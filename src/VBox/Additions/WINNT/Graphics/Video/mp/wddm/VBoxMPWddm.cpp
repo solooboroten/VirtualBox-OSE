@@ -50,6 +50,48 @@ VOID vboxWddmMemFree(PVOID pvMem)
     ExFreePool(pvMem);
 }
 
+DECLINLINE(void) VBoxWddmOaRelease(PVBOXWDDM_OPENALLOCATION pOa)
+{
+    PVBOXWDDM_ALLOCATION pAllocation = pOa->pAllocation;
+    KIRQL OldIrql;
+    KeAcquireSpinLock(&pAllocation->OpenLock, &OldIrql);
+    Assert(pAllocation->cOpens);
+    --pAllocation->cOpens;
+    uint32_t cOpens = --pOa->cOpens;
+    Assert(cOpens < UINT32_MAX/2);
+    if (!cOpens)
+    {
+        RemoveEntryList(&pOa->ListEntry);
+        KeReleaseSpinLock(&pAllocation->OpenLock, OldIrql);
+        vboxWddmMemFree(pOa);
+    }
+    else
+        KeReleaseSpinLock(&pAllocation->OpenLock, OldIrql);
+}
+
+DECLINLINE(PVBOXWDDM_OPENALLOCATION) VBoxWddmOaSearchLocked(PVBOXWDDM_DEVICE pDevice, PVBOXWDDM_ALLOCATION pAllocation)
+{
+    for (PLIST_ENTRY pCur = pAllocation->OpenList.Flink; pCur != &pAllocation->OpenList; pCur = pCur->Flink)
+    {
+        PVBOXWDDM_OPENALLOCATION pCurOa = CONTAINING_RECORD(pCur, VBOXWDDM_OPENALLOCATION, ListEntry);
+        if (pCurOa->pDevice == pDevice)
+        {
+            return pCurOa;
+        }
+    }
+    return NULL;
+}
+
+DECLINLINE(PVBOXWDDM_OPENALLOCATION) VBoxWddmOaSearch(PVBOXWDDM_DEVICE pDevice, PVBOXWDDM_ALLOCATION pAllocation)
+{
+    PVBOXWDDM_OPENALLOCATION pOa;
+    KIRQL OldIrql;
+    KeAcquireSpinLock(&pAllocation->OpenLock, &OldIrql);
+    pOa = VBoxWddmOaSearchLocked(pDevice, pAllocation);
+    KeReleaseSpinLock(&pAllocation->OpenLock, OldIrql);
+    return pOa;
+}
+
 DECLINLINE(PVBOXWDDM_ALLOCATION) vboxWddmGetAllocationFromHandle(PVBOXMP_DEVEXT pDevExt, D3DKMT_HANDLE hAllocation)
 {
     DXGKARGCB_GETHANDLEDATA GhData;
@@ -1935,6 +1977,7 @@ NTSTATUS vboxWddmAllocationCreate(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_RESOURCE pRe
             pAllocation->cRefs = 1;
             pAllocation->bVisible = FALSE;
             pAllocation->bAssigned = FALSE;
+            KeInitializeSpinLock(&pAllocation->OpenLock);
             InitializeListHead(&pAllocation->OpenList);
 
             switch (pAllocInfo->enmType)
@@ -2600,7 +2643,7 @@ static NTSTATUS vboxWddmSubmitCmd(PVBOXMP_DEVEXT pDevExt, VBOXVDMAPIPE_CMD_DMACM
     }
     else
     {
-        vboxVdmaGgCmdDestroy(pDevExt, &pCmd->Hdr);
+        vboxVdmaGgCmdRelease(pDevExt, &pCmd->Hdr);
     }
     return Status;
 }
@@ -2613,12 +2656,18 @@ static NTSTATUS vboxWddmSubmitBltCmd(PVBOXMP_DEVEXT pDevExt, VBOXWDDM_CONTEXT *p
     if (pBltCmd)
     {
         VBOXWDDM_SOURCE *pSource = &pDevExt->aSources[pBlt->Blt.DstAlloc.srcId];
-        vboxVdmaGgCmdDmaNotifyInit(&pBltCmd->Hdr, pContext->NodeOrdinal, u32FenceId, NULL, NULL);
+        vboxVdmaGgCmdDmaNotifyInit(&pBltCmd->Hdr, pContext->NodeOrdinal, u32FenceId, vboxVdmaGgDdiCmdRelease, pBltCmd);
         pBltCmd->Hdr.fFlags = fBltFlags;
         pBltCmd->Hdr.pContext = pContext;
         pBltCmd->Hdr.enmCmd = VBOXVDMACMD_TYPE_DMA_PRESENT_BLT;
         memcpy(&pBltCmd->Blt, &pBlt->Blt, RT_OFFSETOF(VBOXVDMA_BLT, DstRects.UpdateRects.aRects[pBlt->Blt.DstRects.UpdateRects.cRects]));
-        vboxWddmSubmitCmd(pDevExt, &pBltCmd->Hdr);
+        Status = vboxWddmSubmitCmd(pDevExt, &pBltCmd->Hdr);
+        if (Status != STATUS_SUCCESS)
+        {
+            WARN(("vboxWddmSubmitCmd failed, Status 0x%x", Status));
+            Status = STATUS_SUCCESS;
+        }
+        vboxVdmaGgCmdRelease(pDevExt, &pBltCmd->Hdr.Hdr);
     }
     else
     {
@@ -2917,14 +2966,16 @@ DxgkDdiSubmitCommand(
             if (pFlipCmd)
             {
                 VBOXWDDM_SOURCE *pSource = &pDevExt->aSources[pFlip->Flip.Alloc.srcId];
-                vboxVdmaGgCmdDmaNotifyInit(&pFlipCmd->Hdr, pContext->NodeOrdinal, pSubmitCommand->SubmissionFenceId, NULL, NULL);
+                vboxVdmaGgCmdDmaNotifyInit(&pFlipCmd->Hdr, pContext->NodeOrdinal, pSubmitCommand->SubmissionFenceId, vboxVdmaGgDdiCmdRelease, pFlipCmd);
                 pFlipCmd->Hdr.fFlags.Value = 0;
                 pFlipCmd->Hdr.fFlags.b3DRelated = 1;
                 pFlipCmd->Hdr.pContext = pContext;
                 pFlipCmd->Hdr.enmCmd = VBOXVDMACMD_TYPE_DMA_PRESENT_FLIP;
                 memcpy(&pFlipCmd->Flip, &pFlip->Flip, sizeof (pFlipCmd->Flip));
                 Status = vboxWddmSubmitCmd(pDevExt, &pFlipCmd->Hdr);
-                Assert(Status == STATUS_SUCCESS);
+                if (Status != STATUS_SUCCESS)
+                    WARN(("vboxWddmSubmitCmd failed, Status 0x%x", Status));
+                vboxVdmaGgCmdRelease(pDevExt, &pFlipCmd->Hdr.Hdr);
             }
             else
             {
@@ -2941,15 +2992,17 @@ DxgkDdiSubmitCommand(
             Assert(pCFCmd);
             if (pCFCmd)
             {
-//                VBOXWDDM_SOURCE *pSource = &pDevExt->aSources[pFlip->Flip.Alloc.srcId];
-                vboxVdmaGgCmdDmaNotifyInit(&pCFCmd->Hdr, pContext->NodeOrdinal, pSubmitCommand->SubmissionFenceId, NULL, NULL);
+                vboxVdmaGgCmdDmaNotifyInit(&pCFCmd->Hdr, pContext->NodeOrdinal, pSubmitCommand->SubmissionFenceId, vboxVdmaGgDdiCmdRelease, pCFCmd);
                 pCFCmd->Hdr.fFlags.Value = 0;
                 pCFCmd->Hdr.fFlags.b2DRelated = 1;
                 pCFCmd->Hdr.pContext = pContext;
                 pCFCmd->Hdr.enmCmd = VBOXVDMACMD_TYPE_DMA_PRESENT_CLRFILL;
                 memcpy(&pCFCmd->ClrFill, &pCF->ClrFill, RT_OFFSETOF(VBOXVDMA_CLRFILL, Rects.aRects[pCF->ClrFill.Rects.cRects]));
                 Status = vboxWddmSubmitCmd(pDevExt, &pCFCmd->Hdr);
-                Assert(Status == STATUS_SUCCESS);
+                if (Status != STATUS_SUCCESS)
+                    WARN(("vboxWddmSubmitCmd failed, Status 0x%x", Status));
+                vboxVdmaGgCmdRelease(pDevExt, &pCFCmd->Hdr.Hdr);
+
             }
             else
             {
@@ -3872,17 +3925,7 @@ DxgkDdiEscape(
                     break;
                 }
 
-                PVBOXWDDM_OPENALLOCATION pOa = NULL;
-                for (PLIST_ENTRY pCur = pAlloc->OpenList.Flink; pCur != &pAlloc->OpenList; pCur = pCur->Flink)
-                {
-                    PVBOXWDDM_OPENALLOCATION pCurOa = CONTAINING_RECORD(pCur, VBOXWDDM_OPENALLOCATION, ListEntry);
-                    if (pCurOa->pDevice == pDevice)
-                    {
-                        pOa = pCurOa;
-                        break;
-                    }
-                }
-
+                PVBOXWDDM_OPENALLOCATION pOa = VBoxWddmOaSearch(pDevice, pAlloc);
                 if (!pOa)
                 {
                     WARN(("failed to get open allocation from alloc"));
@@ -4749,6 +4792,8 @@ DxgkDdiDestroyDevice(
     return STATUS_SUCCESS;
 }
 
+
+
 /*
  * DxgkDdiOpenAllocation
  */
@@ -4798,43 +4843,17 @@ DxgkDdiOpenAllocation(
                 break;
             }
 
-            PVBOXWDDM_OPENALLOCATION pOa = (PVBOXWDDM_OPENALLOCATION)vboxWddmMemAllocZero(sizeof (VBOXWDDM_OPENALLOCATION));
-            if (!pOa)
-            {
-                WARN(("failed to allocation alloc info"));
-                Status = STATUS_INSUFFICIENT_RESOURCES;
-                break;
-            }
-
 #ifdef DEBUG
-            for (PLIST_ENTRY pCur = pAllocation->OpenList.Flink; pCur != &pAllocation->OpenList; pCur = pCur->Flink)
-            {
-                PVBOXWDDM_OPENALLOCATION pCurOa = CONTAINING_RECORD(pCur, VBOXWDDM_OPENALLOCATION, ListEntry);
-                if (pCurOa->pDevice == pDevice)
-                {
-                    /* should not happen */
-                    Assert(0);
-                    break;
-                }
-            }
             Assert(!pAllocation->fAssumedDeletion);
 #endif
-            InsertHeadList(&pAllocation->OpenList, &pOa->ListEntry);
-            pOa->hAllocation = pInfo->hAllocation;
-            pOa->pAllocation = pAllocation;
-            pOa->pDevice = pDevice;
-            pInfo->hDeviceSpecificAllocation = pOa;
-
-
             if (pRcInfo)
             {
                 Assert(pAllocation->enmType == VBOXWDDM_ALLOC_TYPE_UMD_RC_GENERIC);
 
-                if (pInfo->PrivateDriverDataSize < sizeof (VBOXWDDM_ALLOCINFO)
+                if (pInfo->PrivateDriverDataSize != sizeof (VBOXWDDM_ALLOCINFO)
                         || !pInfo->pPrivateDriverData)
                 {
                     WARN(("invalid data size"));
-                    vboxWddmMemFree(pOa);
                     Status = STATUS_INVALID_PARAMETER;
                     break;
                 }
@@ -4851,7 +4870,49 @@ DxgkDdiOpenAllocation(
 #endif
             }
 
-            ++pAllocation->cOpens;
+            KIRQL OldIrql;
+            PVBOXWDDM_OPENALLOCATION pOa;
+            KeAcquireSpinLock(&pAllocation->OpenLock, &OldIrql);
+            pOa = VBoxWddmOaSearchLocked(pDevice, pAllocation);
+            if (pOa)
+            {
+                ++pOa->cOpens;
+                ++pAllocation->cOpens;
+                KeReleaseSpinLock(&pAllocation->OpenLock, OldIrql);
+            }
+            else
+            {
+                KeReleaseSpinLock(&pAllocation->OpenLock, OldIrql);
+                pOa = (PVBOXWDDM_OPENALLOCATION)vboxWddmMemAllocZero(sizeof (VBOXWDDM_OPENALLOCATION));
+                if (!pOa)
+                {
+                    WARN(("failed to allocation alloc info"));
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
+                    break;
+                }
+
+                pOa->hAllocation = pInfo->hAllocation;
+                pOa->pAllocation = pAllocation;
+                pOa->pDevice = pDevice;
+                pOa->cOpens = 1;
+
+                PVBOXWDDM_OPENALLOCATION pConcurrentOa;
+                KeAcquireSpinLock(&pAllocation->OpenLock, &OldIrql);
+                pConcurrentOa = VBoxWddmOaSearchLocked(pDevice, pAllocation);
+                if (!pConcurrentOa)
+                    InsertHeadList(&pAllocation->OpenList, &pOa->ListEntry);
+                else
+                    ++pConcurrentOa->cOpens;
+                ++pAllocation->cOpens;
+                KeReleaseSpinLock(&pAllocation->OpenLock, OldIrql);
+                if (pConcurrentOa)
+                {
+                    vboxWddmMemFree(pOa);
+                    pOa = pConcurrentOa;
+                }
+            }
+
+            pInfo->hDeviceSpecificAllocation = pOa;
         }
 
         if (Status != STATUS_SUCCESS)
@@ -4860,11 +4921,7 @@ DxgkDdiOpenAllocation(
             {
                 DXGK_OPENALLOCATIONINFO* pInfo2Free = &pOpenAllocation->pOpenAllocation[j];
                 PVBOXWDDM_OPENALLOCATION pOa2Free = (PVBOXWDDM_OPENALLOCATION)pInfo2Free->hDeviceSpecificAllocation;
-                PVBOXWDDM_ALLOCATION pAllocation = pOa2Free->pAllocation;
-                RemoveEntryList(&pOa2Free->ListEntry);
-                Assert(pAllocation->cOpens);
-                --pAllocation->cOpens;
-                vboxWddmMemFree(pOa2Free);
+                VBoxWddmOaRelease(pOa2Free);
             }
         }
     }
@@ -4893,12 +4950,9 @@ DxgkDdiCloseAllocation(
     {
         PVBOXWDDM_OPENALLOCATION pOa2Free = (PVBOXWDDM_OPENALLOCATION)pCloseAllocation->pOpenHandleList[i];
         PVBOXWDDM_ALLOCATION pAllocation = pOa2Free->pAllocation;
-        RemoveEntryList(&pOa2Free->ListEntry);
         Assert(pAllocation->cShRcRefs >= pOa2Free->cShRcRefs);
         pAllocation->cShRcRefs -= pOa2Free->cShRcRefs;
-        Assert(pAllocation->cOpens);
-        --pAllocation->cOpens;
-        vboxWddmMemFree(pOa2Free);
+        VBoxWddmOaRelease(pOa2Free);
     }
 
     LOGF(("LEAVE, hDevice(0x%x)", hDevice));

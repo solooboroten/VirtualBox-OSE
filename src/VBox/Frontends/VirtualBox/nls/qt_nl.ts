@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.0" language="nl_NL">
+<TS version="2.0" language="nl">
 <context>
     <name>MAC_APPLICATION_MENU</name>
     <message>
@@ -712,9 +712,8 @@ niet hernoemen naar
 <context>
     <name>QApplication</name>
     <message>
-        <source>QT_LAYOUT_DIRECTION</source>
-        <comment>Translate this string to the string &apos;LTR&apos; in left-to-right languages or to &apos;RTL&apos; in right-to-left languages (such as Hebrew and Arabic) to get proper widget layout.</comment>
-        <translation>LTR</translation>
+        <source>Activate</source>
+        <translation>Activeren</translation>
     </message>
     <message>
         <source>Executable &apos;%1&apos; requires Qt %2, found Qt %3.</source>
@@ -725,8 +724,9 @@ niet hernoemen naar
         <translation>Qt bibliotheek is niet compatibel</translation>
     </message>
     <message>
-        <source>Activate</source>
-        <translation>Activeren</translation>
+        <source>QT_LAYOUT_DIRECTION</source>
+        <comment>Translate this string to the string &apos;LTR&apos; in left-to-right languages or to &apos;RTL&apos; in right-to-left languages (such as Hebrew and Arabic) to get proper widget layout.</comment>
+        <translation>LTR</translation>
     </message>
     <message>
         <source>Activates the program&apos;s main window</source>
@@ -1091,14 +1091,6 @@ niet hernoemen naar
 <context>
     <name>QErrorMessage</name>
     <message>
-        <source>&amp;Show this message again</source>
-        <translation>&amp;Geef dit bericht opnieuw weer</translation>
-    </message>
-    <message>
-        <source>&amp;OK</source>
-        <translation>&amp;OK</translation>
-    </message>
-    <message>
         <source>Debug Message:</source>
         <translatorcomment>RL - debug als bekende term laten staan</translatorcomment>
         <translation>Debug bericht:</translation>
@@ -1111,6 +1103,14 @@ niet hernoemen naar
         <source>Fatal Error:</source>
         <translation>Fatale fout:</translation>
     </message>
+    <message>
+        <source>&amp;Show this message again</source>
+        <translation>&amp;Geef dit bericht opnieuw weer</translation>
+    </message>
+    <message>
+        <source>&amp;OK</source>
+        <translation>&amp;OK</translation>
+    </message>
 </context>
 <context>
     <name>QFileDialog</name>
@@ -1119,28 +1119,8 @@ niet hernoemen naar
         <translation>Alle bestanden (*)</translation>
     </message>
     <message>
-        <source>Back</source>
-        <translation>Terug</translation>
-    </message>
-    <message>
-        <source>List View</source>
-        <translation>Lijst weergave</translation>
-    </message>
-    <message>
-        <source>Detail View</source>
-        <translation>Detail weergave</translation>
-    </message>
-    <message>
-        <source>File</source>
-        <translation>Bestand</translation>
-    </message>
-    <message>
-        <source>Open</source>
-        <translation>Openen</translation>
-    </message>
-    <message>
-        <source>Save As</source>
-        <translation>Opslaan als</translation>
+        <source>Directories</source>
+        <translation>Mappen</translation>
     </message>
     <message>
         <source>&amp;Open</source>
@@ -1151,32 +1131,8 @@ niet hernoemen naar
         <translation>&amp;Opslaan</translation>
     </message>
     <message>
-        <source>&amp;Rename</source>
-        <translation>&amp;Hernoemen</translation>
-    </message>
-    <message>
-        <source>&amp;Delete</source>
-        <translation>&amp;Verwijderen</translation>
-    </message>
-    <message>
-        <source>Show &amp;hidden files</source>
-        <translation>&amp;Geef verborgen bestanden weer</translation>
-    </message>
-    <message>
-        <source>New Folder</source>
-        <translation>Nieuwe map</translation>
-    </message>
-    <message>
-        <source>Find Directory</source>
-        <translation>Zoek een map</translation>
-    </message>
-    <message>
-        <source>Directories</source>
-        <translation>Mappen</translation>
-    </message>
-    <message>
-        <source>Directory:</source>
-        <translation>Map:</translation>
+        <source>Open</source>
+        <translation>Openen</translation>
     </message>
     <message>
         <source>%1 already exists.
@@ -1197,12 +1153,40 @@ Controleer of de juiste bestandnaam is opgegeven.</translation>
         <translation>Mijn computer</translation>
     </message>
     <message>
+        <source>&amp;Rename</source>
+        <translation>&amp;Hernoemen</translation>
+    </message>
+    <message>
+        <source>&amp;Delete</source>
+        <translation>&amp;Verwijderen</translation>
+    </message>
+    <message>
+        <source>Show &amp;hidden files</source>
+        <translation>&amp;Geef verborgen bestanden weer</translation>
+    </message>
+    <message>
+        <source>Back</source>
+        <translation>Terug</translation>
+    </message>
+    <message>
         <source>Parent Directory</source>
         <translation>Bovenliggende map</translation>
     </message>
     <message>
+        <source>List View</source>
+        <translation>Lijst weergave</translation>
+    </message>
+    <message>
+        <source>Detail View</source>
+        <translation>Detail weergave</translation>
+    </message>
+    <message>
         <source>Files of type:</source>
         <translation>Bestanden van het type:</translation>
+    </message>
+    <message>
+        <source>Directory:</source>
+        <translation>Map:</translation>
     </message>
     <message>
         <source>%1
@@ -1227,12 +1211,24 @@ Wilt u het toch verwijderen?</translation>
         <translation>Kan de map niet verwijderen.</translation>
     </message>
     <message>
+        <source>Save As</source>
+        <translation>Opslaan als</translation>
+    </message>
+    <message>
         <source>Drive</source>
         <translation>Station</translation>
     </message>
     <message>
+        <source>File</source>
+        <translation>Bestand</translation>
+    </message>
+    <message>
         <source>Unknown</source>
         <translation>Onbekend</translation>
+    </message>
+    <message>
+        <source>Find Directory</source>
+        <translation>Zoek een map</translation>
     </message>
     <message>
         <source>Show </source>
@@ -1241,6 +1237,10 @@ Wilt u het toch verwijderen?</translation>
     <message>
         <source>Forward</source>
         <translation>Vooruit</translation>
+    </message>
+    <message>
+        <source>New Folder</source>
+        <translation>Nieuwe map</translation>
     </message>
     <message>
         <source>&amp;New Folder</source>
@@ -1269,26 +1269,6 @@ Wilt u het toch verwijderen?</translation>
 </context>
 <context>
     <name>QFileSystemModel</name>
-    <message>
-        <source>%1 TB</source>
-        <translation>%1 TB</translation>
-    </message>
-    <message>
-        <source>%1 GB</source>
-        <translation>%1 GB</translation>
-    </message>
-    <message>
-        <source>%1 MB</source>
-        <translation>%1 MB</translation>
-    </message>
-    <message>
-        <source>%1 KB</source>
-        <translation>%1 KB</translation>
-    </message>
-    <message>
-        <source>%1 bytes</source>
-        <translation>%1 bytes</translation>
-    </message>
     <message>
         <source>Invalid filename</source>
         <translation>Ongeldige bestandsnaam</translation>
@@ -1326,6 +1306,26 @@ Wilt u het toch verwijderen?</translation>
     <message>
         <source>Computer</source>
         <translation>Computer</translation>
+    </message>
+    <message>
+        <source>%1 TB</source>
+        <translation>%1 TB</translation>
+    </message>
+    <message>
+        <source>%1 GB</source>
+        <translation>%1 GB</translation>
+    </message>
+    <message>
+        <source>%1 MB</source>
+        <translation>%1 MB</translation>
+    </message>
+    <message>
+        <source>%1 KB</source>
+        <translation>%1 KB</translation>
+    </message>
+    <message>
+        <source>%1 bytes</source>
+        <translation>%1 bytes</translation>
     </message>
 </context>
 <context>
@@ -1526,40 +1526,19 @@ Wilt u het toch verwijderen?</translation>
         <translation>Voorbeeld</translation>
     </message>
     <message>
-        <source>Select Font</source>
-        <translation>Selecteer lettertype</translation>
-    </message>
-    <message>
         <source>Wr&amp;iting System</source>
         <translation>&amp;Schrijfsysteem</translation>
+    </message>
+    <message>
+        <source>Select Font</source>
+        <translation>Selecteer lettertype</translation>
     </message>
 </context>
 <context>
     <name>QFtp</name>
     <message>
-        <source>Host %1 found</source>
-        <translation>Host %1 gevonden</translation>
-    </message>
-    <message>
-        <source>Host found</source>
-        <translatorcomment>RL - &apos;host&apos; als host vertalen, voorkomt &apos;gast&apos; en &apos;gastheer&apos; verwarring in VirtualBox (gebruikerswens)</translatorcomment>
-        <translation>Host gevonden</translation>
-    </message>
-    <message>
-        <source>Connected to host %1</source>
-        <translation>Verbonden met host %1</translation>
-    </message>
-    <message>
-        <source>Connected to host</source>
-        <translation>Verbonden met host</translation>
-    </message>
-    <message>
-        <source>Connection to %1 closed</source>
-        <translation>Verbinding met %1 afgesloten</translation>
-    </message>
-    <message>
-        <source>Connection closed</source>
-        <translation>Verbinding afgesloten</translation>
+        <source>Not connected</source>
+        <translation>Geen verbinding</translation>
     </message>
     <message>
         <source>Host %1 not found</source>
@@ -1568,6 +1547,14 @@ Wilt u het toch verwijderen?</translation>
     <message>
         <source>Connection refused to host %1</source>
         <translation>Verbinding met host %1 geweigerd</translation>
+    </message>
+    <message>
+        <source>Connected to host %1</source>
+        <translation>Verbonden met host %1</translation>
+    </message>
+    <message>
+        <source>Connection refused for data connection</source>
+        <translation>Verbinding geweigerd voor dataconnectie</translation>
     </message>
     <message>
         <source>Unknown error</source>
@@ -1628,12 +1615,25 @@ Wilt u het toch verwijderen?</translation>
 %1</translation>
     </message>
     <message>
-        <source>Not connected</source>
-        <translation>Geen verbinding</translation>
+        <source>Connection closed</source>
+        <translation>Verbinding afgesloten</translation>
     </message>
     <message>
-        <source>Connection refused for data connection</source>
-        <translation>Verbinding geweigerd voor dataconnectie</translation>
+        <source>Host %1 found</source>
+        <translation>Host %1 gevonden</translation>
+    </message>
+    <message>
+        <source>Connection to %1 closed</source>
+        <translation>Verbinding met %1 afgesloten</translation>
+    </message>
+    <message>
+        <source>Host found</source>
+        <translatorcomment>RL - &apos;host&apos; als host vertalen, voorkomt &apos;gast&apos; en &apos;gastheer&apos; verwarring in VirtualBox (gebruikerswens)</translatorcomment>
+        <translation>Host gevonden</translation>
+    </message>
+    <message>
+        <source>Connected to host</source>
+        <translation>Verbonden met host</translation>
     </message>
 </context>
 <context>
@@ -1661,46 +1661,6 @@ Wilt u het toch verwijderen?</translation>
 <context>
     <name>QHttp</name>
     <message>
-        <source>Connection refused</source>
-        <translation>Verbinding geweigerd</translation>
-    </message>
-    <message>
-        <source>Host %1 not found</source>
-        <translation>Host %1 niet gevonden</translation>
-    </message>
-    <message>
-        <source>Wrong content length</source>
-        <translation>Lengte van de inhoud is verkeerd</translation>
-    </message>
-    <message>
-        <source>HTTP request failed</source>
-        <translation>HTTP verzoek is mislukt</translation>
-    </message>
-    <message>
-        <source>Host %1 found</source>
-        <translation>Host %1 gevonden</translation>
-    </message>
-    <message>
-        <source>Host found</source>
-        <translation>Host gevonden</translation>
-    </message>
-    <message>
-        <source>Connected to host %1</source>
-        <translation>Verbonden met host %1</translation>
-    </message>
-    <message>
-        <source>Connected to host</source>
-        <translation>Verbonden met host</translation>
-    </message>
-    <message>
-        <source>Connection to %1 closed</source>
-        <translation>Verbinding met %1 afgesloten</translation>
-    </message>
-    <message>
-        <source>Connection closed</source>
-        <translation>Verbinding afgesloten</translation>
-    </message>
-    <message>
         <source>Unknown error</source>
         <translation>Onbekende fout</translation>
     </message>
@@ -1713,8 +1673,24 @@ Wilt u het toch verwijderen?</translation>
         <translation>Geen server aangewezen om mee te verbinden</translation>
     </message>
     <message>
+        <source>Wrong content length</source>
+        <translation>Lengte van de inhoud is verkeerd</translation>
+    </message>
+    <message>
         <source>Server closed connection unexpectedly</source>
         <translation>Server heeft de verbinding onverwacht verbroken</translation>
+    </message>
+    <message>
+        <source>Connection refused</source>
+        <translation>Verbinding geweigerd</translation>
+    </message>
+    <message>
+        <source>Host %1 not found</source>
+        <translation>Host %1 niet gevonden</translation>
+    </message>
+    <message>
+        <source>HTTP request failed</source>
+        <translation>HTTP verzoek is mislukt</translation>
     </message>
     <message>
         <source>Invalid HTTP response header</source>
@@ -1725,12 +1701,40 @@ Wilt u het toch verwijderen?</translation>
         <translation>Ongeldige HTTP afgebroken body</translation>
     </message>
     <message>
+        <source>Host %1 found</source>
+        <translation>Host %1 gevonden</translation>
+    </message>
+    <message>
+        <source>Connected to host %1</source>
+        <translation>Verbonden met host %1</translation>
+    </message>
+    <message>
+        <source>Connection to %1 closed</source>
+        <translation>Verbinding met %1 afgesloten</translation>
+    </message>
+    <message>
+        <source>Host found</source>
+        <translation>Host gevonden</translation>
+    </message>
+    <message>
+        <source>Connected to host</source>
+        <translation>Verbonden met host</translation>
+    </message>
+    <message>
+        <source>Connection closed</source>
+        <translation>Verbinding afgesloten</translation>
+    </message>
+    <message>
         <source>Proxy authentication required</source>
         <translation>Proxy authentcatie vereist</translation>
     </message>
     <message>
         <source>Authentication required</source>
         <translation>Authenticatie vereist</translation>
+    </message>
+    <message>
+        <source>Connection refused (or timed out)</source>
+        <translation>Verbinding geweigerd (tijdslimiet verstreken)</translation>
     </message>
     <message>
         <source>Proxy requires authentication</source>
@@ -1745,16 +1749,12 @@ Wilt u het toch verwijderen?</translation>
         <translation>Data gecorrumpeerd</translation>
     </message>
     <message>
-        <source>SSL handshake failed</source>
-        <translation>SSL handdruk is mislukt</translation>
-    </message>
-    <message>
         <source>Unknown protocol specified</source>
         <translation>Onbekend protocol gespecificeerd</translation>
     </message>
     <message>
-        <source>Connection refused (or timed out)</source>
-        <translation>Verbinding geweigerd (tijdslimiet verstreken)</translation>
+        <source>SSL handshake failed</source>
+        <translation>SSL handdruk is mislukt</translation>
     </message>
     <message>
         <source>HTTPS connection requested but SSL support not compiled in</source>
@@ -1957,10 +1957,6 @@ Wilt u het toch verwijderen?</translation>
 <context>
     <name>QLineEdit</name>
     <message>
-        <source>Select All</source>
-        <translation>Alles selecteren</translation>
-    </message>
-    <message>
         <source>&amp;Undo</source>
         <translation>&amp;Ongedaan maken</translation>
     </message>
@@ -1983,6 +1979,10 @@ Wilt u het toch verwijderen?</translation>
     <message>
         <source>Delete</source>
         <translation>Verwijderen</translation>
+    </message>
+    <message>
+        <source>Select All</source>
+        <translation>Alles selecteren</translation>
     </message>
 </context>
 <context>
@@ -2173,6 +2173,10 @@ Wilt u het toch verwijderen?</translation>
         <translation>Sl&amp;uiten</translation>
     </message>
     <message>
+        <source>- [%1]</source>
+        <translation>- [%1]</translation>
+    </message>
+    <message>
         <source>Maximize</source>
         <translation>Maximaliseren</translation>
     </message>
@@ -2197,10 +2201,6 @@ Wilt u het toch verwijderen?</translation>
         <source>Menu</source>
         <translation>Menu</translation>
     </message>
-    <message>
-        <source>- [%1]</source>
-        <translation>- [%1]</translation>
-    </message>
 </context>
 <context>
     <name>QMenu</name>
@@ -2220,17 +2220,17 @@ Wilt u het toch verwijderen?</translation>
 <context>
     <name>QMessageBox</name>
     <message>
+        <source>Help</source>
+        <translatorcomment>RL - eng &apos;Help&apos; wordt bij Moz/KDe/GNOME/Ubuntu/Fedora/Windows/Mac standaard vertaald in Nederlands als &apos;Hulp&apos;</translatorcomment>
+        <translation>Hulp</translation>
+    </message>
+    <message>
         <source>OK</source>
         <translation>OK</translation>
     </message>
     <message>
         <source>About Qt</source>
         <translation>Info over Qt</translation>
-    </message>
-    <message>
-        <source>Help</source>
-        <translatorcomment>RL - eng &apos;Help&apos; wordt bij Moz/KDe/GNOME/Ubuntu/Fedora/Windows/Mac standaard vertaald in Nederlands als &apos;Hulp&apos;</translatorcomment>
-        <translation>Hulp</translation>
     </message>
     <message>
         <source>&lt;p&gt;This program uses Qt version %1.&lt;/p&gt;</source>
@@ -2906,6 +2906,10 @@ Kies een andere bestandsnaam.</translation>
         <translation>&amp;Opties &gt;&gt;</translation>
     </message>
     <message>
+        <source>&amp;Print</source>
+        <translation>&amp;Printen</translation>
+    </message>
+    <message>
         <source>&amp;Options &lt;&lt;</source>
         <translation>&amp;Opties &lt;&lt; </translation>
     </message>
@@ -2925,13 +2929,13 @@ Kies een andere bestandsnaam.</translation>
         <source>Write %1 file</source>
         <translation>Schrijf %1 bestand</translation>
     </message>
-    <message>
-        <source>&amp;Print</source>
-        <translation>&amp;Printen</translation>
-    </message>
 </context>
 <context>
     <name>QPrintPreviewDialog</name>
+    <message>
+        <source>Page Setup</source>
+        <translation>Pagina Instelling</translation>
+    </message>
     <message>
         <source>Print Preview</source>
         <translation>Afdrukvoorbeeld</translation>
@@ -2999,10 +3003,6 @@ Kies een andere bestandsnaam.</translation>
     <message>
         <source>Close</source>
         <translation>Sluiten</translation>
-    </message>
-    <message>
-        <source>Page Setup</source>
-        <translation>Pagina Instelling</translation>
     </message>
 </context>
 <context>
@@ -3349,6 +3349,10 @@ Kies een andere bestandsnaam.</translation>
 <context>
     <name>QSharedMemory</name>
     <message>
+        <source>%1: unable to set key on lock</source>
+        <translation>%1: kan geen sleutel op het slot zetten</translation>
+    </message>
+    <message>
         <source>%1: create size is less then 0</source>
         <translation>%1: aanmaakgrote is kleiner dan 0</translation>
     </message>
@@ -3403,10 +3407,6 @@ Kies een andere bestandsnaam.</translation>
     <message>
         <source>%1: not attached</source>
         <translation>%1: niet gekoppeld</translation>
-    </message>
-    <message>
-        <source>%1: unable to set key on lock</source>
-        <translation>%1: kan geen sleutel op het slot zetten</translation>
     </message>
 </context>
 <context>
@@ -4101,6 +4101,10 @@ Kies een andere bestandsnaam.</translation>
 <context>
     <name>QWebPage</name>
     <message>
+        <source>Bad HTTP request</source>
+        <translation>Ongeldig HTTP verzoek</translation>
+    </message>
+    <message>
         <source>Submit</source>
         <comment>default label for Submit buttons in forms on web pages</comment>
         <translation>Indienen</translation>
@@ -4114,6 +4118,11 @@ Kies een andere bestandsnaam.</translation>
         <source>Reset</source>
         <comment>default label for Reset buttons in forms on web pages</comment>
         <translation>Terugzetten</translation>
+    </message>
+    <message>
+        <source>This is a searchable index. Enter search keywords: </source>
+        <comment>text that appears at the start of nearly-obsolete web pages in the form of a &apos;searchable index&apos;</comment>
+        <translation>Deze index is te doorzoeken. Geef trefwoorden op:</translation>
     </message>
     <message>
         <source>Choose File</source>
@@ -4332,22 +4341,13 @@ Kies een andere bestandsnaam.</translation>
         <translation>Onbekend</translation>
     </message>
     <message>
-        <source>Web Inspector - %2</source>
-        <translation>Web Inspector - %2</translation>
-    </message>
-    <message>
         <source>%1 (%2x%3 pixels)</source>
         <comment>Title string for images</comment>
         <translation>%1 (%2x%3 pixels)</translation>
     </message>
     <message>
-        <source>Bad HTTP request</source>
-        <translation>Ongeldig HTTP verzoek</translation>
-    </message>
-    <message>
-        <source>This is a searchable index. Enter search keywords: </source>
-        <comment>text that appears at the start of nearly-obsolete web pages in the form of a &apos;searchable index&apos;</comment>
-        <translation>Deze index is te doorzoeken. Geef trefwoorden op:</translation>
+        <source>Web Inspector - %2</source>
+        <translation>Web Inspector - %2</translation>
     </message>
 </context>
 <context>
@@ -4367,28 +4367,6 @@ Kies een andere bestandsnaam.</translation>
 <context>
     <name>QWizard</name>
     <message>
-        <source>Cancel</source>
-        <translation>Annuleren</translation>
-    </message>
-    <message>
-        <source>Help</source>
-        <translatorcomment>RL - eng &apos;Help&apos; wordt bij Moz/KDe/GNOME/Ubuntu/Fedora/Windows/Mac standaard vertaald in Nederlands als &apos;Hulp&apos;</translatorcomment>
-        <translation>Hulp</translation>
-    </message>
-    <message>
-        <source>&lt; &amp;Back</source>
-        <translation>&lt; &amp;Terug</translation>
-    </message>
-    <message>
-        <source>&amp;Finish</source>
-        <translation>&amp;Klaar</translation>
-    </message>
-    <message>
-        <source>&amp;Help</source>
-        <translatorcomment>RL - eng &apos;Help&apos; wordt bij Moz/KDe/GNOME/Ubuntu/Fedora/Windows/Mac standaard vertaald in Nederlands als &apos;Hulp&apos;</translatorcomment>
-        <translation>&amp;Hulp</translation>
-    </message>
-    <message>
         <source>Go Back</source>
         <translation>Vorige</translation>
     </message>
@@ -4407,6 +4385,28 @@ Kies een andere bestandsnaam.</translation>
     <message>
         <source>Quit</source>
         <translation>Stoppen</translation>
+    </message>
+    <message>
+        <source>Help</source>
+        <translatorcomment>RL - eng &apos;Help&apos; wordt bij Moz/KDe/GNOME/Ubuntu/Fedora/Windows/Mac standaard vertaald in Nederlands als &apos;Hulp&apos;</translatorcomment>
+        <translation>Hulp</translation>
+    </message>
+    <message>
+        <source>&lt; &amp;Back</source>
+        <translation>&lt; &amp;Terug</translation>
+    </message>
+    <message>
+        <source>&amp;Finish</source>
+        <translation>&amp;Klaar</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Annuleren</translation>
+    </message>
+    <message>
+        <source>&amp;Help</source>
+        <translatorcomment>RL - eng &apos;Help&apos; wordt bij Moz/KDe/GNOME/Ubuntu/Fedora/Windows/Mac standaard vertaald in Nederlands als &apos;Hulp&apos;</translatorcomment>
+        <translation>&amp;Hulp</translation>
     </message>
     <message>
         <source>&amp;Next</source>
@@ -4448,6 +4448,14 @@ Kies een andere bestandsnaam.</translation>
         <translation>Op &amp;voorgrond blijven</translation>
     </message>
     <message>
+        <source>Sh&amp;ade</source>
+        <translation>Sh&amp;ade</translation>
+    </message>
+    <message>
+        <source>%1 - [%2]</source>
+        <translation>%1 - [%2]</translation>
+    </message>
+    <message>
         <source>Minimize</source>
         <translation>Minimaliseren</translation>
     </message>
@@ -4459,14 +4467,6 @@ Kies een andere bestandsnaam.</translation>
     <message>
         <source>Close</source>
         <translation>Sluiten</translation>
-    </message>
-    <message>
-        <source>Sh&amp;ade</source>
-        <translation>Sh&amp;ade</translation>
-    </message>
-    <message>
-        <source>%1 - [%2]</source>
-        <translation>%1 - [%2]</translation>
     </message>
     <message>
         <source>&amp;Unshade</source>
@@ -4521,6 +4521,14 @@ Kies een andere bestandsnaam.</translation>
         <translation>Verkeerde waarde voor een standalone declaratie</translation>
     </message>
     <message>
+        <source>encoding declaration or standalone declaration expected while reading the XML declaration</source>
+        <translation>Bij het lezen van de XML declaratie wordt een coderende declaratie of op zichzelf staande declaratie verwacht</translation>
+    </message>
+    <message>
+        <source>standalone declaration expected while reading the XML declaration</source>
+        <translation>op zichzelf staande declaratie verwacht bij het lezen een XML declaratie</translation>
+    </message>
+    <message>
         <source>error occurred while parsing document type definition</source>
         <translation>fout opgetreden bij het parsen van document type definitie</translation>
     </message>
@@ -4560,14 +4568,6 @@ Kies een andere bestandsnaam.</translation>
     <message>
         <source>error in the text declaration of an external entity</source>
         <translation>Fout in de tekst declaratie van een externe entiteit</translation>
-    </message>
-    <message>
-        <source>encoding declaration or standalone declaration expected while reading the XML declaration</source>
-        <translation>Bij het lezen van de XML declaratie wordt een coderende declaratie of op zichzelf staande declaratie verwacht</translation>
-    </message>
-    <message>
-        <source>standalone declaration expected while reading the XML declaration</source>
-        <translation>op zichzelf staande declaratie verwacht bij het lezen een XML declaratie</translation>
     </message>
 </context>
 <context>
@@ -4717,252 +4717,12 @@ Kies een andere bestandsnaam.</translation>
 <context>
     <name>QtXmlPatterns</name>
     <message>
-        <source>At least one component must be present.</source>
-        <translation>Tenminste één component moet aanwezig zijn.</translation>
+        <source>An %1-attribute with value %2 has already been declared.</source>
+        <translation>Een %1 attribuut met de waarde %2 is al gedeclareerd.</translation>
     </message>
     <message>
-        <source>No operand in an integer division, %1, can be %2.</source>
-        <translation>Geen operand bij deling %1, van gehele getallen, kan een %2 zijn.</translation>
-    </message>
-    <message>
-        <source>%1 is not a valid value of type %2.</source>
-        <translation>%1 is een ongeldige waarde van het soort %2.</translation>
-    </message>
-    <message>
-        <source>When casting to %1 from %2, the source value cannot be %3.</source>
-        <translation>Bij het omzetten naar %1 vanuit %2 kan %3 geen bron zijn.</translation>
-    </message>
-    <message>
-        <source>Effective Boolean Value cannot be calculated for a sequence containing two or more atomic values.</source>
-        <translatorcomment>RL - EBV: Waarde van George Boole, wiskundige. Wordt in Nederland wisselend niet vertaald (Boolean) en wel (Booleaans)
-RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</translatorcomment>
-        <translation>Een Effectieve Booleaanse Waarde kan niet worden berekend voor een serie die twee of meer atomaire waarden bevat.</translation>
-    </message>
-    <message>
-        <source>Operator %1 is not available between atomic values of type %2 and %3.</source>
-        <translatorcomment>RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</translatorcomment>
-        <translation>Operator %1 is niet beschikbaar tussen atomaire waarden van type %2 en %3.</translation>
-    </message>
-    <message>
-        <source>It is not possible to cast from %1 to %2.</source>
-        <translatorcomment>RL - To cast hier is eigenlijk &apos;omgieten&apos; bv van SQL-vorm naar Xml of andersom</translatorcomment>
-        <translation>Het is niet mogelijk om %1 om te zetten %2.</translation>
-    </message>
-    <message>
-        <source>Casting to %1 is not possible because it is an abstract type, and can therefore never be instantiated.</source>
-        <translation>Omzetten naar %1 is niet mogelijk omdat dit een abstract type is en daarom nooit geconcretiseerd kan worden.</translation>
-    </message>
-    <message>
-        <source>It&apos;s not possible to cast the value %1 of type %2 to %3</source>
-        <translation>Het is niet mogelijk om waarde %1 van soort %2 om te zetten in %3</translation>
-    </message>
-    <message>
-        <source>Failure when casting from %1 to %2: %3</source>
-        <translation>Omzetting van %1 naar %2 is mislukt: %3</translation>
-    </message>
-    <message>
-        <source>No comparisons can be done involving the type %1.</source>
-        <translation>Met type %1 zijn geen vergelijkingen uit te voeren.</translation>
-    </message>
-    <message>
-        <source>The data of a processing instruction cannot contain the string %1</source>
-        <translation>De gegevens van een procesinstructie kunnen niet de reeks %1 bevatten</translation>
-    </message>
-    <message>
-        <source>%1 is an invalid %2</source>
-        <translation>%1 is een ongeldig %2</translation>
-    </message>
-    <message>
-        <source>%1 is not a valid XML 1.0 character.</source>
-        <translation>%1 is een ongeldig XML 1.0 teken.</translation>
-    </message>
-    <message>
-        <source>The first argument to %1 cannot be of type %2.</source>
-        <translation>Het eerste argument van %1 kan niet van het type %2 zijn.</translation>
-    </message>
-    <message>
-        <source>%1 was called.</source>
-        <translation>%1 was aangeroepen.</translation>
-    </message>
-    <message>
-        <source>In the replacement string, %1 must be followed by at least one digit when not escaped.</source>
-        <translation>In de vervangende reeks moet %1 gevolgd worden door tenminste één cijfer als deze niet door een escape teken wordt gedekt.</translation>
-    </message>
-    <message>
-        <source>In the replacement string, %1 can only be used to escape itself or %2, not %3</source>
-        <translation>In de vervangende reeks kan %1 alleen worden gebruikt om zichzelf in te dekken of %2, maar niet %3</translation>
-    </message>
-    <message>
-        <source>%1 matches newline characters</source>
-        <translation>%1 komt overeen met tekens voor een nieuwe tekstregel</translation>
-    </message>
-    <message>
-        <source>Matches are case insensitive</source>
-        <translation>Overeenkomsten zijn niet hoofdletter gevoelig</translation>
-    </message>
-    <message>
-        <source>%1 is an invalid regular expression pattern: %2</source>
-        <translation>%1 is een ongeldige reguliere expressie patroon: %2</translation>
-    </message>
-    <message>
-        <source>It will not be possible to retrieve %1.</source>
-        <translation>Het is niet mogelijk om %1 terug te halen.</translation>
-    </message>
-    <message>
-        <source>The default collection is undefined</source>
-        <translation>De standaardverzameling is niet gedefinieerd</translation>
-    </message>
-    <message>
-        <source>%1 cannot be retrieved</source>
-        <translation>%1 kan niet terug gehaald worden</translation>
-    </message>
-    <message>
-        <source>The item %1 did not match the required type %2.</source>
-        <translation>Het item %1 komt niet overeen met het vereiste type %2.</translation>
-    </message>
-    <message>
-        <source>%1 is an unknown schema type.</source>
-        <translation>%1 is een onbekend schematype.</translation>
-    </message>
-    <message>
-        <source>Only one %1 declaration can occur in the query prolog.</source>
-        <translation>Maar één %1 declaratie kan voorkomen in de inleiding van een zoekopdracht.</translation>
-    </message>
-    <message>
-        <source>The initialization of variable %1 depends on itself</source>
-        <translation>De initialisering van variabele %1 hangt van zichzelf af</translation>
-    </message>
-    <message>
-        <source>The variable %1 is unused</source>
-        <translation>De variabele %1 wordt niet gebruikt</translation>
-    </message>
-    <message>
-        <source>Version %1 is not supported. The supported XQuery version is 1.0.</source>
-        <translation>Versie %1 wordt niet ondersteund. De ondersteunde XQuery-versie is 1.0.</translation>
-    </message>
-    <message>
-        <source>No function with signature %1 is available</source>
-        <translation>Geen functie beschikbaar met handtekening %1</translation>
-    </message>
-    <message>
-        <source>It is not possible to redeclare prefix %1.</source>
-        <translation>Het is niet mogelijk om prefix %1 opnieuw te declareren.</translation>
-    </message>
-    <message>
-        <source>Prefix %1 is already declared in the prolog.</source>
-        <translation>Prefix %1 is al gedeclareerd in de inleiding.</translation>
-    </message>
-    <message>
-        <source>The name of an option must have a prefix. There is no default namespace for options.</source>
-        <translation>De naam van een optie moet een prefix hebben. Er bestaat geen standaardnaamruimte voor opties.</translation>
-    </message>
-    <message>
-        <source>The Schema Import feature is not supported, and therefore %1 declarations cannot occur.</source>
-        <translation>De faciliteit Schema Import wordt niet ondersteund en daarom kunnen declaraties %1 niet voorkomen.</translation>
-    </message>
-    <message>
-        <source>The target namespace of a %1 cannot be empty.</source>
-        <translation>De doelnaamruimte van een %1 kan niet leeg zijn.</translation>
-    </message>
-    <message>
-        <source>The module import feature is not supported</source>
-        <translation>De import-module faciliteit wordt niet ondersteund</translation>
-    </message>
-    <message>
-        <source>A variable by name %1 has already been declared in the prolog.</source>
-        <translation>Een variabele met de naam %1 is al gedeclareerd in de inleiding.</translation>
-    </message>
-    <message>
-        <source>No value is available for the external variable by name %1.</source>
-        <translation>Voor de externe variabele met de naam %1 is geen waarde beschikbaar.</translation>
-    </message>
-    <message>
-        <source>The namespace of a user defined function in a library module must be equivalent to the module namespace. In other words, it should be %1 instead of %2</source>
-        <translation>De naamruimte van een zelf gedefinieerde functie in een bibliotheek module moet overeenkomen met de module naamruimte. Met andere woorden: het zou %1 moeten zijn in plaats van %2</translation>
-    </message>
-    <message>
-        <source>A function already exists with the signature %1.</source>
-        <translation>Een functie met handtekening %1 bestaat al.</translation>
-    </message>
-    <message>
-        <source>No external functions are supported. All supported functions can be used directly, without first declaring them as external</source>
-        <translation>Externe functies worden niet ondersteund. Alle ondersteunde functies kunnen direct worden gebruikt zonder deze als extern te declareren</translation>
-    </message>
-    <message>
-        <source>An argument by name %1 has already been declared. Every argument name must be unique.</source>
-        <translation>Een argument met de naam %1 is al gedeclareerd. Elke naam van een argument moet uniek zijn.</translation>
-    </message>
-    <message>
-        <source>The %1-axis is unsupported in XQuery</source>
-        <translation>De %1 as wordt niet ondersteund in een XQuery</translation>
-    </message>
-    <message>
-        <source>No variable by name %1 exists</source>
-        <translation>Een variabele met naam %1 bestaat niet</translation>
-    </message>
-    <message>
-        <source>No function by name %1 is available.</source>
-        <translation>Een functie met naam %1 is niet beschikbaar.</translation>
-    </message>
-    <message>
-        <source>The namespace URI cannot be the empty string when binding to a prefix, %1.</source>
-        <translation>De naamruimte URI kan niet een lege reeks zijn als deze gebonden wordt aan een prefix, %1.</translation>
-    </message>
-    <message>
-        <source>%1 is an invalid namespace URI.</source>
-        <translation>%1 is een ongeldige naamruimte URI.</translation>
-    </message>
-    <message>
-        <source>It is not possible to bind to the prefix %1</source>
-        <translation>Het is niet mogelijk om prefix %1 opnieuw te binden</translation>
-    </message>
-    <message>
-        <source>Two namespace declaration attributes have the same name: %1.</source>
-        <translation>Twee attributen voor een naamruimtedeclaratie hebben dezelfde naam: %1.</translation>
-    </message>
-    <message>
-        <source>The namespace URI must be a constant and cannot use enclosed expressions.</source>
-        <translation>Een naamruimte URI moet een constante zijn en kan geen ingesloten expressie zijn.</translation>
-    </message>
-    <message>
-        <source>An attribute by name %1 has already appeared on this element.</source>
-        <translation>Een attribuut met de naam %1 is al voorgekomen op dit element.</translation>
-    </message>
-    <message>
-        <source>%1 is not a valid name for a processing-instruction. Therefore this name test will never match.</source>
-        <translation>%1 is geen geldige naam voor een procesinstructie. Daarom zal deze naamtest nooit werken.</translation>
-    </message>
-    <message>
-        <source>%1 is not in the in-scope attribute declarations. Note that the schema import feature is not supported.</source>
-        <translation>%1 valt niet in het bereik van de attribuutdeclaraties. Weet dat schema-import faciliteit niet wordt ondersteund.</translation>
-    </message>
-    <message>
-        <source>empty</source>
-        <translation>leeg</translation>
-    </message>
-    <message>
-        <source>zero or one</source>
-        <translation>nul of één</translation>
-    </message>
-    <message>
-        <source>exactly one</source>
-        <translation>precies één</translation>
-    </message>
-    <message>
-        <source>one or more</source>
-        <translation>één of meer</translation>
-    </message>
-    <message>
-        <source>zero or more</source>
-        <translation>nul of meer</translation>
-    </message>
-    <message>
-        <source>The focus is undefined.</source>
-        <translation>De focus in niet gedefinieerd.</translation>
-    </message>
-    <message>
-        <source>An attribute by name %1 has already been created.</source>
-        <translation>Een attribuut met de naam %1 is al aangemaakt.</translation>
+        <source>An %1-attribute must have a valid %2 as value, which %3 isn&apos;t.</source>
+        <translation>Een %1 attribuut moet een geldige %2 als waarde hebben en dat heeft %3 niet.</translation>
     </message>
     <message>
         <source>Network timeout.</source>
@@ -5008,8 +4768,44 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Kan de datum niet weergeven (Overflow).</translation>
     </message>
     <message>
+        <source>At least one component must be present.</source>
+        <translation>Tenminste één component moet aanwezig zijn.</translation>
+    </message>
+    <message>
         <source>At least one time component must appear after the %1-delimiter.</source>
         <translation>Tenminste één tijdscomponent moet voorkomen na de %1 begrenzer.</translation>
+    </message>
+    <message>
+        <source>No operand in an integer division, %1, can be %2.</source>
+        <translation>Geen operand bij deling %1, van gehele getallen, kan een %2 zijn.</translation>
+    </message>
+    <message>
+        <source>The first operand in an integer division, %1, cannot be infinity (%2).</source>
+        <translation>De eerste operand in een deling met gehele getallen, %1, kan niet oneindig zijn (%2).</translation>
+    </message>
+    <message>
+        <source>The second operand in a division, %1, cannot be zero (%2).</source>
+        <translation>De tweede operand in een deling, %1 kan niet nul zijn (%2).</translation>
+    </message>
+    <message>
+        <source>%1 is not a valid value of type %2.</source>
+        <translation>%1 is een ongeldige waarde van het soort %2.</translation>
+    </message>
+    <message>
+        <source>When casting to %1 from %2, the source value cannot be %3.</source>
+        <translation>Bij het omzetten naar %1 vanuit %2 kan %3 geen bron zijn.</translation>
+    </message>
+    <message>
+        <source>Integer division (%1) by zero (%2) is undefined.</source>
+        <translation>De deling met gehele getallen (%1) door nul (%2) is niet gedefinieerd.</translation>
+    </message>
+    <message>
+        <source>Division (%1) by zero (%2) is undefined.</source>
+        <translation>Deling (%1) door nul (%2) is niet gedefinieerd.</translation>
+    </message>
+    <message>
+        <source>Modulus division (%1) by zero (%2) is undefined.</source>
+        <translation>De modulus deling (%1) door nul (%2) is niet gedefinieerd.</translation>
     </message>
     <message>
         <source>Dividing a value of type %1 by %2 (not-a-number) is not allowed.</source>
@@ -5027,6 +4823,12 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <source>A value of type %1 cannot have an Effective Boolean Value.</source>
         <translatorcomment>RL - EBV: Waarde van George Boole, wiskundige. Wordt in Nederland wisselend niet vertaald (Boolean) en wel (Booleaans)</translatorcomment>
         <translation>Een waarde van het soort %1 kan geen Effectieve Booleaanse Waarde hebben.</translation>
+    </message>
+    <message>
+        <source>Effective Boolean Value cannot be calculated for a sequence containing two or more atomic values.</source>
+        <translatorcomment>RL - EBV: Waarde van George Boole, wiskundige. Wordt in Nederland wisselend niet vertaald (Boolean) en wel (Booleaans)
+RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</translatorcomment>
+        <translation>Een Effectieve Booleaanse Waarde kan niet worden berekend voor een serie die twee of meer atomaire waarden bevat.</translation>
     </message>
     <message>
         <source>Value %1 of type %2 exceeds maximum (%3).</source>
@@ -5071,12 +4873,42 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Bij omzetten van %1 of typen daarvan afgeleid moet de bronwaarde van hetzelfde type zijn of moet het een literale reeks zijn. Soort %2 is niet toegestaan.</translation>
     </message>
     <message>
+        <source>No casting is possible with %1 as the target type.</source>
+        <translation>Een omzetting is niet mogelijk met %1 als doeltype.</translation>
+    </message>
+    <message>
+        <source>It is not possible to cast from %1 to %2.</source>
+        <translatorcomment>RL - To cast hier is eigenlijk &apos;omgieten&apos; bv van SQL-vorm naar Xml of andersom</translatorcomment>
+        <translation>Het is niet mogelijk om %1 om te zetten %2.</translation>
+    </message>
+    <message>
+        <source>Casting to %1 is not possible because it is an abstract type, and can therefore never be instantiated.</source>
+        <translation>Omzetten naar %1 is niet mogelijk omdat dit een abstract type is en daarom nooit geconcretiseerd kan worden.</translation>
+    </message>
+    <message>
+        <source>It&apos;s not possible to cast the value %1 of type %2 to %3</source>
+        <translation>Het is niet mogelijk om waarde %1 van soort %2 om te zetten in %3</translation>
+    </message>
+    <message>
+        <source>Failure when casting from %1 to %2: %3</source>
+        <translation>Omzetting van %1 naar %2 is mislukt: %3</translation>
+    </message>
+    <message>
         <source>A comment cannot contain %1</source>
         <translation>Een commentaar kan geen %1 bevatten</translation>
     </message>
     <message>
         <source>A comment cannot end with a %1.</source>
         <translation>Een commentaar kan niet op %1 eindigen.</translation>
+    </message>
+    <message>
+        <source>No comparisons can be done involving the type %1.</source>
+        <translation>Met type %1 zijn geen vergelijkingen uit te voeren.</translation>
+    </message>
+    <message>
+        <source>Operator %1 is not available between atomic values of type %2 and %3.</source>
+        <translatorcomment>RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</translatorcomment>
+        <translation>Operator %1 is niet beschikbaar tussen atomaire waarden van type %2 en %3.</translation>
     </message>
     <message>
         <source>An attribute node cannot be a child of a document node. Therefore, the attribute %1 is out of place.</source>
@@ -5096,6 +4928,10 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Een positioneel predikaat moet evalueren naar een enkele numerieke waarde.</translation>
     </message>
     <message>
+        <source>The target name in a processing instruction cannot be %1 in any combination of upper and lower case. Therefore, is %2 invalid.</source>
+        <translation>De doelnaam in een procesinstructie kan geen %1 zijn, in welke combinatie van hoofd- of kleine letters dan ook. Daarom is %2 ongeldig.</translation>
+    </message>
+    <message>
         <source>%1 is not a valid target name in a processing instruction. It must be a %2 value, e.g. %3.</source>
         <translation>%1 is geen geldige doelnaam in een procesinstructie. Deze moet een %2 waarde zijn, bijvoorbeeld %3.</translation>
     </message>
@@ -5105,12 +4941,35 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>De laatste stap in een pad moet of nodes of atomaire waarden bevatten. Een combinatie van beide kan niet.</translation>
     </message>
     <message>
+        <source>The data of a processing instruction cannot contain the string %1</source>
+        <translation>De gegevens van een procesinstructie kunnen niet de reeks %1 bevatten</translation>
+    </message>
+    <message>
         <source>No namespace binding exists for the prefix %1</source>
         <translation>Een naamruimtebinding bestaat niet voor prefix %1</translation>
     </message>
     <message>
         <source>No namespace binding exists for the prefix %1 in %2</source>
         <translation>Een naamruimtebinding bestaat niet voor prefix %1 in %2</translation>
+    </message>
+    <message>
+        <source>%1 is an invalid %2</source>
+        <translation>%1 is een ongeldig %2</translation>
+    </message>
+    <message numerus="yes">
+        <source>%1 takes at most %n argument(s). %2 is therefore invalid.</source>
+        <translatorcomment>enkel en meervoud string, nieuwe format</translatorcomment>
+        <translation>
+            <numerusform>%1 accepteert ten hoogste %n argument. %2 is daarom ongeldig.</numerusform>
+            <numerusform>%1 accepteert ten hoogste %n argumenten. %2 is daarom ongeldig.</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%1 requires at least %n argument(s). %2 is therefore invalid.</source>
+        <translation>
+            <numerusform>%1 vereist tenminste %n argument %2 is daarom ongeldig.</numerusform>
+            <numerusform>%1 vereist tenminste %n argumenten %2 is daarom ongeldig.</numerusform>
+        </translation>
     </message>
     <message>
         <source>The first argument to %1 cannot be of type %2. It must be a numeric type, xs:yearMonthDuration or xs:dayTimeDuration.</source>
@@ -5125,20 +4984,52 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Het tweede argument van %1 kan niet van het type %2 zijn. Het moet van het type %3, %4 of %5 zijn.</translation>
     </message>
     <message>
+        <source>%1 is not a valid XML 1.0 character.</source>
+        <translation>%1 is een ongeldig XML 1.0 teken.</translation>
+    </message>
+    <message>
+        <source>The first argument to %1 cannot be of type %2.</source>
+        <translation>Het eerste argument van %1 kan niet van het type %2 zijn.</translation>
+    </message>
+    <message>
         <source>If both values have zone offsets, they must have the same zone offset. %1 and %2 are not the same.</source>
         <translation>Hebben beide waarden zone offsets, dan moeten ze dezelfde zone offset hebben. %1 en %2 zijn niet hetzelfde.</translation>
+    </message>
+    <message>
+        <source>%1 was called.</source>
+        <translation>%1 was aangeroepen.</translation>
     </message>
     <message>
         <source>%1 must be followed by %2 or %3, not at the end of the replacement string.</source>
         <translation>%1 moet gevolgd worden door %2 of %3; maar niet aan het einde van een vervangende reeks.</translation>
     </message>
     <message>
+        <source>In the replacement string, %1 must be followed by at least one digit when not escaped.</source>
+        <translation>In de vervangende reeks moet %1 gevolgd worden door tenminste één cijfer als deze niet door een escape teken wordt gedekt.</translation>
+    </message>
+    <message>
+        <source>In the replacement string, %1 can only be used to escape itself or %2, not %3</source>
+        <translation>In de vervangende reeks kan %1 alleen worden gebruikt om zichzelf in te dekken of %2, maar niet %3</translation>
+    </message>
+    <message>
+        <source>%1 matches newline characters</source>
+        <translation>%1 komt overeen met tekens voor een nieuwe tekstregel</translation>
+    </message>
+    <message>
         <source>%1 and %2 match the start and end of a line.</source>
         <translation>%1 en %2 betekenen allebei begin en het einde van een regel.</translation>
     </message>
     <message>
+        <source>Matches are case insensitive</source>
+        <translation>Overeenkomsten zijn niet hoofdletter gevoelig</translation>
+    </message>
+    <message>
         <source>Whitespace characters are removed, except when they appear in character classes</source>
         <translation>Witruimte-tekens worden verwijderd, behalve wanneer deze voorkomen in tekenklassen</translation>
+    </message>
+    <message>
+        <source>%1 is an invalid regular expression pattern: %2</source>
+        <translation>%1 is een ongeldige reguliere expressie patroon: %2</translation>
     </message>
     <message>
         <source>%1 is an invalid flag for regular expressions. Valid flags are:</source>
@@ -5149,6 +5040,23 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Is het eerste argument een lege reeks (empty sequence) of een reeks met lengte nul (geen naamruimte), dan kan geen prefix worden meegegeven. Prefix %1 was meegegeven.</translation>
     </message>
     <message>
+        <source>It will not be possible to retrieve %1.</source>
+        <translation>Het is niet mogelijk om %1 terug te halen.</translation>
+    </message>
+    <message>
+        <source>The root node of the second argument to function %1 must be a document node. %2 is not a document node.</source>
+        <translatorcomment>RL - root node is Techterm</translatorcomment>
+        <translation>De root node van het tweede argument voor functie %1 moet een document node zijn. %2 is geen document node.</translation>
+    </message>
+    <message>
+        <source>The default collection is undefined</source>
+        <translation>De standaardverzameling is niet gedefinieerd</translation>
+    </message>
+    <message>
+        <source>%1 cannot be retrieved</source>
+        <translation>%1 kan niet terug gehaald worden</translation>
+    </message>
+    <message>
         <source>The normalization form %1 is unsupported. The supported forms are %2, %3, %4, and %5, and none, i.e. the empty string (no normalization).</source>
         <translation>De normalisatie vorm %1 wordt niet ondersteund. De ondersteunde vormen zijn %2, %3, %4, %5 ,en &quot;geen&quot; d.w.z. de lege reeks (geen normalisatie).</translation>
     </message>
@@ -5157,8 +5065,40 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Een zone offset moet binnen de reeks %1..%2 (inclusief) vallen. %3 valt buiten het bereik.</translation>
     </message>
     <message>
+        <source>%1 is not a whole number of minutes.</source>
+        <translation>%1 is geen geheel getal in minuten.</translation>
+    </message>
+    <message>
         <source>Required cardinality is %1; got cardinality %2.</source>
         <translation>Het vereiste hoofdtelwoord is %1 maar kreeg %2.</translation>
+    </message>
+    <message>
+        <source>The item %1 did not match the required type %2.</source>
+        <translation>Het item %1 komt niet overeen met het vereiste type %2.</translation>
+    </message>
+    <message>
+        <source>%1 is an unknown schema type.</source>
+        <translation>%1 is een onbekend schematype.</translation>
+    </message>
+    <message>
+        <source>Only one %1 declaration can occur in the query prolog.</source>
+        <translation>Maar één %1 declaratie kan voorkomen in de inleiding van een zoekopdracht.</translation>
+    </message>
+    <message>
+        <source>The initialization of variable %1 depends on itself</source>
+        <translation>De initialisering van variabele %1 hangt van zichzelf af</translation>
+    </message>
+    <message>
+        <source>No variable by name %1 exists</source>
+        <translation>Een variabele met naam %1 bestaat niet</translation>
+    </message>
+    <message>
+        <source>The variable %1 is unused</source>
+        <translation>De variabele %1 wordt niet gebruikt</translation>
+    </message>
+    <message>
+        <source>Version %1 is not supported. The supported XQuery version is 1.0.</source>
+        <translation>Versie %1 wordt niet ondersteund. De ondersteunde XQuery-versie is 1.0.</translation>
     </message>
     <message>
         <source>The encoding %1 is invalid. It must contain Latin characters only, must not contain whitespace, and must match the regular expression %2.</source>
@@ -5166,12 +5106,76 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>De codering %1 is ongeldig. Deze mag alleen Latin tekens bevatten, geen witruimte en moet overeenkomen met de reguliere expressie %2.</translation>
     </message>
     <message>
+        <source>No function with signature %1 is available</source>
+        <translation>Geen functie beschikbaar met handtekening %1</translation>
+    </message>
+    <message>
+        <source>A default namespace declaration must occur before function, variable, and option declarations.</source>
+        <translation>Een standaard naamruimte declaratie moet aanwezig zijn vóór functie, variabele en optie-declaraties.</translation>
+    </message>
+    <message>
+        <source>Namespace declarations must occur before function, variable, and option declarations.</source>
+        <translation>Naamruimte declaraties moeten aanwezig zijn vóór functie, variabele en optie declaraties.</translation>
+    </message>
+    <message>
+        <source>Module imports must occur before function, variable, and option declarations.</source>
+        <translation>Module imports moeten aanwezig zijn vóór functie, variabele en optie declaraties.</translation>
+    </message>
+    <message>
+        <source>It is not possible to redeclare prefix %1.</source>
+        <translation>Het is niet mogelijk om prefix %1 opnieuw te declareren.</translation>
+    </message>
+    <message>
         <source>Only the prefix %1 can be declared to bind the namespace %2. By default, it is already bound to the prefix %1.</source>
         <translation>Alleen prefixl %1 kan gedeclareerd worden om te binden met naamruimte %2. Standaard is deze al gebonden met prefix %1.</translation>
     </message>
     <message>
+        <source>Prefix %1 is already declared in the prolog.</source>
+        <translation>Prefix %1 is al gedeclareerd in de inleiding.</translation>
+    </message>
+    <message>
+        <source>The name of an option must have a prefix. There is no default namespace for options.</source>
+        <translation>De naam van een optie moet een prefix hebben. Er bestaat geen standaardnaamruimte voor opties.</translation>
+    </message>
+    <message>
+        <source>The Schema Import feature is not supported, and therefore %1 declarations cannot occur.</source>
+        <translation>De faciliteit Schema Import wordt niet ondersteund en daarom kunnen declaraties %1 niet voorkomen.</translation>
+    </message>
+    <message>
+        <source>The target namespace of a %1 cannot be empty.</source>
+        <translation>De doelnaamruimte van een %1 kan niet leeg zijn.</translation>
+    </message>
+    <message>
+        <source>The module import feature is not supported</source>
+        <translation>De import-module faciliteit wordt niet ondersteund</translation>
+    </message>
+    <message>
+        <source>A variable by name %1 has already been declared in the prolog.</source>
+        <translation>Een variabele met de naam %1 is al gedeclareerd in de inleiding.</translation>
+    </message>
+    <message>
+        <source>No value is available for the external variable by name %1.</source>
+        <translation>Voor de externe variabele met de naam %1 is geen waarde beschikbaar.</translation>
+    </message>
+    <message>
         <source>The namespace %1 is reserved; therefore user defined functions may not use it. Try the predefined prefix %2, which exists for these cases.</source>
         <translation>De naamruimte %1 is gereserveerd. Daarom mogen eigen gedefineerde functies deze niet gebruiken. Probeer het voorgedefinieerde prefix %2, dat al bestaat voor dit soort gevallen.</translation>
+    </message>
+    <message>
+        <source>The namespace of a user defined function in a library module must be equivalent to the module namespace. In other words, it should be %1 instead of %2</source>
+        <translation>De naamruimte van een zelf gedefinieerde functie in een bibliotheek module moet overeenkomen met de module naamruimte. Met andere woorden: het zou %1 moeten zijn in plaats van %2</translation>
+    </message>
+    <message>
+        <source>A function already exists with the signature %1.</source>
+        <translation>Een functie met handtekening %1 bestaat al.</translation>
+    </message>
+    <message>
+        <source>No external functions are supported. All supported functions can be used directly, without first declaring them as external</source>
+        <translation>Externe functies worden niet ondersteund. Alle ondersteunde functies kunnen direct worden gebruikt zonder deze als extern te declareren</translation>
+    </message>
+    <message>
+        <source>An argument by name %1 has already been declared. Every argument name must be unique.</source>
+        <translation>Een argument met de naam %1 is al gedeclareerd. Elke naam van een argument moet uniek zijn.</translation>
     </message>
     <message>
         <source>The name of a variable bound in a for-expression must be different from the positional variable. Hence, the two variables named %1 collide.</source>
@@ -5186,8 +5190,28 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Geen van de pragmatische expressies wordt ondersteund. Daarom moet een terugval expressie aanwezig zijn</translation>
     </message>
     <message>
+        <source>The %1-axis is unsupported in XQuery</source>
+        <translation>De %1 as wordt niet ondersteund in een XQuery</translation>
+    </message>
+    <message>
         <source>%1 is not a valid numeric literal.</source>
         <translation>%1 is geen geldige numerieke literaal.</translation>
+    </message>
+    <message>
+        <source>No function by name %1 is available.</source>
+        <translation>Een functie met naam %1 is niet beschikbaar.</translation>
+    </message>
+    <message>
+        <source>The namespace URI cannot be the empty string when binding to a prefix, %1.</source>
+        <translation>De naamruimte URI kan niet een lege reeks zijn als deze gebonden wordt aan een prefix, %1.</translation>
+    </message>
+    <message>
+        <source>%1 is an invalid namespace URI.</source>
+        <translation>%1 is een ongeldige naamruimte URI.</translation>
+    </message>
+    <message>
+        <source>It is not possible to bind to the prefix %1</source>
+        <translation>Het is niet mogelijk om prefix %1 opnieuw te binden</translation>
     </message>
     <message>
         <source>Namespace %1 can only be bound to %2 (and it is, in either case, pre-declared).</source>
@@ -5196,6 +5220,18 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
     <message>
         <source>Prefix %1 can only be bound to %2 (and it is, in either case, pre-declared).</source>
         <translation>Prefix %1 kan alleen gebonden worden aan %2 (en is in elk geval voorgedeclareerd).</translation>
+    </message>
+    <message>
+        <source>Two namespace declaration attributes have the same name: %1.</source>
+        <translation>Twee attributen voor een naamruimtedeclaratie hebben dezelfde naam: %1.</translation>
+    </message>
+    <message>
+        <source>The namespace URI must be a constant and cannot use enclosed expressions.</source>
+        <translation>Een naamruimte URI moet een constante zijn en kan geen ingesloten expressie zijn.</translation>
+    </message>
+    <message>
+        <source>An attribute by name %1 has already appeared on this element.</source>
+        <translation>Een attribuut met de naam %1 is al voorgekomen op dit element.</translation>
     </message>
     <message>
         <source>A direct element constructor is not well-formed. %1 is ended with %2.</source>
@@ -5216,8 +5252,36 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>%1 is geen atomair type. Overgaan is alleen mogeijk naar atomaire typen.</translation>
     </message>
     <message>
+        <source>%1 is not a valid name for a processing-instruction. Therefore this name test will never match.</source>
+        <translation>%1 is geen geldige naam voor een procesinstructie. Daarom zal deze naamtest nooit werken.</translation>
+    </message>
+    <message>
+        <source>%1 is not in the in-scope attribute declarations. Note that the schema import feature is not supported.</source>
+        <translation>%1 valt niet in het bereik van de attribuutdeclaraties. Weet dat schema-import faciliteit niet wordt ondersteund.</translation>
+    </message>
+    <message>
         <source>The name of an extension expression must be in a namespace.</source>
         <translation>De naam van een aanvullende expressie moet in een naamruimte staan.</translation>
+    </message>
+    <message>
+        <source>empty</source>
+        <translation>leeg</translation>
+    </message>
+    <message>
+        <source>zero or one</source>
+        <translation>nul of één</translation>
+    </message>
+    <message>
+        <source>exactly one</source>
+        <translation>precies één</translation>
+    </message>
+    <message>
+        <source>one or more</source>
+        <translation>één of meer</translation>
+    </message>
+    <message>
+        <source>zero or more</source>
+        <translation>nul of meer</translation>
     </message>
     <message>
         <source>Required type is %1, but %2 was found.</source>
@@ -5228,8 +5292,16 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Het opwaarderen van %1 maar %2 kan verlies van nauwkeurigheid tot gevolg hebben.</translation>
     </message>
     <message>
+        <source>The focus is undefined.</source>
+        <translation>De focus in niet gedefinieerd.</translation>
+    </message>
+    <message>
         <source>It&apos;s not possible to add attributes after any other kind of node.</source>
         <translation>Het is niet mogelijk om attributen toe te voegen na enig ander soort node.</translation>
+    </message>
+    <message>
+        <source>An attribute by name %1 has already been created.</source>
+        <translation>Een attribuut met de naam %1 is al aangemaakt.</translation>
     </message>
     <message>
         <source>Only the Unicode Codepoint Collation is supported(%1). %2 is unsupported.</source>
@@ -5237,84 +5309,12 @@ RL - een attribuut is atomair indien het maar één enkele waarde kan bevatten</
         <translation>Alleen Unicode Codepoint Collation wordt ondersteund (%1). %2 wordt niet ondersteund.</translation>
     </message>
     <message>
-        <source>An %1-attribute with value %2 has already been declared.</source>
-        <translation>Een %1 attribuut met de waarde %2 is al gedeclareerd.</translation>
-    </message>
-    <message>
-        <source>An %1-attribute must have a valid %2 as value, which %3 isn&apos;t.</source>
-        <translation>Een %1 attribuut moet een geldige %2 als waarde hebben en dat heeft %3 niet.</translation>
-    </message>
-    <message>
-        <source>The first operand in an integer division, %1, cannot be infinity (%2).</source>
-        <translation>De eerste operand in een deling met gehele getallen, %1, kan niet oneindig zijn (%2).</translation>
-    </message>
-    <message>
-        <source>The second operand in a division, %1, cannot be zero (%2).</source>
-        <translation>De tweede operand in een deling, %1 kan niet nul zijn (%2).</translation>
-    </message>
-    <message>
-        <source>Integer division (%1) by zero (%2) is undefined.</source>
-        <translation>De deling met gehele getallen (%1) door nul (%2) is niet gedefinieerd.</translation>
-    </message>
-    <message>
-        <source>Division (%1) by zero (%2) is undefined.</source>
-        <translation>Deling (%1) door nul (%2) is niet gedefinieerd.</translation>
-    </message>
-    <message>
-        <source>Modulus division (%1) by zero (%2) is undefined.</source>
-        <translation>De modulus deling (%1) door nul (%2) is niet gedefinieerd.</translation>
-    </message>
-    <message>
-        <source>No casting is possible with %1 as the target type.</source>
-        <translation>Een omzetting is niet mogelijk met %1 als doeltype.</translation>
-    </message>
-    <message>
-        <source>The target name in a processing instruction cannot be %1 in any combination of upper and lower case. Therefore, is %2 invalid.</source>
-        <translation>De doelnaam in een procesinstructie kan geen %1 zijn, in welke combinatie van hoofd- of kleine letters dan ook. Daarom is %2 ongeldig.</translation>
-    </message>
-    <message numerus="yes">
-        <source>%1 takes at most %n argument(s). %2 is therefore invalid.</source>
-        <translatorcomment>enkel en meervoud string, nieuwe format</translatorcomment>
-        <translation>
-            <numerusform>%1 accepteert ten hoogste %n argument. %2 is daarom ongeldig.</numerusform>
-            <numerusform>%1 accepteert ten hoogste %n argumenten. %2 is daarom ongeldig.</numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
-        <source>%1 requires at least %n argument(s). %2 is therefore invalid.</source>
-        <translation>
-            <numerusform>%1 vereist tenminste %n argument %2 is daarom ongeldig.</numerusform>
-            <numerusform>%1 vereist tenminste %n argumenten %2 is daarom ongeldig.</numerusform>
-        </translation>
-    </message>
-    <message>
-        <source>The root node of the second argument to function %1 must be a document node. %2 is not a document node.</source>
-        <translatorcomment>RL - root node is Techterm</translatorcomment>
-        <translation>De root node van het tweede argument voor functie %1 moet een document node zijn. %2 is geen document node.</translation>
+        <source>Attribute %1 can&apos;t be serialized because it appears at the top level.</source>
+        <translation>Attribuut %1 kan niet geserialiseerd worden omdat deze op het hoogste niveau optreedt.</translation>
     </message>
     <message>
         <source>The namespace for a user defined function cannot be empty (try the predefined prefix %1 which exists for cases like this)</source>
         <translation>De naamruimte for een eigen gedefinieerde functie kan niet leeg zijn (probeer een voorgedefinieerd prefix %1 dat voor dit soort gevallen bestaat)</translation>
-    </message>
-    <message>
-        <source>A default namespace declaration must occur before function, variable, and option declarations.</source>
-        <translation>Een standaard naamruimte declaratie moet aanwezig zijn vóór functie, variabele en optie-declaraties.</translation>
-    </message>
-    <message>
-        <source>Namespace declarations must occur before function, variable, and option declarations.</source>
-        <translation>Naamruimte declaraties moeten aanwezig zijn vóór functie, variabele en optie declaraties.</translation>
-    </message>
-    <message>
-        <source>Module imports must occur before function, variable, and option declarations.</source>
-        <translation>Module imports moeten aanwezig zijn vóór functie, variabele en optie declaraties.</translation>
-    </message>
-    <message>
-        <source>%1 is not a whole number of minutes.</source>
-        <translation>%1 is geen geheel getal in minuten.</translation>
-    </message>
-    <message>
-        <source>Attribute %1 can&apos;t be serialized because it appears at the top level.</source>
-        <translation>Attribuut %1 kan niet geserialiseerd worden omdat deze op het hoogste niveau optreedt.</translation>
     </message>
 </context>
 <context>

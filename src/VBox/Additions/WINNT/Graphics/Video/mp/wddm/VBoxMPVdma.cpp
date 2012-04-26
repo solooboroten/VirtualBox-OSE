@@ -247,6 +247,7 @@ PVBOXVDMAPIPE_CMD_DR vboxVdmaGgCmdCreate(PVBOXMP_DEVEXT pDevExt, VBOXVDMAPIPE_CM
         }
     }
     pHdr->enmType = enmType;
+    pHdr->cRefs = 1;
     return pHdr;
 }
 
@@ -279,9 +280,9 @@ void vboxVdmaGgCmdDestroy(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAPIPE_CMD_DR pDr)
     vboxWddmMemFree(pDr);
 }
 
-DECLCALLBACK(VOID) vboxVdmaGgDdiCmdDestroy(PVBOXMP_DEVEXT pDevExt, PVBOXVDMADDI_CMD pCmd, PVOID pvContext)
+DECLCALLBACK(VOID) vboxVdmaGgDdiCmdRelease(PVBOXMP_DEVEXT pDevExt, PVBOXVDMADDI_CMD pCmd, PVOID pvContext)
 {
-    vboxVdmaGgCmdDestroy(pDevExt, (PVBOXVDMAPIPE_CMD_DR)pvContext);
+    vboxVdmaGgCmdRelease(pDevExt, (PVBOXVDMAPIPE_CMD_DR)pvContext);
 }
 
 /**
@@ -883,11 +884,16 @@ static NTSTATUS vboxVdmaGgDmaCmdProcessFast(PVBOXMP_DEVEXT pDevExt, VBOXVDMAPIPE
             break;
     }
 
+    /* Corresponding Release is done by dma command completion handler */
+    vboxVdmaGgCmdAddRef(&pDmaCmd->Hdr);
+
     NTSTATUS tmpStatus = vboxVdmaGgCmdDmaNotifyCompleted(pDevExt, pDmaCmd, enmComplType);
-    Assert(tmpStatus == STATUS_SUCCESS);
-    if (Status != STATUS_MORE_PROCESSING_REQUIRED)
+    if (!NT_SUCCESS(tmpStatus))
     {
-        vboxVdmaGgCmdDestroy(pDevExt, &pDmaCmd->Hdr);
+        WARN(("vboxVdmaGgCmdDmaNotifyCompleted failed, Status 0x%x", tmpStatus));
+        /* the command was NOT submitted, and thus will not be released, release it here */
+        vboxVdmaGgCmdRelease(pDevExt, &pDmaCmd->Hdr);
+        Status = tmpStatus;
     }
 
     return Status;
@@ -1019,7 +1025,7 @@ static NTSTATUS vboxVdmaGgDmaCmdProcessSlow(PVBOXMP_DEVEXT pDevExt, VBOXVDMAPIPE
             break;
     }
 
-    vboxVdmaGgCmdDestroy(pDevExt, &pDmaCmd->Hdr);
+    vboxVdmaGgCmdRelease(pDevExt, &pDmaCmd->Hdr);
 
     return Status;
 }
@@ -1070,7 +1076,7 @@ static VOID vboxVdmaGgWorkerThread(PVOID pvUser)
                             PVBOXVDMAPIPE_CMD_RECTSINFO pRects = (PVBOXVDMAPIPE_CMD_RECTSINFO)pDr;
                             Status = vboxVdmaGgDirtyRectsProcess(pDevExt, pRects->pContext, pRects->pSwapchain, &pRects->ContextsRects);
                             Assert(Status == STATUS_SUCCESS);
-                            vboxVdmaGgCmdDestroy(pDevExt, pDr);
+                            vboxVdmaGgCmdRelease(pDevExt, pDr);
                             break;
                         }
 #endif
@@ -1084,7 +1090,7 @@ static VOID vboxVdmaGgWorkerThread(PVOID pvUser)
                             {
                                 WARN(("vboxVideoCmCmdWaitCompleted failedm Status (0x%x)", Status));
                             }
-                            vboxVdmaGgCmdDestroy(pDevExt, &pCmd->Hdr);
+                            vboxVdmaGgCmdRelease(pDevExt, &pCmd->Hdr);
                             break;
                         }
                         case VBOXVDMAPIPE_CMD_TYPE_CANCEL:
@@ -1098,7 +1104,7 @@ static VOID vboxVdmaGgWorkerThread(PVOID pvUser)
                             }
                             Assert(pCmd->pEvent);
                             KeSetEvent(pCmd->pEvent, 0, FALSE);
-                            vboxVdmaGgCmdDestroy(pDevExt, &pCmd->Hdr);
+                            vboxVdmaGgCmdRelease(pDevExt, &pCmd->Hdr);
                             break;
                         }
                         default:
@@ -1172,6 +1178,8 @@ NTSTATUS vboxVdmaGgCmdSubmit(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAPIPE_CMD_DR pCmd)
         default:
             break;
     }
+    /* correspondinf Release is done by the pipe command handler */
+    vboxVdmaGgCmdAddRef(pCmd);
     return vboxVdmaPipeCltCmdPut(&pDevExt->u.primary.Vdma.DmaGg.CmdPipe, &pCmd->PipeHdr);
 }
 
@@ -1231,6 +1239,7 @@ NTSTATUS vboxVdmaGgCmdFinish(PVBOXMP_DEVEXT pDevExt, VBOXWDDM_CONTEXT *pContext,
         {
             WARN(("vboxVdmaGgCmdSubmit returned 0x%x", Status));
         }
+        vboxVdmaGgCmdRelease(pDevExt, &pCmd->Hdr);
     }
     else
     {
@@ -1262,6 +1271,7 @@ NTSTATUS vboxVdmaGgCmdCancel(PVBOXMP_DEVEXT pDevExt, VBOXWDDM_CONTEXT *pContext,
         {
             WARN(("vboxVdmaGgCmdSubmit returned 0x%x", Status));
         }
+        vboxVdmaGgCmdRelease(pDevExt, &pCmd->Hdr);
     }
     else
     {
