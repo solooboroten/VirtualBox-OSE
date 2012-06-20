@@ -19,9 +19,11 @@
 #include "VBoxMPWddm.h"
 #include "VBoxMPCr.h"
 
-#include <cr_protocol.h>
-
 #include <VBox/HostServices/VBoxCrOpenGLSvc.h>
+
+#ifdef VBOX_WITH_CROGL
+#include <cr_protocol.h>
+#endif
 
 static int vboxMpCrCtlAddRef(PVBOXMP_CRCTLCON pCrCtlCon)
 {
@@ -206,6 +208,7 @@ int VBoxMpCrCtlConCallUserData(PVBOXMP_CRCTLCON pCrCtlCon, VBoxGuestHGCMCallInfo
 
 bool VBoxMpCrCtlConIs3DSupported()
 {
+#ifdef VBOX_WITH_CROGL
     VBOXMP_CRCTLCON CrCtlCon = {0};
     uint32_t u32ClientID = 0;
     int rc = VBoxMpCrCtlConConnect(&CrCtlCon, CR_PROTOCOL_VERSION_MAJOR, CR_PROTOCOL_VERSION_MINOR, &u32ClientID);
@@ -220,4 +223,7 @@ bool VBoxMpCrCtlConIs3DSupported()
         WARN(("VBoxMpCrCtlConDisconnect failed, ignoring.."));
 
     return true;
+#else
+    return false;
+#endif
 }
