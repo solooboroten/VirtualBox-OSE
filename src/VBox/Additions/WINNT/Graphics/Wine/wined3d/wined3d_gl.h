@@ -1373,14 +1373,15 @@ void (__stdcall *wglFinish)(void) DECLSPEC_HIDDEN;
 void (__stdcall *wglFlush)(void) DECLSPEC_HIDDEN;
 
 /* WGL functions */
-HGLRC (WINAPI *pwglCreateContext)(HDC) DECLSPEC_HIDDEN;
 BOOL (WINAPI *pwglDeleteContext)(HGLRC) DECLSPEC_HIDDEN;
 HGLRC (WINAPI *pwglGetCurrentContext)(void) DECLSPEC_HIDDEN;
 HDC (WINAPI *pwglGetCurrentDC)(void) DECLSPEC_HIDDEN;
 PROC (WINAPI *pwglGetProcAddress)(LPCSTR) DECLSPEC_HIDDEN;
 BOOL (WINAPI *pwglMakeCurrent)(HDC, HGLRC) DECLSPEC_HIDDEN;
-BOOL (WINAPI *pwglSwapLayerBuffers)(HDC) DECLSPEC_HIDDEN;
+BOOL (WINAPI *pwglSwapLayerBuffers)(HDC, UINT) DECLSPEC_HIDDEN;
 BOOL (WINAPI *pwglShareLists)(HGLRC, HGLRC) DECLSPEC_HIDDEN;
+
+HGLRC (WINAPI *pVBoxCreateContext)(HDC, struct VBOXUHGSMI*) DECLSPEC_HIDDEN;
 
 #define GL_FUNCS_GEN \
     USE_GL_FUNC(glAccum) \
@@ -1720,7 +1721,6 @@ BOOL (WINAPI *pwglShareLists)(HGLRC, HGLRC) DECLSPEC_HIDDEN;
     USE_GL_FUNC(glPointParameterfv) \
 
 #define WGL_FUNCS_GEN \
-    USE_WGL_FUNC(wglCreateContext) \
     USE_WGL_FUNC(wglDeleteContext) \
     USE_WGL_FUNC(wglGetCurrentContext) \
     USE_WGL_FUNC(wglGetCurrentDC) \
@@ -1728,6 +1728,9 @@ BOOL (WINAPI *pwglShareLists)(HGLRC, HGLRC) DECLSPEC_HIDDEN;
     USE_WGL_FUNC(wglMakeCurrent) \
     USE_WGL_FUNC(wglShareLists) \
     USE_WGL_FUNC(wglSwapLayerBuffers)
+
+#define VBOX_FUNCS_GEN \
+    USE_WGL_FUNC(VBoxCreateContext)
 
 /* OpenGL extensions. */
 typedef enum wined3d_gl_extension
@@ -1844,9 +1847,8 @@ typedef enum wined3d_gl_extension
     WGL_ARB_PIXEL_FORMAT,
     WGL_WINE_PIXEL_FORMAT_PASSTHROUGH,
 
-#ifdef VBOX_WITH_WDDM
     VBOX_SHARED_CONTEXTS,
-#endif
+
     /* Internally used */
     WINE_NORMALIZED_TEXRECT,
 
@@ -3774,18 +3776,23 @@ typedef BOOL (WINAPI *WINED3D_PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC hdc, const int
 typedef BOOL (WINAPI *WINED3D_PFNWGLSETPIXELFORMATWINE)(HDC hdc, int iPixelFormat,
         const PIXELFORMATDESCRIPTOR *ppfd);
 
-#ifdef VBOX_WITH_WDDM
+/*Global resource ids sharing*/
 #define GL_SHARE_CONTEXT_RESOURCES_CR 0x8B27
+/*do flush for the command buffer of a thread the context was previusly current for*/
 #define GL_FLUSH_ON_THREAD_SWITCH_CR  0x8B28
+/*report that the shared resource is used by this context, the parameter value is a texture name*/
+#define GL_RCUSAGE_TEXTURE_SET_CR     0x8B29
+/*report that the shared resource is no longer used by this context, the parameter value is a texture name*/
+#define GL_RCUSAGE_TEXTURE_CLEAR_CR   0x8B2A
+/*configures host to create windows initially hidden*/
+#define GL_HOST_WND_CREATED_HIDDEN    0x8B2B
+
 typedef void (WINE_GLAPI *PGLFNCHROMIUMPARAMETERUCR)(GLenum param, GLint value);
 
 # define VBOXWDDM_GL_EXT_FUNCS_GEN \
         USE_GL_FUNC(PGLFNCHROMIUMPARAMETERUCR, \
                 glChromiumParameteriCR,                VBOX_SHARED_CONTEXTS,            NULL) \
 
-#else
-# define VBOXWDDM_GL_EXT_FUNCS_GEN
-#endif
 
 #define GL_EXT_FUNCS_GEN \
     /* GL_APPLE_fence */ \

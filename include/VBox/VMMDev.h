@@ -138,9 +138,34 @@ typedef enum
     VMMDevReq_ReportGuestInfo            = 50,
     VMMDevReq_ReportGuestInfo2           = 58, /* since version 3.2.0 */
     VMMDevReq_ReportGuestStatus          = 59, /* since version 3.2.8 */
+    /**
+     * Retrieve a display resize request sent by the host using
+     * @a IDisplay:setVideoModeHint.  Deprecated.
+     *
+     * Similar to @a VMMDevReq_GetDisplayChangeRequest2, except that it only
+     * considers host requests sent for the first virtual display.  This guest
+     * request should not be used in new guest code, and the results are
+     * undefined if a guest mixes calls to this and
+     * @a VMMDevReq_GetDisplayChangeRequest2.
+     */
     VMMDevReq_GetDisplayChangeRequest    = 51,
     VMMDevReq_VideoModeSupported         = 52,
     VMMDevReq_GetHeightReduction         = 53,
+    /**
+     * Retrieve a display resize request sent by the host using
+     * @a IDisplay:setVideoModeHint.
+     *
+     * Queries a display resize request sent from the host.  If the
+     * @a eventAck member is sent to true and there is an unqueried
+     * request available for one of the virtual display then that request will
+     * be returned.  If several displays have unqueried requests the lowest
+     * numbered display will be chosen first.  Only the most recent unseen
+     * request for each display is remembered.
+     * If @a eventAck is set to false, the last host request queried with
+     * @a eventAck set is resent, or failing that the most recent received from
+     * the host.  If no host request was ever received then all zeros are
+     * returned.
+     */
     VMMDevReq_GetDisplayChangeRequest2   = 54,
     VMMDevReq_ReportGuestCapabilities    = 55,
     VMMDevReq_SetGuestCapabilities       = 56,
@@ -291,6 +316,17 @@ AssertCompileSize(VMMDevReqMouseStatus, 24+12);
        | VMMDEV_MOUSE_HOST_CANNOT_HWPOINTER \
        | VMMDEV_MOUSE_HOST_RECHECKS_NEEDS_HOST_CURSOR \
        | VMMDEV_MOUSE_HOST_HAS_ABS_DEV)
+/** @} */
+
+/** @name Absolute mouse reporting range
+ * @{ */
+/** @todo Should these be here?  They are needed by both host and guest. */
+/** The minumum value our pointing device can return. */
+#define VMMDEV_MOUSE_RANGE_MIN 0
+/** The maximum value our pointing device can return. */
+#define VMMDEV_MOUSE_RANGE_MAX 0xFFFF
+/** The full range our pointing device can return. */
+#define VMMDEV_MOUSE_RANGE (VMMDEV_MOUSE_RANGE_MAX - VMMDEV_MOUSE_RANGE_MIN)
 /** @} */
 
 
@@ -647,7 +683,15 @@ typedef struct VBoxGuestInfo2
     uint32_t additionsRevision;
     /** Feature mask, currently unused. */
     uint32_t additionsFeatures;
-    /** Some additional information, for example 'Beta 1' or something like that. */
+    /** The intentional meaning of this field was:
+     * Some additional information, for example 'Beta 1' or something like that.
+     *
+     * The way it was implemented was implemented: VBOX_VERSION_STRING.
+     *
+     * This means the first three members are duplicated in this field (if the guest
+     * build config is sane). So, the user must check this and chop it off before
+     * usage.  There is, because of the Main code's blind trust in the field's
+     * content, no way back. */
     char     szName[128];
 } VBoxGuestInfo2;
 AssertCompileSize(VBoxGuestInfo2, 144);
@@ -675,6 +719,7 @@ typedef enum
 {
     VBoxGuestFacilityType_Unknown         = 0,
     VBoxGuestFacilityType_VBoxGuestDriver = 20,
+    VBoxGuestFacilityType_AutoLogon       = 90,  /* VBoxGINA / VBoxCredProv / pam_vbox. */
     VBoxGuestFacilityType_VBoxService     = 100,
     VBoxGuestFacilityType_VBoxTrayClient  = 101, /* VBoxTray (Windows), VBoxClient (Linux, Unix). */
     VBoxGuestFacilityType_Seamless        = 1000,
@@ -1213,7 +1258,7 @@ AssertCompileSize(VMMDevGetCpuHotPlugRequest, 24+4+4+4);
 /**
  * Shared region description
  */
-typedef struct
+typedef struct VMMDEVSHAREDREGIONDESC
 {
     RTGCPTR64           GCRegionAddr;
     uint32_t            cbRegion;

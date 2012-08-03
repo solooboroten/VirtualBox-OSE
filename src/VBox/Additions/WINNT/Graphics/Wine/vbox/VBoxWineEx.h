@@ -15,10 +15,23 @@
 #ifndef ___VBoxWineEx_h__
 #define ___VBoxWineEx_h__
 
+typedef enum
+{
+    VBOXWINEEX_SHRC_STATE_UNDEFINED = 0,
+    /* the underlying GL resource can not be used because it can be removed concurrently by other SHRC client */
+    VBOXWINEEX_SHRC_STATE_GL_DISABLE,
+    /* the given client is requested to delete the underlying GL resource on SHRC termination */
+    VBOXWINEEX_SHRC_STATE_GL_DELETE
+} VBOXWINEEX_SHRC_STATE;
+
+#ifndef IN_VBOXLIBWINE
+
+#define VBOXWINEEX_VERSION 1
+
 #ifndef IN_VBOXWINEEX
-#  define VBOXWINEEX_DECL(_type) __declspec(dllimport) _type WINAPI
+# define VBOXWINEEX_DECL(_type)   __declspec(dllimport) _type WINAPI
 # else
-#  define VBOXWINEEX_DECL(_type) __declspec(dllexport) _type WINAPI
+# define VBOXWINEEX_DECL(_type)  __declspec(dllexport) _type WINAPI
 #endif
 
 typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_CREATETEXTURE(IDirect3DDevice9Ex *iface,
@@ -38,6 +51,15 @@ typedef FNVBOXWINEEXD3DDEV9_FLUSH *PFNVBOXWINEEXD3DDEV9_FLUSH;
 
 typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_UPDATE(IDirect3DDevice9Ex *iface, D3DPRESENT_PARAMETERS * pParams, IDirect3DDevice9Ex **outIface);
 typedef FNVBOXWINEEXD3DDEV9_UPDATE *PFNVBOXWINEEXD3DDEV9_UPDATE;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_TERM(IDirect3DDevice9Ex *iface);
+typedef FNVBOXWINEEXD3DDEV9_TERM *PFNVBOXWINEEXD3DDEV9_TERM;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DRC9_SETSHRCSTATE(IDirect3DResource9 *iface, VBOXWINEEX_SHRC_STATE enmState);
+typedef FNVBOXWINEEXD3DRC9_SETSHRCSTATE *PFNVBOXWINEEXD3DRC9_SETSHRCSTATE;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DSWAPCHAIN9_PRESENT(IDirect3DSwapChain9 *iface, IDirect3DSurface9 *surf);
+typedef FNVBOXWINEEXD3DSWAPCHAIN9_PRESENT *PFNVBOXWINEEXD3DSWAPCHAIN9_PRESENT;
 
 #ifdef __cplusplus
 extern "C"
@@ -59,8 +81,23 @@ VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Flush(IDirect3DDevice9Ex *iface); /* p
 
 VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Update(IDirect3DDevice9Ex *iface, D3DPRESENT_PARAMETERS * pParams,
                                                     IDirect3DDevice9Ex **outIface); /* update device parameters */
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Term(IDirect3DDevice9Ex *iface);
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DRc9SetShRcState(IDirect3DResource9 *iface, VBOXWINEEX_SHRC_STATE enmState);
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DSwapchain9Present(IDirect3DSwapChain9 *iface,
+                                IDirect3DSurface9 *surf); /* use the given surface as a frontbuffer content source */
+
+typedef struct VBOXWINEEX_D3DPRESENT_PARAMETERS
+{
+    D3DPRESENT_PARAMETERS Base;
+    struct VBOXUHGSMI *pHgsmi;
+} VBOXWINEEX_D3DPRESENT_PARAMETERS, *PVBOXWINEEX_D3DPRESENT_PARAMETERS;
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* #ifndef IN_VBOXLIBWINE */
 
 #endif

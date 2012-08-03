@@ -1,4 +1,4 @@
-/* $Id: vboxext.c 38366 2011-08-09 06:55:53Z vboxsync $ */
+/* $Id: vboxext.c 42499 2012-08-01 10:26:43Z vboxsync $ */
 /** @file
  *
  * VBox extension to Wine D3D
@@ -14,21 +14,32 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 #include "config.h"
+#include "wine/port.h"
 #include "wined3d_private.h"
 #include "vboxext.h"
+#ifdef VBOX_WITH_WDDM
+#include <VBox/VBoxCrHgsmi.h>
+#include <iprt/err.h>
+#endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d_vbox);
 
 typedef DECLCALLBACK(void) FNVBOXEXTWORKERCB(void *pvUser);
 typedef FNVBOXEXTWORKERCB *PFNVBOXEXTWORKERCB;
 
-HRESULT VBoxExtDwSubmitProc(PFNVBOXEXTWORKERCB pfnCb, void *pvCb);
+HRESULT VBoxExtDwSubmitProcSync(PFNVBOXEXTWORKERCB pfnCb, void *pvCb);
+HRESULT VBoxExtDwSubmitProcAsync(PFNVBOXEXTWORKERCB pfnCb, void *pvCb);
 
 /*******************************/
-#if defined(VBOX_WDDM_WOW64)
+#ifdef VBOX_WITH_WDDM
+# if defined(VBOX_WDDM_WOW64)
 # define VBOXEXT_WINE_MODULE_NAME "wined3dwddm-x86.dll"
-#else
+# else
 # define VBOXEXT_WINE_MODULE_NAME "wined3dwddm.dll"
+# endif
+#else
+/* both 32bit and 64bit versions of xpdm wine libs are named identically */
+# define VBOXEXT_WINE_MODULE_NAME "wined3d.dll"
 #endif
 
 typedef struct VBOXEXT_WORKER
@@ -60,7 +71,8 @@ typedef struct VBOXEXT_GLOBAL
 
 static VBOXEXT_GLOBAL g_VBoxExtGlobal;
 
-#define WM_VBOXEXT_CALLPROC (WM_APP+1)
+#define WM_VBOXEXT_CALLPROC  (WM_APP+1)
+#define WM_VBOXEXT_INIT_QUIT (WM_APP+2)
 
 typedef struct VBOXEXT_CALLPROC
 {
@@ -102,6 +114,12 @@ static DWORD WINAPI vboxExtWorkerThread(void *pvUser)
                 VBOXEXT_CALLPROC* pData = (VBOXEXT_CALLPROC*)Msg.lParam;
                 pData->pfnCb(pData->pvCb);
                 SetEvent(pWorker->hEvent);
+                break;
+            }
+            case WM_VBOXEXT_INIT_QUIT:
+            case WM_CLOSE:
+            {
+                PostQuitMessage(0);
                 break;
             }
             default:
@@ -164,7 +182,7 @@ HRESULT VBoxExtWorkerCreate(PVBOXEXT_WORKER pWorker)
 
 HRESULT VBoxExtWorkerDestroy(PVBOXEXT_WORKER pWorker)
 {
-    BOOL bResult = PostThreadMessage(pWorker->idThread, WM_QUIT, 0, 0);
+    BOOL bResult = PostThreadMessage(pWorker->idThread, WM_VBOXEXT_INIT_QUIT, 0, 0);
     DWORD dwErr;
     if (!bResult)
     {
@@ -185,10 +203,12 @@ HRESULT VBoxExtWorkerDestroy(PVBOXEXT_WORKER pWorker)
 
     FreeLibrary(pWorker->hSelf);
 
+    CloseHandle(pWorker->hThread);
+
     return S_OK;
 }
 
-static HRESULT vboxExtWorkerSubmit(VBOXEXT_WORKER *pWorker, UINT Msg, LPARAM lParam)
+static HRESULT vboxExtWorkerSubmit(VBOXEXT_WORKER *pWorker, UINT Msg, LPARAM lParam, BOOL fSync)
 {
     HRESULT hr = E_FAIL;
     BOOL bResult;
@@ -198,15 +218,20 @@ static HRESULT vboxExtWorkerSubmit(VBOXEXT_WORKER *pWorker, UINT Msg, LPARAM lPa
     bResult = PostThreadMessage(pWorker->idThread, Msg, 0, lParam);
     if (bResult)
     {
-        DWORD dwErr = WaitForSingleObject(pWorker->hEvent, INFINITE);
-        if (dwErr == WAIT_OBJECT_0)
+        if (fSync)
         {
-            hr = S_OK;
+            DWORD dwErr = WaitForSingleObject(pWorker->hEvent, INFINITE);
+            if (dwErr == WAIT_OBJECT_0)
+            {
+                hr = S_OK;
+            }
+            else
+            {
+                ERR("WaitForSingleObject returned (%d)", dwErr);
+            }
         }
         else
-        {
-            ERR("WaitForSingleObject returned (%d)", dwErr);
-        }
+            hr = S_OK;
     }
     else
     {
@@ -218,26 +243,92 @@ static HRESULT vboxExtWorkerSubmit(VBOXEXT_WORKER *pWorker, UINT Msg, LPARAM lPa
     return hr;
 }
 
-HRESULT VBoxExtWorkerSubmitProc(PVBOXEXT_WORKER pWorker, PFNVBOXEXTWORKERCB pfnCb, void *pvCb)
+HRESULT VBoxExtWorkerSubmitProcSync(PVBOXEXT_WORKER pWorker, PFNVBOXEXTWORKERCB pfnCb, void *pvCb)
 {
     VBOXEXT_CALLPROC Ctx;
     Ctx.pfnCb = pfnCb;
     Ctx.pvCb = pvCb;
-    return vboxExtWorkerSubmit(pWorker, WM_VBOXEXT_CALLPROC, (LPARAM)&Ctx);
+    return vboxExtWorkerSubmit(pWorker, WM_VBOXEXT_CALLPROC, (LPARAM)&Ctx, TRUE);
 }
+
+static DECLCALLBACK(void) vboxExtWorkerSubmitProcAsyncWorker(void *pvUser)
+{
+    PVBOXEXT_CALLPROC pCallInfo = (PVBOXEXT_CALLPROC)pvUser;
+    pCallInfo[1].pfnCb(pCallInfo[1].pvCb);
+    HeapFree(GetProcessHeap(), 0, pCallInfo);
+}
+
+HRESULT VBoxExtWorkerSubmitProcAsync(PVBOXEXT_WORKER pWorker, PFNVBOXEXTWORKERCB pfnCb, void *pvCb)
+{
+    HRESULT hr;
+    PVBOXEXT_CALLPROC pCallInfo = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof (VBOXEXT_CALLPROC) * 2);
+    if (!pCallInfo)
+    {
+        ERR("HeapAlloc failed\n");
+        return E_OUTOFMEMORY;
+    }
+    pCallInfo[0].pfnCb = vboxExtWorkerSubmitProcAsyncWorker;
+    pCallInfo[0].pvCb = pCallInfo;
+    pCallInfo[1].pfnCb = pfnCb;
+    pCallInfo[1].pvCb = pvCb;
+    hr = vboxExtWorkerSubmit(pWorker, WM_VBOXEXT_CALLPROC, (LPARAM)pCallInfo, FALSE);
+    if (FAILED(hr))
+    {
+        ERR("vboxExtWorkerSubmit failed, hr 0x%x\n", hr);
+        HeapFree(GetProcessHeap(), 0, pCallInfo);
+        return hr;
+    }
+    return S_OK;
+}
+
 
 static HRESULT vboxExtInit()
 {
     HRESULT hr = S_OK;
+#ifdef VBOX_WITH_WDDM
+    int rc = VBoxCrHgsmiInit();
+    if (!RT_SUCCESS(rc))
+    {
+        ERR("VBoxCrHgsmiInit failed rc %d", rc);
+        return E_FAIL;
+    }
+#endif
     memset(&g_VBoxExtGlobal, 0, sizeof (g_VBoxExtGlobal));
     hr = VBoxExtWorkerCreate(&g_VBoxExtGlobal.Worker);
+    if (SUCCEEDED(hr))
+        return S_OK;
+
+    /* failure branch */
+#ifdef VBOX_WITH_WDDM
+    VBoxCrHgsmiTerm();
+#endif
     return hr;
 }
 
+
+static HRESULT vboxExtWndCleanup();
+
 static HRESULT vboxExtTerm()
 {
-    HRESULT hr = VBoxExtWorkerDestroy(&g_VBoxExtGlobal.Worker);
-    return hr;
+    HRESULT hr = vboxExtWndCleanup();
+    if (!SUCCEEDED(hr))
+    {
+        ERR("vboxExtWndCleanup failed, hr %d", hr);
+        return hr;
+    }
+
+    hr = VBoxExtWorkerDestroy(&g_VBoxExtGlobal.Worker);
+    if (!SUCCEEDED(hr))
+    {
+        ERR("VBoxExtWorkerDestroy failed, hr %d", hr);
+        return hr;
+    }
+
+#ifdef VBOX_WITH_WDDM
+    VBoxCrHgsmiTerm();
+#endif
+
+    return S_OK;
 }
 
 /* wine serializes all calls to us, so no need for any synchronization here */
@@ -292,11 +383,18 @@ HRESULT VBoxExtCheckTerm()
     return S_OK;
 }
 
-HRESULT VBoxExtDwSubmitProc(PFNVBOXEXTWORKERCB pfnCb, void *pvCb)
+HRESULT VBoxExtDwSubmitProcSync(PFNVBOXEXTWORKERCB pfnCb, void *pvCb)
 {
-    return VBoxExtWorkerSubmitProc(&g_VBoxExtGlobal.Worker, pfnCb, pvCb);
+    return VBoxExtWorkerSubmitProcSync(&g_VBoxExtGlobal.Worker, pfnCb, pvCb);
 }
 
+HRESULT VBoxExtDwSubmitProcAsync(PFNVBOXEXTWORKERCB pfnCb, void *pvCb)
+{
+    return VBoxExtWorkerSubmitProcAsync(&g_VBoxExtGlobal.Worker, pfnCb, pvCb);
+}
+
+#if defined(VBOX_WINE_WITH_SINGLE_CONTEXT) || defined(VBOX_WINE_WITH_SINGLE_SWAPCHAIN_CONTEXT)
+# ifndef VBOX_WITH_WDDM
 typedef struct VBOXEXT_GETDC_CB
 {
     HWND hWnd;
@@ -321,50 +419,64 @@ static DECLCALLBACK(void) vboxExtReleaseDCWorker(void *pvUser)
     PVBOXEXT_RELEASEDC_CB pData = (PVBOXEXT_RELEASEDC_CB)pvUser;
     pData->ret = ReleaseDC(pData->hWnd, pData->hDC);
 }
-#if 0
+
 HDC VBoxExtGetDC(HWND hWnd)
 {
-#ifdef VBOX_WINE_WITH_SINGLE_CONTEXT
     HRESULT hr;
     VBOXEXT_GETDC_CB Data = {0};
     Data.hWnd = hWnd;
     Data.hDC = NULL;
 
-    hr = VBoxExtDwSubmitProc(vboxExtGetDCWorker, &Data);
+    hr = VBoxExtDwSubmitProcSync(vboxExtGetDCWorker, &Data);
     if (FAILED(hr))
     {
-        ERR("VBoxExtDwSubmitProc feiled, hr (0x%x)\n", hr);
+        ERR("VBoxExtDwSubmitProcSync feiled, hr (0x%x)\n", hr);
         return NULL;
     }
 
     return Data.hDC;
-#else
-    return GetDC(hWnd);
-#endif
 }
 
 int VBoxExtReleaseDC(HWND hWnd, HDC hDC)
 {
-#ifdef VBOX_WINE_WITH_SINGLE_CONTEXT
     HRESULT hr;
     VBOXEXT_RELEASEDC_CB Data = {0};
     Data.hWnd = hWnd;
     Data.hDC = hDC;
     Data.ret = 0;
 
-    hr = VBoxExtDwSubmitProc(vboxExtReleaseDCWorker, &Data);
+    hr = VBoxExtDwSubmitProcSync(vboxExtReleaseDCWorker, &Data);
     if (FAILED(hr))
     {
-        ERR("VBoxExtDwSubmitProc feiled, hr (0x%x)\n", hr);
+        ERR("VBoxExtDwSubmitProcSync feiled, hr (0x%x)\n", hr);
         return -1;
     }
 
     return Data.ret;
-#else
-    return ReleaseDC(hWnd, hDC);
-#endif
 }
-#endif
+# endif /* #ifndef VBOX_WITH_WDDM */
+
+static DECLCALLBACK(void) vboxExtReleaseContextWorker(void *pvUser)
+{
+    struct wined3d_context *context = (struct wined3d_context *)pvUser;
+    wined3d_mutex_lock();
+    VBoxTlsRefRelease(context);
+    wined3d_mutex_unlock();
+}
+
+void VBoxExtReleaseContextAsync(struct wined3d_context *context)
+{
+    HRESULT hr;
+
+    hr = VBoxExtDwSubmitProcAsync(vboxExtReleaseContextWorker, context);
+    if (FAILED(hr))
+    {
+        ERR("VBoxExtDwSubmitProcAsync feiled, hr (0x%x)\n", hr);
+        return;
+    }
+}
+
+#endif /* #if defined(VBOX_WINE_WITH_SINGLE_CONTEXT) || defined(VBOX_WINE_WITH_SINGLE_SWAPCHAIN_CONTEXT) */
 
 /* window creation API */
 static LRESULT CALLBACK vboxExtWndProc(HWND hwnd,
@@ -391,7 +503,24 @@ static LRESULT CALLBACK vboxExtWndProc(HWND hwnd,
 
 #define VBOXEXTWND_NAME "VboxDispD3DWineWnd"
 
-HRESULT vboxExtWndDoCreate(DWORD w, DWORD h, HWND *phWnd, HDC *phDC)
+static HRESULT vboxExtWndDoCleanup()
+{
+    HRESULT hr = S_OK;
+    HINSTANCE hInstance = (HINSTANCE)GetModuleHandle(NULL);
+    WNDCLASS wc;
+    if (GetClassInfo(hInstance, VBOXEXTWND_NAME, &wc))
+    {
+        if (!UnregisterClass(VBOXEXTWND_NAME, hInstance))
+        {
+            DWORD winEr = GetLastError();
+            ERR("UnregisterClass failed, winErr(%d)\n", winEr);
+            hr = E_FAIL;
+        }
+    }
+    return hr;
+}
+
+static HRESULT vboxExtWndDoCreate(DWORD w, DWORD h, HWND *phWnd, HDC *phDC)
 {
     HRESULT hr = S_OK;
     HINSTANCE hInstance = (HINSTANCE)GetModuleHandle(NULL);
@@ -483,18 +612,29 @@ typedef struct VBOXEXTWND_DESTROY_INFO
     HDC hDC;
 } VBOXEXTWND_DESTROY_INFO;
 
-DECLCALLBACK(void) vboxExtWndDestroyWorker(void *pvUser)
+typedef struct VBOXEXTWND_CLEANUP_INFO
+{
+    int hr;
+} VBOXEXTWND_CLEANUP_INFO;
+
+static DECLCALLBACK(void) vboxExtWndDestroyWorker(void *pvUser)
 {
     VBOXEXTWND_DESTROY_INFO *pInfo = (VBOXEXTWND_DESTROY_INFO*)pvUser;
     pInfo->hr = vboxExtWndDoDestroy(pInfo->hWnd, pInfo->hDC);
     Assert(pInfo->hr == S_OK);
 }
 
-DECLCALLBACK(void) vboxExtWndCreateWorker(void *pvUser)
+static DECLCALLBACK(void) vboxExtWndCreateWorker(void *pvUser)
 {
     VBOXEXTWND_CREATE_INFO *pInfo = (VBOXEXTWND_CREATE_INFO*)pvUser;
     pInfo->hr = vboxExtWndDoCreate(pInfo->width, pInfo->height, &pInfo->hWnd, &pInfo->hDC);
     Assert(pInfo->hr == S_OK);
+}
+
+static DECLCALLBACK(void) vboxExtWndCleanupWorker(void *pvUser)
+{
+    VBOXEXTWND_CLEANUP_INFO *pInfo = (VBOXEXTWND_CLEANUP_INFO*)pvUser;
+    pInfo-> hr = vboxExtWndDoCleanup();
 }
 
 HRESULT VBoxExtWndDestroy(HWND hWnd, HDC hDC)
@@ -504,14 +644,20 @@ HRESULT VBoxExtWndDestroy(HWND hWnd, HDC hDC)
     Info.hr = E_FAIL;
     Info.hWnd = hWnd;
     Info.hDC = hDC;
-    hr = VBoxExtDwSubmitProc(vboxExtWndDestroyWorker, &Info);
-    Assert(hr == S_OK);
-    if (hr == S_OK)
+    hr = VBoxExtDwSubmitProcSync(vboxExtWndDestroyWorker, &Info);
+    if (!SUCCEEDED(hr))
     {
-        Assert(Info.hr == S_OK);
+        ERR("VBoxExtDwSubmitProcSync-vboxExtWndDestroyWorker failed hr %d", hr);
+        return hr;
+    }
+
+    if (!SUCCEEDED(Info.hr))
+    {
+        ERR("vboxExtWndDestroyWorker failed hr %d", Info.hr);
         return Info.hr;
     }
-    return hr;
+
+    return S_OK;
 }
 
 HRESULT VBoxExtWndCreate(DWORD width, DWORD height, HWND *phWnd, HDC *phDC)
@@ -521,17 +667,183 @@ HRESULT VBoxExtWndCreate(DWORD width, DWORD height, HWND *phWnd, HDC *phDC)
     Info.hr = E_FAIL;
     Info.width = width;
     Info.height = height;
-    hr = VBoxExtDwSubmitProc(vboxExtWndCreateWorker, &Info);
-    Assert(hr == S_OK);
-    if (hr == S_OK)
+    hr = VBoxExtDwSubmitProcSync(vboxExtWndCreateWorker, &Info);
+    if (!SUCCEEDED(hr))
     {
-        Assert(Info.hr == S_OK);
-        if (Info.hr == S_OK)
-        {
-            *phWnd = Info.hWnd;
-            *phDC = Info.hDC;
-        }
+        ERR("VBoxExtDwSubmitProcSync-vboxExtWndCreateWorker failed hr %d", hr);
+        return hr;
+    }
+
+    Assert(Info.hr == S_OK);
+    if (!SUCCEEDED(Info.hr))
+    {
+        ERR("vboxExtWndCreateWorker failed hr %d", Info.hr);
         return Info.hr;
     }
-    return hr;
+
+    *phWnd = Info.hWnd;
+    *phDC = Info.hDC;
+    return S_OK;
+}
+
+static HRESULT vboxExtWndCleanup()
+{
+    HRESULT hr;
+    VBOXEXTWND_CLEANUP_INFO Info;
+    Info.hr = E_FAIL;
+    hr = VBoxExtDwSubmitProcSync(vboxExtWndCleanupWorker, &Info);
+    if (!SUCCEEDED(hr))
+    {
+        ERR("VBoxExtDwSubmitProcSync-vboxExtWndCleanupWorker failed hr %d", hr);
+        return hr;
+    }
+
+    if (!SUCCEEDED(Info.hr))
+    {
+        ERR("vboxExtWndCleanupWorker failed hr %d", Info.hr);
+        return Info.hr;
+    }
+
+    return S_OK;
+}
+
+
+/* hash map impl */
+static void vboxExtHashInitEntries(PVBOXEXT_HASHMAP pMap)
+{
+    uint32_t i;
+    pMap->cEntries = 0;
+    for (i = 0; i < RT_ELEMENTS(pMap->aBuckets); ++i)
+    {
+        RTListInit(&pMap->aBuckets[i].EntryList);
+    }
+}
+
+void VBoxExtHashInit(PVBOXEXT_HASHMAP pMap, PFNVBOXEXT_HASHMAP_HASH pfnHash, PFNVBOXEXT_HASHMAP_EQUAL pfnEqual)
+{
+    pMap->pfnHash = pfnHash;
+    pMap->pfnEqual = pfnEqual;
+    vboxExtHashInitEntries(pMap);
+}
+
+static DECLINLINE(uint32_t) vboxExtHashIdx(uint32_t u32Hash)
+{
+    return u32Hash % VBOXEXT_HASHMAP_NUM_BUCKETS;
+}
+
+#define VBOXEXT_FOREACH_NODE(_pNode, _pList, _op) do { \
+        PRTLISTNODE _pNode; \
+        PRTLISTNODE __pNext; \
+        for (_pNode = (_pList)->pNext; \
+                _pNode != (_pList); \
+                _pNode = __pNext) \
+        { \
+            __pNext = _pNode->pNext; /* <- the _pNode should not be referenced after the _op */ \
+            _op \
+        } \
+    } while (0)
+
+DECLINLINE(PVBOXEXT_HASHMAP_ENTRY) vboxExtHashSearchEntry(PVBOXEXT_HASHMAP pMap, void *pvKey)
+{
+    uint32_t u32Hash = pMap->pfnHash(pvKey);
+    uint32_t u32HashIdx = vboxExtHashIdx(u32Hash);
+    PVBOXEXT_HASHMAP_BUCKET pBucket = &pMap->aBuckets[u32HashIdx];
+    PVBOXEXT_HASHMAP_ENTRY pEntry;
+    VBOXEXT_FOREACH_NODE(pNode, &pBucket->EntryList,
+        pEntry = RT_FROM_MEMBER(pNode, VBOXEXT_HASHMAP_ENTRY, ListNode);
+        if (pEntry->u32Hash != u32Hash)
+            continue;
+
+        if (!pMap->pfnEqual(pvKey, pEntry->pvKey))
+            continue;
+        return pEntry;
+    );
+    return NULL;
+}
+
+void* VBoxExtHashRemoveEntry(PVBOXEXT_HASHMAP pMap, PVBOXEXT_HASHMAP_ENTRY pEntry)
+{
+    RTListNodeRemove(&pEntry->ListNode);
+    --pMap->cEntries;
+    Assert(pMap->cEntries <= UINT32_MAX/2);
+    return pEntry->pvKey;
+}
+
+static void vboxExtHashPutEntry(PVBOXEXT_HASHMAP pMap, PVBOXEXT_HASHMAP_BUCKET pBucket, PVBOXEXT_HASHMAP_ENTRY pEntry)
+{
+    RTListNodeInsertAfter(&pBucket->EntryList, &pEntry->ListNode);
+    ++pMap->cEntries;
+}
+
+PVBOXEXT_HASHMAP_ENTRY VBoxExtHashRemove(PVBOXEXT_HASHMAP pMap, void *pvKey)
+{
+    PVBOXEXT_HASHMAP_ENTRY pEntry = vboxExtHashSearchEntry(pMap, pvKey);
+    if (!pEntry)
+        return NULL;
+
+    VBoxExtHashRemoveEntry(pMap, pEntry);
+    return pEntry;
+}
+
+PVBOXEXT_HASHMAP_ENTRY VBoxExtHashPut(PVBOXEXT_HASHMAP pMap, void *pvKey, PVBOXEXT_HASHMAP_ENTRY pEntry)
+{
+    PVBOXEXT_HASHMAP_ENTRY pOldEntry = VBoxExtHashRemove(pMap, pvKey);
+    uint32_t u32Hash = pMap->pfnHash(pvKey);
+    uint32_t u32HashIdx = vboxExtHashIdx(u32Hash);
+    pEntry->pvKey = pvKey;
+    pEntry->u32Hash = u32Hash;
+    vboxExtHashPutEntry(pMap, &pMap->aBuckets[u32HashIdx], pEntry);
+    return pOldEntry;
+}
+
+
+PVBOXEXT_HASHMAP_ENTRY VBoxExtHashGet(PVBOXEXT_HASHMAP pMap, void *pvKey)
+{
+    return vboxExtHashSearchEntry(pMap, pvKey);
+}
+
+void VBoxExtHashVisit(PVBOXEXT_HASHMAP pMap, PFNVBOXEXT_HASHMAP_VISITOR pfnVisitor, void *pvVisitor)
+{
+    uint32_t iBucket = 0, iEntry = 0;
+    uint32_t cEntries = pMap->cEntries;
+
+    if (!cEntries)
+        return;
+
+    for (; ; ++iBucket)
+    {
+        PVBOXEXT_HASHMAP_ENTRY pEntry;
+        PVBOXEXT_HASHMAP_BUCKET pBucket = &pMap->aBuckets[iBucket];
+        Assert(iBucket < RT_ELEMENTS(pMap->aBuckets));
+        VBOXEXT_FOREACH_NODE(pNode, &pBucket->EntryList,
+            pEntry = RT_FROM_MEMBER(pNode, VBOXEXT_HASHMAP_ENTRY, ListNode);
+            if (!pfnVisitor(pMap, pEntry->pvKey, pEntry, pvVisitor))
+                return;
+
+            if (++iEntry == cEntries)
+                return;
+        );
+    }
+
+    /* should not be here! */
+    AssertFailed();
+}
+
+void VBoxExtHashCleanup(PVBOXEXT_HASHMAP pMap, PFNVBOXEXT_HASHMAP_VISITOR pfnVisitor, void *pvVisitor)
+{
+    VBoxExtHashVisit(pMap, pfnVisitor, pvVisitor);
+    vboxExtHashInitEntries(pMap);
+}
+
+static DECLCALLBACK(bool) vboxExtCacheCleanupCb(struct VBOXEXT_HASHMAP *pMap, void *pvKey, struct VBOXEXT_HASHMAP_ENTRY *pValue, void *pvVisitor)
+{
+    PVBOXEXT_HASHCACHE pCache = VBOXEXT_HASHCACHE_FROM_MAP(pMap);
+    PVBOXEXT_HASHCACHE_ENTRY pCacheEntry = VBOXEXT_HASHCACHE_ENTRY_FROM_MAP(pValue);
+    pCache->pfnCleanupEntry(pvKey, pCacheEntry);
+    return TRUE;
+}
+
+void VBoxExtCacheCleanup(PVBOXEXT_HASHCACHE pCache)
+{
+    VBoxExtHashCleanup(&pCache->Map, vboxExtCacheCleanupCb, NULL);
 }

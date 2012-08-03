@@ -22,11 +22,13 @@
 
 #include <VBox/vmm/ssm.h>
 
+#ifdef VBOX_WITH_CRHGSMI
+# include <VBox/VBoxVideo.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define SHCROGL_SSM_VERSION 28
 
 #define CR_MAX_WINDOWS 100
 #define CR_MAX_CLIENTS 64
@@ -87,6 +89,7 @@ typedef struct {
 
     GLboolean bVisible;      /*guest window is visible*/
     GLboolean bUseFBO;       /*redirect to FBO instead of real host window*/
+    GLboolean bFbDraw;       /*GL_FRONT buffer is drawn to directly*/
 
     GLint       cVisibleRects;    /*count of visible rects*/
     GLint      *pVisibleRects;    /*visible rects left, top, right, bottom*/
@@ -99,6 +102,18 @@ typedef struct {
     void *pvOutputRedirectInstance;
 } CRMuralInfo;
 
+typedef struct {
+    char   *pszDpyName;
+    GLint   visualBits;
+    int32_t externalID;
+} CRCreateInfo_t;
+
+typedef struct {
+    CRContext *pContext;
+    int SpuContext;
+    CRCreateInfo_t CreateInfo;
+} CRContextInfo;
+
 /**
  * A client is basically an upstream Cr Node (connected via mothership)
  */
@@ -108,7 +123,7 @@ typedef struct _crclient {
     int number;        /**< a unique number for each client */
     uint64_t pid;      /*guest pid*/
     GLint currentContextNumber;
-    CRContext *currentCtx;
+    CRContextInfo *currentCtxInfo;
     GLint currentWindow;
     CRMuralInfo *currentMural;
     GLint windowList[CR_MAX_WINDOWS];
@@ -153,9 +168,16 @@ typedef struct {
 } CRScreenInfo;
 
 typedef struct {
+    int32_t    x, y;
+    uint32_t   w, h;
+} CRScreenViewportInfo;
+
+
+typedef struct {
     unsigned short tcpip_port;
 
     CRScreenInfo screen[CR_MAX_GUEST_MONITORS];
+    CRScreenViewportInfo screenVieport[CR_MAX_GUEST_MONITORS];
     int          screenCount;
 
     int numClients;
@@ -168,6 +190,8 @@ typedef struct {
     GLboolean firstCallMakeCurrent;
     GLboolean bIsInLoadingState; /* Indicates if we're in process of loading VM snapshot */
     GLboolean bIsInSavingState; /* Indicates if we're in process of saving VM snapshot */
+    GLboolean bForceMakeCurrentOnClientSwitch;
+    CRContextInfo *currentCtxInfo;
     GLint currentWindow;
     GLint currentNativeWindow;
 
@@ -190,13 +214,9 @@ typedef struct {
 
     CRLimitsState limits; /**< GL limits for any contexts we create */
 
-    int SpuContext; /**< Rendering context for the head SPU */
-    int SpuContextVisBits; /**< Context's visual attributes */
-    char *SpuContextDpyName; /**< Context's dpyName */
+    CRContextInfo MainContextInfo;
 
     CRHashTable *contextTable;  /**< hash table for rendering contexts */
-    CRHashTable *pContextCreateInfoTable; /**< hash table with contexts creation info */
-    CRContext *DummyContext;    /**< used when no other bound context */
 
     CRHashTable *programTable;  /**< for vertex programs */
     GLuint currentProgram;
@@ -262,6 +282,8 @@ typedef struct {
 
     GLboolean             bUseOutputRedirect;       /* Whether the output redirect was set. */
     CROutputRedirect      outputRedirect;
+
+    GLboolean             bUseMultipleContexts;
 } CRServer;
 
 
@@ -295,6 +317,26 @@ extern DECLEXPORT(void) crVBoxServerSetPresentFBOCB(PFNCRSERVERPRESENTFBO pfnPre
 extern DECLEXPORT(int32_t) crVBoxServerSetOffscreenRendering(GLboolean value);
 
 extern DECLEXPORT(int32_t) crVBoxServerOutputRedirectSet(const CROutputRedirect *pCallbacks);
+
+extern DECLEXPORT(int32_t) crVBoxServerSetScreenViewport(int sIndex, int32_t x, int32_t y, uint32_t w, uint32_t h);
+
+#ifdef VBOX_WITH_CRHGSMI
+/* We moved all CrHgsmi command processing to crserverlib to keep the logic of dealing with CrHgsmi commands in one place.
+ *
+ * For now we need the notion of CrHgdmi commands in the crserver_lib to be able to complete it asynchronously once it is really processed.
+ * This help avoiding the "blocked-client" issues. The client is blocked if another client is doing begin-end stuff.
+ * For now we eliminated polling that could occur on block, which caused a higher-priority thread (in guest) polling for the blocked command complition
+ * to block the lower-priority thread trying to complete the blocking command.
+ * And removed extra memcpy done on blocked command arrival.
+ *
+ * In the future we will extend CrHgsmi functionality to maintain texture data directly in CrHgsmi allocation to avoid extra memcpy-ing with PBO,
+ * implement command completion and stuff necessary for GPU scheduling to work properly for WDDM Windows guests, etc.
+ *
+ * NOTE: it is ALWAYS responsibility of the crVBoxServerCrHgsmiCmd to complete the command!
+ * */
+extern DECLEXPORT(int32_t) crVBoxServerCrHgsmiCmd(struct VBOXVDMACMD_CHROMIUM_CMD *pCmd, uint32_t cbCmd);
+extern DECLEXPORT(int32_t) crVBoxServerCrHgsmiCtl(struct VBOXVDMACMD_CHROMIUM_CTL *pCtl, uint32_t cbCtl);
+#endif
 
 #ifdef __cplusplus
 }

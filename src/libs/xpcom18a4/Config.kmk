@@ -1,4 +1,4 @@
-# $Id: Config.kmk 35440 2011-01-09 23:43:10Z vboxsync $
+# $Id: Config.kmk 41877 2012-06-22 08:07:37Z vboxsync $
 ## @file
 # XPCOM kBuild Configuration file.
 #
@@ -38,7 +38,8 @@ TEMPLATE_XPCOM_ASFLAGS.amd64       = -m64
 TEMPLATE_XPCOM_ASDEFS              = $(NO_SUCH_VARIABLE)
 TEMPLATE_XPCOM_CXXFLAGS            = -g -pipe -ansi -Wall -Wno-unused -Wno-non-virtual-dtor \
 	$(VBOX_GCC_Wno-invalid-offsetof) -Wno-sign-compare -Wno-unused -Wno-ctor-dtor-privacy \
-	$(VBOX_GCC_fvisibility-inlines-hidden) $(VBOX_GCC_fvisibility-hidden) $(VBOX_GCC_fdiagnostics-show-option)
+	$(VBOX_GCC_fvisibility-inlines-hidden) $(VBOX_GCC_fvisibility-hidden) \
+	$(VBOX_GCC_fdiagnostics-show-option) $(VBOX_GCC_Wno-delete-non-virtual-dtor)
 TEMPLATE_XPCOM_CXXFLAGS.x86        = -m32
 TEMPLATE_XPCOM_CXXFLAGS.amd64      = -m64
 TEMPLATE_XPCOM_CXXFLAGS.release    = -O
@@ -250,6 +251,19 @@ TEMPLATE_XPCOMOSX106_CFLAGS.darwin      = $(filter-out $(VBOX_DARWIN_DEF_SDK_CFL
 TEMPLATE_XPCOMOSX106_LDFLAGS.darwin     = $(filter-out $(VBOX_DARWIN_DEF_SDK_LDFLAGS),$(TEMPLATE_XPCOM_LDFLAGS.darwin)) $(VBOX_DARWIN_DEF_SDK_10_6_LDFLAGS)
 TEMPLATE_XPCOMOSX106_DEFS.darwin        = $(filter-out $(VBOX_DARWIN_DEF_SDK_DEFS),$(TEMPLATE_XPCOM_DEFS.darwin)) $(VBOX_DARWIN_DEF_SDK_10_6_DEFS)
 TEMPLATE_XPCOMOSX106_INCS.darwin        = $(VBOX_PATH_MACOSX_SDK_10_6)/Developer/Headers/FlatCarbon
+
+#
+# Template for building VBoxPhython against the Mac OS X 10.7 SDK.
+# ASSUMES that the SDK bits are in the .darwin properties we're overriding below.
+#
+TEMPLATE_XPCOMOSX107                    = XPCOM libraries (shared) built against the Mac OS X 10.7 SDK
+TEMPLATE_XPCOMOSX107_EXTENDS            = XPCOM
+TEMPLATE_XPCOMOSX107_TOOL               = LLVMGXX42MACHO
+TEMPLATE_XPCOMOSX107_CXXFLAGS.darwin    = $(filter-out $(VBOX_DARWIN_DEF_SDK_CXXFLAGS),$(TEMPLATE_XPCOM_CXXFLAGS.darwin)) $(VBOX_DARWIN_DEF_SDK_10_7_CXXFLAGS)
+TEMPLATE_XPCOMOSX107_CFLAGS.darwin      = $(filter-out $(VBOX_DARWIN_DEF_SDK_CFLAGS),$(TEMPLATE_XPCOM_CFLAGS.darwin)) $(VBOX_DARWIN_DEF_SDK_10_7_CFLAGS)
+TEMPLATE_XPCOMOSX107_LDFLAGS.darwin     = $(filter-out $(VBOX_DARWIN_DEF_SDK_LDFLAGS),$(TEMPLATE_XPCOM_LDFLAGS.darwin)) $(VBOX_DARWIN_DEF_SDK_10_7_LDFLAGS)
+TEMPLATE_XPCOMOSX107_DEFS.darwin        = $(filter-out $(VBOX_DARWIN_DEF_SDK_DEFS),$(TEMPLATE_XPCOM_DEFS.darwin)) $(VBOX_DARWIN_DEF_SDK_10_7_DEFS)
+TEMPLATE_XPCOMOSX107_INCS.darwin        = $(VBOX_PATH_MACOSX_SDK_10_7)/Developer/Headers/FlatCarbon
 
 
 #

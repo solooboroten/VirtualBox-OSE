@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -53,7 +53,7 @@ RT_C_DECLS_BEGIN
 # define RTFILE_NATIVE_STDIN 0
 #endif
 
-/** Platform specific native standard outt "handle". */
+/** Platform specific native standard out "handle". */
 #ifdef RT_OS_WINDOWS
 # define RTFILE_NATIVE_STDOUT ((uint32_t)-11)
 #else
@@ -212,6 +212,10 @@ RTDECL(int) RTFileQuerySize(const char *pszPath, uint64_t *pcbFile);
  */
 #define RTFILE_O_NO_CACHE               UINT32_C(0x00080000)
 
+/** Don't allow symbolic links as part of the path.
+ * @remarks this flag is currently not implemented and will be ignored. */
+#define RTFILE_O_NO_SYMLINKS            UINT32_C(0x20000000)
+
 /** Unix file mode mask for use when creating files. */
 #define RTFILE_O_CREATE_MODE_MASK       UINT32_C(0x1ff00000)
 /** The number of bits to shift to get the file mode mask.
@@ -219,14 +223,13 @@ RTDECL(int) RTFileQuerySize(const char *pszPath, uint64_t *pcbFile);
  */
 #define RTFILE_O_CREATE_MODE_SHIFT      20
 
-                                      /*UINT32_C(0x20000000),
-                                        UINT32_C(0x40000000)
-                                    and UINT32_C(0x80000000) are unused atm. */
+                                      /* UINT32_C(0x40000000)
+                                     and UINT32_C(0x80000000) are unused atm. */
 
 /** Mask of all valid flags.
  * @remark  This doesn't validate the access mode properly.
  */
-#define RTFILE_O_VALID_MASK             UINT32_C(0x1ffffff7)
+#define RTFILE_O_VALID_MASK             UINT32_C(0x3ffffff7)
 
 /** @} */
 
@@ -561,7 +564,10 @@ RTDECL(int) RTFileRename(const char *pszSrc, const char *pszDst, unsigned fRenam
 /** @name RTFileMove flags (bit masks).
  * @{ */
 /** Replace destination file if present. */
-#define RTFILEMOVE_FLAGS_REPLACE    0x1
+#define RTFILEMOVE_FLAGS_REPLACE      0x1
+/** Don't allow symbolic links as part of the path.
+ * @remarks this flag is currently not implemented and will be ignored. */
+#define RTFILEMOVE_FLAGS_NO_SYMLINKS  0x2
 /** @} */
 
 /**

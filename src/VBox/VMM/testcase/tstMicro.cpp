@@ -1,4 +1,4 @@
-/* $Id: tstMicro.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstMicro.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * Micro Testcase, profiling special CPU operations.
  */
@@ -321,6 +321,8 @@ static DECLCALLBACK(int) doit(PVM pVM)
     /* execute the trap/cycle profiling tests. */
     RTPrintf("\n");
     PrintHeaderTraps();
+    /* don't disable rdtsc in R1/R2/R3! */
+    CPUMR3SetCR4Feature(pVM, 0, ~X86_CR4_TSD);
     for (i = TSTMICROTEST_TRAP_FIRST; i < TSTMICROTEST_MAX; i++)
     {
         TSTMICROTEST enmTest = (TSTMICROTEST)i;
@@ -338,7 +340,7 @@ int main(int argc, char **argv)
 {
     int     rcRet = 0;                  /* error count. */
 
-    RTR3InitAndSUPLib();
+    RTR3InitExe(argc, &argv, RTR3INIT_FLAGS_SUPLIB);
 
     /*
      * Create empty VM.
@@ -357,16 +359,22 @@ int main(int argc, char **argv)
         /*
          * Cleanup.
          */
+        rc = VMR3PowerOff(pVM);
+        if (!RT_SUCCESS(rc))
+        {
+            RTPrintf(TESTCASE ": error: failed to power off vm! rc=%Rrc\n", rc);
+            rcRet++;
+        }
         rc = VMR3Destroy(pVM);
         if (!RT_SUCCESS(rc))
         {
-            RTPrintf(TESTCASE ": error: failed to destroy vm! rc=%d\n", rc);
+            RTPrintf(TESTCASE ": error: failed to destroy vm! rc=%Rrc\n", rc);
             rcRet++;
         }
     }
     else
     {
-        RTPrintf(TESTCASE ": fatal error: failed to create vm! rc=%d\n", rc);
+        RTPrintf(TESTCASE ": fatal error: failed to create vm! rc=%Rrc\n", rc);
         rcRet++;
     }
 

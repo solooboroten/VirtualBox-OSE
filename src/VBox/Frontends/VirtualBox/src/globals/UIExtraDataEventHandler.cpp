@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataEventHandler.cpp 35722 2011-01-26 16:37:16Z vboxsync $ */
+/* $Id: UIExtraDataEventHandler.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -17,16 +17,18 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* Local includes */
+/* Qt includes: */
+#include <QMutex>
+
+/* GUI includes: */
 #include "UIExtraDataEventHandler.h"
 #include "UIMainEventListener.h"
 #include "VBoxGlobal.h"
 #include "VBoxGlobalSettings.h"
 
-/* Global includes */
-//#include <iprt/thread.h>
-//#include <iprt/stream.h>
-#include <QMutex>
+/* COM includes: */
+#include "COMEnums.h"
+#include "CEventSource.h"
 
 class UIExtraDataEventHandlerPrivate: public QObject
 {
@@ -51,7 +53,7 @@ public slots:
             /* it's a global extra data key someone wants to change */
             if (strKey.startsWith("GUI/"))
             {
-                if (strKey == VBoxDefs::GUI_RegistrationDlgWinID)
+                if (strKey == GUI_RegistrationDlgWinID)
                 {
                     if (m_fIsRegDlgOwner)
                     {
@@ -63,19 +65,8 @@ public slots:
                     return;
                 }
 
-                if (strKey == VBoxDefs::GUI_UpdateDlgWinID)
-                {
-                    if (m_fIsUpdDlgOwner)
-                    {
-                        if (!(strValue.isEmpty() ||
-                              strValue == QString("%1")
-                              .arg((qulonglong)vboxGlobal().mainWindow()->winId())))
-                            fVeto = true;
-                    }
-                    return;
-                }
 #ifdef VBOX_GUI_WITH_SYSTRAY
-                if (strKey == VBoxDefs::GUI_TrayIconWinID)
+                if (strKey == GUI_TrayIconWinID)
                 {
                     if (m_fIsTrayIconOwner)
                     {
@@ -110,7 +101,7 @@ public slots:
        {
            if (strKey.startsWith ("GUI/"))
            {
-               if (strKey == VBoxDefs::GUI_RegistrationDlgWinID)
+               if (strKey == GUI_RegistrationDlgWinID)
                {
                    if (strValue.isEmpty())
                    {
@@ -126,28 +117,12 @@ public slots:
                    else
                        emit sigCanShowRegistrationDlg(false);
                }
-               if (strKey == VBoxDefs::GUI_UpdateDlgWinID)
-               {
-                   if (strValue.isEmpty())
-                   {
-                       m_fIsUpdDlgOwner = false;
-                       emit sigCanShowUpdateDlg(true);
-                   }
-                   else if (strValue == QString("%1")
-                            .arg((qulonglong)vboxGlobal().mainWindow()->winId()))
-                   {
-                       m_fIsUpdDlgOwner = true;
-                       emit sigCanShowUpdateDlg(true);
-                   }
-                   else
-                       emit sigCanShowUpdateDlg(false);
-               }
-               if (strKey == VBoxDefs::GUI_LanguageId)
+               if (strKey == GUI_LanguageId)
                        emit sigGUILanguageChange(strValue);
 #ifdef VBOX_GUI_WITH_SYSTRAY
-               if (strKey == VBoxDefs::GUI_MainWindowCount)
+               if (strKey == GUI_MainWindowCount)
                    emit sigMainWindowCountChange(strValue.toInt());
-               if (strKey == VBoxDefs::GUI_TrayIconWinID)
+               if (strKey == GUI_TrayIconWinID)
                {
                    if (strValue.isEmpty())
                    {
@@ -163,11 +138,11 @@ public slots:
                    else
                        emit sigCanShowTrayIcon(false);
                }
-               if (strKey == VBoxDefs::GUI_TrayIconEnabled)
+               if (strKey == GUI_TrayIconEnabled)
                    emit sigTrayIconChange((strValue.toLower() == "true") ? true : false);
 #endif /* VBOX_GUI_WITH_SYSTRAY */
 #ifdef Q_WS_MAC
-               if (strKey == VBoxDefs::GUI_PresentationModeEnabled)
+               if (strKey == GUI_PresentationModeEnabled)
                {
                    /* Default to true if it is an empty value */
                    QString testStr = strValue.toLower();
@@ -188,8 +163,8 @@ public slots:
            /* Check for the currently running machine */
            if (strId == vboxGlobal().managedVMUuid())
            {
-               if (   strKey == VBoxDefs::GUI_RealtimeDockIconUpdateEnabled
-                   || strKey == VBoxDefs::GUI_RealtimeDockIconUpdateMonitor)
+               if (   strKey == GUI_RealtimeDockIconUpdateEnabled
+                   || strKey == GUI_RealtimeDockIconUpdateMonitor)
                {
                    bool f = strValue.toLower() == "false" ? false : true;
                    emit sigDockIconAppearanceChange(f);
@@ -201,7 +176,6 @@ public slots:
 
 signals:
     void sigCanShowRegistrationDlg(bool fEnabled);
-    void sigCanShowUpdateDlg(bool fEnabled);
     void sigGUILanguageChange(QString strLang);
 #ifdef VBOX_GUI_WITH_SYSTRAY
     void sigMainWindowCountChange(int count);
@@ -277,10 +251,6 @@ UIExtraDataEventHandler::UIExtraDataEventHandler()
     /* UI signals */
     connect(m_pHandler, SIGNAL(sigCanShowRegistrationDlg(bool)),
             this, SIGNAL(sigCanShowRegistrationDlg(bool)),
-            Qt::QueuedConnection);
-
-    connect(m_pHandler, SIGNAL(sigCanShowUpdateDlg(bool)),
-            this, SIGNAL(sigCanShowUpdateDlg(bool)),
             Qt::QueuedConnection);
 
     connect(m_pHandler, SIGNAL(sigGUILanguageChange(QString)),

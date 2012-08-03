@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoLog.h 38331 2011-08-05 15:29:06Z vboxsync $ */
+/* $Id: VBoxVideoLog.h 41472 2012-05-29 07:12:42Z vboxsync $ */
 
 /** @file
  * VBox Video drivers, logging helper
@@ -23,10 +23,36 @@
 # error VBOX_VIDEO_LOG_NAME should be defined!
 #endif
 
+#ifndef VBOX_VIDEO_LOG_LOGGER
+# define VBOX_VIDEO_LOG_LOGGER Log
+#endif
+
+#ifndef VBOX_VIDEO_LOGREL_LOGGER
+# define VBOX_VIDEO_LOGREL_LOGGER LogRel
+#endif
+
+#ifndef VBOX_VIDEO_LOGFLOW_LOGGER
+# define VBOX_VIDEO_LOGFLOW_LOGGER LogFlow
+#endif
+
+#ifndef VBOX_VIDEO_LOG_FN_FMT
+# define VBOX_VIDEO_LOG_FN_FMT LOG_FN_FMT
+#endif
+
+#ifndef VBOX_VIDEO_LOG_FORMATTER
+# define VBOX_VIDEO_LOG_FORMATTER(_logger, _severity, _a)                     \
+    do                                                                      \
+    {                                                                       \
+        _logger((VBOX_VIDEO_LOG_PREFIX_FMT _severity, VBOX_VIDEO_LOG_PREFIX_PARMS));  \
+        _logger(_a);                                                        \
+        _logger((VBOX_VIDEO_LOG_SUFFIX_FMT  VBOX_VIDEO_LOG_SUFFIX_PARMS));  \
+    } while (0)
+#endif
+
 /* Uncomment to show file/line info in the log */
 /*#define VBOX_VIDEO_LOG_SHOWLINEINFO*/
 
-#define VBOX_VIDEO_LOG_PREFIX_FMT VBOX_VIDEO_LOG_NAME"::"LOG_FN_FMT": "
+#define VBOX_VIDEO_LOG_PREFIX_FMT VBOX_VIDEO_LOG_NAME"::"VBOX_VIDEO_LOG_FN_FMT": "
 #define VBOX_VIDEO_LOG_PREFIX_PARMS __PRETTY_FUNCTION__
 
 #ifdef VBOX_VIDEO_LOG_SHOWLINEINFO
@@ -49,12 +75,10 @@
         _logger(_a);                                                        \
     } while (0)
 
-#define _LOGMSG(_logger, _a)                                                \
+#define _LOGMSG(_logger, _severity, _a)                                     \
     do                                                                      \
     {                                                                       \
-        _logger((VBOX_VIDEO_LOG_PREFIX_FMT, VBOX_VIDEO_LOG_PREFIX_PARMS));  \
-        _logger(_a);                                                        \
-        _logger((VBOX_VIDEO_LOG_SUFFIX_FMT  VBOX_VIDEO_LOG_SUFFIX_PARMS));  \
+        VBOX_VIDEO_LOG_FORMATTER(_logger, _severity, _a);                   \
     } while (0)
 
 /* we can not print paged strings to RT logger, do it this way */
@@ -66,40 +90,45 @@
         _logger(("\n")); \
     } while (0)
 
-#define WARN_NOBP(_a)                                                          \
-    do                                                                            \
-    {                                                                             \
-        Log((VBOX_VIDEO_LOG_PREFIX_FMT"WARNING! ", VBOX_VIDEO_LOG_PREFIX_PARMS)); \
-        Log(_a);                                                                  \
-        Log((VBOX_VIDEO_LOG_SUFFIX_FMT VBOX_VIDEO_LOG_SUFFIX_PARMS));             \
+#ifdef VBOX_WDDM_MINIPORT
+# define _WARN_LOGGER VBOX_VIDEO_LOGREL_LOGGER
+#else
+# define _WARN_LOGGER VBOX_VIDEO_LOG_LOGGER
+#endif
+
+#define WARN_NOBP(_a) _LOGMSG(VBOX_VIDEO_LOG_LOGGER, "WARNING! :", _a)
+#define WARN(_a)           \
+    do                     \
+    {                      \
+        WARN_NOBP(_a);     \
+        BP_WARN();         \
+    } while (0)
+#define ASSERT_WARN(_a, _w) do {\
+        if(!(_a)) { \
+            WARN(_w); \
+        }\
     } while (0)
 
-#define WARN(_a)                                                                  \
-    do                                                                            \
-    {                                                                             \
-        WARN_NOBP(_a);                                                         \
-        BP_WARN();                                                             \
-    } while (0)
-
-#define LOG(_a) _LOGMSG(Log, _a)
-#define LOGREL(_a) _LOGMSG(LogRel, _a)
-#define LOGF(_a) _LOGMSG(LogFlow, _a)
+#define LOG(_a) _LOGMSG(VBOX_VIDEO_LOG_LOGGER, "", _a)
+#define LOGREL(_a) _LOGMSG(VBOX_VIDEO_LOGREL_LOGGER, "", _a)
+#define LOGF(_a) _LOGMSG(VBOX_VIDEO_LOGFLOW_LOGGER, "", _a)
 #define LOGF_ENTER() LOGF(("ENTER"))
 #define LOGF_LEAVE() LOGF(("LEAVE"))
-#define LOG_EXACT(_a) _LOGMSG_EXACT(Log, _a)
-#define LOGREL_EXACT(_a) _LOGMSG_EXACT(LogRel, _a)
+#define LOG_EXACT(_a) _LOGMSG_EXACT(VBOX_VIDEO_LOG_LOGGER, _a)
+#define LOGREL_EXACT(_a) _LOGMSG_EXACT(VBOX_VIDEO_LOGREL_LOGGER, _a)
+#define LOGF_EXACT(_a) _LOGMSG_EXACT(VBOX_VIDEO_LOGFLOW_LOGGER, _a)
 /* we can not print paged strings to RT logger, do it this way */
 #define LOG_STRA(_a) do {\
-        _LOGMSG_STR(Log, _a, "c"); \
+        _LOGMSG_STR(VBOX_VIDEO_LOG_LOGGER, _a, "c"); \
     } while (0)
 #define LOG_STRW(_a) do {\
-        _LOGMSG_STR(Log, _a, "c"); \
+        _LOGMSG_STR(VBOX_VIDEO_LOG_LOGGER, _a, "c"); \
     } while (0)
 #define LOGREL_STRA(_a) do {\
-        _LOGMSG_STR(LogRel, _a, "c"); \
+        _LOGMSG_STR(VBOX_VIDEO_LOGREL_LOGGER, _a, "c"); \
     } while (0)
 #define LOGREL_STRW(_a) do {\
-        _LOGMSG_STR(LogRel, _a, "c"); \
+        _LOGMSG_STR(VBOX_VIDEO_LOGREL_LOGGER, _a, "c"); \
     } while (0)
 
 

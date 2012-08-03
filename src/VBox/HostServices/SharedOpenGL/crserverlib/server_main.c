@@ -12,6 +12,7 @@
 #include "cr_string.h"
 #include "cr_mem.h"
 #include "cr_hash.h"
+#include "cr_environment.h"
 #include "server_dispatch.h"
 #include "state/cr_texture.h"
 #include "render/renderspu.h"
@@ -27,6 +28,14 @@
 
 #ifdef VBOXCR_LOGFPS
 #include <iprt/timer.h>
+#endif
+
+#ifdef VBOX_WITH_CRHGSMI
+# include <VBox/HostServices/VBoxCrOpenGLSvc.h>
+uint8_t* g_pvVRamBase = NULL;
+uint32_t g_cbVRam = 0;
+HCRHGSMICMDCOMPLETION g_hCrHgsmiCompletion = NULL;
+PFNCRHGSMICMDCOMPLETION g_pfnCrHgsmiCompletion = NULL;
 #endif
 
 /**
@@ -46,6 +55,39 @@
 CRServer cr_server;
 
 int tearingdown = 0; /* can't be static */
+
+DECLINLINE(int32_t) crVBoxServerClientGet(uint32_t u32ClientID, CRClient **ppClient)
+{
+    CRClient *pClient = NULL;
+    int32_t i;
+
+    *ppClient = NULL;
+
+    for (i = 0; i < cr_server.numClients; i++)
+    {
+        if (cr_server.clients[i] && cr_server.clients[i]->conn
+            && cr_server.clients[i]->conn->u32ClientID==u32ClientID)
+        {
+            pClient = cr_server.clients[i];
+            break;
+        }
+    }
+    if (!pClient)
+    {
+        crWarning("client not found!");
+        return VERR_INVALID_PARAMETER;
+    }
+
+    if (!pClient->conn->vMajor)
+    {
+        crWarning("no major version specified for client!");
+        return VERR_NOT_SUPPORTED;
+    }
+
+    *ppClient = pClient;
+
+    return VINF_SUCCESS;
+}
 
 
 /**
@@ -67,10 +109,13 @@ static void DeleteBarrierCallback( void *data )
 }
 
 
-static void deleteContextCallback( void *data )
+static void deleteContextInfoCallback( void *data )
 {
-    CRContext *c = (CRContext *) data;
-    crStateDestroyContext(c);
+    CRContextInfo *c = (CRContextInfo *) data;
+    crStateDestroyContext(c->pContext);
+    if (c->CreateInfo.pszDpyName)
+        crFree(c->CreateInfo.pszDpyName);
+    crFree(c);
 }
 
 
@@ -102,10 +147,9 @@ static void crServerTearDown( void )
     cr_server.barriers = NULL;
 
     /* Free all context info */
-    crFreeHashtable(cr_server.contextTable, deleteContextCallback);
+    crFreeHashtable(cr_server.contextTable, deleteContextInfoCallback);
 
     /* Free context/window creation info */
-    crFreeHashtable(cr_server.pContextCreateInfoTable, crServerCreateInfoDeleteCB);
     crFreeHashtable(cr_server.pWindowCreateInfoTable, crServerCreateInfoDeleteCB);
 
     /* Free vertex programs */
@@ -233,8 +277,17 @@ crServerInit(int argc, char *argv[])
     }
 #endif
 
+    cr_server.bUseMultipleContexts = (crGetenv( "CR_SERVER_ENABLE_MULTIPLE_CONTEXTS" ) != NULL);
+
+    if (cr_server.bUseMultipleContexts)
+    {
+        crInfo("Info: using multiple contexts!");
+        crDebug("Debug: using multiple contexts!");
+    }
+
     cr_server.firstCallCreateContext = GL_TRUE;
     cr_server.firstCallMakeCurrent = GL_TRUE;
+    cr_server.bForceMakeCurrentOnClientSwitch = GL_FALSE;
 
     /*
      * Create default mural info and hash table.
@@ -256,9 +309,9 @@ crServerInit(int argc, char *argv[])
      * Default context
      */
     cr_server.contextTable = crAllocHashtable();
-    cr_server.DummyContext = crStateCreateContext( &cr_server.limits,
+    cr_server.MainContextInfo.pContext = crStateCreateContext( &cr_server.limits,
                                                    CR_RGB_BIT | CR_DEPTH_BIT, NULL );
-    cr_server.curClient->currentCtx = cr_server.DummyContext;
+    cr_server.curClient->currentCtxInfo = &cr_server.MainContextInfo;
 
     crServerInitDispatch();
     crStateDiffAPI( &(cr_server.head_spu->dispatch_table) );
@@ -292,6 +345,14 @@ GLboolean crVBoxServerInit(void)
     }
 #endif
 
+    cr_server.bUseMultipleContexts = (crGetenv( "CR_SERVER_ENABLE_MULTIPLE_CONTEXTS" ) != NULL);
+
+    if (cr_server.bUseMultipleContexts)
+    {
+        crInfo("Info: using multiple contexts!");
+        crDebug("Debug: using multiple contexts!");
+    }
+
     crNetInit(crServerRecv, crServerClose);
 
     cr_server.firstCallCreateContext = GL_TRUE;
@@ -299,6 +360,7 @@ GLboolean crVBoxServerInit(void)
 
     cr_server.bIsInLoadingState = GL_FALSE;
     cr_server.bIsInSavingState  = GL_FALSE;
+    cr_server.bForceMakeCurrentOnClientSwitch = GL_FALSE;
 
     cr_server.pCleanupClient = NULL;
 
@@ -325,9 +387,9 @@ GLboolean crVBoxServerInit(void)
      * Default context
      */
     cr_server.contextTable = crAllocHashtable();
-    cr_server.DummyContext = crStateCreateContext( &cr_server.limits,
+    cr_server.MainContextInfo.pContext = crStateCreateContext( &cr_server.limits,
                                                    CR_RGB_BIT | CR_DEPTH_BIT, NULL );
-    cr_server.pContextCreateInfoTable = crAllocHashtable();
+//    cr_server.pContextCreateInfoTable = crAllocHashtable();
     cr_server.pWindowCreateInfoTable = crAllocHashtable();
 
     crServerSetVBoxConfigurationHGCM();
@@ -360,7 +422,7 @@ int32_t crVBoxServerAddClient(uint32_t u32ClientID)
     crDebug("crServer: AddClient u32ClientID=%d", u32ClientID);
 
     newClient->spu_id = 0;
-    newClient->currentCtx = cr_server.DummyContext;
+    newClient->currentCtxInfo = &cr_server.MainContextInfo;
     newClient->currentContextNumber = -1;
     newClient->conn = crNetAcceptClient(cr_server.protocol, NULL,
                                         cr_server.tcpip_port,
@@ -397,6 +459,10 @@ void crVBoxServerRemoveClient(uint32_t u32ClientID)
         return;
     }
 
+#ifdef VBOX_WITH_CRHGSMI
+    CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+#endif
+
     /* Disconnect the client */
     pClient->conn->Disconnect(pClient->conn);
 
@@ -404,43 +470,34 @@ void crVBoxServerRemoveClient(uint32_t u32ClientID)
     crServerDeleteClient(pClient);
 }
 
-int32_t crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t cbBuffer)
+static int32_t crVBoxServerInternalClientWriteRead(CRClient *pClient)
 {
-    CRClient *pClient = NULL;
-    int32_t i;
 #ifdef VBOXCR_LOGFPS
     uint64_t tstart, tend;
 #endif
 
     /*crDebug("=>crServer: ClientWrite u32ClientID=%d", u32ClientID);*/
 
-    for (i = 0; i < cr_server.numClients; i++)
-    {
-        if (cr_server.clients[i] && cr_server.clients[i]->conn
-            && cr_server.clients[i]->conn->u32ClientID==u32ClientID)
-        {
-            pClient = cr_server.clients[i];
-            break;
-        }
-    }
-    if (!pClient) return VERR_INVALID_PARAMETER;
-
-    if (!pClient->conn->vMajor) return VERR_NOT_SUPPORTED;
 
 #ifdef VBOXCR_LOGFPS
     tstart = RTTimeNanoTS();
 #endif
 
-    CRASSERT(pBuffer);
+    /* This should be setup already */
+    CRASSERT(pClient->conn->pBuffer);
+    CRASSERT(pClient->conn->cbBuffer);
+#ifdef VBOX_WITH_CRHGSMI
+    CRVBOXHGSMI_CMDDATA_ASSERT_CONSISTENT(&pClient->conn->CmdData);
+#endif
 
-    /* This should never fire unless we start to multithread */
-    CRASSERT(pClient->conn->pBuffer==NULL && pClient->conn->cbBuffer==0);
-
-    /* Check if there's a blocker in queue and it's not this client */
-    if (cr_server.run_queue->client != pClient
-        && crServerClientInBeginEnd(cr_server.run_queue->client))
+    if (
+#ifdef VBOX_WITH_CRHGSMI
+         !CRVBOXHGSMI_CMDDATA_IS_SET(&pClient->conn->CmdData) &&
+#endif
+         cr_server.run_queue->client != pClient
+         && crServerClientInBeginEnd(cr_server.run_queue->client))
     {
-        crDebug("crServer: client %d blocked, allow_redir_ptr = 0", u32ClientID);
+        crDebug("crServer: client %d blocked, allow_redir_ptr = 0", pClient->conn->u32ClientID);
         pClient->conn->allow_redir_ptr = 0;
     }
     else
@@ -448,11 +505,9 @@ int32_t crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t
         pClient->conn->allow_redir_ptr = 1;
     }
 
-    pClient->conn->pBuffer = pBuffer;
-    pClient->conn->cbBuffer = cbBuffer;
-
     crNetRecv();
     CRASSERT(pClient->conn->pBuffer==NULL && pClient->conn->cbBuffer==0);
+    CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
 
     crServerServiceClients();
 
@@ -485,7 +540,9 @@ int32_t crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t
 
     crStateResetCurrentPointers(&cr_server.current);
 
+#ifndef VBOX_WITH_CRHGSMI
     CRASSERT(!pClient->conn->allow_redir_ptr || crNetNumMessages(pClient->conn)==0);
+#endif
 
 #ifdef VBOXCR_LOGFPS
     tend = RTTimeNanoTS();
@@ -496,30 +553,36 @@ int32_t crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t
     return VINF_SUCCESS;
 }
 
-int32_t crVBoxServerClientRead(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t *pcbBuffer)
+
+int32_t crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t cbBuffer)
 {
     CRClient *pClient=NULL;
-    int32_t i;
+    int32_t rc = crVBoxServerClientGet(u32ClientID, &pClient);
 
-    //crDebug("crServer: [%x] ClientRead u32ClientID=%d", crThreadID(), u32ClientID);
+    if (RT_FAILURE(rc))
+        return rc;
 
-    for (i = 0; i < cr_server.numClients; i++)
-    {
-        if (cr_server.clients[i] && cr_server.clients[i]->conn
-            && cr_server.clients[i]->conn->u32ClientID==u32ClientID)
-        {
-            pClient = cr_server.clients[i];
-            break;
-        }
-    }
-    if (!pClient) return VERR_INVALID_PARAMETER;    
 
-    if (!pClient->conn->vMajor) return VERR_NOT_SUPPORTED;
+    CRASSERT(pBuffer);
 
+    /* This should never fire unless we start to multithread */
+    CRASSERT(pClient->conn->pBuffer==NULL && pClient->conn->cbBuffer==0);
+
+    pClient->conn->pBuffer = pBuffer;
+    pClient->conn->cbBuffer = cbBuffer;
+#ifdef VBOX_WITH_CRHGSMI
+    CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+#endif
+
+    return crVBoxServerInternalClientWriteRead(pClient);
+}
+
+int32_t crVBoxServerInternalClientRead(CRClient *pClient, uint8_t *pBuffer, uint32_t *pcbBuffer)
+{
     if (pClient->conn->cbHostBuffer > *pcbBuffer)
     {
         crDebug("crServer: [%lx] ClientRead u32ClientID=%d FAIL, host buffer too small %d of %d",
-                  crThreadID(), u32ClientID, *pcbBuffer, pClient->conn->cbHostBuffer);
+                  crThreadID(), pClient->conn->u32ClientID, *pcbBuffer, pClient->conn->cbHostBuffer);
 
         /* Return the size of needed buffer */
         *pcbBuffer = pClient->conn->cbHostBuffer;
@@ -538,6 +601,21 @@ int32_t crVBoxServerClientRead(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t 
     }
 
     return VINF_SUCCESS;
+}
+
+int32_t crVBoxServerClientRead(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t *pcbBuffer)
+{
+    CRClient *pClient=NULL;
+    int32_t rc = crVBoxServerClientGet(u32ClientID, &pClient);
+
+    if (RT_FAILURE(rc))
+        return rc;
+
+#ifdef VBOX_WITH_CRHGSMI
+    CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+#endif
+
+    return crVBoxServerInternalClientRead(pClient, pBuffer, pcbBuffer);
 }
 
 int32_t crVBoxServerClientSetVersion(uint32_t u32ClientID, uint32_t vMajor, uint32_t vMinor)
@@ -628,7 +706,7 @@ static void crVBoxServerSaveMuralCB(unsigned long key, void *data1, void *data2)
 /* @todo add hashtable walker with result info and intermediate abort */
 static void crVBoxServerSaveCreateInfoCB(unsigned long key, void *data1, void *data2)
 {
-    CRCreateInfo_t *pCreateInfo = (CRCreateInfo_t *) data1;
+    CRCreateInfo_t *pCreateInfo = (CRCreateInfo_t *)data1;
     PSSMHANDLE pSSM = (PSSMHANDLE) data2;
     int32_t rc;
 
@@ -647,6 +725,15 @@ static void crVBoxServerSaveCreateInfoCB(unsigned long key, void *data1, void *d
     }
 }
 
+static void crVBoxServerSaveCreateInfoFromCtxInfoCB(unsigned long key, void *data1, void *data2)
+{
+    CRContextInfo *pContextInfo = (CRContextInfo *)data1;
+    CRCreateInfo_t CreateInfo = pContextInfo->CreateInfo;
+    /* saved state contains internal id */
+    CreateInfo.externalID = pContextInfo->pContext->id;
+    crVBoxServerSaveCreateInfoCB(key, &CreateInfo, data2);
+}
+
 static void crVBoxServerSyncTextureCB(unsigned long key, void *data1, void *data2)
 {
     CRTextureObj *pTexture = (CRTextureObj *) data1;
@@ -658,7 +745,8 @@ static void crVBoxServerSyncTextureCB(unsigned long key, void *data1, void *data
 
 static void crVBoxServerSaveContextStateCB(unsigned long key, void *data1, void *data2)
 {
-    CRContext *pContext = (CRContext *) data1;
+    CRContextInfo *pContextInfo = (CRContextInfo *) data1;
+    CRContext *pContext = pContextInfo->pContext;
     PSSMHANDLE pSSM = (PSSMHANDLE) data2;
     int32_t rc;
 
@@ -674,7 +762,7 @@ static void crVBoxServerSaveContextStateCB(unsigned long key, void *data1, void 
     if (cr_server.curClient)
     {
         unsigned long id;
-        if (!crHashtableGetDataKey(cr_server.contextTable, pContext, &id))
+        if (!crHashtableGetDataKey(cr_server.contextTable, pContextInfo, &id))
         {
             crWarning("No client id for server ctx %d", pContext->id);
         }
@@ -728,10 +816,10 @@ DECLEXPORT(int32_t) crVBoxServerSaveState(PSSMHANDLE pSSM)
     }
 
     /* Save rendering contexts creation info */
-    ui32 = crHashtableNumElements(cr_server.pContextCreateInfoTable);
+    ui32 = crHashtableNumElements(cr_server.contextTable);
     rc = SSMR3PutU32(pSSM, (uint32_t) ui32);
     AssertRCReturn(rc, rc);
-    crHashtableWalk(cr_server.pContextCreateInfoTable, crVBoxServerSaveCreateInfoCB, pSSM);
+    crHashtableWalk(cr_server.contextTable, crVBoxServerSaveCreateInfoFromCtxInfoCB, pSSM);
 
 #ifdef CR_STATE_NO_TEXTURE_IMAGE_STORE
     /* Save current win and ctx IDs, as we'd rebind contexts when saving textures */
@@ -797,9 +885,9 @@ DECLEXPORT(int32_t) crVBoxServerSaveState(PSSMHANDLE pSSM)
             rc = SSMR3PutMem(pSSM, pClient, sizeof(*pClient));
             AssertRCReturn(rc, rc);
 
-            if (pClient->currentCtx && pClient->currentContextNumber>=0)
+            if (pClient->currentCtxInfo && pClient->currentCtxInfo->pContext && pClient->currentContextNumber>=0)
             {
-                b = crHashtableGetDataKey(cr_server.contextTable, pClient->currentCtx, &key);
+                b = crHashtableGetDataKey(cr_server.contextTable, pClient->currentCtxInfo, &key);
                 CRASSERT(b);
                 rc = SSMR3PutMem(pSSM, &key, sizeof(key));
                 AssertRCReturn(rc, rc);
@@ -818,6 +906,14 @@ DECLEXPORT(int32_t) crVBoxServerSaveState(PSSMHANDLE pSSM)
     cr_server.bIsInSavingState = GL_FALSE;
 
     return VINF_SUCCESS;
+}
+
+static DECLCALLBACK(CRContext*) crVBoxServerGetContextCB(void* pvData)
+{
+    CRContextInfo* pContextInfo = (CRContextInfo*)pvData;
+    CRASSERT(pContextInfo);
+    CRASSERT(pContextInfo->pContext);
+    return pContextInfo->pContext;
 }
 
 DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
@@ -844,7 +940,7 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
         return VINF_SUCCESS;
     }
 
-    if (version!=SHCROGL_SSM_VERSION)
+    if (version < SHCROGL_SSM_VERSION_BEFORE_CTXUSAGE_BITS)
     {
         return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
     }
@@ -857,6 +953,7 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
         CRCreateInfo_t createInfo;
         char psz[200];
         GLint ctxID;
+        CRContextInfo* pContextInfo;
         CRContext* pContext;
 
         rc = SSMR3GetMem(pSSM, &key, sizeof(key));
@@ -871,26 +968,31 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
             createInfo.pszDpyName = psz;
         }
 
-        ctxID = crServerDispatchCreateContextEx(createInfo.pszDpyName, createInfo.visualBits, 0, key, createInfo.internalID);
+        ctxID = crServerDispatchCreateContextEx(createInfo.pszDpyName, createInfo.visualBits, 0, key, createInfo.externalID /* <-saved state stores internal id here*/);
         CRASSERT((int64_t)ctxID == (int64_t)key);
 
-        pContext = (CRContext*) crHashtableSearch(cr_server.contextTable, key);
-        CRASSERT(pContext);
+        pContextInfo = (CRContextInfo*) crHashtableSearch(cr_server.contextTable, key);
+        CRASSERT(pContextInfo);
+        CRASSERT(pContextInfo->pContext);
+        pContext = pContextInfo->pContext;
         pContext->shared->id=-1;
     }
 
     /* Restore context state data */
     for (ui=0; ui<uiNumElems; ++ui)
     {
+        CRContextInfo* pContextInfo;
         CRContext *pContext;
 
         rc = SSMR3GetMem(pSSM, &key, sizeof(key));
         AssertRCReturn(rc, rc);
 
-        pContext = (CRContext*) crHashtableSearch(cr_server.contextTable, key);
-        CRASSERT(pContext);
+        pContextInfo = (CRContextInfo*) crHashtableSearch(cr_server.contextTable, key);
+        CRASSERT(pContextInfo);
+        CRASSERT(pContextInfo->pContext);
+        pContext = pContextInfo->pContext;
 
-        rc = crStateLoadContext(pContext, cr_server.contextTable, pSSM);
+        rc = crStateLoadContext(pContext, cr_server.contextTable, crVBoxServerGetContextCB, pSSM, version);
         AssertRCReturn(rc, rc);
     }
 
@@ -931,6 +1033,9 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
         AssertRCReturn(rc, rc);
         rc = SSMR3GetMem(pSSM, &muralInfo, sizeof(muralInfo));
         AssertRCReturn(rc, rc);
+
+        if (version <= SHCROGL_SSM_VERSION_BEFORE_FRONT_DRAW_TRACKING)
+            muralInfo.bFbDraw = GL_TRUE;
 
         if (muralInfo.pVisibleRects)
         {
@@ -998,18 +1103,19 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
             *pClient = client;
 
             pClient->currentContextNumber = -1;
-            pClient->currentCtx = cr_server.DummyContext;
+            pClient->currentCtxInfo = &cr_server.MainContextInfo;
             pClient->currentMural = NULL;
             pClient->currentWindow = -1;
 
             cr_server.curClient = pClient;
 
-            if (client.currentCtx && client.currentContextNumber>=0)
+            if (client.currentCtxInfo && client.currentContextNumber>=0)
             {
                 rc = SSMR3GetMem(pSSM, &ctxID, sizeof(ctxID));
                 AssertRCReturn(rc, rc);
-                client.currentCtx = (CRContext*) crHashtableSearch(cr_server.contextTable, ctxID);
-                CRASSERT(client.currentCtx);
+                client.currentCtxInfo = (CRContextInfo*) crHashtableSearch(cr_server.contextTable, ctxID);
+                CRASSERT(client.currentCtxInfo);
+                CRASSERT(client.currentCtxInfo->pContext);
                 //pClient->currentCtx = client.currentCtx;
                 //pClient->currentContextNumber = ctxID;
             }
@@ -1029,24 +1135,24 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
 
             if (0)
             {
-            CRContext *tmpCtx;
-            CRCreateInfo_t *createInfo;
+//            CRContext *tmpCtx;
+//            CRCreateInfo_t *createInfo;
             GLfloat one[4] = { 1, 1, 1, 1 };
             GLfloat amb[4] = { 0.4f, 0.4f, 0.4f, 1.0f };
 
             crServerDispatchMakeCurrent(winID, 0, ctxID);
 
-            crHashtableWalk(client.currentCtx->shared->textureTable, crVBoxServerSyncTextureCB, client.currentCtx);
+            crHashtableWalk(client.currentCtxInfo->pContext->shared->textureTable, crVBoxServerSyncTextureCB, client.currentCtxInfo->pContext);
 
-            crStateTextureObjectDiff(client.currentCtx, NULL, NULL, &client.currentCtx->texture.base1D, GL_TRUE);
-            crStateTextureObjectDiff(client.currentCtx, NULL, NULL, &client.currentCtx->texture.base2D, GL_TRUE);
-            crStateTextureObjectDiff(client.currentCtx, NULL, NULL, &client.currentCtx->texture.base3D, GL_TRUE);
+            crStateTextureObjectDiff(client.currentCtxInfo->pContext, NULL, NULL, &client.currentCtxInfo->pContext->texture.base1D, GL_TRUE);
+            crStateTextureObjectDiff(client.currentCtxInfo->pContext, NULL, NULL, &client.currentCtxInfo->pContext->texture.base2D, GL_TRUE);
+            crStateTextureObjectDiff(client.currentCtxInfo->pContext, NULL, NULL, &client.currentCtxInfo->pContext->texture.base3D, GL_TRUE);
 #ifdef CR_ARB_texture_cube_map
-            crStateTextureObjectDiff(client.currentCtx, NULL, NULL, &client.currentCtx->texture.baseCubeMap, GL_TRUE);
+            crStateTextureObjectDiff(client.currentCtxInfo->pContext, NULL, NULL, &client.currentCtxInfo->pContext->texture.baseCubeMap, GL_TRUE);
 #endif
 #ifdef CR_NV_texture_rectangle
             //@todo this doesn't work as expected
-            //crStateTextureObjectDiff(client.currentCtx, NULL, NULL, &client.currentCtx->texture.baseRect, GL_TRUE);
+            //crStateTextureObjectDiff(client.currentCtxInfo->pContext, NULL, NULL, &client.currentCtxInfo->pContext->texture.baseRect, GL_TRUE);
 #endif
             /*cr_server.head_spu->dispatch_table.Materialfv(GL_FRONT_AND_BACK, GL_AMBIENT, amb);
             cr_server.head_spu->dispatch_table.LightModelfv(GL_LIGHT_MODEL_AMBIENT, amb);
@@ -1083,7 +1189,7 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
                 CRASSERT(createInfo);
                 tmpCtx = crStateCreateContext(NULL, createInfo->visualBits, NULL);
                 CRASSERT(tmpCtx);
-                crStateDiffContext(tmpCtx, client.currentCtx);
+                crStateDiffContext(tmpCtx, client.currentCtxInfo->pContext);
                 crStateDestroyContext(tmpCtx);*/
             }
         }
@@ -1156,6 +1262,8 @@ DECLEXPORT(int32_t) crVBoxServerSetScreenCount(int sCount)
 
 DECLEXPORT(int32_t) crVBoxServerUnmapScreen(int sIndex)
 {
+    crDebug("crVBoxServerUnmapScreen(%i)", sIndex);
+
     if (sIndex<0 || sIndex>=cr_server.screenCount)
         return VERR_INVALID_PARAMETER;
 
@@ -1173,7 +1281,7 @@ DECLEXPORT(int32_t) crVBoxServerUnmapScreen(int sIndex)
 
 DECLEXPORT(int32_t) crVBoxServerMapScreen(int sIndex, int32_t x, int32_t y, uint32_t w, uint32_t h, uint64_t winID)
 {
-    crDebug("crVBoxServerMapScreen(%i) [%i,%i:%u,%u]", sIndex, x, y, w, h);
+    crDebug("crVBoxServerMapScreen(%i) [%i,%i:%u,%u %x]", sIndex, x, y, w, h, winID);
 
     if (sIndex<0 || sIndex>=cr_server.screenCount)
         return VERR_INVALID_PARAMETER;
@@ -1204,12 +1312,13 @@ DECLEXPORT(int32_t) crVBoxServerMapScreen(int sIndex, int32_t x, int32_t y, uint
         for (i = 0; i < cr_server.numClients; i++)
         {
             cr_server.curClient = cr_server.clients[i];
-            if (cr_server.curClient->currentCtx
-                && (cr_server.curClient->currentCtx->buffer.pFrontImg || cr_server.curClient->currentCtx->buffer.pBackImg)
+            if (cr_server.curClient->currentCtxInfo
+                && cr_server.curClient->currentCtxInfo->pContext
+                && (cr_server.curClient->currentCtxInfo->pContext->buffer.pFrontImg || cr_server.curClient->currentCtxInfo->pContext->buffer.pBackImg)
                 && cr_server.curClient->currentMural
                 && cr_server.curClient->currentMural->screenId == sIndex
-                && cr_server.curClient->currentCtx->buffer.storedHeight == h
-                && cr_server.curClient->currentCtx->buffer.storedWidth == w)
+                && cr_server.curClient->currentCtxInfo->pContext->buffer.storedHeight == h
+                && cr_server.curClient->currentCtxInfo->pContext->buffer.storedWidth == w)
             {
                 int clientWindow = cr_server.curClient->currentWindow;
                 int clientContext = cr_server.curClient->currentContextNumber;
@@ -1219,7 +1328,7 @@ DECLEXPORT(int32_t) crVBoxServerMapScreen(int sIndex, int32_t x, int32_t y, uint
                     crServerDispatchMakeCurrent(clientWindow, 0, clientContext);
                 }
 
-                crStateApplyFBImage(cr_server.curClient->currentCtx);
+                crStateApplyFBImage(cr_server.curClient->currentCtxInfo->pContext);
             }
         }
         cr_server.curClient = NULL;
@@ -1278,3 +1387,419 @@ DECLEXPORT(int32_t) crVBoxServerOutputRedirectSet(const CROutputRedirect *pCallb
 
     return VINF_SUCCESS;
 }
+
+static void crVBoxServerUpdateScreenViewportCB(unsigned long key, void *data1, void *data2)
+{
+    CRMuralInfo *mural = (CRMuralInfo*) data1;
+    int *sIndex = (int*) data2;
+
+    if (mural->screenId != *sIndex)
+        return;
+
+    if (!mural->width || !mural->height)
+        return;
+
+    crServerCheckMuralGeometry(mural);
+}
+
+
+DECLEXPORT(int32_t) crVBoxServerSetScreenViewport(int sIndex, int32_t x, int32_t y, uint32_t w, uint32_t h)
+{
+    CRScreenViewportInfo *pVieport;
+    GLboolean fPosChanged, fSizeChanged;
+
+    crDebug("crVBoxServerSetScreenViewport(%i)", sIndex);
+
+    if (sIndex<0 || sIndex>=cr_server.screenCount)
+    {
+        crWarning("crVBoxServerSetScreenViewport: invalid screen id %d", sIndex);
+        return VERR_INVALID_PARAMETER;
+    }
+
+    pVieport = &cr_server.screenVieport[sIndex];
+    fPosChanged = (pVieport->x != x || pVieport->y != y);
+    fSizeChanged = (pVieport->w != w || pVieport->h != h);
+
+    if (!fPosChanged && !fSizeChanged)
+    {
+        crDebug("crVBoxServerSetScreenViewport: no changes");
+        return VINF_SUCCESS;
+    }
+
+    if (fPosChanged)
+    {
+        pVieport->x = x;
+        pVieport->y = y;
+
+        crHashtableWalk(cr_server.muralTable, crVBoxServerUpdateScreenViewportCB, &sIndex);
+    }
+
+    if (fSizeChanged)
+    {
+        pVieport->w = w;
+        pVieport->h = h;
+
+        /* no need to do anything here actually */
+    }
+    return VINF_SUCCESS;
+}
+
+
+#ifdef VBOX_WITH_CRHGSMI
+/* We moved all CrHgsmi command processing to crserverlib to keep the logic of dealing with CrHgsmi commands in one place.
+ *
+ * For now we need the notion of CrHgdmi commands in the crserver_lib to be able to complete it asynchronously once it is really processed.
+ * This help avoiding the "blocked-client" issues. The client is blocked if another client is doing begin-end stuff.
+ * For now we eliminated polling that could occur on block, which caused a higher-priority thread (in guest) polling for the blocked command complition
+ * to block the lower-priority thread trying to complete the blocking command.
+ * And removed extra memcpy done on blocked command arrival.
+ *
+ * In the future we will extend CrHgsmi functionality to maintain texture data directly in CrHgsmi allocation to avoid extra memcpy-ing with PBO,
+ * implement command completion and stuff necessary for GPU scheduling to work properly for WDDM Windows guests, etc.
+ *
+ * NOTE: it is ALWAYS responsibility of the crVBoxServerCrHgsmiCmd to complete the command!
+ * */
+int32_t crVBoxServerCrHgsmiCmd(struct VBOXVDMACMD_CHROMIUM_CMD *pCmd, uint32_t cbCmd)
+{
+    int32_t rc;
+    uint32_t cBuffers = pCmd->cBuffers;
+    uint32_t cParams;
+    uint32_t cbHdr;
+    CRVBOXHGSMIHDR *pHdr;
+    uint32_t u32Function;
+    uint32_t u32ClientID;
+    CRClient *pClient;
+
+    if (!g_pvVRamBase)
+    {
+        crWarning("g_pvVRamBase is not initialized");
+        crServerCrHgsmiCmdComplete(pCmd, VERR_INVALID_STATE);
+        return VINF_SUCCESS;
+    }
+
+    if (!cBuffers)
+    {
+        crWarning("zero buffers passed in!");
+        crServerCrHgsmiCmdComplete(pCmd, VERR_INVALID_PARAMETER);
+        return VINF_SUCCESS;
+    }
+
+    cParams = cBuffers-1;
+
+    cbHdr = pCmd->aBuffers[0].cbBuffer;
+    pHdr = VBOXCRHGSMI_PTR_SAFE(pCmd->aBuffers[0].offBuffer, cbHdr, CRVBOXHGSMIHDR);
+    if (!pHdr)
+    {
+        crWarning("invalid header buffer!");
+        crServerCrHgsmiCmdComplete(pCmd, VERR_INVALID_PARAMETER);
+        return VINF_SUCCESS;
+    }
+
+    if (cbHdr < sizeof (*pHdr))
+    {
+        crWarning("invalid header buffer size!");
+        crServerCrHgsmiCmdComplete(pCmd, VERR_INVALID_PARAMETER);
+        return VINF_SUCCESS;
+    }
+
+    u32Function = pHdr->u32Function;
+    u32ClientID = pHdr->u32ClientID;
+
+    switch (u32Function)
+    {
+        case SHCRGL_GUEST_FN_WRITE:
+        {
+            crDebug(("svcCall: SHCRGL_GUEST_FN_WRITE\n"));
+
+            /* @todo: Verify  */
+            if (cParams == 1)
+            {
+                CRVBOXHGSMIWRITE* pFnCmd = (CRVBOXHGSMIWRITE*)pHdr;
+                VBOXVDMACMD_CHROMIUM_BUFFER *pBuf = &pCmd->aBuffers[1];
+                /* Fetch parameters. */
+                uint32_t cbBuffer = pBuf->cbBuffer;
+                uint8_t *pBuffer  = VBOXCRHGSMI_PTR_SAFE(pBuf->offBuffer, cbBuffer, uint8_t);
+
+                if (cbHdr < sizeof (*pFnCmd))
+                {
+                    crWarning("invalid write cmd buffer size!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+                CRASSERT(cbBuffer);
+                if (!pBuffer)
+                {
+                    crWarning("invalid buffer data received from guest!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+                rc = crVBoxServerClientGet(u32ClientID, &pClient);
+                if (RT_FAILURE(rc))
+                {
+                    break;
+                }
+
+                /* This should never fire unless we start to multithread */
+                CRASSERT(pClient->conn->pBuffer==NULL && pClient->conn->cbBuffer==0);
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+
+                pClient->conn->pBuffer = pBuffer;
+                pClient->conn->cbBuffer = cbBuffer;
+                CRVBOXHGSMI_CMDDATA_SET(&pClient->conn->CmdData, pCmd, pHdr);
+                rc = crVBoxServerInternalClientWriteRead(pClient);
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+                return rc;
+            }
+            else
+            {
+                crWarning("invalid number of args");
+                rc = VERR_INVALID_PARAMETER;
+                break;
+            }
+            break;
+        }
+
+        case SHCRGL_GUEST_FN_INJECT:
+        {
+            crDebug(("svcCall: SHCRGL_GUEST_FN_INJECT\n"));
+
+            /* @todo: Verify  */
+            if (cParams == 1)
+            {
+                CRVBOXHGSMIINJECT *pFnCmd = (CRVBOXHGSMIINJECT*)pHdr;
+                /* Fetch parameters. */
+                uint32_t u32InjectClientID = pFnCmd->u32ClientID;
+                VBOXVDMACMD_CHROMIUM_BUFFER *pBuf = &pCmd->aBuffers[1];
+                uint32_t cbBuffer = pBuf->cbBuffer;
+                uint8_t *pBuffer  = VBOXCRHGSMI_PTR_SAFE(pBuf->offBuffer, cbBuffer, uint8_t);
+
+                if (cbHdr < sizeof (*pFnCmd))
+                {
+                    crWarning("invalid inject cmd buffer size!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+                CRASSERT(cbBuffer);
+                if (!pBuffer)
+                {
+                    crWarning("invalid buffer data received from guest!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+                rc = crVBoxServerClientGet(u32InjectClientID, &pClient);
+                if (RT_FAILURE(rc))
+                {
+                    break;
+                }
+
+                /* This should never fire unless we start to multithread */
+                CRASSERT(pClient->conn->pBuffer==NULL && pClient->conn->cbBuffer==0);
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+
+                pClient->conn->pBuffer = pBuffer;
+                pClient->conn->cbBuffer = cbBuffer;
+                CRVBOXHGSMI_CMDDATA_SET(&pClient->conn->CmdData, pCmd, pHdr);
+                rc = crVBoxServerInternalClientWriteRead(pClient);
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+                return rc;
+            }
+
+            crWarning("invalid number of args");
+            rc = VERR_INVALID_PARAMETER;
+            break;
+        }
+
+        case SHCRGL_GUEST_FN_READ:
+        {
+            crDebug(("svcCall: SHCRGL_GUEST_FN_READ\n"));
+
+            /* @todo: Verify  */
+            if (cParams == 1)
+            {
+                CRVBOXHGSMIREAD *pFnCmd = (CRVBOXHGSMIREAD*)pHdr;
+                VBOXVDMACMD_CHROMIUM_BUFFER *pBuf = &pCmd->aBuffers[1];
+                /* Fetch parameters. */
+                uint32_t cbBuffer = pBuf->cbBuffer;
+                uint8_t *pBuffer  = VBOXCRHGSMI_PTR_SAFE(pBuf->offBuffer, cbBuffer, uint8_t);
+
+                if (cbHdr < sizeof (*pFnCmd))
+                {
+                    crWarning("invalid read cmd buffer size!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+
+                if (!pBuffer)
+                {
+                    crWarning("invalid buffer data received from guest!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+                rc = crVBoxServerClientGet(u32ClientID, &pClient);
+                if (RT_FAILURE(rc))
+                {
+                    break;
+                }
+
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+
+                rc = crVBoxServerInternalClientRead(pClient, pBuffer, &cbBuffer);
+
+                /* Return the required buffer size always */
+                pFnCmd->cbBuffer = cbBuffer;
+
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+
+                /* the read command is never pended, complete it right away */
+                pHdr->result = rc;
+                crServerCrHgsmiCmdComplete(pCmd, VINF_SUCCESS);
+                return VINF_SUCCESS;
+            }
+
+            crWarning("invalid number of args");
+            rc = VERR_INVALID_PARAMETER;
+            break;
+        }
+
+        case SHCRGL_GUEST_FN_WRITE_READ:
+        {
+            crDebug(("svcCall: SHCRGL_GUEST_FN_WRITE_READ\n"));
+
+            /* @todo: Verify  */
+            if (cParams == 2)
+            {
+                CRVBOXHGSMIWRITEREAD *pFnCmd = (CRVBOXHGSMIWRITEREAD*)pHdr;
+                VBOXVDMACMD_CHROMIUM_BUFFER *pBuf = &pCmd->aBuffers[1];
+                VBOXVDMACMD_CHROMIUM_BUFFER *pWbBuf = &pCmd->aBuffers[2];
+
+                /* Fetch parameters. */
+                uint32_t cbBuffer = pBuf->cbBuffer;
+                uint8_t *pBuffer  = VBOXCRHGSMI_PTR_SAFE(pBuf->offBuffer, cbBuffer, uint8_t);
+
+                uint32_t cbWriteback = pWbBuf->cbBuffer;
+                char *pWriteback  = VBOXCRHGSMI_PTR_SAFE(pWbBuf->offBuffer, cbWriteback, char);
+
+                if (cbHdr < sizeof (*pFnCmd))
+                {
+                    crWarning("invalid write_read cmd buffer size!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+
+                CRASSERT(cbBuffer);
+                if (!pBuffer)
+                {
+                    crWarning("invalid write buffer data received from guest!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+
+                CRASSERT(cbWriteback);
+                if (!pWriteback)
+                {
+                    crWarning("invalid writeback buffer data received from guest!");
+                    rc = VERR_INVALID_PARAMETER;
+                    break;
+                }
+                rc = crVBoxServerClientGet(u32ClientID, &pClient);
+                if (RT_FAILURE(rc))
+                {
+                    pHdr->result = rc;
+                    crServerCrHgsmiCmdComplete(pCmd, VINF_SUCCESS);
+                    return rc;
+                }
+
+                /* This should never fire unless we start to multithread */
+                CRASSERT(pClient->conn->pBuffer==NULL && pClient->conn->cbBuffer==0);
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+
+                pClient->conn->pBuffer = pBuffer;
+                pClient->conn->cbBuffer = cbBuffer;
+                CRVBOXHGSMI_CMDDATA_SETWB(&pClient->conn->CmdData, pCmd, pHdr, pWriteback, cbWriteback, &pFnCmd->cbWriteback);
+                rc = crVBoxServerInternalClientWriteRead(pClient);
+                CRVBOXHGSMI_CMDDATA_ASSERT_CLEANED(&pClient->conn->CmdData);
+                return rc;
+            }
+
+            crWarning("invalid number of args");
+            rc = VERR_INVALID_PARAMETER;
+            break;
+        }
+
+        case SHCRGL_GUEST_FN_SET_VERSION:
+        {
+            crWarning("invalid function");
+            rc = VERR_NOT_IMPLEMENTED;
+            break;
+        }
+
+        case SHCRGL_GUEST_FN_SET_PID:
+        {
+            crWarning("invalid function");
+            rc = VERR_NOT_IMPLEMENTED;
+            break;
+        }
+
+        default:
+        {
+            crWarning("invalid function");
+            rc = VERR_NOT_IMPLEMENTED;
+            break;
+        }
+
+    }
+
+    /* we can be on fail only here */
+    CRASSERT(RT_FAILURE(rc));
+    pHdr->result = rc;
+    crServerCrHgsmiCmdComplete(pCmd, VINF_SUCCESS);
+    return rc;
+}
+
+int32_t crVBoxServerCrHgsmiCtl(struct VBOXVDMACMD_CHROMIUM_CTL *pCtl, uint32_t cbCtl)
+{
+    int rc = VINF_SUCCESS;
+
+    switch (pCtl->enmType)
+    {
+        case VBOXVDMACMD_CHROMIUM_CTL_TYPE_CRHGSMI_SETUP:
+        {
+            PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP pSetup = (PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP)pCtl;
+            g_pvVRamBase = (uint8_t*)pSetup->pvVRamBase;
+            g_cbVRam = pSetup->cbVRam;
+            rc = VINF_SUCCESS;
+            break;
+        }
+        case VBOXVDMACMD_CHROMIUM_CTL_TYPE_SAVESTATE_BEGIN:
+        case VBOXVDMACMD_CHROMIUM_CTL_TYPE_SAVESTATE_END:
+            rc = VINF_SUCCESS;
+            break;
+        case VBOXVDMACMD_CHROMIUM_CTL_TYPE_CRHGSMI_SETUP_COMPLETION:
+        {
+            PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP_COMPLETION pSetup = (PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP_COMPLETION)pCtl;
+            g_hCrHgsmiCompletion = pSetup->hCompletion;
+            g_pfnCrHgsmiCompletion = pSetup->pfnCompletion;
+            rc = VINF_SUCCESS;
+            break;
+        }
+        default:
+            AssertMsgFailed(("invalid param %d", pCtl->enmType));
+            rc = VERR_INVALID_PARAMETER;
+    }
+
+    /* NOTE: Control commands can NEVER be pended here, this is why its a task of a caller (Main)
+     * to complete them accordingly.
+     * This approach allows using host->host and host->guest commands in the same way here
+     * making the command completion to be the responsibility of the command originator.
+     * E.g. ctl commands can be both Hgcm Host synchronous commands that do not require completion at all,
+     * or Hgcm Host Fast Call commands that do require completion. All this details are hidden here */
+    return rc;
+}
+#endif

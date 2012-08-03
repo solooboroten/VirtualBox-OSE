@@ -1,4 +1,4 @@
-/* $Id: VMInternal.h 36041 2011-02-21 16:04:53Z vboxsync $ */
+/* $Id: VMInternal.h 38942 2011-10-05 13:17:23Z vboxsync $ */
 /** @file
  * VM - Internal header file.
  */
@@ -168,24 +168,28 @@ typedef struct VMINT
 typedef VMINT *PVMINT;
 
 
+#ifdef IN_RING3
+
 /**
  * VM internal data kept in the UVM.
  */
 typedef struct VMINTUSERPERVM
 {
-    /** Head of the request queue. Atomic. */
-    volatile PVMREQ                 pReqs;
+    /** Head of the standard request queue. Atomic. */
+    volatile PVMREQ                 pNormalReqs;
+    /** Head of the priority request queue. Atomic. */
+    volatile PVMREQ                 pPriorityReqs;
     /** The last index used during alloc/free. */
     volatile uint32_t               iReqFree;
     /** Number of free request packets. */
     volatile uint32_t               cReqFree;
     /** Array of pointers to lists of free request packets. Atomic. */
-    volatile PVMREQ                 apReqFree[16-4];
+    volatile PVMREQ                 apReqFree[16 - (HC_ARCH_BITS == 32 ? 5 : 4)];
 
     /** The reference count of the UVM handle. */
     volatile uint32_t               cUvmRefs;
 
-#ifdef VBOX_WITH_STATISTICS
+# ifdef VBOX_WITH_STATISTICS
     /** Number of VMR3ReqAlloc returning a new packet. */
     STAMCOUNTER                     StatReqAllocNew;
     /** Number of VMR3ReqAlloc causing races. */
@@ -204,7 +208,7 @@ typedef struct VMINTUSERPERVM
     /** Number of times we've raced someone when pushing the other requests back
      * onto the list. */
     STAMCOUNTER                     StatReqPushBackRaces;
-#endif
+# endif
 
     /** Pointer to the support library session.
      * Mainly for creation and destruction. */
@@ -302,6 +306,9 @@ typedef struct VMINTUSERPERVM
     /** The VM UUID. (Set after the config constructure has been called.) */
     RTUUID                          Uuid;
 } VMINTUSERPERVM;
+# ifdef VBOX_WITH_STATISTICS
+AssertCompileMemberAlignment(VMINTUSERPERVM, StatReqAllocNew, 8);
+# endif
 
 /** Pointer to the VM internal data kept in the UVM. */
 typedef VMINTUSERPERVM *PVMINTUSERPERVM;
@@ -314,8 +321,10 @@ typedef VMINTUSERPERVM *PVMINTUSERPERVM;
  */
 typedef struct VMINTUSERPERVMCPU
 {
-    /** Head of the request queue. Atomic. */
-    volatile PVMREQ                 pReqs;
+    /** Head of the normal request queue. Atomic. */
+    volatile PVMREQ                 pNormalReqs;
+    /** Head of the priority request queue. Atomic. */
+    volatile PVMREQ                 pPriorityReqs;
 
     /** The handle to the EMT thread. */
     RTTHREAD                        ThreadEMT;
@@ -326,7 +335,7 @@ typedef struct VMINTUSERPERVMCPU
     /** Wait/Idle indicator. */
     bool volatile                   fWait;
     /** Align the next bit. */
-    bool                            afAlignment[7];
+    bool                            afAlignment[HC_ARCH_BITS == 32 ? 3 : 7];
 
     /** @name Generic Halt data
      * @{
@@ -375,7 +384,7 @@ typedef struct VMINTUSERPERVMCPU
             uint64_t                u64StartSpinTS;
         }                           Method12;
 
-#if 0
+# if 0
        /**
         * Method 3 & 4 - Same as method 1 & 2 respectivly, except that we
         * sprinkle it with yields.
@@ -407,7 +416,7 @@ typedef struct VMINTUSERPERVMCPU
            /** When we started spinning relentlessly in order to catch up some of the oversleeping. */
            uint64_t                 u64StartSpinTS;
        }                            Method34;
-#endif
+# endif
     }                               Halt;
 
     /** Profiling the halted state; yielding vs blocking.
@@ -421,14 +430,14 @@ typedef struct VMINTUSERPERVMCPU
     STAMPROFILE                     StatHaltPoll;
     /** @} */
 } VMINTUSERPERVMCPU;
-#ifdef IN_RING3
 AssertCompileMemberAlignment(VMINTUSERPERVMCPU, u64HaltsStartTS, 8);
 AssertCompileMemberAlignment(VMINTUSERPERVMCPU, Halt.Method12.cNSBlockedTooLongAvg, 8);
 AssertCompileMemberAlignment(VMINTUSERPERVMCPU, StatHaltYield, 8);
-#endif
 
 /** Pointer to the VM internal data kept in the UVM. */
 typedef VMINTUSERPERVMCPU *PVMINTUSERPERVMCPU;
+
+#endif /* IN_RING3 */
 
 RT_C_DECLS_BEGIN
 

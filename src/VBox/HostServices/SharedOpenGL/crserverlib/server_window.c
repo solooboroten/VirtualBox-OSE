@@ -257,15 +257,33 @@ crServerDispatchWindowSize( GLint window, GLint width, GLint height )
 #endif
          return;
     }
+
     mural->width = width;
     mural->height = height;
 
     crStateGetCurrent()->buffer.width = mural->width;
     crStateGetCurrent()->buffer.height = mural->height;
 
+    if (!width || !height)
+    {
+        crServerDispatchWindowVisibleRegion(window, 0, NULL);
+        return;
+    }
+
     crServerCheckMuralGeometry(mural);
 
     cr_server.head_spu->dispatch_table.WindowSize(mural->spuWindow, width, height);
+
+    /* Work-around Intel driver bug */
+    CRASSERT(!cr_server.curClient
+            || !cr_server.curClient->currentMural
+            || cr_server.curClient->currentMural == mural);
+    if (cr_server.curClient && cr_server.curClient->currentMural == mural)
+    {
+        CRContextInfo * ctxInfo = cr_server.currentCtxInfo;
+        CRASSERT(ctxInfo);
+        crServerDispatchMakeCurrent(mural->spuWindow, 0, ctxInfo->CreateInfo.externalID);
+    }
 }
 
 
@@ -282,6 +300,9 @@ crServerDispatchWindowPosition( GLint window, GLint x, GLint y )
     }
     mural->gX = x;
     mural->gY = y;
+
+    if (!mural->width || !mural->height)
+        return;
 
     crServerCheckMuralGeometry(mural);
 }

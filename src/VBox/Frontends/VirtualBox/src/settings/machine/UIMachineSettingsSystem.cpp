@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsSystem.cpp 37753 2011-07-04 10:09:18Z vboxsync $ */
+/* $Id: UIMachineSettingsSystem.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2011 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -17,15 +17,21 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* Local includes */
+/* Qt includes: */
+#include <QHeaderView>
+
+/* GUI includes: */
 #include "QIWidgetValidator.h"
 #include "UIIconPool.h"
 #include "VBoxGlobal.h"
 #include "UIMachineSettingsSystem.h"
+#include "UIConverter.h"
 
-/* Global includes */
+/* COM includes: */
+#include "CBIOSSettings.h"
+
+/* Other VBox includes: */
 #include <iprt/cdefs.h>
-#include <QHeaderView>
 
 UIMachineSettingsSystem::UIMachineSettingsSystem()
     : mValidator(0)
@@ -38,7 +44,7 @@ UIMachineSettingsSystem::UIMachineSettingsSystem()
 
     /* Setup constants */
     CSystemProperties properties = vboxGlobal().virtualBox().GetSystemProperties();
-    uint hostCPUs = vboxGlobal().virtualBox().GetHost().GetProcessorCount();
+    uint hostCPUs = vboxGlobal().host().GetProcessorCount();
     mMinGuestCPU = properties.GetMinGuestCPUCount();
     mMaxGuestCPU = RT_MIN (2 * hostCPUs, properties.GetMaxGuestCPUCount());
     mMinGuestCPUExecCap = 1;
@@ -156,8 +162,8 @@ UIMachineSettingsSystem::UIMachineSettingsSystem()
     sltValueChangedCPUExecCap(mSlCPUExecCap->value());
 
     /* Populate chipset combo: */
-    mCbChipset->insertItem(0, vboxGlobal().toString(KChipsetType_PIIX3), QVariant(KChipsetType_PIIX3));
-    mCbChipset->insertItem(1, vboxGlobal().toString(KChipsetType_ICH9), QVariant(KChipsetType_ICH9));
+    mCbChipset->insertItem(0, gpConverter->toString(KChipsetType_PIIX3), QVariant(KChipsetType_PIIX3));
+    mCbChipset->insertItem(1, gpConverter->toString(KChipsetType_ICH9), QVariant(KChipsetType_ICH9));
 
     /* Install global event filter */
     qApp->installEventFilter (this);
@@ -226,12 +232,12 @@ void UIMachineSettingsSystem::loadToCacheFrom(QVariant &data)
         }
     }
     /* Gather other system data: */
-    systemData.m_fPFHwVirtExSupported = vboxGlobal().virtualBox().GetHost().GetProcessorFeature(KProcessorFeature_HWVirtEx);
-    systemData.m_fPFPAESupported = vboxGlobal().virtualBox().GetHost().GetProcessorFeature(KProcessorFeature_PAE);
+    systemData.m_fPFHwVirtExSupported = vboxGlobal().host().GetProcessorFeature(KProcessorFeature_HWVirtEx);
+    systemData.m_fPFPAESupported = vboxGlobal().host().GetProcessorFeature(KProcessorFeature_PAE);
     systemData.m_fIoApicEnabled = m_machine.GetBIOSSettings().GetIOAPICEnabled();
     systemData.m_fEFIEnabled = m_machine.GetFirmwareType() >= KFirmwareType_EFI && m_machine.GetFirmwareType() <= KFirmwareType_EFIDUAL;
     systemData.m_fUTCEnabled = m_machine.GetRTCUseUTC();
-    systemData.m_fUseAbsHID = m_machine.GetPointingHidType() == KPointingHidType_USBTablet;
+    systemData.m_fUseAbsHID = m_machine.GetPointingHIDType() == KPointingHIDType_USBTablet;
     systemData.m_fPAEEnabled = m_machine.GetCPUProperty(KCPUPropertyType_PAE);
     systemData.m_fHwVirtExEnabled = m_machine.GetHWVirtExProperty(KHWVirtExPropertyType_Enabled);
     systemData.m_fNestedPagingEnabled = m_machine.GetHWVirtExProperty(KHWVirtExPropertyType_NestedPaging);
@@ -356,7 +362,7 @@ void UIMachineSettingsSystem::saveFromCacheTo(QVariant &data)
             m_machine.GetBIOSSettings().SetIOAPICEnabled(systemData.m_fIoApicEnabled);
             m_machine.SetFirmwareType(systemData.m_fEFIEnabled ? KFirmwareType_EFI : KFirmwareType_BIOS);
             m_machine.SetRTCUseUTC(systemData.m_fUTCEnabled);
-            m_machine.SetPointingHidType(systemData.m_fUseAbsHID ? KPointingHidType_USBTablet : KPointingHidType_PS2Mouse);
+            m_machine.SetPointingHIDType(systemData.m_fUseAbsHID ? KPointingHIDType_USBTablet : KPointingHIDType_PS2Mouse);
             /* Processor tab: */
             m_machine.SetCPUCount(systemData.m_cCPUCount);
             m_machine.SetCPUProperty(KCPUPropertyType_PAE, systemData.m_fPAEEnabled);
@@ -386,7 +392,7 @@ void UIMachineSettingsSystem::setValidator (QIWidgetValidator *aVal)
 
 bool UIMachineSettingsSystem::revalidate (QString &aWarning, QString & /* aTitle */)
 {
-    ulong fullSize = vboxGlobal().virtualBox().GetHost().GetMemorySize();
+    ulong fullSize = vboxGlobal().host().GetMemorySize();
     if (mSlMemory->value() > (int)mSlMemory->maxRAMAlw())
     {
         aWarning = tr (
@@ -409,7 +415,7 @@ bool UIMachineSettingsSystem::revalidate (QString &aWarning, QString & /* aTitle
     }
 
     /* VCPU amount test */
-    int totalCPUs = vboxGlobal().virtualBox().GetHost().GetProcessorOnlineCount();
+    int totalCPUs = vboxGlobal().host().GetProcessorOnlineCount();
     if (mSlCPU->value() > 2 * totalCPUs)
     {
         aWarning = tr (

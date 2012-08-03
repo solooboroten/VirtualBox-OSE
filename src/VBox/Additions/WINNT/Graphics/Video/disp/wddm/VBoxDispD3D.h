@@ -1,4 +1,4 @@
-/* $Id: VBoxDispD3D.h 38363 2011-08-08 19:01:30Z vboxsync $ */
+/* $Id: VBoxDispD3D.h 42557 2012-08-02 20:31:05Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -25,11 +25,32 @@
 #include "VBoxUhgsmiDisp.h"
 #endif
 
+#ifdef VBOX_WDDMDISP_WITH_PROFILE
+#include <iprt/asm.h>
+extern volatile uint32_t g_u32VBoxDispProfileFunctionLoggerIndex;
+# define VBOXDISPPROFILE_FUNCTION_LOGGER_INDEX_GEN() ASMAtomicIncU32(&g_u32VBoxDispProfileFunctionLoggerIndex);
+# include "VBoxDispProfile.h"
+#endif
+
 #include <iprt/cdefs.h>
 #include <iprt/list.h>
 
 #define VBOXWDDMDISP_MAX_VERTEX_STREAMS 16
 #define VBOXWDDMDISP_MAX_SWAPCHAIN_SIZE 16
+#define VBOXWDDMDISP_MAX_TEX_SAMPLERS 16
+#define VBOXWDDMDISP_TOTAL_SAMPLERS VBOXWDDMDISP_MAX_TEX_SAMPLERS + 5
+#define VBOXWDDMDISP_SAMPLER_IDX_IS_SPECIAL(_i) ((_i) >= D3DDMAPSAMPLER && (_i) <= D3DVERTEXTEXTURESAMPLER3)
+#define VBOXWDDMDISP_SAMPLER_IDX_SPECIAL(_i) (VBOXWDDMDISP_SAMPLER_IDX_IS_SPECIAL(_i) ? (int)((_i) - D3DDMAPSAMPLER + VBOXWDDMDISP_MAX_TEX_SAMPLERS) : (int)-1)
+#define VBOXWDDMDISP_SAMPLER_IDX(_i) (((_i) < VBOXWDDMDISP_MAX_TEX_SAMPLERS) ? (int)(_i) : VBOXWDDMDISP_SAMPLER_IDX_SPECIAL(_i))
+
+
+/* maximum number of direct render targets to be used before
+ * switching to offscreen rendering */
+#ifdef VBOXWDDMDISP_DEBUG
+# define VBOXWDDMDISP_MAX_DIRECT_RTS      g_VBoxVDbgCfgMaxDirectRts
+#else
+# define VBOXWDDMDISP_MAX_DIRECT_RTS      3
+#endif
 
 #define VBOXWDDMDISP_IS_TEXTURE(_f) ((_f).Texture || (_f).Value == 0)
 
@@ -54,14 +75,13 @@ typedef struct VBOXWDDMDISP_ADAPTER
     HANDLE hAdapter;
     UINT uIfVersion;
     UINT uRtVersion;
-    VBOXDISPD3D D3D;
-    IDirect3D9Ex * pD3D9If;
     D3DDDI_ADAPTERCALLBACKS RtCallbacks;
-    uint32_t cFormstOps;
-    FORMATOP *paFormstOps;
-    uint32_t cSurfDescs;
-    DDSURFACEDESC *paSurfDescs;
-    UINT cMaxSimRTs;
+    VBOXWDDMDISP_D3D D3D;
+    VBOXWDDMDISP_FORMATS Formats;
+#ifdef VBOX_WDDMDISP_WITH_PROFILE
+    VBoxDispProfileFpsCounter ProfileDdiFps;
+    VBoxDispProfileSet ProfileDdiFunc;
+#endif
 #ifdef VBOX_WITH_VIDEOHWACCEL
     uint32_t cHeads;
     VBOXWDDMDISP_HEAD aHeads[1];
@@ -128,8 +148,10 @@ typedef struct VBOXWDDMDISP_SWAPCHAIN_FLAGS
     {
         struct
         {
-            UINT bChanged : 1;
-            UINT Reserved : 31;
+            UINT bChanged                : 1;
+            UINT bRtReportingPresent     : 1; /* use VBox extension method for performing present */
+            UINT bSwitchReportingPresent : 1; /* switch to use VBox extension method for performing present on next present */
+            UINT Reserved                : 29;
         };
         uint32_t Value;
     };
@@ -155,22 +177,12 @@ typedef struct VBOXWDDMDISP_SWAPCHAIN
     VBOXWDDMDISP_RENDERTGT aRTs[VBOXWDDMDISP_MAX_SWAPCHAIN_SIZE];
 } VBOXWDDMDISP_SWAPCHAIN, *PVBOXWDDMDISP_SWAPCHAIN;
 
-
-//typedef struct VBOXWDDMDISP_SCREEN
-//{
-//    RTLISTNODE SwapchainList;
-//    IDirect3DDevice9 *pDevice9If;
-////    struct VBOXWDDMDISP_RESOURCE *pDstSharedRc;
-//    uint32_t iRenderTargetFrontBuf;
-//    HWND hWnd;
-//} VBOXWDDMDISP_SCREEN, *PVBOXWDDMDISP_SCREEN;
-
 typedef struct VBOXWDDMDISP_DEVICE
 {
     HANDLE hDevice;
     PVBOXWDDMDISP_ADAPTER pAdapter;
     IDirect3DDevice9 *pDevice9If;
-    RTLISTNODE SwapchainList;
+    RTLISTANCHOR SwapchainList;
     UINT u32IfVersion;
     UINT uRtVersion;
     D3DDDI_DEVICECALLBACKS RtCallbacks;
@@ -189,12 +201,25 @@ typedef struct VBOXWDDMDISP_DEVICE
      * is split into two calls : SetViewport & SetZRange */
     D3DVIEWPORT9 ViewPort;
     VBOXWDDMDISP_CONTEXT DefaultContext;
-#ifdef VBOX_WITH_CRHGSMI
     VBOXUHGSMI_PRIVATE_D3D Uhgsmi;
-#endif
 
     /* no lock is needed for this since we're guaranteed the per-device calls are not reentrant */
-    RTLISTNODE DirtyAllocList;
+    RTLISTANCHOR DirtyAllocList;
+
+    UINT cSamplerTextures;
+    struct VBOXWDDMDISP_RESOURCE *aSamplerTextures[VBOXWDDMDISP_TOTAL_SAMPLERS];
+
+#ifdef VBOX_WDDMDISP_WITH_PROFILE
+    VBoxDispProfileFpsCounter ProfileDdiFps;
+    VBoxDispProfileSet ProfileDdiFunc;
+
+    VBoxDispProfileSet ProfileDdiPresentCb;
+#endif
+
+#ifdef VBOXWDDMDISP_DEBUG_TIMER
+    HANDLE hTimerQueue;
+#endif
+
     UINT cRTs;
     struct VBOXWDDMDISP_ALLOCATION * apRTs[1];
 } VBOXWDDMDISP_DEVICE, *PVBOXWDDMDISP_DEVICE;
@@ -234,7 +259,6 @@ typedef struct VBOXWDDMDISP_ALLOCATION
     UINT D3DWidth;
     /* object type is defined by enmD3DIfType enum */
     IUnknown *pD3DIf;
-    IUnknown *pSecondaryOpenedD3DIf;
     VBOXDISP_D3DIFTYPE enmD3DIfType;
     /* list entry used to add allocation to the dirty alloc list */
     RTLISTNODE DirtyAllocListEntry;
@@ -251,7 +275,7 @@ typedef struct VBOXWDDMDISP_RESOURCE
     HANDLE hResource;
     D3DKMT_HANDLE hKMResource;
     PVBOXWDDMDISP_DEVICE pDevice;
-    uint32_t fFlags;
+    VBOXWDDMDISP_RESOURCE_FLAGS fFlags;
     VBOXWDDM_RC_DESC RcDesc;
     UINT cAllocations;
     VBOXWDDMDISP_ALLOCATION aAllocations[1];
@@ -261,11 +285,7 @@ typedef struct VBOXWDDMDISP_QUERY
 {
     D3DDDIQUERYTYPE enmType;
     D3DDDI_ISSUEQUERYFLAGS fQueryState;
-    union
-    {
-        BOOL bData;
-        UINT u32Data;
-    } data ;
+    IDirect3DQuery9 *pQueryIf;
 } VBOXWDDMDISP_QUERY, *PVBOXWDDMDISP_QUERY;
 
 typedef struct VBOXWDDMDISP_TSS_LOOKUP
@@ -284,11 +304,6 @@ typedef struct VBOXWDDMDISP_OVERLAY
 #define VBOXDISP_CUBEMAP_LEVELS_COUNT(pRc) (((pRc)->cAllocations)/6)
 #define VBOXDISP_CUBEMAP_INDEX_TO_FACE(pRc, idx) ((D3DCUBEMAP_FACES)(D3DCUBEMAP_FACE_POSITIVE_X+(idx)%VBOXDISP_CUBEMAP_LEVELS_COUNT(pRc)))
 #define VBOXDISP_CUBEMAP_INDEX_TO_LEVEL(pRc, idx) ((idx)%VBOXDISP_CUBEMAP_LEVELS_COUNT(pRc))
-
-#ifdef VBOX_WITH_CRHGSMI
-HRESULT vboxUhgsmiGlobalSetCurrent();
-HRESULT vboxUhgsmiGlobalClearCurrent();
-#endif
 
 DECLINLINE(PVBOXWDDMDISP_SWAPCHAIN) vboxWddmSwapchainForAlloc(PVBOXWDDMDISP_ALLOCATION pAlloc)
 {
@@ -377,7 +392,13 @@ DECLINLINE(HRESULT) vboxWddmSurfGet(PVBOXWDDMDISP_RESOURCE pRc, UINT iAlloc, IDi
     return hr;
 }
 
-#define VBOXDISPMODE_IS_3D(_p) (!!((_p)->pD3D9If))
+HRESULT vboxWddmLockRect(PVBOXWDDMDISP_RESOURCE pRc, UINT iAlloc,
+        D3DLOCKED_RECT * pLockedRect,
+        CONST RECT *pRect,
+        DWORD fLockFlags);
+HRESULT vboxWddmUnlockRect(PVBOXWDDMDISP_RESOURCE pRc, UINT iAlloc);
+
+#define VBOXDISPMODE_IS_3D(_p) (!!((_p)->D3D.pD3D9If))
 #ifdef VBOXDISP_EARLYCREATEDEVICE
 #define VBOXDISP_D3DEV(_p) (_p)->pDevice9If
 #else

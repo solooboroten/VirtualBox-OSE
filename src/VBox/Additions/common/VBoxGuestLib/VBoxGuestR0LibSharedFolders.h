@@ -29,6 +29,8 @@
 #include <VBox/VBoxGuestLib.h>
 #ifndef _NTIFS_
 # ifdef RT_OS_WINDOWS
+#  undef PAGE_SIZE
+#  undef PAGE_SHIFT
 #  if (_MSC_VER >= 1400) && !defined(VBOX_WITH_PATCHED_DDK)
 #   include <iprt/asm.h>
 #   define _InterlockedExchange           _InterlockedExchange_StupidDDKvsCompilerCrap
@@ -52,12 +54,17 @@
 # endif
 #endif
 
-#if defined(RT_OS_LINUX) || defined(RT_OS_WINDOWS)
+#if defined(RT_OS_WINDOWS) && 0
 /** @todo remove this legacy and use VBox/log.h and/or iprt/log.h. */
+/* => Done.  The next person who needs logging in Windows guests will have the
+ *    honour of making it work. */
 # ifdef DEBUG
 #  define LOG_ENABLED
 # endif
 # include "VBoxGuestLog.h"
+#endif
+#if defined(RT_OS_WINDOWS)
+# include <VBox/log.h>
 #endif
 
 #include <iprt/assert.h>

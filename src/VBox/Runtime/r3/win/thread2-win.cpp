@@ -1,4 +1,4 @@
-/* $Id: thread2-win.cpp 37733 2011-07-01 15:41:37Z vboxsync $ */
+/* $Id: thread2-win.cpp 39443 2011-11-28 15:01:21Z vboxsync $ */
 /** @file
  * IPRT - Threads part 2, Windows.
  */
@@ -55,6 +55,13 @@ RTR3DECL(int)   RTThreadSleep(RTMSINTERVAL cMillies)
 }
 
 
+RTR3DECL(int)   RTThreadSleepNoLog(RTMSINTERVAL cMillies)
+{
+    Sleep(cMillies);
+    return VINF_SUCCESS;
+}
+
+
 RTR3DECL(bool) RTThreadYield(void)
 {
     uint64_t u64TS = ASMReadTSC();
@@ -64,5 +71,4 @@ RTR3DECL(bool) RTThreadYield(void)
     LogFlow(("RTThreadYield: returning %d (%llu ticks)\n", fRc, u64TS));
     return fRc;
 }
-
 

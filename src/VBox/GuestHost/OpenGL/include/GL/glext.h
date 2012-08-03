@@ -785,6 +785,11 @@ extern "C" {
 #define GL_MIRRORED_REPEAT_ARB            0x8370
 #endif
 
+#ifndef GL_ATI_texture_mirror_once
+#define GL_MIRROR_CLAMP_ATI               0x8742
+#define GL_MIRROR_CLAMP_TO_EDGE_ATI       0x8743
+#endif
+
 #ifndef GL_ARB_depth_texture
 #define GL_DEPTH_COMPONENT16_ARB          0x81A5
 #define GL_DEPTH_COMPONENT24_ARB          0x81A6
@@ -3717,6 +3722,25 @@ typedef ptrdiff_t GLintptrARB;
 typedef ptrdiff_t GLsizeiptrARB;
 #endif
 
+/* VBox: HACK ALERT! When building the host side against Mac OS X 10.7 headers,
+   /Developer/SDKs/MacOSX10.7.sdk/System/Library/Frameworks/OpenGL.framework/Headers/gltypes.h
+   is included and it typedefs GLhandleARB differently.  In 10.6 and earlier,
+   gl.h was included instead of gltypes.h (new file) avoiding the conflicting
+   typedef in Headers/glext.h.
+
+   Since sizeof the gltypes.h typedef is 64-bit on 64-bit platforms, we're in
+   trouble if the type is used for anything important.  Fortunately, the
+   conflict only occurs in three files: renderspu_config.c, renderspu_cocoa.c
+   and renderspu_cocoa_helper.m. */
+#ifdef RT_OS_DARWIN
+# ifndef MAC_OS_X_VERSION_MIN_REQUIRED
+#  error "MAC_OS_X_VERSION_MIN_REQUIRED is not defined"
+# endif
+# if MAC_OS_X_VERSION_MIN_REQUIRED >= 1070 && defined(__gltypes_h_)
+#  define GLhandleARB VBoxGLhandleARB
+# endif
+#endif
+
 #ifndef GL_ARB_shader_objects
 /* GL types for handling shader object handles and program/shader text */
 typedef char GLcharARB;		/* native character */
@@ -4502,6 +4526,10 @@ typedef void (APIENTRYP PFNGLMATRIXINDEXPOINTERARBPROC) (GLint size, GLenum type
 
 #ifndef GL_ARB_texture_mirrored_repeat
 #define GL_ARB_texture_mirrored_repeat 1
+#endif
+
+#ifndef GL_ATI_texture_mirror_once
+#define GL_ATI_texture_mirror_once 1
 #endif
 
 #ifndef GL_ARB_depth_texture

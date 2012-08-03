@@ -16,9 +16,22 @@
 #include <windows.h>
 #include <stdio.h>
 
+/* Currently host part will misbehave re-creating context with proper visual bits
+ * if contexts with alternative visual bits is requested.
+ * For now we just report a superset of all visual bits to avoid that.
+ * Better to it on the host side as well?
+ * We could also implement properly multiple pixel formats,
+ * which should be done by implementing offscreen rendering or multiple host contexts.
+ * */
+#define VBOX_CROGL_USE_VBITS_SUPERSET
+
+#ifdef VBOX_CROGL_USE_VBITS_SUPERSET
+static GLuint desiredVisual = CR_RGB_BIT | CR_ALPHA_BIT | CR_DEPTH_BIT | CR_STENCIL_BIT | CR_ACCUM_BIT | CR_DOUBLE_BIT;
+#else
 static GLuint desiredVisual = CR_RGB_BIT;
+#endif
 
-
+#ifndef VBOX_CROGL_USE_VBITS_SUPERSET
 /**
  * Compute a mask of CR_*_BIT flags which reflects the attributes of
  * the pixel format of the given hdc.
@@ -50,10 +63,13 @@ static GLuint ComputeVisBits( HDC hdc )
 
     return b;
 }
+#endif
 
 int WINAPI wglChoosePixelFormat_prox( HDC hdc, CONST PIXELFORMATDESCRIPTOR *pfd )
 {
     DWORD okayFlags;
+
+    CR_DDI_PROLOGUE();
 
     stubInit();
 
@@ -77,7 +93,11 @@ int WINAPI wglChoosePixelFormat_prox( HDC hdc, CONST PIXELFORMATDESCRIPTOR *pfd 
             PFD_DOUBLEBUFFER_DONTCARE |
             PFD_SWAP_EXCHANGE         |
             PFD_SWAP_COPY             |
-            PFD_STEREO            |
+            /* @todo: this is disabled due to VSG Open Inventor interop issues
+             * it does not make any sense actually since reporting this
+             * as well as choosing a pixel format with this cap would not do anything
+             * since ICD stuff has its own pixelformat state var */
+//            PFD_STEREO            |
             PFD_STEREO_DONTCARE       |
             PFD_DEPTH_DONTCARE        );
     if ( pfd->dwFlags & ~okayFlags ) {
@@ -145,6 +165,8 @@ int WINAPI wglChoosePixelFormat_prox( HDC hdc, CONST PIXELFORMATDESCRIPTOR *pfd 
 BOOL WINAPI wglSetPixelFormat_prox( HDC hdc, int pixelFormat, 
         CONST PIXELFORMATDESCRIPTOR *pdf )
 {
+    CR_DDI_PROLOGUE();
+
     if ( pixelFormat != 1 ) {
         crError( "wglSetPixelFormat: pixelFormat=%d?\n", pixelFormat );
     }
@@ -154,6 +176,7 @@ BOOL WINAPI wglSetPixelFormat_prox( HDC hdc, int pixelFormat,
 
 BOOL WINAPI wglDeleteContext_prox( HGLRC hglrc )
 {
+    CR_DDI_PROLOGUE();
     stubDestroyContext( (unsigned long) hglrc );
     return 1;
 }
@@ -163,6 +186,8 @@ BOOL WINAPI wglMakeCurrent_prox( HDC hdc, HGLRC hglrc )
     ContextInfo *context;
     WindowInfo *window;
     BOOL ret;
+
+    CR_DDI_PROLOGUE();
 
     crHashtableLock(stub.windowTable);
     crHashtableLock(stub.contextTable);
@@ -185,19 +210,24 @@ BOOL WINAPI wglMakeCurrent_prox( HDC hdc, HGLRC hglrc )
 
 HGLRC WINAPI wglGetCurrentContext_prox( void )
 {
-    return (HGLRC) (stub.currentContext ? stub.currentContext->id : 0);
+    ContextInfo *context = stubGetCurrentContext();
+    CR_DDI_PROLOGUE();
+    return (HGLRC) (context ? context->id : 0);
 }
 
 HDC WINAPI wglGetCurrentDC_prox( void )
 {
-    if (stub.currentContext && stub.currentContext->currentDrawable)
-        return (HDC) stub.currentContext->currentDrawable->drawable;
+    ContextInfo *context = stubGetCurrentContext();
+    CR_DDI_PROLOGUE();
+    if (context && context->currentDrawable)
+        return (HDC) context->currentDrawable->drawable;
     else
         return (HDC) NULL;
 }
 
 int WINAPI wglGetPixelFormat_prox( HDC hdc )
 {
+    CR_DDI_PROLOGUE();
     /* this is what we call our generic pixelformat, regardless of the HDC */
     return 1;
 }
@@ -205,6 +235,8 @@ int WINAPI wglGetPixelFormat_prox( HDC hdc )
 int WINAPI wglDescribePixelFormat_prox( HDC hdc, int pixelFormat, UINT nBytes,
         LPPIXELFORMATDESCRIPTOR pfd )
 {
+    CR_DDI_PROLOGUE();
+
 /*  if ( pixelFormat != 1 ) { 
  *      crError( "wglDescribePixelFormat: pixelFormat=%d?\n", pixelFormat ); 
  *      return 0; 
@@ -256,47 +288,66 @@ int WINAPI wglDescribePixelFormat_prox( HDC hdc, int pixelFormat, UINT nBytes,
 
 BOOL WINAPI wglShareLists_prox( HGLRC hglrc1, HGLRC hglrc2 )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglShareLists: unsupported" );
     return 0;
 }
 
 
-HGLRC WINAPI wglCreateContext_prox( HDC hdc )
+HGLRC WINAPI VBoxCreateContext( HDC hdc, struct VBOXUHGSMI *pHgsmi )
 {
     char dpyName[MAX_DPY_NAME];
     ContextInfo *context;
+
+    CR_DDI_PROLOGUE();
 
     stubInit();
 
     CRASSERT(stub.contextTable);
 
     sprintf(dpyName, "%d", hdc);
+#ifndef VBOX_CROGL_USE_VBITS_SUPERSET
     if (stub.haveNativeOpenGL)
         desiredVisual |= ComputeVisBits( hdc );
+#endif
 
-    context = stubNewContext(dpyName, desiredVisual, UNDECIDED, 0);
+    context = stubNewContext(dpyName, desiredVisual, UNDECIDED, 0
+#if defined(VBOX_WITH_CRHGSMI) && defined(IN_GUEST)
+        , pHgsmi
+#else
+        , NULL
+#endif
+            );
     if (!context)
         return 0;
 
     return (HGLRC) context->id;
 }
 
+HGLRC WINAPI wglCreateContext_prox( HDC hdc )
+{
+    return VBoxCreateContext(hdc, NULL);
+}
+
 BOOL WINAPI
 wglSwapBuffers_prox( HDC hdc )
 {
     WindowInfo *window = stubGetWindowInfo(hdc);
+    CR_DDI_PROLOGUE();
     stubSwapBuffers( window, 0 );
     return 1;
 }
 
 BOOL WINAPI wglCopyContext_prox( HGLRC src, HGLRC dst, UINT mask )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglCopyContext: unsupported" );
     return 0;
 }
 
 HGLRC WINAPI wglCreateLayerContext_prox( HDC hdc, int layerPlane )
 {
+    CR_DDI_PROLOGUE();
     stubInit();
     crWarning( "wglCreateLayerContext: unsupported" );
     return 0;
@@ -304,17 +355,20 @@ HGLRC WINAPI wglCreateLayerContext_prox( HDC hdc, int layerPlane )
 
 PROC WINAPI wglGetProcAddress_prox( LPCSTR name )
 {
+    CR_DDI_PROLOGUE();
     return (PROC) crGetProcAddress( name );
 }
 
 BOOL WINAPI wglUseFontBitmapsA_prox( HDC hdc, DWORD first, DWORD count, DWORD listBase )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglUseFontBitmapsA: unsupported" );
     return 0;
 }
 
 BOOL WINAPI wglUseFontBitmapsW_prox( HDC hdc, DWORD first, DWORD count, DWORD listBase )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglUseFontBitmapsW: unsupported" );
     return 0;
 }
@@ -322,6 +376,7 @@ BOOL WINAPI wglUseFontBitmapsW_prox( HDC hdc, DWORD first, DWORD count, DWORD li
 BOOL WINAPI wglDescribeLayerPlane_prox( HDC hdc, int pixelFormat, int layerPlane,
         UINT nBytes, LPLAYERPLANEDESCRIPTOR lpd )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglDescribeLayerPlane: unimplemented" );
     return 0;
 }
@@ -329,6 +384,7 @@ BOOL WINAPI wglDescribeLayerPlane_prox( HDC hdc, int pixelFormat, int layerPlane
 int WINAPI wglSetLayerPaletteEntries_prox( HDC hdc, int layerPlane, int start,
         int entries, CONST COLORREF *cr )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglSetLayerPaletteEntries: unsupported" );
     return 0;
 }
@@ -336,18 +392,21 @@ int WINAPI wglSetLayerPaletteEntries_prox( HDC hdc, int layerPlane, int start,
 int WINAPI wglGetLayerPaletteEntries_prox( HDC hdc, int layerPlane, int start,
         int entries, COLORREF *cr )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglGetLayerPaletteEntries: unsupported" );
     return 0;
 }
 
 BOOL WINAPI wglRealizeLayerPalette_prox( HDC hdc, int layerPlane, BOOL realize )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglRealizeLayerPalette: unsupported" );
     return 0;
 }
 
 DWORD WINAPI wglSwapMultipleBuffers_prox( UINT a, CONST void *b )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglSwapMultipleBuffer: unsupported" );
     return 0;
 }
@@ -356,6 +415,7 @@ BOOL WINAPI wglUseFontOutlinesA_prox( HDC hdc, DWORD first, DWORD count, DWORD l
         FLOAT deviation, FLOAT extrusion, int format,
         LPGLYPHMETRICSFLOAT gmf )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglUseFontOutlinesA: unsupported" );
     return 0;
 }
@@ -364,12 +424,14 @@ BOOL WINAPI wglUseFontOutlinesW_prox( HDC hdc, DWORD first, DWORD count, DWORD l
         FLOAT deviation, FLOAT extrusion, int format,
         LPGLYPHMETRICSFLOAT gmf )
 {
+    CR_DDI_PROLOGUE();
     crWarning( "wglUseFontOutlinesW: unsupported" );
     return 0;
 }
 
 BOOL WINAPI wglSwapLayerBuffers_prox( HDC hdc, UINT planes )
 {
+    CR_DDI_PROLOGUE();
     if (planes == WGL_SWAP_MAIN_PLANE)
     {
         return wglSwapBuffers_prox(hdc);
@@ -386,6 +448,8 @@ BOOL WINAPI wglChoosePixelFormatEXT_prox
 {
     int *pi;
     int wants_rgb = 0;
+
+    CR_DDI_PROLOGUE();
 
     stubInit();
 
@@ -424,7 +488,15 @@ BOOL WINAPI wglChoosePixelFormatEXT_prox
 
             case WGL_STEREO_EXT:
                 if (pi[1] > 0)
-                    desiredVisual |= CR_STEREO_BIT;
+                {
+                    /* @todo: this is disabled due to VSG Open Inventor interop issues
+                     * it does not make any sense actually since reporting this
+                     * as well as choosing a pixel format with this cap would not do anything
+                     * since ICD stuff has its own pixelformat state var */
+                    crWarning("WGL_STEREO_EXT not supporteed!");
+                    return 0;
+//                    desiredVisual |= CR_STEREO_BIT;
+                }
                 pi++;
                 break;
 
@@ -451,7 +523,15 @@ BOOL WINAPI wglChoosePixelFormatEXT_prox
             case WGL_SAMPLE_BUFFERS_EXT:
             case WGL_SAMPLES_EXT:
                 if (pi[1] > 0)
-                    desiredVisual |= CR_MULTISAMPLE_BIT;
+                {
+                    /* @todo: this is disabled due to VSG Open Inventor interop issues
+                     * it does not make any sense actually since reporting this
+                     * as well as choosing a pixel format with this cap would not do anything
+                     * since ICD stuff has its own pixelformat state var */
+                    crWarning("WGL_SAMPLE_BUFFERS_EXT & WGL_SAMPLES_EXT not supporteed!");
+                    return 0;
+//                    desiredVisual |= CR_MULTISAMPLE_BIT;
+                }
                 pi++;
                 break;
 
@@ -490,6 +570,8 @@ BOOL WINAPI wglGetPixelFormatAttribivEXT_prox
 {
     UINT i;
 
+    CR_DDI_PROLOGUE();
+
     if (!pValues || !piAttributes) return 0;
 
     if ((nAttributes!=1) || (piAttributes && piAttributes[0]!=WGL_NUMBER_PIXEL_FORMATS_ARB))
@@ -511,8 +593,14 @@ BOOL WINAPI wglGetPixelFormatAttribivEXT_prox
             case WGL_DRAW_TO_WINDOW_ARB:
             case WGL_SUPPORT_OPENGL_ARB:
             case WGL_DOUBLE_BUFFER_ARB:
-            case WGL_STEREO_ARB:
                 pValues[i] = 1;
+                break;
+            case WGL_STEREO_ARB:
+                /* @todo: this is disabled due to VSG Open Inventor interop issues
+                 * it does not make any sense actually since reporting this
+                 * as well as choosing a pixel format with this cap would not do anything
+                 * since ICD stuff has its own pixelformat state var */
+                pValues[i] = 0;
                 break;
             case WGL_DRAW_TO_BITMAP_ARB:
             case WGL_NEED_PALETTE_ARB:
@@ -587,10 +675,21 @@ BOOL WINAPI wglGetPixelFormatAttribivEXT_prox
                 pValues[i] = 0;
                 break;
             case WGL_SAMPLE_BUFFERS_EXT:
-                pValues[i] = 1;
+                /* @todo: this is disabled due to VSG Open Inventor interop issues
+                 * it does not make any sense actually since reporting this
+                 * as well as choosing a pixel format with this cap would not do anything
+                 * since ICD stuff has its own pixelformat state var */
+                pValues[i] = 0;
                 break;
             case WGL_SAMPLES_EXT:
-                pValues[i] = 1;
+                /* @todo: this is disabled due to VSG Open Inventor interop issues
+                 * it does not make any sense actually since reporting this
+                 * as well as choosing a pixel format with this cap would not do anything
+                 * since ICD stuff has its own pixelformat state var */
+                pValues[i] = 0;
+                break;
+            case 0x202d: /* <- WGL_DRAW_TO_PBUFFER_ARB this is to make VSG Open Inventor happy */
+                pValues[i] = 0;
                 break;
             default:
                 crWarning("wglGetPixelFormatAttribivARB: bad attrib=0x%x", piAttributes[i]);
@@ -605,6 +704,8 @@ BOOL WINAPI wglGetPixelFormatAttribfvEXT_prox
 (HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, int *piAttributes, float *pValues)
 {
     UINT i;
+
+    CR_DDI_PROLOGUE();
 
     if (!pValues || !piAttributes) return 0;
 
@@ -627,8 +728,14 @@ BOOL WINAPI wglGetPixelFormatAttribfvEXT_prox
             case WGL_DRAW_TO_WINDOW_ARB:
             case WGL_SUPPORT_OPENGL_ARB:
             case WGL_DOUBLE_BUFFER_ARB:
-            case WGL_STEREO_ARB:
                 pValues[i] = 1.f;
+                break;
+            case WGL_STEREO_ARB:
+                /* @todo: this is disabled due to VSG Open Inventor interop issues
+                 * it does not make any sense actually since reporting this
+                 * as well as choosing a pixel format with this cap would not do anything
+                 * since ICD stuff has its own pixelformat state var */
+                pValues[i] = 0.f;
                 break;
             case WGL_DRAW_TO_BITMAP_ARB:
             case WGL_NEED_PALETTE_ARB:
@@ -703,10 +810,21 @@ BOOL WINAPI wglGetPixelFormatAttribfvEXT_prox
                 pValues[i] = 0.f;
                 break;
             case WGL_SAMPLE_BUFFERS_EXT:
-                pValues[i] = 1.f;
+                /* @todo: this is disabled due to VSG Open Inventor interop issues
+                 * it does not make any sense actually since reporting this
+                 * as well as choosing a pixel format with this cap would not do anything
+                 * since ICD stuff has its own pixelformat state var */
+                pValues[i] = 0.f;
                 break;
             case WGL_SAMPLES_EXT:
-                pValues[i] = 1.f;
+                /* @todo: this is disabled due to VSG Open Inventor interop issues
+                 * it does not make any sense actually since reporting this
+                 * as well as choosing a pixel format with this cap would not do anything
+                 * since ICD stuff has its own pixelformat state var */
+                pValues[i] = 0.f;
+                break;
+            case 0x202d: /* <- WGL_DRAW_TO_PBUFFER_ARB this is to make VSG Open Inventor happy */
+                pValues[i] = 0.f;
                 break;
             default:
                 crWarning("wglGetPixelFormatAttribivARB: bad attrib=0x%x", piAttributes[i]);
@@ -719,11 +837,13 @@ BOOL WINAPI wglGetPixelFormatAttribfvEXT_prox
 
 BOOL WINAPI wglSwapIntervalEXT_prox(int interval)
 {
+    CR_DDI_PROLOGUE();
     return TRUE;
 }
 
 int  WINAPI wglGetSwapIntervalEXT_prox()
 {
+    CR_DDI_PROLOGUE();
     return 1;
 }
 
@@ -731,11 +851,13 @@ static GLubyte *gsz_wgl_extensions = "WGL_EXT_pixel_format WGL_ARB_pixel_format 
 
 const GLubyte * WINAPI wglGetExtensionsStringEXT_prox()
 {
+    CR_DDI_PROLOGUE();
     return gsz_wgl_extensions;
 }
 
 const GLubyte * WINAPI wglGetExtensionsStringARB_prox(HDC hdc)
 {
+    CR_DDI_PROLOGUE();
     (void) hdc;
 
     return gsz_wgl_extensions;

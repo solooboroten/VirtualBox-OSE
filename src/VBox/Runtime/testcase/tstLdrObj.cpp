@@ -1,4 +1,4 @@
-/* $Id: tstLdrObj.cpp 38325 2011-08-05 14:11:58Z vboxsync $ */
+/* $Id: tstLdrObj.cpp 41675 2012-06-12 20:27:37Z vboxsync $ */
 /** @file
  * IPRT - RTLdr test object.
  *
@@ -81,12 +81,14 @@ extern "C" DECLEXPORT(uint32_t) SomeExportFunction1(void *pvBuf)
 
 extern "C" DECLEXPORT(char *) SomeExportFunction2(void *pvBuf)
 {
+    NOREF(pvBuf);
     return (char *)memcpy(achBss, szStr1, sizeof(szStr1));
 }
 
 
 extern "C" DECLEXPORT(char *) SomeExportFunction3(void *pvBuf)
 {
+    NOREF(pvBuf);
     return (char *)memcpy(achBss, szStr2, strlen(szStr2));
 }
 
@@ -95,9 +97,7 @@ extern "C" DECLEXPORT(void *) SomeExportFunction4(void)
 {
     static unsigned cb;
     DISCPUSTATE Cpu;
-    memset(&Cpu, 0, sizeof(Cpu));
-    Cpu.mode = CPUMODE_32BIT;
-    DISCoreOne(&Cpu, (uintptr_t)SomeExportFunction3, &cb);
+    DISInstr((void *)(uintptr_t)SomeExportFunction3, DISCPUMODE_32BIT, &Cpu, &cb);
     return (void *)(uintptr_t)&SomeExportFunction1;
 }
 

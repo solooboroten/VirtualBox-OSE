@@ -1,4 +1,4 @@
-/* $Revision: 37672 $ */
+/* $Revision: 40207 $ */
 /** @file
  * VBoxGuestR0LibSharedFolders - Ring 0 Shared Folders calls.
  */
@@ -27,12 +27,15 @@
 /* Entire file is ifdef'ed with !VBGL_VBOXGUEST */
 #ifndef VBGL_VBOXGUEST
 
+#define LOG_GROUP LOG_GROUP_SHARED_FOLDERS
+
 #ifdef RT_OS_LINUX
 # include "VBoxGuestR0LibSharedFolders.h"
 # define DbgPrint RTAssertMsg2Weak
 #else
 # include "VBoxGuestR0LibSharedFolders.h"
 #endif
+#include <VBox/log.h>
 #include <iprt/time.h>
 #include <iprt/mem.h>
 #include <iprt/path.h>
@@ -42,6 +45,8 @@
 #define SHFL_CPARMS_SET_SYMLINKS 0
 
 #define VBOX_INIT_CALL(a, b, c)          \
+    LogFunc(("%s, u32ClientID=%d\n", "SHFL_FN_" # b, \
+            (c)->ulClientID)); \
     (a)->result      = VINF_SUCCESS;     \
     (a)->u32ClientID = (c)->ulClientID;  \
     (a)->u32Function = SHFL_FN_##b;      \
@@ -92,6 +97,7 @@ DECLVBGL(int) vboxConnect (PVBSFCLIENT pClient)
     if (RT_SUCCESS (rc))
     {
         pClient->ulClientID = data.u32ClientID;
+        LogFunc(("u32ClientID=%d\n", pClient->ulClientID));
     }
     return rc;
 }
@@ -99,9 +105,9 @@ DECLVBGL(int) vboxConnect (PVBSFCLIENT pClient)
 DECLVBGL(void) vboxDisconnect (PVBSFCLIENT pClient)
 {
     int rc;
-
     VBoxGuestHGCMDisconnectInfo data;
 
+    LogFunc(("u32ClientID=%d\n", pClient->ulClientID));
     if (pClient->handle == NULL)
         return;                 /* not connected */
 
@@ -500,7 +506,7 @@ DECLVBGL(int) VbglR0SfWritePhysCont(PVBSFCLIENT pClient, PVBSFMAP pMap, SHFLHAND
     pData->buffer.u.PageList.offset       = sizeof(VBoxSFWrite);
 
     pPgLst->flags = VBOX_HGCM_F_PARM_DIRECTION_TO_HOST;
-    pPgLst->offFirstPage = PhysBuffer & PAGE_OFFSET_MASK;
+    pPgLst->offFirstPage = (uint16_t)(PhysBuffer & PAGE_OFFSET_MASK);
     pPgLst->cPages = cPages;
     PhysBuffer &= ~(RTCCPHYS)PAGE_OFFSET_MASK;
     for (iPage = 0; iPage < cPages; iPage++, PhysBuffer += PAGE_SIZE)

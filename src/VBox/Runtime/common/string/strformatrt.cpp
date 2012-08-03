@@ -1,4 +1,4 @@
-/* $Id: strformatrt.cpp 37996 2011-07-18 10:09:19Z vboxsync $ */
+/* $Id: strformatrt.cpp 40988 2012-04-19 13:25:45Z vboxsync $ */
 /** @file
  * IPRT - IPRT String Formatter Extensions.
  */
@@ -30,8 +30,10 @@
 *******************************************************************************/
 #define LOG_GROUP RTLOGGROUP_STRING
 #include <iprt/string.h>
-#define RT_NO_EXPORT_SYMBOL /* don't slurp <linux/module.h> which then again
-                               slurps arch-specific headers defining symbols */
+#ifndef RT_NO_EXPORT_SYMBOL
+# define RT_NO_EXPORT_SYMBOL /* don't slurp <linux/module.h> which then again
+                                slurps arch-specific headers defining symbols */
+#endif
 #include "internal/iprt.h"
 
 #include <iprt/log.h>
@@ -46,6 +48,7 @@
 #include <iprt/time.h>
 #include <iprt/net.h>
 #include <iprt/path.h>
+#include <iprt/asm.h>
 #define STRFORMAT_WITH_X86
 #ifdef STRFORMAT_WITH_X86
 # include <iprt/x86.h>
@@ -514,9 +517,9 @@ DECLHIDDEN(size_t) rtstrFormatRt(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, co
                             /* cannot call RTUuidToStr because of GC/R0. */
                             return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0,
                                                "%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-                                               u.pUuid->Gen.u32TimeLow,
-                                               u.pUuid->Gen.u16TimeMid,
-                                               u.pUuid->Gen.u16TimeHiAndVersion,
+                                               RT_H2LE_U32(u.pUuid->Gen.u32TimeLow),
+                                               RT_H2LE_U16(u.pUuid->Gen.u16TimeMid),
+                                               RT_H2LE_U16(u.pUuid->Gen.u16TimeHiAndVersion),
                                                u.pUuid->Gen.u8ClockSeqHiAndReserved,
                                                u.pUuid->Gen.u8ClockSeqLow,
                                                u.pUuid->Gen.au8Node[0],

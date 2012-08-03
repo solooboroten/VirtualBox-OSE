@@ -382,8 +382,8 @@ main (int argc, char **argv)
         0,     /* uid */
         0,     /* gid */
         0,     /* ttl */
-       ~0,     /* dmode */
-       ~0,     /* fmode*/
+       ~0U,    /* dmode */
+       ~0U,    /* fmode*/
         0,     /* dmask */
         0,     /* fmask */
         0,     /* ronly */
@@ -465,6 +465,8 @@ main (int argc, char **argv)
         flags |= MS_NOEXEC;
     if (opts.nodev)
         flags |= MS_NODEV;
+    if (opts.remount)
+        flags |= MS_REMOUNT;
 
     mntinf.uid   = opts.uid;
     mntinf.gid   = opts.gid;
@@ -530,7 +532,7 @@ main (int argc, char **argv)
                 break;
 
             case 3:
-                panic_err("%s: Could not add an entry to the mount table.", argv[0]);
+                /* panic_err("%s: Could not add an entry to the mount table.", argv[0]); */
                 break;
 
             default:

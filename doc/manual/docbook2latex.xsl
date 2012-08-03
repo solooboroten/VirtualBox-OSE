@@ -18,7 +18,7 @@
         pretty quotes for English in the LaTeX output generated
         by this XSLT (see below).
 
-     Copyright (C) 2006-2010 Oracle Corporation
+     Copyright (C) 2006-2012 Oracle Corporation
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -413,7 +413,14 @@
   </xsl:template>
 
   <xsl:template match="tgroup">
-    <xsl:text>&#x0a;&#x0a;{\small\begin{center}&#x0a;\begin{tabulary}{.9\textwidth}[]{|L|L|L|}&#x0a;\hline&#x0a;</xsl:text>
+    <xsl:choose>
+      <xsl:when test="@style='verywide'">
+        <xsl:text>&#x0a;&#x0a;{\small\begin{center}&#x0a;\begin{tabulary}{1.1\textwidth}[]{|L|L|L|}&#x0a;\hline&#x0a;</xsl:text>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:text>&#x0a;&#x0a;{\small\begin{center}&#x0a;\begin{tabulary}{.9\textwidth}[]{|L|L|L|}&#x0a;\hline&#x0a;</xsl:text>
+      </xsl:otherwise>
+    </xsl:choose>
     <xsl:apply-templates />
     <xsl:text>&#x0a;\end{tabulary}&#x0a;\end{center}}&#x0a;</xsl:text>
   </xsl:template>
@@ -584,7 +591,7 @@
           <xsl:call-template name="str:subst">
             <xsl:with-param name="text" select="$subst6" />
             <xsl:with-param name="replace" select="'~'" />
-            <xsl:with-param name="with" select="'\~'" />
+            <xsl:with-param name="with" select="'\textasciitilde '" />
             <xsl:with-param name="disable-output-escaping" select="no" />
           </xsl:call-template>
         </xsl:variable>
@@ -675,7 +682,7 @@
           <xsl:call-template name="str:subst">
             <xsl:with-param name="text" select="$subst8" />
             <xsl:with-param name="replace" select="'~'" />
-            <xsl:with-param name="with" select="'\~'" />
+            <xsl:with-param name="with" select="'\textasciitilde '" />
             <xsl:with-param name="disable-output-escaping" select="no" />
           </xsl:call-template>
         </xsl:variable>

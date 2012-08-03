@@ -1,4 +1,4 @@
-/* $Id: PDMDriver.cpp 37418 2011-06-11 08:22:10Z vboxsync $ */
+/* $Id: PDMDriver.cpp 42141 2012-07-13 10:05:11Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, Driver parts.
  */
@@ -75,7 +75,7 @@ static int pdmR3DrvLoad(PVM pVM, PPDMDRVREGCBINT pRegCB, const char *pszFilename
  * Register drivers in a statically linked environment.
  *
  * @returns VBox status code.
- * @param   pVM         The VM to operate on.
+ * @param   pVM         Pointer to the VM.
  * @param   pfnCallback Driver registration callback
  */
 VMMR3DECL(int) PDMR3DrvStaticRegistration(PVM pVM, FNPDMVBOXDRIVERSREGISTER pfnCallback)
@@ -105,7 +105,7 @@ VMMR3DECL(int) PDMR3DrvStaticRegistration(PVM pVM, FNPDMVBOXDRIVERSREGISTER pfnC
  * loaded and called for registration.
  *
  * @returns VBox status code.
- * @param   pVM     VM Handle.
+ * @param   pVM     Pointer to the VM.
  */
 int pdmR3DrvInit(PVM pVM)
 {
@@ -217,7 +217,7 @@ int pdmR3DrvInit(PVM pVM)
  * Loads one driver module and call the registration entry point.
  *
  * @returns VBox status code.
- * @param   pVM             VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pRegCB          The registration callback stuff.
  * @param   pszFilename     Module filename.
  * @param   pszName         Module name.
@@ -269,7 +269,9 @@ static DECLCALLBACK(int) pdmR3DrvRegister(PCPDMDRVREGCB pCallbacks, PCPDMDRVREG 
                     VERR_PDM_UNKNOWN_DRVREG_VERSION);
     AssertReturn(pReg->szName[0], VERR_PDM_INVALID_DRIVER_REGISTRATION);
     AssertMsgReturn(RTStrEnd(pReg->szName, sizeof(pReg->szName)),
-                    (".*s\n", sizeof(pReg->szName), pReg->szName),
+                    ("%.*s\n", sizeof(pReg->szName), pReg->szName),
+                    VERR_PDM_INVALID_DRIVER_REGISTRATION);
+    AssertMsgReturn(pdmR3IsValidName(pReg->szName), ("%.*s\n", pReg->szName),
                     VERR_PDM_INVALID_DRIVER_REGISTRATION);
     AssertMsgReturn(    !(pReg->fFlags & PDM_DRVREG_FLAGS_R0)
                     ||  (   pReg->szR0Mod[0]
@@ -369,11 +371,257 @@ PPDMDRV pdmR3DrvLookup(PVM pVM, const char *pszName)
 
 
 /**
+ * Transforms the driver chain as it's being instantiated.
+ *
+ * Worker for pdmR3DrvInstantiate.
+ *
+ * @returns VBox status code.
+ * @param   pVM                 Pointer to the VM.
+ * @param   pDrvAbove           The driver above, NULL if top.
+ * @param   pLun                The LUN.
+ * @param   ppNode              The AttachedDriver node, replaced if any
+ *                              morphing took place.
+ */
+static int pdmR3DrvMaybeTransformChain(PVM pVM, PPDMDRVINS pDrvAbove, PPDMLUN pLun, PCFGMNODE *ppNode)
+{
+    /*
+     * The typical state of affairs is that there are no injections.
+     */
+    PCFGMNODE pCurTrans = CFGMR3GetFirstChild(CFGMR3GetChild(CFGMR3GetRoot(pVM), "PDM/DriverTransformations"));
+    if (!pCurTrans)
+        return VINF_SUCCESS;
+
+    /*
+     * Gather the attributes used in the matching process.
+     */
+    const char *pszDevice = pLun->pDevIns
+                          ? pLun->pDevIns->Internal.s.pDevR3->pReg->szName
+                          : pLun->pUsbIns->Internal.s.pUsbDev->pReg->szName;
+    char        szLun[32];
+    RTStrPrintf(szLun, sizeof(szLun), "%u", pLun->iLun);
+    const char *pszAbove  = pDrvAbove ? pDrvAbove->Internal.s.pDrv->pReg->szName : "<top>";
+    char       *pszThisDrv;
+    int rc = CFGMR3QueryStringAlloc(*ppNode, "Driver", &pszThisDrv);
+    AssertMsgRCReturn(rc,  ("Query for string value of \"Driver\" -> %Rrc\n", rc),
+                      rc == VERR_CFGM_VALUE_NOT_FOUND ? VERR_PDM_CFG_MISSING_DRIVER_NAME : rc);
+
+    uint64_t    uInjectTransformationAbove = 0;
+    if (pDrvAbove)
+    {
+        rc = CFGMR3QueryIntegerDef(CFGMR3GetParent(*ppNode), "InjectTransformationPtr", &uInjectTransformationAbove, 0);
+        AssertLogRelRCReturn(rc, rc);
+    }
+
+
+    /*
+     * Enumerate possible driver chain transformations.
+     */
+    unsigned cTransformations = 0;
+    for (; pCurTrans != NULL; pCurTrans = CFGMR3GetNextChild(pCurTrans))
+    {
+        char szCurTransNm[256];
+        rc = CFGMR3GetName(pCurTrans, szCurTransNm, sizeof(szCurTransNm));
+        AssertLogRelRCReturn(rc, rc);
+
+        /* Match against the driver multi pattern. */
+        char *pszMultiPat;
+        rc = CFGMR3QueryStringAllocDef(pCurTrans, "Driver", &pszMultiPat, "*");
+        AssertLogRelRCReturn(rc, rc);
+        bool fMatch = RTStrSimplePatternMultiMatch(pszMultiPat, RTSTR_MAX, pszDevice, RTSTR_MAX, NULL);
+        MMR3HeapFree(pszMultiPat);
+        if (!fMatch)
+            continue;
+
+        /* Match against the lun multi pattern. */
+        rc = CFGMR3QueryStringAllocDef(pCurTrans, "LUN", &pszMultiPat, "*");
+        AssertLogRelRCReturn(rc, rc);
+        fMatch = RTStrSimplePatternMultiMatch(pszMultiPat, RTSTR_MAX, szLun, RTSTR_MAX, NULL);
+        MMR3HeapFree(pszMultiPat);
+        if (!fMatch)
+            continue;
+
+        /* Match against the below-driver multi pattern. */
+        rc = CFGMR3QueryStringAllocDef(pCurTrans, "BelowDriver", &pszMultiPat, "*");
+        AssertLogRelRCReturn(rc, rc);
+        fMatch = RTStrSimplePatternMultiMatch(pszMultiPat, RTSTR_MAX, pszAbove, RTSTR_MAX, NULL);
+        MMR3HeapFree(pszMultiPat);
+        if (!fMatch)
+            continue;
+
+        /* Match against the above-driver multi pattern. */
+        rc = CFGMR3QueryStringAlloc(pCurTrans, "AboveDriver", &pszMultiPat);
+        if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+            rc = VINF_SUCCESS;
+        else
+        {
+            AssertLogRelRCReturn(rc, rc);
+            fMatch = RTStrSimplePatternMultiMatch(pszMultiPat, RTSTR_MAX, pszThisDrv, RTSTR_MAX, NULL);
+            MMR3HeapFree(pszMultiPat);
+            if (!fMatch)
+                continue;
+            if (uInjectTransformationAbove == (uintptr_t)pCurTrans)
+                continue;
+        }
+
+        /*
+         * We've got a match! Now, what are we supposed to do?
+         */
+        char szAction[16];
+        rc = CFGMR3QueryStringDef(pCurTrans, "Action", szAction, sizeof(szAction), "inject");
+        AssertLogRelRCReturn(rc, rc);
+        AssertLogRelMsgReturn(   !strcmp(szAction, "inject")
+                              || !strcmp(szAction, "mergeconfig")
+                              || !strcmp(szAction, "remove")
+                              || !strcmp(szAction, "removetree")
+                              || !strcmp(szAction, "replace")
+                              || !strcmp(szAction, "replacetree")
+                              ,
+                              ("Action='%s', valid values are 'inject', 'mergeconfig', 'replace', 'replacetree', 'remove', 'removetree'.\n", szAction),
+                              VERR_PDM_MISCONFIGURED_DRV_TRANSFORMATION);
+        LogRel(("Applying '%s' to '%s'::[%s]...'%s': %s\n", szCurTransNm, pszDevice, szLun, pszThisDrv, szAction));
+        CFGMR3Dump(*ppNode);
+        CFGMR3Dump(pCurTrans);
+
+        /* Get the attached driver to inject. */
+        PCFGMNODE pTransAttDrv = NULL;
+        if (!strcmp(szAction, "inject") || !strcmp(szAction, "replace") || !strcmp(szAction, "replacetree"))
+        {
+            pTransAttDrv = CFGMR3GetChild(pCurTrans, "AttachedDriver");
+            AssertLogRelMsgReturn(pTransAttDrv,
+                                  ("An %s transformation requires an AttachedDriver child node!\n", szAction),
+                                  VERR_PDM_MISCONFIGURED_DRV_TRANSFORMATION);
+        }
+
+
+        /*
+         * Remove the node.
+         */
+        if (!strcmp(szAction, "remove") || !strcmp(szAction, "removetree"))
+        {
+            PCFGMNODE pBelowThis = CFGMR3GetChild(*ppNode, "AttachedDriver");
+            if (!pBelowThis || !strcmp(szAction, "removetree"))
+            {
+                CFGMR3RemoveNode(*ppNode);
+                *ppNode = NULL;
+            }
+            else
+            {
+                PCFGMNODE pBelowThisCopy;
+                rc = CFGMR3DuplicateSubTree(pBelowThis, &pBelowThisCopy);
+                AssertLogRelRCReturn(rc, rc);
+
+                rc = CFGMR3ReplaceSubTree(*ppNode, pBelowThisCopy);
+                if (RT_FAILURE(rc))
+                {
+                    CFGMR3RemoveNode(pBelowThis);
+                    AssertLogRelReturn(("rc=%Rrc\n", rc), rc);
+                }
+            }
+        }
+        /*
+         * Replace the driver about to be instantiated.
+         */
+        else if (!strcmp(szAction, "replace") || !strcmp(szAction, "replacetree"))
+        {
+            PCFGMNODE pTransCopy;
+            rc = CFGMR3DuplicateSubTree(pTransAttDrv, &pTransCopy);
+            AssertLogRelRCReturn(rc, rc);
+
+            PCFGMNODE pBelowThis = CFGMR3GetChild(*ppNode, "AttachedDriver");
+            if (!pBelowThis || !strcmp(szAction, "replacetree"))
+                rc = VINF_SUCCESS;
+            else
+            {
+                PCFGMNODE pBelowThisCopy;
+                rc = CFGMR3DuplicateSubTree(pBelowThis, &pBelowThisCopy);
+                if (RT_SUCCESS(rc))
+                {
+                    rc = CFGMR3InsertSubTree(pTransCopy, "AttachedDriver", pBelowThisCopy, NULL);
+                    AssertLogRelRC(rc);
+                    if (RT_FAILURE(rc))
+                        CFGMR3RemoveNode(pBelowThisCopy);
+                }
+            }
+            if (RT_SUCCESS(rc))
+                rc = CFGMR3ReplaceSubTree(*ppNode, pTransCopy);
+            if (RT_FAILURE(rc))
+                CFGMR3RemoveNode(pTransCopy);
+        }
+        /*
+         * Inject a driver before the driver about to be instantiated.
+         */
+        else if (!strcmp(szAction, "inject"))
+        {
+            PCFGMNODE pTransCopy;
+            rc = CFGMR3DuplicateSubTree(pTransAttDrv, &pTransCopy);
+            AssertLogRelRCReturn(rc, rc);
+
+            PCFGMNODE pThisCopy;
+            rc = CFGMR3DuplicateSubTree(*ppNode, &pThisCopy);
+            if (RT_SUCCESS(rc))
+            {
+                rc = CFGMR3InsertSubTree(pTransCopy, "AttachedDriver", pThisCopy, NULL);
+                if (RT_SUCCESS(rc))
+                {
+                    rc = CFGMR3InsertInteger(pTransCopy, "InjectTransformationPtr", (uintptr_t)pCurTrans);
+                    AssertLogRelRC(rc);
+                    rc = CFGMR3InsertString(pTransCopy, "InjectTransformationNm", szCurTransNm);
+                    AssertLogRelRC(rc);
+                    if (RT_SUCCESS(rc))
+                        rc = CFGMR3ReplaceSubTree(*ppNode, pTransCopy);
+                }
+                else
+                {
+                    AssertLogRelRC(rc);
+                    CFGMR3RemoveNode(pThisCopy);
+                }
+            }
+            if (RT_FAILURE(rc))
+                CFGMR3RemoveNode(pTransCopy);
+        }
+        /*
+         * Merge the Config node of the transformation with the one of the
+         * current driver.
+         */
+        else if (!strcmp(szAction, "mergeconfig"))
+        {
+            PCFGMNODE pTransConfig = CFGMR3GetChild(pCurTrans, "Config");
+            AssertLogRelReturn(pTransConfig, VERR_PDM_MISCONFIGURED_DRV_TRANSFORMATION);
+
+            PCFGMNODE pDrvConfig = CFGMR3GetChild(*ppNode, "Config");
+            if (*ppNode)
+                CFGMR3InsertNode(*ppNode, "Config", &pDrvConfig);
+            AssertLogRelReturn(pDrvConfig, VERR_PDM_CANNOT_TRANSFORM_REMOVED_DRIVER);
+
+            rc = CFGMR3CopyTree(pDrvConfig, pTransConfig, CFGM_COPY_FLAGS_REPLACE_VALUES | CFGM_COPY_FLAGS_MERGE_KEYS);
+            AssertLogRelRCReturn(rc, rc);
+        }
+        else
+            AssertFailed();
+
+        cTransformations++;
+        if (*ppNode)
+            CFGMR3Dump(*ppNode);
+        else
+            LogRel(("The transformation removed the driver.\n"));
+    }
+
+    /*
+     * Note what happened in the release log.
+     */
+    if (cTransformations > 0)
+        LogRel(("Transformations done. Applied %u driver transformations.\n", cTransformations));
+
+    return rc;
+}
+
+
+/**
  * Instantiate a driver.
  *
  * @returns VBox status code, including informational statuses.
  *
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pNode               The CFGM node for the driver.
  * @param   pBaseInterface      The base interface.
  * @param   pDrvAbove           The driver above it.  NULL if it's the top-most
@@ -386,6 +634,10 @@ PPDMDRV pdmR3DrvLookup(PVM pVM, const char *pszName)
  *
  * @remarks Recursive calls to this function is normal as the drivers will
  *          attach to anything below them during the pfnContruct call.
+ *
+ * @todo    Need to extend this interface a bit so that the driver
+ *          transformation feature can attach drivers to unconfigured LUNs and
+ *          at the end of chains.
  */
 int pdmR3DrvInstantiate(PVM pVM, PCFGMNODE pNode, PPDMIBASE pBaseInterface, PPDMDRVINS pDrvAbove,
                         PPDMLUN pLun, PPDMIBASE *ppBaseInterface)
@@ -396,14 +648,22 @@ int pdmR3DrvInstantiate(PVM pVM, PCFGMNODE pNode, PPDMIBASE pBaseInterface, PPDM
     Assert(pBaseInterface->pfnQueryInterface(pBaseInterface, PDMIBASE_IID) == pBaseInterface);
 
     /*
+     * Do driver chain injections
+     */
+    int rc = pdmR3DrvMaybeTransformChain(pVM, pDrvAbove, pLun, &pNode);
+    if (RT_FAILURE(rc))
+        return rc;
+    if (!pNode)
+        return VERR_PDM_NO_ATTACHED_DRIVER;
+
+    /*
      * Find the driver.
      */
     char *pszName;
-    int rc = CFGMR3QueryStringAlloc(pNode, "Driver", &pszName);
+    rc = CFGMR3QueryStringAlloc(pNode, "Driver", &pszName);
     if (RT_SUCCESS(rc))
     {
         PPDMDRV pDrv = pdmR3DrvLookup(pVM, pszName);
-        MMR3HeapFree(pszName);
         if (    pDrv
             &&  pDrv->cInstances < pDrv->pReg->cMaxInstances)
         {
@@ -432,6 +692,7 @@ int pdmR3DrvInstantiate(PVM pVM, PCFGMNODE pNode, PPDMIBASE pBaseInterface, PPDM
                      * Initialize the instance structure (declaration order).
                      */
                     pNew->u32Version                = PDM_DRVINS_VERSION;
+                    pNew->iInstance                 = pDrv->iNextInstance;
                     pNew->Internal.s.pUp            = pDrvAbove ? pDrvAbove : NULL;
                     //pNew->Internal.s.pDown          = NULL;
                     pNew->Internal.s.pLun           = pLun;
@@ -447,11 +708,12 @@ int pdmR3DrvInstantiate(PVM pVM, PCFGMNODE pNode, PPDMIBASE pBaseInterface, PPDM
                     pNew->Internal.s.pCfgHandle     = pNode;
                     pNew->pReg                      = pDrv->pReg;
                     pNew->pCfg                      = pConfigNode;
-                    pNew->iInstance                 = pDrv->iNextInstance;
                     pNew->pUpBase                   = pBaseInterface;
                     Assert(!pDrvAbove || pBaseInterface == &pDrvAbove->IBase);
                     //pNew->pDownBase                 = NULL;
                     //pNew->IBase.pfnQueryInterface   = NULL;
+                    //pNew->fTracing                  = 0;
+                    pNew->idTracing                 = ++pVM->pdm.s.idTracingOther;
                     pNew->pHlpR3                    = &g_pdmR3DrvHlp;
                     pNew->pvInstanceDataR3          = &pNew->achInstanceData[0];
                     if (pDrv->pReg->fFlags & PDM_DRVREG_FLAGS_R0)
@@ -533,6 +795,7 @@ int pdmR3DrvInstantiate(PVM pVM, PCFGMNODE pNode, PPDMIBASE pBaseInterface, PPDM
             AssertMsgFailed(("Driver '%s' wasn't found!\n", pszName));
             rc = VERR_PDM_DRIVER_NOT_FOUND;
         }
+        MMR3HeapFree(pszName);
     }
     else
     {
@@ -570,9 +833,12 @@ int pdmR3DrvDetach(PPDMDRVINS pDrvIns, uint32_t fFlags)
      * Check that we actually can detach this instance.
      * The requirement is that the driver/device above has a detach method.
      */
-    if (pDrvIns->Internal.s.pUp
+    if (  pDrvIns->Internal.s.pUp
         ? !pDrvIns->Internal.s.pUp->pReg->pfnDetach
-        : !pDrvIns->Internal.s.pLun->pDevIns->pReg->pfnDetach)
+        :   pDrvIns->Internal.s.pLun->pDevIns
+          ? !pDrvIns->Internal.s.pLun->pDevIns->pReg->pfnDetach
+          : !pDrvIns->Internal.s.pLun->pUsbIns->pReg->pfnDriverDetach
+       )
     {
         AssertMsgFailed(("Cannot detach driver instance because the driver/device above doesn't support it!\n"));
         return VERR_PDM_DRIVER_DETACH_NOT_POSSIBLE;
@@ -639,8 +905,27 @@ void pdmR3DrvDestroyChain(PPDMDRVINS pDrvIns, uint32_t fFlags)
             /* device parent */
             Assert(pLun->pTop == pCur);
             pLun->pTop = NULL;
-            if (!(fFlags & PDM_TACH_FLAGS_NO_CALLBACKS) && pLun->pDevIns->pReg->pfnDetach)
-                pLun->pDevIns->pReg->pfnDetach(pLun->pDevIns, pLun->iLun, fFlags);
+            if (!(fFlags & PDM_TACH_FLAGS_NO_CALLBACKS))
+            {
+                if (pLun->pDevIns)
+                {
+                    if (pLun->pDevIns->pReg->pfnDetach)
+                    {
+                        PDMCritSectEnter(pLun->pDevIns->pCritSectRoR3, VERR_IGNORED);
+                        pLun->pDevIns->pReg->pfnDetach(pLun->pDevIns, pLun->iLun, fFlags);
+                        PDMCritSectLeave(pLun->pDevIns->pCritSectRoR3);
+                    }
+                }
+                else
+                {
+                    if (pLun->pUsbIns->pReg->pfnDriverDetach)
+                    {
+                        /** @todo USB device locking? */
+                        /** @todo add flags to pfnDriverDetach. */
+                        pLun->pUsbIns->pReg->pfnDriverDetach(pLun->pUsbIns, pLun->iLun);
+                    }
+                }
+            }
         }
 
         /*
@@ -1266,6 +1551,38 @@ static DECLCALLBACK(int) pdmR3DrvHlp_AsyncCompletionTemplateCreate(PPDMDRVINS pD
 }
 
 
+#ifdef VBOX_WITH_NETSHAPER
+/** @interface_method_impl{PDMDRVHLP,pfnNetShaperAttach} */
+static DECLCALLBACK(int) pdmR3DrvHlp_NetShaperAttach(PPDMDRVINS pDrvIns, const char *pszBwGroup, PPDMNSFILTER pFilter)
+{
+    PDMDRV_ASSERT_DRVINS(pDrvIns);
+    LogFlow(("pdmR3DrvHlp_NetShaperAttach: caller='%s'/%d: pFilter=%p pszBwGroup=%p:{%s}\n",
+             pDrvIns->pReg->szName, pDrvIns->iInstance, pFilter, pszBwGroup, pszBwGroup));
+
+    int rc = PDMR3NsAttach(pDrvIns->Internal.s.pVMR3, pDrvIns, pszBwGroup, pFilter);
+
+    LogFlow(("pdmR3DrvHlp_NetShaperAttach: caller='%s'/%d: returns %Rrc\n", pDrvIns->pReg->szName,
+             pDrvIns->iInstance, rc));
+    return rc;
+}
+
+
+/** @interface_method_impl{PDMDRVHLP,pfnNetShaperDetach} */
+static DECLCALLBACK(int) pdmR3DrvHlp_NetShaperDetach(PPDMDRVINS pDrvIns, PPDMNSFILTER pFilter)
+{
+    PDMDRV_ASSERT_DRVINS(pDrvIns);
+    LogFlow(("pdmR3DrvHlp_NetShaperDetach: caller='%s'/%d: pFilter=%p\n",
+             pDrvIns->pReg->szName, pDrvIns->iInstance, pFilter));
+
+    int rc = PDMR3NsDetach(pDrvIns->Internal.s.pVMR3, pDrvIns, pFilter);
+
+    LogFlow(("pdmR3DrvHlp_NetShaperDetach: caller='%s'/%d: returns %Rrc\n", pDrvIns->pReg->szName,
+             pDrvIns->iInstance, rc));
+    return rc;
+}
+#endif /* VBOX_WITH_NETSHAPER */
+
+
 /** @interface_method_impl{PDMDRVHLP,pfnLdrGetRCInterfaceSymbols} */
 static DECLCALLBACK(int) pdmR3DrvHlp_LdrGetRCInterfaceSymbols(PPDMDRVINS pDrvIns, void *pvInterface, size_t cbInterface,
                                                               const char *pszSymPrefix, const char *pszSymList)
@@ -1424,11 +1741,12 @@ static DECLCALLBACK(int) pdmR3DrvHlp_FTSetCheckpoint(PPDMDRVINS pDrvIns, FTMCHEC
 static DECLCALLBACK(int) pdmR3DrvHlp_BlkCacheRetain(PPDMDRVINS pDrvIns, PPPDMBLKCACHE ppBlkCache,
                                                     PFNPDMBLKCACHEXFERCOMPLETEDRV pfnXferComplete,
                                                     PFNPDMBLKCACHEXFERENQUEUEDRV pfnXferEnqueue,
+                                                    PFNPDMBLKCACHEXFERENQUEUEDISCARDDRV pfnXferEnqueueDiscard,
                                                     const char *pcszId)
 {
     PDMDRV_ASSERT_DRVINS(pDrvIns);
     return PDMR3BlkCacheRetainDriver(pDrvIns->Internal.s.pVMR3, pDrvIns, ppBlkCache,
-                                     pfnXferComplete, pfnXferEnqueue, pcszId);
+                                     pfnXferComplete, pfnXferEnqueue, pfnXferEnqueueDiscard, pcszId);
 }
 
 
@@ -1469,6 +1787,10 @@ const PDMDRVHLPR3 g_pdmR3DrvHlp =
     pdmR3DrvHlp_AsyncNotificationCompleted,
     pdmR3DrvHlp_ThreadCreate,
     pdmR3DrvHlp_AsyncCompletionTemplateCreate,
+#ifdef VBOX_WITH_NETSHAPER
+    pdmR3DrvHlp_NetShaperAttach,
+    pdmR3DrvHlp_NetShaperDetach,
+#endif /* VBOX_WITH_NETSHAPER */
     pdmR3DrvHlp_LdrGetRCInterfaceSymbols,
     pdmR3DrvHlp_LdrGetR0InterfaceSymbols,
     pdmR3DrvHlp_CritSectInit,

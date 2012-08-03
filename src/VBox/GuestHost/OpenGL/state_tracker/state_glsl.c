@@ -1,4 +1,4 @@
-/* $Id: state_glsl.c 37773 2011-07-04 18:07:09Z vboxsync $ */
+/* $Id: state_glsl.c 41928 2012-06-27 16:06:23Z vboxsync $ */
 
 /** @file
  * VBox OpenGL: GLSL state tracking
@@ -173,7 +173,11 @@ DECLEXPORT(void) STATE_APIENTRY crStateGLSLDestroy(CRContext *ctx)
     /*@todo: hack to allow crStateFreeGLSLProgram to work correctly, 
       as the current context isn't the one being destroyed*/
 #ifdef CHROMIUM_THREADSAFE
-    crSetTSD(&__contextTSD, ctx);
+    CRASSERT(g != ctx);
+    VBoxTlsRefAddRef(ctx); /* <- this is a hack to avoid subsequent SetCurrentContext(g) do recursive Destroy for ctx */
+    if (g)
+        VBoxTlsRefAddRef(g); /* <- ensure the g is not destroyed by the following SetCurrentContext call */
+    SetCurrentContext(ctx);
 #else
     __currentContext = ctx;
 #endif
@@ -182,7 +186,10 @@ DECLEXPORT(void) STATE_APIENTRY crStateGLSLDestroy(CRContext *ctx)
     crFreeHashtable(ctx->glsl.shaders, crStateFreeGLSLShader);
 
 #ifdef CHROMIUM_THREADSAFE
-    crSetTSD(&__contextTSD, g);
+    SetCurrentContext(g);
+    if (g)
+        VBoxTlsRefRelease(g);
+    VBoxTlsRefRelease(ctx); /* <- restore back the cRefs (see above) */
 #else
     __currentContext = g;
 #endif
@@ -198,6 +205,7 @@ DECLEXPORT(GLuint) STATE_APIENTRY crStateGetShaderHWID(GLuint id)
 DECLEXPORT(GLuint) STATE_APIENTRY crStateGetProgramHWID(GLuint id)
 {
     CRGLSLProgram *pProgram = crStateGetProgramObj(id);
+    CRASSERT(!pProgram || pProgram->hwid == id);
     return pProgram ? pProgram->hwid : 0;
 }
 

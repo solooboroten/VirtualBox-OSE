@@ -1,4 +1,4 @@
-/* $Id: UIVMItem.cpp 38311 2011-08-04 13:08:39Z vboxsync $ */
+/* $Id: UIVMItem.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,16 +21,20 @@
 # include "precomp.h"
 #else  /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
-/* Local includes */
-#include "UIVMItem.h"
-
-/* Qt includes */
+/* Qt includes: */
 #include <QFileInfo>
+#include <QIcon>
 
+/* GUI includes: */
+#include "UIVMItem.h"
+#include "VBoxGlobal.h"
+#include "UIConverter.h"
 #ifdef Q_WS_MAC
-//# include "VBoxUtils.h"
 # include <ApplicationServices/ApplicationServices.h>
 #endif /* Q_WS_MAC */
+
+/* COM includes: */
+#include "CSnapshot.h"
 
 #endif /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
@@ -148,15 +152,27 @@ UIVMItem::~UIVMItem()
 // public members
 ////////////////////////////////////////////////////////////////////////////////
 
+QIcon UIVMItem::osIcon() const
+{
+    return m_fAccessible ? vboxGlobal().vmGuestOSTypeIcon(m_strOSTypeId) :
+                           QPixmap(":/os_other.png");
+}
+
 QString UIVMItem::machineStateName() const
 {
-    return m_fAccessible ? vboxGlobal().toString(m_machineState) :
+    return m_fAccessible ? gpConverter->toString(m_machineState) :
            QApplication::translate("UIVMListView", "Inaccessible");
+}
+
+QIcon UIVMItem::machineStateIcon() const
+{
+    return m_fAccessible ? gpConverter->toPixmap(m_machineState) :
+                           QPixmap(":/state_aborted_16px.png");
 }
 
 QString UIVMItem::sessionStateName() const
 {
-    return m_fAccessible ? vboxGlobal().toString(m_sessionState) :
+    return m_fAccessible ? gpConverter->toString(m_sessionState) :
            QApplication::translate("UIVMListView", "Inaccessible");
 }
 
@@ -179,9 +195,9 @@ QString UIVMItem::toolTipText() const
             "<nobr>Session %4</nobr>",
             "VM tooltip (name, last state change, session state)")
             .arg(toolTip)
-            .arg(vboxGlobal().toString(m_machineState))
+            .arg(gpConverter->toString(m_machineState))
             .arg(dateTime)
-            .arg(vboxGlobal().toString(m_sessionState));
+            .arg(gpConverter->toString(m_sessionState));
     }
     else
     {
@@ -233,7 +249,7 @@ bool UIVMItem::recache()
         }
         else
         {
-            m_pid = m_machine.GetSessionPid();
+            m_pid = m_machine.GetSessionPID();
     /// @todo Remove. See @c todo in #switchTo() below.
 #if 0
             mWinId = FindWindowIdFromPid(m_pid);
@@ -247,7 +263,7 @@ bool UIVMItem::recache()
         /* this should be in sync with
          * UIMessageCenter::confirm_machineDeletion() */
         QFileInfo fi(m_strSettingsFile);
-        QString name = VBoxGlobal::hasAllowedExtension(fi.completeSuffix(), VBoxDefs::VBoxFileExts) ?
+        QString name = VBoxGlobal::hasAllowedExtension(fi.completeSuffix(), VBoxFileExts) ?
                        fi.completeBaseName() : fi.fileName();
         needsResort = name != m_strName;
         m_strName = name;

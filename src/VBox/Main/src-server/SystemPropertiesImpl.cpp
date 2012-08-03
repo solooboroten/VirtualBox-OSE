@@ -1,12 +1,10 @@
-/* $Id: SystemPropertiesImpl.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
-
+/* $Id: SystemPropertiesImpl.cpp 42391 2012-07-25 13:21:27Z vboxsync $ */
 /** @file
- *
  * VirtualBox COM class implementation
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,6 +24,7 @@
 #include "AutoCaller.h"
 #include "Global.h"
 #include "Logging.h"
+#include "AutostartDb.h"
 
 // generated header
 #include "SchemaDefs.h"
@@ -321,20 +320,10 @@ STDMETHODIMP SystemProperties::GetMaxNetworkAdapters(ChipsetType_T aChipset, ULO
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    ULONG uResult = 0;
-
     /* no need for locking, no state */
-    switch (aChipset)
-    {
-        case ChipsetType_PIIX3:
-            uResult = SchemaDefs::NetworkAdapterCount; /* == 8 */
-            break;
-        case ChipsetType_ICH9:
-            uResult = 36;
-            break;
-        default:
-            AssertMsgFailed(("Invalid chipset type %d\n", aChipset));
-    }
+    uint32_t uResult = Global::getMaxNetworkAdapters(aChipset);
+    if (uResult == 0)
+        AssertMsgFailed(("Invalid chipset type %d\n", aChipset));
 
     *count = uResult;
 
@@ -348,12 +337,11 @@ STDMETHODIMP SystemProperties::GetMaxNetworkAdaptersOfType(ChipsetType_T aChipse
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    ULONG uResult = 0;
-    HRESULT rc = GetMaxNetworkAdapters(aChipset, &uResult);
-    if (FAILED(rc))
-        return rc;
-
     /* no need for locking, no state */
+    uint32_t uResult = Global::getMaxNetworkAdapters(aChipset);
+    if (uResult == 0)
+        AssertMsgFailed(("Invalid chipset type %d\n", aChipset));
+
     switch (aType)
     {
         case NetworkAttachmentType_NAT:
@@ -364,7 +352,7 @@ STDMETHODIMP SystemProperties::GetMaxNetworkAdaptersOfType(ChipsetType_T aChipse
             /* Maybe use current host interface count here? */
             break;
         case NetworkAttachmentType_HostOnly:
-            uResult = 8;
+            uResult = RT_MIN(uResult, 8);
             break;
         default:
             AssertMsgFailed(("Unhandled attachment type %d\n", aType));
@@ -929,6 +917,39 @@ STDMETHODIMP SystemProperties::COMGETTER(DefaultAudioDriver)(AudioDriverType_T *
     return S_OK;
 }
 
+STDMETHODIMP SystemProperties::COMGETTER(AutostartDatabasePath)(BSTR *aAutostartDbPath)
+{
+    CheckComArgOutPointerValid(aAutostartDbPath);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    m->strAutostartDatabasePath.cloneTo(aAutostartDbPath);
+
+    return S_OK;
+}
+
+STDMETHODIMP SystemProperties::COMSETTER(AutostartDatabasePath)(IN_BSTR aAutostartDbPath)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    HRESULT rc = setAutostartDatabasePath(aAutostartDbPath);
+    alock.release();
+
+    if (SUCCEEDED(rc))
+    {
+        // VirtualBox::saveSettings() needs vbox write lock
+        AutoWriteLock vboxLock(mParent COMMA_LOCKVAL_SRC_POS);
+        rc = mParent->saveSettings();
+    }
+
+    return rc;
+}
+
 // public methods only for internal purposes
 /////////////////////////////////////////////////////////////////////////////
 
@@ -957,6 +978,9 @@ HRESULT SystemProperties::loadSettings(const settings::SystemProperties &data)
     if (FAILED(rc)) return rc;
 
     m->ulLogHistoryCount = data.ulLogHistoryCount;
+
+    rc = setAutostartDatabasePath(data.strAutostartDatabasePath);
+    if (FAILED(rc)) return rc;
 
     return S_OK;
 }
@@ -1134,4 +1158,34 @@ HRESULT SystemProperties::setDefaultVRDEExtPack(const Utf8Str &aExtPack)
     m->strDefaultVRDEExtPack = aExtPack;
 
     return S_OK;
+}
+
+HRESULT SystemProperties::setAutostartDatabasePath(const Utf8Str &aPath)
+{
+    HRESULT rc = S_OK;
+    AutostartDb *autostartDb = this->mParent->getAutostartDb();
+
+    if (!aPath.isEmpty())
+    {
+        /* Update path in the autostart database. */
+        int vrc = autostartDb->setAutostartDbPath(aPath.c_str());
+        if (RT_SUCCESS(vrc))
+            m->strAutostartDatabasePath = aPath;
+        else
+            rc = setError(E_FAIL,
+                          tr("Cannot set the autostart database path (%Rrc)"),
+                          vrc);
+    }
+    else
+    {
+        int vrc = autostartDb->setAutostartDbPath(NULL);
+        if (RT_SUCCESS(vrc) || vrc == VERR_NOT_SUPPORTED)
+            m->strAutostartDatabasePath = "";
+        else
+            rc = setError(E_FAIL,
+                          tr("Deleting the autostart database path failed (%Rrc)"),
+                          vrc);
+    }
+
+    return rc;
 }

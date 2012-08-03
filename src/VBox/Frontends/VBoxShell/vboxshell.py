@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-# Copyright (C) 2009-2011 Oracle Corporation
+# Copyright (C) 2009-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -218,7 +218,7 @@ def colSizeM(ctx,m):
 def createVm(ctx,name,kind):
     mgr = ctx['mgr']
     vb = ctx['vb']
-    mach = vb.createMachine("", name, kind, "", False)
+    mach = vb.createMachine("", name, [], kind, "", False)
     mach.saveSettings()
     print "created machine with UUID",mach.id
     vb.registerMachine(mach)
@@ -294,7 +294,11 @@ def asFlag(var):
     else:
         return 'no'
 
-def perfStats(ctx,mach):
+def getFacilityStatus(ctx, guest, facilityType):
+    (status, ts) = guest.getFacilityStatus(facilityType)
+    return asEnumElem(ctx, 'AdditionsFacilityStatus', status)
+        
+def perfStats(ctx, mach):
     if not ctx['perf']:
         return
     for metric in ctx['perf'].query(["*"], [mach]):
@@ -628,12 +632,11 @@ def printSf(ctx,sf):
 
 def ginfo(ctx,console, args):
     guest = console.guest
-    if guest.additionsActive:
-        vers = int(str(guest.additionsVersion))
-        print "Additions active, version %d.%d"  %(vers >> 16, vers & 0xffff)
-        print "Support seamless: %s"          %(asFlag(guest.supportsSeamless))
-        print "Support graphics: %s"          %(asFlag(guest.supportsGraphics))
-        print "Baloon size: %d"               %(guest.memoryBalloonSize)
+    if guest.additionsRunLevel != ctx['const'].AdditionsRunLevelType_None:
+        print "Additions active, version %s"  %(guest.additionsVersion)
+        print "Support seamless: %s"          %(getFacilityStatus(ctx, guest, ctx['const'].AdditionsFacilityType_Seamless))
+        print "Support graphics: %s"          %(getFacilityStatus(ctx, guest, ctx['const'].AdditionsFacilityType_Graphics))
+        print "Balloon size: %d"              %(guest.memoryBalloonSize)
         print "Statistic update interval: %d" %(guest.statisticsUpdateInterval)
     else:
         print "No additions"
@@ -2164,7 +2167,7 @@ def registerHddCmd(ctx,args):
    imageId = ""
    setParentId = False
    parentId = ""
-   hdd = vb.openMedium(loc, ctx['global'].constants.DeviceType_HardDisk, ctx['global'].constants.AccessMode_ReadWrite)
+   hdd = vb.openMedium(loc, ctx['global'].constants.DeviceType_HardDisk, ctx['global'].constants.AccessMode_ReadWrite, false)
    print "registered HDD as %s" %(hdd.id)
    return 0
 
@@ -2183,7 +2186,7 @@ def attachHddCmd(ctx,args):
    vb = ctx['vb']
    loc = args[2]
    try:
-      hdd = vb.findMedium(loc, ctx['global'].constants.DeviceType_HardDisk)
+      hdd = vb.openMedium(loc, ctx['global'].constants.DeviceType_HardDisk, ctx['global'].constants.AccessMode_ReadWrite, false)
    except:
       print "no HDD with path %s registered" %(loc)
       return 0
@@ -2218,7 +2221,7 @@ def detachHddCmd(ctx,args):
    vb = ctx['vb']
    loc = args[2]
    try:
-      hdd = vb.findMedium(loc, ctx['global'].constants.DeviceType_HardDisk)
+      hdd = vb.openMedium(loc, ctx['global'].constants.DeviceType_HardDisk, ctx['global'].constants.AccessMode_ReadWrite, false)
    except:
       print "no HDD with path %s registered" %(loc)
       return 0
@@ -2238,7 +2241,7 @@ def unregisterHddCmd(ctx,args):
    else:
       vmunreg = 0
    try:
-      hdd = vb.findMedium(loc, ctx['global'].constants.DeviceType_HardDisk)
+      hdd = vb.openMedium(loc, ctx['global'].constants.DeviceType_HardDisk, ctx['global'].constants.AccessMode_ReadWrite, false)
    except:
       print "no HDD with path %s registered" %(loc)
       return 0
@@ -2263,7 +2266,7 @@ def removeHddCmd(ctx,args):
    vb = ctx['vb']
    loc = args[1]
    try:
-      hdd = vb.findMedium(loc, ctx['global'].constants.DeviceType_HardDisk)
+      hdd = vb.openMedium(loc, ctx['global'].constants.DeviceType_HardDisk, ctx['global'].constants.AccessMode_ReadWrite, false)
    except:
       print "no HDD with path %s registered" %(loc)
       return 0
@@ -2279,7 +2282,7 @@ def registerIsoCmd(ctx,args):
       return 0
    vb = ctx['vb']
    loc = args[1]
-   iso = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly)
+   iso = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly, false)
    print "registered ISO as %s" %(iso.id)
    return 0
 
@@ -2291,7 +2294,7 @@ def unregisterIsoCmd(ctx,args):
    vb = ctx['vb']
    loc = args[1]
    try:
-      dvd = vb.findMedium(loc, ctx['global'].constants.DeviceType_DVD)
+      dvd = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly, false)
    except:
       print "no DVD with path %s registered" %(loc)
       return 0
@@ -2309,7 +2312,7 @@ def removeIsoCmd(ctx,args):
    vb = ctx['vb']
    loc = args[1]
    try:
-      dvd = vb.findMedium(loc, ctx['global'].constants.DeviceType_DVD)
+      dvd = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly, false)
    except:
       print "no DVD with path %s registered" %(loc)
       return 0
@@ -2332,7 +2335,7 @@ def attachIsoCmd(ctx,args):
    vb = ctx['vb']
    loc = args[2]
    try:
-      dvd = vb.findMedium(loc, ctx['global'].constants.DeviceType_DVD)
+      dvd = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly, false)
    except:
       print "no DVD with path %s registered" %(loc)
       return 0
@@ -2355,7 +2358,7 @@ def detachIsoCmd(ctx,args):
    vb = ctx['vb']
    loc = args[2]
    try:
-      dvd = vb.findMedium(loc, ctx['global'].constants.DeviceType_DVD)
+      dvd = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly, false)
    except:
       print "no DVD with path %s registered" %(loc)
       return 0
@@ -2374,7 +2377,7 @@ def mountIsoCmd(ctx,args):
    vb = ctx['vb']
    loc = args[2]
    try:
-      dvd = vb.findMedium(loc, ctx['global'].constants.DeviceType_DVD)
+      dvd = vb.openMedium(loc, ctx['global'].constants.DeviceType_DVD, ctx['global'].constants.AccessMode_ReadOnly, false)
    except:
       print "no DVD with path %s registered" %(loc)
       return 0

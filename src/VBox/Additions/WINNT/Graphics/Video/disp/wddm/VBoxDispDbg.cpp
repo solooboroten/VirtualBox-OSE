@@ -1,4 +1,4 @@
-/* $Id: VBoxDispDbg.cpp 38331 2011-08-05 15:29:06Z vboxsync $ */
+/* $Id: VBoxDispDbg.cpp 42027 2012-07-05 15:22:12Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -47,6 +47,44 @@
 #include <stdarg.h>
 
 #include <iprt/asm.h>
+#include <iprt/assert.h>
+
+static DWORD g_VBoxVDbgFIsModuleNameInited = 0;
+static char g_VBoxVDbgModuleName[MAX_PATH];
+
+char *vboxVDbgDoGetModuleName()
+{
+    if (!g_VBoxVDbgFIsModuleNameInited)
+    {
+        DWORD cName = GetModuleFileNameA(NULL, g_VBoxVDbgModuleName, RT_ELEMENTS(g_VBoxVDbgModuleName));
+        if (!cName)
+        {
+            DWORD winEr = GetLastError();
+            WARN(("GetModuleFileNameA failed, winEr %d", winEr));
+            return NULL;
+        }
+        g_VBoxVDbgFIsModuleNameInited = TRUE;
+    }
+    return g_VBoxVDbgModuleName;
+}
+
+static void vboxDispLogDbgFormatStringV(char * szBuffer, uint32_t cbBuffer, const char * szString, va_list pArgList)
+{
+    uint32_t cbWritten = sprintf(szBuffer, "['%s' 0x%x.0x%x] Disp: ", vboxVDbgDoGetModuleName(), GetCurrentProcessId(), GetCurrentThreadId());
+    if (cbWritten > cbBuffer)
+    {
+        AssertReleaseFailed();
+        return;
+    }
+
+    _vsnprintf(szBuffer + cbWritten, cbBuffer - cbWritten, szString, pArgList);
+}
+
+#if defined(VBOXWDDMDISP_DEBUG) || defined(VBOX_WDDMDISP_WITH_PROFILE)
+LONG g_VBoxVDbgFIsDwm = -1;
+
+DWORD g_VBoxVDbgPid = 0;
+#endif
 
 #ifdef VBOXWDDMDISP_DEBUG
 #define VBOXWDDMDISP_DEBUG_DUMP_DEFAULT 0
@@ -59,147 +97,130 @@ DWORD g_VBoxVDbgFDumpFlush = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
 DWORD g_VBoxVDbgFDumpShared = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
 DWORD g_VBoxVDbgFDumpLock = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
 DWORD g_VBoxVDbgFDumpUnlock = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
+DWORD g_VBoxVDbgFDumpPresentEnter = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
+DWORD g_VBoxVDbgFDumpPresentLeave = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
+DWORD g_VBoxVDbgFDumpScSync = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
 
 DWORD g_VBoxVDbgFBreakShared = VBOXWDDMDISP_DEBUG_DUMP_DEFAULT;
+DWORD g_VBoxVDbgFBreakDdi = 0;
 
-DWORD g_VBoxVDbgPid = 0;
-typedef enum
-{
-    VBOXDISPDBG_STATE_UNINITIALIZED = 0,
-    VBOXDISPDBG_STATE_INITIALIZING,
-    VBOXDISPDBG_STATE_INITIALIZED,
-} VBOXDISPDBG_STATE;
+DWORD g_VBoxVDbgFCheckSysMemSync = 0;
+DWORD g_VBoxVDbgFCheckBlt = 0;
+DWORD g_VBoxVDbgFCheckTexBlt = 0;
+DWORD g_VBoxVDbgFCheckScSync = 0;
 
-typedef struct VBOXDISPDBG
-{
-    VBOXDISPKMT_CALLBACKS KmtCallbacks;
-    VBOXDISPDBG_STATE enmState;
-} VBOXDISPDBG, *PVBOXDISPDBG;
+DWORD g_VBoxVDbgFSkipCheckTexBltDwmWndUpdate = 1;
 
-static VBOXDISPDBG g_VBoxDispDbg = {0};
+DWORD g_VBoxVDbgFLogRel = 1;
+DWORD g_VBoxVDbgFLog = 1;
+DWORD g_VBoxVDbgFLogFlow = 0;
 
-PVBOXDISPDBG vboxDispDbgGet()
-{
-    if (ASMAtomicCmpXchgU32((volatile uint32_t *)&g_VBoxDispDbg.enmState, VBOXDISPDBG_STATE_INITIALIZING, VBOXDISPDBG_STATE_UNINITIALIZED))
-    {
-        HRESULT hr = vboxDispKmtCallbacksInit(&g_VBoxDispDbg.KmtCallbacks);
-        Assert(hr == S_OK);
-        if (hr == S_OK)
-        {
-            ASMAtomicWriteU32((volatile uint32_t *)&g_VBoxDispDbg.enmState, VBOXDISPDBG_STATE_INITIALIZED);
-            return &g_VBoxDispDbg;
-        }
-        else
-        {
-            ASMAtomicWriteU32((volatile uint32_t *)&g_VBoxDispDbg.enmState, VBOXDISPDBG_STATE_UNINITIALIZED);
-        }
-    }
-    else if (ASMAtomicReadU32((volatile uint32_t *)&g_VBoxDispDbg.enmState) == VBOXDISPDBG_STATE_INITIALIZED)
-    {
-        return &g_VBoxDispDbg;
-    }
-    Assert(0);
-    return NULL;
-}
+DWORD g_VBoxVDbgCfgMaxDirectRts = 0;
+DWORD g_VBoxVDbgCfgForceDummyDevCreate = 0;
 
-void vboxDispLogDrv(char * szString)
-{
-    PVBOXDISPDBG pDbg = vboxDispDbgGet();
-    if (!pDbg)
-    {
-        /* do not use WARN her esince this would lead to a recursion */
-        WARN_BREAK();
-        return;
-    }
+PVBOXWDDMDISP_DEVICE g_VBoxVDbgInternalDevice = NULL;
+PVBOXWDDMDISP_RESOURCE g_VBoxVDbgInternalRc = NULL;
 
-    VBOXDISPKMT_ADAPTER Adapter;
-    HRESULT hr = vboxDispKmtOpenAdapter(&pDbg->KmtCallbacks, &Adapter);
-    if (hr == S_OK)
-    {
-        uint32_t cbString = (uint32_t)strlen(szString) + 1;
-        uint32_t cbCmd = RT_OFFSETOF(VBOXDISPIFESCAPE_DBGPRINT, aStringBuf[cbString]);
-        PVBOXDISPIFESCAPE_DBGPRINT pCmd = (PVBOXDISPIFESCAPE_DBGPRINT)RTMemAllocZ(cbCmd);
-        if (pCmd)
-        {
-            pCmd->EscapeHdr.escapeCode = VBOXESC_DBGPRINT;
-            memcpy(pCmd->aStringBuf, szString, cbString);
-
-            D3DKMT_ESCAPE EscapeData = {0};
-            EscapeData.hAdapter = Adapter.hAdapter;
-            //EscapeData.hDevice = NULL;
-            EscapeData.Type = D3DKMT_ESCAPE_DRIVERPRIVATE;
-    //        EscapeData.Flags.HardwareAccess = 1;
-            EscapeData.pPrivateDriverData = pCmd;
-            EscapeData.PrivateDriverDataSize = cbCmd;
-            //EscapeData.hContext = NULL;
-
-            int Status = pDbg->KmtCallbacks.pfnD3DKMTEscape(&EscapeData);
-            if (Status)
-            {
-                WARN_BREAK();
-            }
-
-            RTMemFree(pCmd);
-        }
-        else
-        {
-            WARN_BREAK();
-        }
-        hr = vboxDispKmtCloseAdapter(&Adapter);
-        if(hr != S_OK)
-        {
-            WARN_BREAK();
-        }
-    }
-}
-
-void vboxDispLogDrvF(char * szString, ...)
-{
-    char szBuffer[4096] = {0};
-    va_list pArgList;
-    va_start(pArgList, szString);
-    _vsnprintf(szBuffer, sizeof(szBuffer) / sizeof(szBuffer[0]), szString, pArgList);
-    va_end(pArgList);
-
-    vboxDispLogDrv(szBuffer);
-}
+DWORD g_VBoxVDbgCfgCreateSwapchainOnDdiOnce = 0;
 
 void vboxDispLogDbgPrintF(char * szString, ...)
 {
     char szBuffer[4096] = {0};
     va_list pArgList;
     va_start(pArgList, szString);
-    _vsnprintf(szBuffer, sizeof(szBuffer) / sizeof(szBuffer[0]), szString, pArgList);
+    vboxDispLogDbgFormatStringV(szBuffer, sizeof (szBuffer), szString, pArgList);
     va_end(pArgList);
 
     OutputDebugStringA(szBuffer);
 }
 
-
-VOID vboxVDbgDoDumpSurfRectByAlloc(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, const RECT *pRect, const char* pSuffix)
+VOID vboxVDbgDoPrintDmlCmd(const char* pszDesc, const char* pszCmd)
 {
-    vboxVDbgDoDumpSurfRectByRc(pPrefix, pAlloc->pRc, pAlloc->iAlloc, pRect, pSuffix);
+    vboxVDbgPrint(("<?dml?><exec cmd=\"%s\">%s</exec>, ( %s )\n", pszCmd, pszDesc, pszCmd));
 }
 
-VOID vboxVDbgDoPrintDumpCmd(const void *pvData, uint32_t width, uint32_t height, uint32_t bpp, uint32_t pitch)
+VOID vboxVDbgDoPrintDumpCmd(const char* pszDesc, const void *pvData, uint32_t width, uint32_t height, uint32_t bpp, uint32_t pitch)
 {
-    vboxVDbgPrint(("<?dml?><exec cmd=\"!vbvdbg.ms 0x%p 0n%d 0n%d 0n%d 0n%d\">surface info</exec>, ( !vbvdbg.ms 0x%p 0n%d 0n%d 0n%d 0n%d )\n",
-            pvData, width, height, bpp, pitch,
-            pvData, width, height, bpp, pitch));
+    char Cmd[1024];
+    sprintf(Cmd, "!vbvdbg.ms 0x%p 0n%d 0n%d 0n%d 0n%d", pvData, width, height, bpp, pitch);
+    vboxVDbgDoPrintDmlCmd(pszDesc, Cmd);
 }
 
-VOID vboxVDbgDoDumpAllocRect(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, const RECT *pRect, const char* pSuffix)
+VOID vboxVDbgDoPrintLopLastCmd(const char* pszDesc)
 {
-    if (pPrefix)
+    vboxVDbgDoPrintDmlCmd(pszDesc, "ed @@(&vboxVDbgLoop) 0");
+}
+
+typedef struct VBOXVDBG_DUMP_INFO
+{
+    DWORD fFlags;
+    PVBOXWDDMDISP_ALLOCATION pAlloc;
+    IDirect3DResource9 *pD3DRc;
+    RECT *pRect;
+} VBOXVDBG_DUMP_INFO, *PVBOXVDBG_DUMP_INFO;
+
+typedef DECLCALLBACK(void) FNVBOXVDBG_CONTENTS_DUMPER(PVBOXVDBG_DUMP_INFO pInfo, BOOLEAN fBreak, void *pvDumper);
+typedef FNVBOXVDBG_CONTENTS_DUMPER *PFNVBOXVDBG_CONTENTS_DUMPER;
+
+static VOID vboxVDbgDoDumpSummary(const char * pPrefix, PVBOXVDBG_DUMP_INFO pInfo, const char * pSuffix)
+{
+    PVBOXWDDMDISP_ALLOCATION pAlloc = pInfo->pAlloc;
+    IDirect3DResource9 *pD3DRc = pInfo->pD3DRc;
+    char rectBuf[24];
+    if (pInfo->pRect)
+        _snprintf(rectBuf, sizeof(rectBuf) / sizeof(rectBuf[0]), "(%d:%d);(%d:%d)",
+                pInfo->pRect->left, pInfo->pRect->top,
+                pInfo->pRect->right, pInfo->pRect->bottom);
+    else
+        strcpy(rectBuf, "n/a");
+
+    vboxVDbgPrint(("%s Sh(0x%p), Rc(0x%p), pAlloc(0x%x), pD3DIf(0x%p), Type(%s), Rect(%s), Locks(%d) %s",
+                    pPrefix ? pPrefix : "",
+                    pAlloc ? pAlloc->pRc->aAllocations[0].hSharedHandle : NULL,
+                    pAlloc ? pAlloc->pRc : NULL,
+                    pAlloc,
+                    pD3DRc,
+                    pD3DRc ? vboxDispLogD3DRcType(pD3DRc->GetType()) : "n/a",
+                    rectBuf,
+                    pAlloc ? pAlloc->LockInfo.cLocks : 0,
+                    pSuffix ? pSuffix : ""));
+}
+
+VOID vboxVDbgDoDumpPerform(const char * pPrefix, PVBOXVDBG_DUMP_INFO pInfo, const char * pSuffix,
+        PFNVBOXVDBG_CONTENTS_DUMPER pfnCd, void *pvCd)
+{
+    DWORD fFlags = pInfo->fFlags;
+
+    if (!VBOXVDBG_DUMP_TYPE_ENABLED_FOR_INFO(pInfo, fFlags))
+        return;
+
+    if (!pInfo->pD3DRc && pInfo->pAlloc)
+        pInfo->pD3DRc = (IDirect3DResource9*)pInfo->pAlloc->pD3DIf;
+
+    BOOLEAN bLogOnly = VBOXVDBG_DUMP_TYPE_FLOW_ONLY(fFlags);
+    if (bLogOnly || !pfnCd)
     {
-        vboxVDbgPrint(("%s", pPrefix));
+        vboxVDbgDoDumpSummary(pPrefix, pInfo, pSuffix);
+        if (VBOXVDBG_DUMP_FLAGS_IS_SET(fFlags, VBOXVDBG_DUMP_TYPEF_BREAK_ON_FLOW)
+                || (!bLogOnly && VBOXVDBG_DUMP_FLAGS_IS_CLEARED(fFlags, VBOXVDBG_DUMP_TYPEF_DONT_BREAK_ON_CONTENTS)))
+            Assert(0);
+        return;
     }
 
+    vboxVDbgDoDumpSummary(pPrefix, pInfo, NULL);
+
+    pfnCd(pInfo, VBOXVDBG_DUMP_FLAGS_IS_CLEARED(fFlags, VBOXVDBG_DUMP_TYPEF_DONT_BREAK_ON_CONTENTS), pvCd);
+
+    if (pSuffix && pSuffix[0] != '\0')
+        vboxVDbgPrint(("%s", pSuffix));
+}
+
+static DECLCALLBACK(void) vboxVDbgAllocRectContentsDumperCb(PVBOXVDBG_DUMP_INFO pInfo, BOOLEAN fBreak, void *pvDumper)
+{
+    PVBOXWDDMDISP_ALLOCATION pAlloc = pInfo->pAlloc;
+    const RECT *pRect = pInfo->pRect;
+
     Assert(pAlloc->hAllocation);
-
-    HANDLE hSharedHandle = pAlloc->hSharedHandle;
-
-    vboxVDbgPrint(("SharedHandle: (0x%p)\n", hSharedHandle));
 
     D3DDDICB_LOCK LockData;
     LockData.hAllocation = pAlloc->hAllocation;
@@ -218,13 +239,13 @@ VOID vboxVDbgDoDumpAllocRect(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAll
     if (hr == S_OK)
     {
         UINT bpp = vboxWddmCalcBitsPerPixel(pAlloc->SurfDesc.format);
-        vboxVDbgDoPrintDumpCmd(LockData.pData, pAlloc->D3DWidth, pAlloc->SurfDesc.height, bpp, pAlloc->SurfDesc.pitch);
+        vboxVDbgDoPrintDumpCmd("Surf Info", LockData.pData, pAlloc->D3DWidth, pAlloc->SurfDesc.height, bpp, pAlloc->SurfDesc.pitch);
         if (pRect)
         {
             Assert(pRect->right > pRect->left);
             Assert(pRect->bottom > pRect->top);
             vboxVDbgDoPrintRect("rect: ", pRect, "\n");
-            vboxVDbgDoPrintDumpCmd(((uint8_t*)LockData.pData) + (pRect->top * pAlloc->SurfDesc.pitch) + ((pRect->left * bpp) >> 3),
+            vboxVDbgDoPrintDumpCmd("Rect Info", ((uint8_t*)LockData.pData) + (pRect->top * pAlloc->SurfDesc.pitch) + ((pRect->left * bpp) >> 3),
                     pRect->right - pRect->left, pRect->bottom - pRect->top, bpp, pAlloc->SurfDesc.pitch);
         }
         Assert(0);
@@ -237,36 +258,33 @@ VOID vboxVDbgDoDumpAllocRect(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAll
         hr = pDevice->RtCallbacks.pfnUnlockCb(pDevice->hDevice, &DdiUnlock);
         Assert(hr == S_OK);
     }
-    if (pSuffix)
-    {
-        vboxVDbgPrint(("%s\n", pSuffix));
-    }
 }
 
-
-VOID vboxVDbgDoDumpSurfRectByRc(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const RECT *pRect, const char* pSuffix)
+VOID vboxVDbgDoDumpAllocRect(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, RECT *pRect, const char* pSuffix, DWORD fFlags)
 {
-    Assert(pRc->cAllocations > iAlloc);
-    BOOL bReleaseSurf = false;
+    VBOXVDBG_DUMP_INFO Info;
+    Info.fFlags = fFlags;
+    Info.pAlloc = pAlloc;
+    Info.pD3DRc = NULL;
+    Info.pRect = pRect;
+    vboxVDbgDoDumpPerform(pPrefix, &Info, pSuffix, vboxVDbgAllocRectContentsDumperCb, NULL);
+}
+
+static DECLCALLBACK(void) vboxVDbgRcRectContentsDumperCb(PVBOXVDBG_DUMP_INFO pInfo, BOOLEAN fBreak, void *pvDumper)
+{
+    PVBOXWDDMDISP_ALLOCATION pAlloc = pInfo->pAlloc;
+    IDirect3DResource9 *pD3DRc = pInfo->pD3DRc;
+    const RECT *pRect = pInfo->pRect;
     IDirect3DSurface9 *pSurf;
-    HRESULT hr = vboxWddmSurfGet(pRc, iAlloc, &pSurf);
-    Assert(hr == S_OK);
-    if (hr == S_OK)
+    HRESULT hr = vboxWddmSurfGet(pAlloc->pRc, pAlloc->iAlloc, &pSurf);
+    if (hr != S_OK)
     {
-        vboxVDbgDoDumpSurfRect(pPrefix, pSurf, pRect, pSuffix, true);
-        pSurf->Release();
-    }
-}
-
-VOID vboxVDbgDoDumpSurfRect(const char * pPrefix, IDirect3DSurface9 *pSurf, const RECT *pRect, const char * pSuffix, bool bBreak)
-{
-    if (pPrefix)
-    {
-        vboxVDbgPrint(("%s", pPrefix));
+        WARN(("vboxWddmSurfGet failed, hr 0x%x", hr));
+        return;
     }
 
     D3DSURFACE_DESC Desc;
-    HRESULT hr = pSurf->GetDesc(&Desc);
+    hr = pSurf->GetDesc(&Desc);
     Assert(hr == S_OK);
     if (hr == S_OK)
     {
@@ -276,36 +294,67 @@ VOID vboxVDbgDoDumpSurfRect(const char * pPrefix, IDirect3DSurface9 *pSurf, cons
         if (hr == S_OK)
         {
             UINT bpp = vboxWddmCalcBitsPerPixel((D3DDDIFORMAT)Desc.Format);
-            vboxVDbgDoPrintDumpCmd(Lr.pBits, Desc.Width, Desc.Height, bpp, Lr.Pitch);
+            vboxVDbgDoPrintDumpCmd("Surf Info", Lr.pBits, Desc.Width, Desc.Height, bpp, Lr.Pitch);
             if (pRect)
             {
                 Assert(pRect->right > pRect->left);
                 Assert(pRect->bottom > pRect->top);
                 vboxVDbgDoPrintRect("rect: ", pRect, "\n");
-                vboxVDbgDoPrintDumpCmd(((uint8_t*)Lr.pBits) + (pRect->top * Lr.Pitch) + ((pRect->left * bpp) >> 3),
+                vboxVDbgDoPrintDumpCmd("Rect Info", ((uint8_t*)Lr.pBits) + (pRect->top * Lr.Pitch) + ((pRect->left * bpp) >> 3),
                         pRect->right - pRect->left, pRect->bottom - pRect->top, bpp, Lr.Pitch);
             }
 
-            if (bBreak)
+            if (fBreak)
             {
                 Assert(0);
-
-                hr = pSurf->UnlockRect();
-                Assert(hr == S_OK);
             }
+            hr = pSurf->UnlockRect();
+            Assert(hr == S_OK);
         }
     }
-
-    if (pSuffix)
-    {
-        vboxVDbgPrint(("%s", pSuffix));
-    }
 }
 
-VOID vboxVDbgDoDumpSurf(const char * pPrefix, IDirect3DSurface9 *pSurf, const char * pSuffix)
+VOID vboxVDbgDoDumpRcRect(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc,
+        IDirect3DResource9 *pD3DRc, RECT *pRect, const char * pSuffix, DWORD fFlags)
 {
-    vboxVDbgDoDumpSurfRect(pPrefix, pSurf, NULL, pSuffix, true);
+    VBOXVDBG_DUMP_INFO Info;
+    Info.fFlags = fFlags;
+    Info.pAlloc = pAlloc;
+    Info.pD3DRc = pD3DRc;
+    Info.pRect = pRect;
+    vboxVDbgDoDumpPerform(pPrefix, &Info, pSuffix, vboxVDbgRcRectContentsDumperCb, NULL);
 }
+
+VOID vboxVDbgDoDumpBb(const char * pPrefix, IDirect3DSwapChain9 *pSwapchainIf, const char * pSuffix, DWORD fFlags)
+{
+    IDirect3DSurface9 *pBb = NULL;
+    HRESULT hr = pSwapchainIf->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &pBb);
+    Assert(hr == S_OK);
+    if (FAILED(hr))
+    {
+        return;
+    }
+
+    Assert(pBb);
+    vboxVDbgDoDumpRcRect(pPrefix, NULL, pBb, NULL, pSuffix, fFlags);
+    pBb->Release();
+}
+
+VOID vboxVDbgDoDumpFb(const char * pPrefix, IDirect3DSwapChain9 *pSwapchainIf, const char * pSuffix, DWORD fFlags)
+{
+    IDirect3DSurface9 *pBb = NULL;
+    HRESULT hr = pSwapchainIf->GetBackBuffer(-1, D3DBACKBUFFER_TYPE_MONO, &pBb);
+    Assert(hr == S_OK);
+    if (FAILED(hr))
+    {
+        return;
+    }
+
+    Assert(pBb);
+    vboxVDbgDoDumpRcRect(pPrefix, NULL, pBb, NULL, pSuffix, fFlags);
+    pBb->Release();
+}
+
 
 #define VBOXVDBG_STRCASE(_t) \
         case _t: return #_t;
@@ -326,106 +375,7 @@ const char* vboxVDbgStrCubeFaceType(D3DCUBEMAP_FACES enmFace)
     }
 }
 
-VOID vboxVDbgDoDumpRcRect(const char * pPrefix, IDirect3DResource9 *pRc, const RECT *pRect, const char * pSuffix)
-{
-    if (pPrefix)
-    {
-        vboxVDbgPrint(("%s", pPrefix));
-    }
-
-    switch (pRc->GetType())
-    {
-        case D3DRTYPE_TEXTURE:
-        {
-            vboxVDbgPrint(("this is a texture\n"));
-
-            IDirect3DTexture9 *pTex = (IDirect3DTexture9*)pRc;
-            IDirect3DSurface9 *pSurf;
-            HRESULT hr = pTex->GetSurfaceLevel(0, &pSurf);
-            Assert(hr == S_OK);
-            if (hr == S_OK)
-            {
-                vboxVDbgDoDumpSurfRect("", pSurf, pRect, "\n", true);
-                pSurf->Release();
-            }
-            break;
-        }
-        case D3DRTYPE_CUBETEXTURE:
-        {
-            vboxVDbgPrint(("this is a cube texture\n"));
-
-            IDirect3DCubeTexture9 *pCubeTex = (IDirect3DCubeTexture9*)pRc;
-            IDirect3DSurface9 *apSurf[6] = {0};
-            for (UINT i = D3DCUBEMAP_FACE_POSITIVE_X; i < D3DCUBEMAP_FACE_POSITIVE_X + 6; ++i)
-            {
-                vboxVDbgPrint(("face %s: ", vboxVDbgStrCubeFaceType((D3DCUBEMAP_FACES)i)));
-
-                HRESULT hr = pCubeTex->GetCubeMapSurface((D3DCUBEMAP_FACES)i, 0, &apSurf[i]);
-                Assert(hr == S_OK);
-                if (hr == S_OK)
-                {
-                    vboxVDbgDoDumpSurfRect("", apSurf[i], pRect, "\n", false);
-                }
-                else
-                {
-                    Assert(0);
-                }
-            }
-
-            Assert(0);
-
-            for (UINT i = D3DCUBEMAP_FACE_POSITIVE_X; i < D3DCUBEMAP_FACE_POSITIVE_X + 6; ++i)
-            {
-                apSurf[i]->UnlockRect();
-                apSurf[i]->Release();
-            }
-
-            break;
-        }
-        case D3DRTYPE_SURFACE:
-        {
-            vboxVDbgPrint(("this is a surface\n"));
-            IDirect3DSurface9 *pSurf = (IDirect3DSurface9 *)pRc;
-            vboxVDbgDoDumpSurfRect("", pSurf, pRect, "\n", true);
-            break;
-        }
-        default:
-            vboxVDbgPrint(("unsupported rc type\n"));
-            Assert(0);
-    }
-
-    if (pSuffix)
-    {
-        vboxVDbgPrint(("%s", pSuffix));
-    }
-}
-
-VOID vboxVDbgDoDumpRcRectByAlloc(const char * pPrefix, const PVBOXWDDMDISP_ALLOCATION pAlloc, IDirect3DResource9 *pD3DIf, const RECT *pRect, const char* pSuffix)
-{
-    if (pPrefix)
-        vboxVDbgPrint(("%s", pPrefix));
-
-    if (!pD3DIf)
-    {
-        pD3DIf = (IDirect3DResource9*)pAlloc->pD3DIf;
-    }
-
-    vboxVDbgPrint(("Rc(0x%p), pAlloc(0x%x), pD3DIf(0x%p), SharedHandle(0x%p)\n", pAlloc->pRc, pAlloc, pD3DIf, pAlloc->pRc->aAllocations[0].hSharedHandle));
-
-    vboxVDbgDoDumpRcRect("", pD3DIf, pRect, pSuffix);
-}
-
-VOID vboxVDbgDoDumpRcRectByRc(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, const RECT *pRect, const char* pSuffix)
-{
-    vboxVDbgDoDumpRcRectByAlloc(pPrefix, &pRc->aAllocations[0], NULL, pRect, pSuffix);
-}
-
-VOID vboxVDbgDoDumpTex(const char * pPrefix, IDirect3DBaseTexture9 *pTexBase, const char * pSuffix)
-{
-    vboxVDbgDoDumpRcRect(pPrefix, pTexBase, NULL, pSuffix);
-}
-
-VOID vboxVDbgDoDumpRt(const char * pPrefix, PVBOXWDDMDISP_DEVICE pDevice, const char * pSuffix)
+VOID vboxVDbgDoDumpRt(const char * pPrefix, PVBOXWDDMDISP_DEVICE pDevice, const char * pSuffix, DWORD fFlags)
 {
     for (UINT i = 0; i < pDevice->cRTs; ++i)
     {
@@ -437,7 +387,7 @@ VOID vboxVDbgDoDumpRt(const char * pPrefix, PVBOXWDDMDISP_DEVICE pDevice, const 
         if (hr == S_OK)
         {
 //            Assert(pAlloc->pD3DIf == pRt);
-            vboxVDbgDoDumpRcRectByAlloc(pPrefix, pAlloc, NULL, NULL, "\n");
+            vboxVDbgDoDumpRcRect(pPrefix, pAlloc, NULL, NULL, pSuffix, fFlags);
             pRt->Release();
         }
         else
@@ -447,24 +397,31 @@ VOID vboxVDbgDoDumpRt(const char * pPrefix, PVBOXWDDMDISP_DEVICE pDevice, const 
     }
 }
 
-VOID vboxVDbgDoDumpLockUnlockSurfTex(const char * pPrefix, const PVBOXWDDMDISP_ALLOCATION pAlloc, const char * pSuffix, bool fBreak)
+VOID vboxVDbgDoDumpSamplers(const char * pPrefix, PVBOXWDDMDISP_DEVICE pDevice, const char * pSuffix, DWORD fFlags)
 {
-    if (pPrefix)
+    for (UINT i = 0, iSampler = 0; iSampler < pDevice->cSamplerTextures; ++i)
     {
-        vboxVDbgPrint(("%s", pPrefix));
+        Assert(i < RT_ELEMENTS(pDevice->aSamplerTextures));
+        if (!pDevice->aSamplerTextures[i]) continue;
+        PVBOXWDDMDISP_RESOURCE pRc = pDevice->aSamplerTextures[i];
+        for (UINT j = 0; j < pRc->cAllocations; ++j)
+        {
+            PVBOXWDDMDISP_ALLOCATION pAlloc = &pRc->aAllocations[j];
+            vboxVDbgDoDumpRcRect(pPrefix, pAlloc, NULL, NULL, pSuffix, fFlags);
+        }
+        ++iSampler;
     }
+}
 
-    Assert(!pAlloc->hSharedHandle);
-
+static DECLCALLBACK(void) vboxVDbgLockUnlockSurfTexContentsDumperCb(PVBOXVDBG_DUMP_INFO pInfo, BOOLEAN fBreak, void *pvDumper)
+{
+    PVBOXWDDMDISP_ALLOCATION pAlloc = pInfo->pAlloc;
+    PRECT pRect = pInfo->pRect;
     UINT bpp = vboxWddmCalcBitsPerPixel(pAlloc->SurfDesc.format);
     uint32_t width, height, pitch;
-    RECT Rect, *pRect;
     void *pvData;
-    Assert(!pAlloc->LockInfo.fFlags.RangeValid);
-    Assert(!pAlloc->LockInfo.fFlags.BoxValid);
     if (pAlloc->LockInfo.fFlags.AreaValid)
     {
-        pRect = &pAlloc->LockInfo.Area;
         width = pAlloc->LockInfo.Area.left - pAlloc->LockInfo.Area.right;
         height = pAlloc->LockInfo.Area.bottom - pAlloc->LockInfo.Area.top;
     }
@@ -472,11 +429,6 @@ VOID vboxVDbgDoDumpLockUnlockSurfTex(const char * pPrefix, const PVBOXWDDMDISP_A
     {
         width = pAlloc->SurfDesc.width;
         height = pAlloc->SurfDesc.height;
-        Rect.top = 0;
-        Rect.bottom = height;
-        Rect.left = 0;
-        Rect.right = width;
-        pRect = &Rect;
     }
 
     if (pAlloc->LockInfo.fFlags.NotifyOnly)
@@ -489,36 +441,182 @@ VOID vboxVDbgDoDumpLockUnlockSurfTex(const char * pPrefix, const PVBOXWDDMDISP_A
         pvData = pAlloc->LockInfo.pvData;
     }
 
-    vboxVDbgPrint(("pRc(0x%p) iAlloc(%d), type(%d), cLocks(%d)\n", pAlloc->pRc, pAlloc->iAlloc, pAlloc->enmD3DIfType, pAlloc->LockInfo.cLocks));
-
-    vboxVDbgDoPrintDumpCmd(pvData, width, height, bpp, pitch);
+    vboxVDbgDoPrintDumpCmd("Surf Info", pvData, width, height, bpp, pitch);
 
     if (fBreak)
     {
         Assert(0);
     }
-
-    if (pSuffix)
-    {
-        vboxVDbgPrint(("%s", pSuffix));
-    }
-
 }
 
-VOID vboxVDbgDoDumpLockSurfTex(const char * pPrefix, const D3DDDIARG_LOCK* pData, const char * pSuffix, bool fBreak)
+VOID vboxVDbgDoDumpLockUnlockSurfTex(const char * pPrefix, const PVBOXWDDMDISP_ALLOCATION pAlloc, const char * pSuffix, DWORD fFlags)
+{
+    Assert(!pAlloc->hSharedHandle);
+
+    RECT Rect, *pRect;
+    Assert(!pAlloc->LockInfo.fFlags.RangeValid);
+    Assert(!pAlloc->LockInfo.fFlags.BoxValid);
+    if (pAlloc->LockInfo.fFlags.AreaValid)
+    {
+        pRect = &pAlloc->LockInfo.Area;
+    }
+    else
+    {
+        Rect.top = 0;
+        Rect.bottom = pAlloc->SurfDesc.height;
+        Rect.left = 0;
+        Rect.right = pAlloc->SurfDesc.width;
+        pRect = &Rect;
+    }
+
+    VBOXVDBG_DUMP_INFO Info;
+    Info.fFlags = fFlags;
+    Info.pAlloc = pAlloc;
+    Info.pD3DRc = NULL;
+    Info.pRect = pRect;
+    vboxVDbgDoDumpPerform(pPrefix, &Info, pSuffix, vboxVDbgLockUnlockSurfTexContentsDumperCb, NULL);
+}
+
+VOID vboxVDbgDoDumpLockSurfTex(const char * pPrefix, const D3DDDIARG_LOCK* pData, const char * pSuffix, DWORD fFlags)
 {
     const PVBOXWDDMDISP_RESOURCE pRc = (const PVBOXWDDMDISP_RESOURCE)pData->hResource;
     const PVBOXWDDMDISP_ALLOCATION pAlloc = &pRc->aAllocations[pData->SubResourceIndex];
     pAlloc->LockInfo.pvData = pData->pSurfData;
-    vboxVDbgDoDumpLockUnlockSurfTex(pPrefix, pAlloc, pSuffix, fBreak);
+    vboxVDbgDoDumpLockUnlockSurfTex(pPrefix, pAlloc, pSuffix, fFlags);
 }
 
-VOID vboxVDbgDoDumpUnlockSurfTex(const char * pPrefix, const D3DDDIARG_UNLOCK* pData, const char * pSuffix, bool fBreak)
+VOID vboxVDbgDoDumpUnlockSurfTex(const char * pPrefix, const D3DDDIARG_UNLOCK* pData, const char * pSuffix, DWORD fFlags)
 {
     const PVBOXWDDMDISP_RESOURCE pRc = (const PVBOXWDDMDISP_RESOURCE)pData->hResource;
     const PVBOXWDDMDISP_ALLOCATION pAlloc = &pRc->aAllocations[pData->SubResourceIndex];
-    vboxVDbgDoDumpLockUnlockSurfTex(pPrefix, pAlloc, pSuffix, fBreak);
+    vboxVDbgDoDumpLockUnlockSurfTex(pPrefix, pAlloc, pSuffix, fFlags);
 }
+
+BOOL vboxVDbgDoCheckLRects(D3DLOCKED_RECT *pDstLRect, const RECT *pDstRect, D3DLOCKED_RECT *pSrcLRect, const RECT *pSrcRect, DWORD bpp, BOOL fBreakOnMismatch)
+{
+    LONG DstH, DstW, SrcH, SrcW, DstWBytes;
+    BOOL fMatch = FALSE;
+    DstH = pDstRect->bottom - pDstRect->top;
+    DstW = pDstRect->right - pDstRect->left;
+    SrcH = pSrcRect->bottom - pSrcRect->top;
+    SrcW = pSrcRect->right - pSrcRect->left;
+
+    DstWBytes = ((DstW * bpp + 7) >> 3);
+
+    if(DstW != SrcW && DstH != SrcH)
+    {
+        WARN(("stretched comparison not supported!!"));
+        return FALSE;
+    }
+
+    uint8_t *pDst = (uint8_t*)pDstLRect->pBits;
+    uint8_t *pSrc = (uint8_t*)pSrcLRect->pBits;
+    for (LONG i = 0; i < DstH; ++i)
+    {
+        if (!(fMatch = !memcmp(pDst, pSrc, DstWBytes)))
+        {
+            vboxVDbgPrint(("not match!\n"));
+            if (fBreakOnMismatch)
+                Assert(0);
+            break;
+        }
+        pDst += pDstLRect->Pitch;
+        pSrc += pSrcLRect->Pitch;
+    }
+    return fMatch;
+}
+
+#ifndef IN_VBOXCRHGSMI
+BOOL vboxVDbgDoCheckRectsMatch(const PVBOXWDDMDISP_RESOURCE pDstRc, uint32_t iDstAlloc,
+                            const PVBOXWDDMDISP_RESOURCE pSrcRc, uint32_t iSrcAlloc,
+                            const RECT *pDstRect,
+                            const RECT *pSrcRect,
+                            BOOL fBreakOnMismatch)
+{
+    BOOL fMatch = FALSE;
+    RECT DstRect = {0}, SrcRect = {0};
+    if (!pDstRect)
+    {
+        DstRect.left = 0;
+        DstRect.right = pDstRc->aAllocations[iDstAlloc].SurfDesc.width;
+        DstRect.top = 0;
+        DstRect.bottom = pDstRc->aAllocations[iDstAlloc].SurfDesc.height;
+        pDstRect = &DstRect;
+    }
+
+    if (!pSrcRect)
+    {
+        SrcRect.left = 0;
+        SrcRect.right = pSrcRc->aAllocations[iSrcAlloc].SurfDesc.width;
+        SrcRect.top = 0;
+        SrcRect.bottom = pSrcRc->aAllocations[iSrcAlloc].SurfDesc.height;
+        pSrcRect = &SrcRect;
+    }
+
+    if (pDstRc == pSrcRc
+            && iDstAlloc == iSrcAlloc)
+    {
+        if (!memcmp(pDstRect, pSrcRect, sizeof (*pDstRect)))
+        {
+            vboxVDbgPrint(("matching same rect of one allocation, skipping..\n"));
+            return TRUE;
+        }
+        WARN(("matching different rects of the same allocation, unsupported!"));
+        return FALSE;
+    }
+
+    if (pDstRc->RcDesc.enmFormat != pSrcRc->RcDesc.enmFormat)
+    {
+        WARN(("matching different formats, unsupported!"));
+        return FALSE;
+    }
+
+    DWORD bpp = pDstRc->aAllocations[iDstAlloc].SurfDesc.bpp;
+    if (!bpp)
+    {
+        WARN(("uninited bpp! unsupported!"));
+        return FALSE;
+    }
+
+    LONG DstH, DstW, SrcH, SrcW;
+    DstH = pDstRect->bottom - pDstRect->top;
+    DstW = pDstRect->right - pDstRect->left;
+    SrcH = pSrcRect->bottom - pSrcRect->top;
+    SrcW = pSrcRect->right - pSrcRect->left;
+
+    if(DstW != SrcW && DstH != SrcH)
+    {
+        WARN(("stretched comparison not supported!!"));
+        return FALSE;
+    }
+
+    D3DLOCKED_RECT SrcLRect, DstLRect;
+    HRESULT hr = vboxWddmLockRect(pDstRc, iDstAlloc, &DstLRect, pDstRect, D3DLOCK_READONLY);
+    if (FAILED(hr))
+    {
+        WARN(("vboxWddmLockRect failed, hr(0x%x)", hr));
+        return FALSE;
+    }
+
+    hr = vboxWddmLockRect(pSrcRc, iSrcAlloc, &SrcLRect, pSrcRect, D3DLOCK_READONLY);
+    if (FAILED(hr))
+    {
+        WARN(("vboxWddmLockRect failed, hr(0x%x)", hr));
+        hr = vboxWddmUnlockRect(pDstRc, iDstAlloc);
+        return FALSE;
+    }
+
+    fMatch = vboxVDbgDoCheckLRects(&DstLRect, pDstRect, &SrcLRect, pSrcRect, bpp, fBreakOnMismatch);
+
+    hr = vboxWddmUnlockRect(pDstRc, iDstAlloc);
+    Assert(hr == S_OK);
+
+    hr = vboxWddmUnlockRect(pSrcRc, iSrcAlloc);
+    Assert(hr == S_OK);
+
+    return fMatch;
+}
+#endif
 
 void vboxVDbgDoPrintAlloc(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const char * pSuffix)
 {
@@ -544,6 +642,54 @@ void vboxVDbgDoPrintRect(const char * pPrefix, const RECT *pRect, const char * p
 {
     vboxVDbgPrint(("%s left(%d), top(%d), right(%d), bottom(%d) %s", pPrefix, pRect->left, pRect->top, pRect->right, pRect->bottom, pSuffix));
 }
+
+static VOID CALLBACK vboxVDbgTimerCb(__in PVOID lpParameter, __in BOOLEAN TimerOrWaitFired)
+{
+    Assert(0);
+}
+
+HRESULT vboxVDbgTimerStart(HANDLE hTimerQueue, HANDLE *phTimer, DWORD msTimeout)
+{
+    if (!CreateTimerQueueTimer(phTimer, hTimerQueue,
+                               vboxVDbgTimerCb,
+                               NULL,
+                               msTimeout, /* ms*/
+                               0,
+                               WT_EXECUTEONLYONCE))
+    {
+        DWORD winEr = GetLastError();
+        AssertMsgFailed(("CreateTimerQueueTimer failed, winEr (%d)\n", winEr));
+        return E_FAIL;
+    }
+    return S_OK;
+}
+
+HRESULT vboxVDbgTimerStop(HANDLE hTimerQueue, HANDLE hTimer)
+{
+    if (!DeleteTimerQueueTimer(hTimerQueue, hTimer, NULL))
+    {
+        DWORD winEr = GetLastError();
+        AssertMsg(winEr == ERROR_IO_PENDING, ("DeleteTimerQueueTimer failed, winEr (%d)\n", winEr));
+    }
+    return S_OK;
+}
+#endif
+
+#if defined(VBOXWDDMDISP_DEBUG) || defined(VBOX_WDDMDISP_WITH_PROFILE)
+BOOL vboxVDbgDoCheckExe(const char * pszName)
+{
+    char *pszModule = vboxVDbgDoGetModuleName();
+    if (!pszModule)
+        return FALSE;
+    DWORD cbModule, cbName;
+    cbModule = strlen(pszModule);
+    cbName = strlen(pszName);
+    if (cbName > cbModule)
+        return FALSE;
+    if (_stricmp(pszName, pszModule + (cbModule - cbName)))
+        return FALSE;
+    return TRUE;
+}
 #endif
 
 #ifdef VBOXWDDMDISP_DEBUG_VEHANDLER
@@ -555,8 +701,14 @@ LONG WINAPI vboxVDbgVectoredHandler(struct _EXCEPTION_POINTERS *pExceptionInfo)
     PCONTEXT pContextRecord = pExceptionInfo->ContextRecord;
     switch (pExceptionRecord->ExceptionCode)
     {
-        case 0xc0000005: /* only access violation and debug exceptions actually matter */
-        case 0xc0000003:
+        case EXCEPTION_BREAKPOINT:
+        case EXCEPTION_ACCESS_VIOLATION:
+        case EXCEPTION_STACK_OVERFLOW:
+        case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:
+        case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+        case EXCEPTION_FLT_INVALID_OPERATION:
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        case EXCEPTION_ILLEGAL_INSTRUCTION:
             AssertRelease(0);
             break;
         default:
@@ -580,4 +732,17 @@ void vboxVDbgVEHandlerUnregister()
     g_VBoxWDbgVEHandler = NULL;
 }
 
+#endif
+
+#if defined(VBOXWDDMDISP_DEBUG) || defined(LOG_TO_BACKDOOR_DRV)
+void vboxDispLogDrvF(char * szString, ...)
+{
+    char szBuffer[4096] = {0};
+    va_list pArgList;
+    va_start(pArgList, szString);
+    vboxDispLogDbgFormatStringV(szBuffer, sizeof (szBuffer), szString, pArgList);
+    va_end(pArgList);
+
+    VBoxDispMpLoggerLog(szBuffer);
+}
 #endif

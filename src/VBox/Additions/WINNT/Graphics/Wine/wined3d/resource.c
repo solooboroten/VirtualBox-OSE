@@ -60,6 +60,9 @@ HRESULT resource_init(IWineD3DResource *iface, WINED3DRESOURCETYPE resource_type
     list_init(&resource->privateData);
 
 #ifdef VBOX_WITH_WDDM
+    resource->sharerc_handle = 0;
+    resource->sharerc_flags = 0;
+    resource->sharerc_locks = 0;
     if (pool == WINED3DPOOL_SYSTEMMEM && pvClientMem)
     {
         resource->allocatedMemory = pvClientMem;
@@ -71,7 +74,7 @@ HRESULT resource_init(IWineD3DResource *iface, WINED3DRESOURCETYPE resource_type
 #ifdef VBOX_WITH_WDDM
         if (pool == WINED3DPOOL_DEFAULT && shared_handle)
         {
-            resource->sharerc_handle = *shared_handle;
+            resource->sharerc_handle = (DWORD)*shared_handle;
             resource->sharerc_flags = VBOXSHRC_F_SHARED;
             if (*shared_handle)
                 resource->sharerc_flags |= VBOXSHRC_F_SHARED_OPENED;
@@ -93,19 +96,19 @@ HRESULT resource_init(IWineD3DResource *iface, WINED3DRESOURCETYPE resource_type
         resource->allocatedMemory = (BYTE *)(((ULONG_PTR)resource->heapMemory + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
     }
 
+#ifndef VBOX_WITH_WDDM
     /* Check that we have enough video ram left */
     if (pool == WINED3DPOOL_DEFAULT)
     {
-#ifndef VBOX_WITH_WDDM
         if (size > IWineD3DDevice_GetAvailableTextureMem((IWineD3DDevice *)device))
         {
             ERR("Out of adapter memory\n");
             HeapFree(GetProcessHeap(), 0, resource->heapMemory);
             return WINED3DERR_OUTOFVIDEOMEMORY;
         }
-#endif
         WineD3DAdapterChangeGLRam(device, size);
     }
+#endif
 
     device_resource_add(device, iface);
 
@@ -120,10 +123,12 @@ void resource_cleanup(IWineD3DResource *iface)
     HRESULT hr;
 
     TRACE("(%p) Cleaning up resource\n", This);
+#ifndef VBOX_WITH_WDDM
     if (This->resource.pool == WINED3DPOOL_DEFAULT) {
         TRACE("Decrementing device memory pool by %u\n", This->resource.size);
         WineD3DAdapterChangeGLRam(This->resource.device, -This->resource.size);
     }
+#endif
 
     LIST_FOR_EACH_SAFE(e1, e2, &This->resource.privateData) {
         data = LIST_ENTRY(e1, PrivateData, entry);
@@ -282,3 +287,16 @@ HRESULT resource_get_parent(IWineD3DResource *iface, IUnknown **pParent)
     *pParent = This->resource.parent;
     return WINED3D_OK;
 }
+
+#ifdef VBOX_WITH_WDDM
+HRESULT WINAPI IWineD3DResourceImpl_SetShRcState(IWineD3DResource *iface, VBOXWINEEX_SHRC_STATE enmState) {
+    IWineD3DResourceImpl *This = (IWineD3DResourceImpl*)iface;
+    if (!VBOXSHRC_IS_SHARED(This))
+    {
+        ERR("invalid arg");
+        return E_INVALIDARG;
+    }
+
+    return WINED3D_OK;
+}
+#endif

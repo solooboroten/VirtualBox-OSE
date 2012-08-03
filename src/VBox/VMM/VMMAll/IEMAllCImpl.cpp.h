@@ -1,10 +1,10 @@
-/* $Id: IEMAllCImpl.cpp.h 38079 2011-07-19 17:25:00Z vboxsync $ */
+/* $Id: IEMAllCImpl.cpp.h 42483 2012-07-31 14:55:39Z vboxsync $ */
 /** @file
  * IEM - Instruction Implementation in C/C++ (code include).
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -38,8 +38,8 @@ DECLINLINE(VBOXSTRICTRC) iemHlpCheckPortIOPermission(PIEMCPU pIemCpu, PCCPUMCTX 
         && (    pIemCpu->uCpl > pCtx->eflags.Bits.u2IOPL
             ||  pCtx->eflags.Bits.u1VM) )
     {
-        /** @todo I/O port permission bitmap check */
-        AssertFailedReturn(VERR_NOT_IMPLEMENTED);
+        NOREF(u16Port); NOREF(cbOperand); /** @todo I/O port permission bitmap check */
+        IEM_RETURN_ASPECT_NOT_IMPLEMENTED_LOG(("Implement I/O permission bitmap\n"));
     }
     return VINF_SUCCESS;
 }
@@ -98,6 +98,47 @@ static void iemHlpUpdateArithEFlagsU8(PIEMCPU pIemCpu, uint8_t u8Result, uint32_
 }
 
 
+/**
+ * Loads a NULL data selector into a selector register, both the hidden and
+ * visible parts, in protected mode.
+ *
+ * @param   pSReg               Pointer to the segment register.
+ */
+static void iemHlpLoadNullDataSelectorProt(PCPUMSELREG pSReg)
+{
+    /** @todo Testcase: write a testcase checking what happends when loading a NULL
+     *        data selector in protected mode. */
+    pSReg->Sel      = 0;
+    pSReg->ValidSel = 0;
+    pSReg->fFlags   = CPUMSELREG_FLAGS_VALID;
+    pSReg->u64Base  = 0;
+    pSReg->u32Limit = 0;
+    pSReg->Attr.u   = 0;
+}
+
+
+/**
+ * Helper used by iret.
+ *
+ * @param   uCpl                The new CPL.
+ * @param   pSReg               Pointer to the segment register.
+ */
+static void iemHlpAdjustSelectorForNewCpl(PIEMCPU pIemCpu, uint8_t uCpl, PCPUMSELREG pSReg)
+{
+#ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (!CPUMSELREG_ARE_HIDDEN_PARTS_VALID(IEMCPU_TO_VMCPU(pIemCpu), pSReg))
+        CPUMGuestLazyLoadHiddenSelectorReg(IEMCPU_TO_VMCPU(pIemCpu), pSReg);
+#else
+    Assert(CPUMSELREG_ARE_HIDDEN_PARTS_VALID(IEMCPU_TO_VMCPU(pIemCpu), pSReg));
+#endif
+
+    if (   uCpl > pSReg->Attr.n.u2Dpl
+        && pSReg->Attr.n.u1DescType /* code or data, not system */
+        &&    (pSReg->Attr.n.u4Type & (X86_SEL_TYPE_CODE | X86_SEL_TYPE_CONF))
+           !=                         (X86_SEL_TYPE_CODE | X86_SEL_TYPE_CONF)) /* not conforming code */
+        iemHlpLoadNullDataSelectorProt(pSReg);
+}
+
 /** @} */
 
 /** @name C Implementations
@@ -123,7 +164,7 @@ IEM_CIMPL_DEF_0(iemCImpl_popa_16)
      */
     /** @todo do popa boundary / wrap-around checks.  */
     if (RT_UNLIKELY(   IEM_IS_REAL_OR_V86_MODE(pIemCpu)
-                    && (pCtx->csHid.u32Limit < GCPtrLast)) ) /* ASSUMES 64-bit RTGCPTR */
+                    && (pCtx->cs.u32Limit < GCPtrLast)) ) /* ASSUMES 64-bit RTGCPTR */
     {
         /* word-by-word */
         RTUINT64U TmpRsp;
@@ -195,7 +236,7 @@ IEM_CIMPL_DEF_0(iemCImpl_popa_32)
      */
     /** @todo do popa boundary / wrap-around checks.  */
     if (RT_UNLIKELY(   IEM_IS_REAL_OR_V86_MODE(pIemCpu)
-                    && (pCtx->csHid.u32Limit < GCPtrLast)) ) /* ASSUMES 64-bit RTGCPTR */
+                    && (pCtx->cs.u32Limit < GCPtrLast)) ) /* ASSUMES 64-bit RTGCPTR */
     {
         /* word-by-word */
         RTUINT64U TmpRsp;
@@ -597,7 +638,7 @@ IEM_CIMPL_DEF_1(iemCImpl_call_16, uint16_t, uNewPC)
 {
     PCPUMCTX pCtx   = pIemCpu->CTX_SUFF(pCtx);
     uint16_t uOldPC = pCtx->ip + cbInstr;
-    if (uNewPC > pCtx->csHid.u32Limit)
+    if (uNewPC > pCtx->cs.u32Limit)
         return iemRaiseGeneralProtectionFault0(pIemCpu);
 
     VBOXSTRICTRC rcStrict = iemMemStackPushU16(pIemCpu, uOldPC);
@@ -620,7 +661,7 @@ IEM_CIMPL_DEF_1(iemCImpl_call_rel_16, int16_t, offDisp)
     PCPUMCTX pCtx   = pIemCpu->CTX_SUFF(pCtx);
     uint16_t uOldPC = pCtx->ip + cbInstr;
     uint16_t uNewPC = uOldPC + offDisp;
-    if (uNewPC > pCtx->csHid.u32Limit)
+    if (uNewPC > pCtx->cs.u32Limit)
         return iemRaiseGeneralProtectionFault0(pIemCpu);
 
     VBOXSTRICTRC rcStrict = iemMemStackPushU16(pIemCpu, uOldPC);
@@ -643,7 +684,7 @@ IEM_CIMPL_DEF_1(iemCImpl_call_32, uint32_t, uNewPC)
 {
     PCPUMCTX pCtx   = pIemCpu->CTX_SUFF(pCtx);
     uint32_t uOldPC = pCtx->eip + cbInstr;
-    if (uNewPC > pCtx->csHid.u32Limit)
+    if (uNewPC > pCtx->cs.u32Limit)
         return iemRaiseGeneralProtectionFault0(pIemCpu);
 
     VBOXSTRICTRC rcStrict = iemMemStackPushU32(pIemCpu, uOldPC);
@@ -666,7 +707,7 @@ IEM_CIMPL_DEF_1(iemCImpl_call_rel_32, int32_t, offDisp)
     PCPUMCTX pCtx   = pIemCpu->CTX_SUFF(pCtx);
     uint32_t uOldPC = pCtx->eip + cbInstr;
     uint32_t uNewPC = uOldPC + offDisp;
-    if (uNewPC > pCtx->csHid.u32Limit)
+    if (uNewPC > pCtx->cs.u32Limit)
         return iemRaiseGeneralProtectionFault0(pIemCpu);
 
     VBOXSTRICTRC rcStrict = iemMemStackPushU32(pIemCpu, uOldPC);
@@ -725,15 +766,128 @@ IEM_CIMPL_DEF_1(iemCImpl_call_rel_64, int64_t, offDisp)
 
 
 /**
+ * Implements far jumps and calls thru task segments (TSS).
+ *
+ * @param   uSel            The selector.
+ * @param   enmBranch       The kind of branching we're performing.
+ * @param   enmEffOpSize    The effective operand size.
+ * @param   pDesc           The descriptor corrsponding to @a uSel. The type is
+ *                          call gate.
+ */
+IEM_CIMPL_DEF_4(iemCImpl_BranchTaskSegment, uint16_t, uSel, IEMBRANCH, enmBranch, IEMMODE, enmEffOpSize, PIEMSELDESC, pDesc)
+{
+    /* Call various functions to do the work. */
+    IEM_RETURN_ASPECT_NOT_IMPLEMENTED();
+}
+
+
+/**
+ * Implements far jumps and calls thru task gates.
+ *
+ * @param   uSel            The selector.
+ * @param   enmBranch       The kind of branching we're performing.
+ * @param   enmEffOpSize    The effective operand size.
+ * @param   pDesc           The descriptor corrsponding to @a uSel. The type is
+ *                          call gate.
+ */
+IEM_CIMPL_DEF_4(iemCImpl_BranchTaskGate, uint16_t, uSel, IEMBRANCH, enmBranch, IEMMODE, enmEffOpSize, PIEMSELDESC, pDesc)
+{
+    /* Call various functions to do the work. */
+    IEM_RETURN_ASPECT_NOT_IMPLEMENTED();
+}
+
+
+/**
+ * Implements far jumps and calls thru call gates.
+ *
+ * @param   uSel            The selector.
+ * @param   enmBranch       The kind of branching we're performing.
+ * @param   enmEffOpSize    The effective operand size.
+ * @param   pDesc           The descriptor corrsponding to @a uSel. The type is
+ *                          call gate.
+ */
+IEM_CIMPL_DEF_4(iemCImpl_BranchCallGate, uint16_t, uSel, IEMBRANCH, enmBranch, IEMMODE, enmEffOpSize, PIEMSELDESC, pDesc)
+{
+    /* Call various functions to do the work. */
+    IEM_RETURN_ASPECT_NOT_IMPLEMENTED();
+}
+
+
+/**
+ * Implements far jumps and calls thru system selectors.
+ *
+ * @param   uSel            The selector.
+ * @param   enmBranch       The kind of branching we're performing.
+ * @param   enmEffOpSize    The effective operand size.
+ * @param   pDesc           The descriptor corrsponding to @a uSel.
+ */
+IEM_CIMPL_DEF_4(iemCImpl_BranchSysSel, uint16_t, uSel, IEMBRANCH, enmBranch, IEMMODE, enmEffOpSize, PIEMSELDESC, pDesc)
+{
+    Assert(enmBranch == IEMBRANCH_JUMP || enmBranch == IEMBRANCH_CALL);
+    Assert((uSel & X86_SEL_MASK_OFF_RPL));
+
+    if (IEM_IS_LONG_MODE(pIemCpu))
+        switch (pDesc->Legacy.Gen.u4Type)
+        {
+            case AMD64_SEL_TYPE_SYS_CALL_GATE:
+                return IEM_CIMPL_CALL_4(iemCImpl_BranchCallGate, uSel, enmBranch, enmEffOpSize, pDesc);
+
+            default:
+            case AMD64_SEL_TYPE_SYS_LDT:
+            case AMD64_SEL_TYPE_SYS_TSS_BUSY:
+            case AMD64_SEL_TYPE_SYS_TSS_AVAIL:
+            case AMD64_SEL_TYPE_SYS_TRAP_GATE:
+            case AMD64_SEL_TYPE_SYS_INT_GATE:
+                Log(("branch %04x -> wrong sys selector (64-bit): %d\n", uSel, pDesc->Legacy.Gen.u4Type));
+                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+
+        }
+
+    switch (pDesc->Legacy.Gen.u4Type)
+    {
+        case X86_SEL_TYPE_SYS_286_CALL_GATE:
+        case X86_SEL_TYPE_SYS_386_CALL_GATE:
+            return IEM_CIMPL_CALL_4(iemCImpl_BranchCallGate, uSel, enmBranch, enmEffOpSize, pDesc);
+
+        case X86_SEL_TYPE_SYS_TASK_GATE:
+            return IEM_CIMPL_CALL_4(iemCImpl_BranchTaskGate, uSel, enmBranch, enmEffOpSize, pDesc);
+
+        case X86_SEL_TYPE_SYS_286_TSS_AVAIL:
+        case X86_SEL_TYPE_SYS_386_TSS_AVAIL:
+            return IEM_CIMPL_CALL_4(iemCImpl_BranchTaskSegment, uSel, enmBranch, enmEffOpSize, pDesc);
+
+        case X86_SEL_TYPE_SYS_286_TSS_BUSY:
+            Log(("branch %04x -> busy 286 TSS\n", uSel));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+
+        case X86_SEL_TYPE_SYS_386_TSS_BUSY:
+            Log(("branch %04x -> busy 386 TSS\n", uSel));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+
+        default:
+        case X86_SEL_TYPE_SYS_LDT:
+        case X86_SEL_TYPE_SYS_286_INT_GATE:
+        case X86_SEL_TYPE_SYS_286_TRAP_GATE:
+        case X86_SEL_TYPE_SYS_386_INT_GATE:
+        case X86_SEL_TYPE_SYS_386_TRAP_GATE:
+            Log(("branch %04x -> wrong sys selector: %d\n", uSel, pDesc->Legacy.Gen.u4Type));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+    }
+}
+
+
+/**
  * Implements far jumps.
  *
  * @param   uSel            The selector.
  * @param   offSeg          The segment offset.
  * @param   enmEffOpSize    The effective operand size.
  */
-IEM_CIMPL_DEF_3(iemCImpl_FarJmp, uint16_t, uSel, uint32_t, offSeg, IEMMODE, enmEffOpSize)
+IEM_CIMPL_DEF_3(iemCImpl_FarJmp, uint16_t, uSel, uint64_t, offSeg, IEMMODE, enmEffOpSize)
 {
     PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+    NOREF(cbInstr);
+    Assert(offSeg <= UINT32_MAX);
 
     /*
      * Real mode and V8086 mode are easy.  The only snag seems to be that
@@ -743,29 +897,26 @@ IEM_CIMPL_DEF_3(iemCImpl_FarJmp, uint16_t, uSel, uint32_t, offSeg, IEMMODE, enmE
     if (   pIemCpu->enmCpuMode == IEMMODE_16BIT
         && IEM_IS_REAL_OR_V86_MODE(pIemCpu))
     {
-        if (offSeg > pCtx->csHid.u32Limit)
+        if (offSeg > pCtx->cs.u32Limit)
             return iemRaiseGeneralProtectionFault0(pIemCpu);
 
         if (enmEffOpSize == IEMMODE_16BIT) /** @todo WRONG, must pass this. */
             pCtx->rip       = offSeg;
         else
             pCtx->rip       = offSeg & UINT16_MAX;
-        pCtx->cs            = uSel;
-        pCtx->csHid.u64Base = (uint32_t)uSel << 4;
-        /** @todo REM reset the accessed bit (see on jmp far16 after disabling
-         *        PE.  Check with VT-x and AMD-V. */
-#ifdef IEM_VERIFICATION_MODE
-        pCtx->csHid.Attr.u  &= ~X86_SEL_TYPE_ACCESSED;
-#endif
+        pCtx->cs.Sel        = uSel;
+        pCtx->cs.ValidSel   = uSel;
+        pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.u64Base    = (uint32_t)uSel << 4;
         return VINF_SUCCESS;
     }
 
     /*
      * Protected mode. Need to parse the specified descriptor...
      */
-    if (!(uSel & (X86_SEL_MASK | X86_SEL_LDT)))
+    if (!(uSel & X86_SEL_MASK_OFF_RPL))
     {
-        Log(("jmpf %04x:%08x -> invalid selector, #GP(0)\n", uSel, offSeg));
+        Log(("jmpf %04x:%08RX64 -> invalid selector, #GP(0)\n", uSel, offSeg));
         return iemRaiseGeneralProtectionFault0(pIemCpu);
     }
 
@@ -778,158 +929,121 @@ IEM_CIMPL_DEF_3(iemCImpl_FarJmp, uint16_t, uSel, uint32_t, offSeg, IEMMODE, enmE
     /* Is it there? */
     if (!Desc.Legacy.Gen.u1Present) /** @todo this is probably checked too early. Testcase! */
     {
-        Log(("jmpf %04x:%08x -> segment not present\n", uSel, offSeg));
+        Log(("jmpf %04x:%08RX64 -> segment not present\n", uSel, offSeg));
         return iemRaiseSelectorNotPresentBySelector(pIemCpu, uSel);
     }
 
     /*
-     * Deal with it according to its type.
+     * Deal with it according to its type.  We do the standard code selectors
+     * here and dispatch the system selectors to worker functions.
      */
-    if (Desc.Legacy.Gen.u1DescType)
+    if (!Desc.Legacy.Gen.u1DescType)
+        return IEM_CIMPL_CALL_4(iemCImpl_BranchSysSel, uSel, IEMBRANCH_JUMP, enmEffOpSize, &Desc);
+
+    /* Only code segments. */
+    if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE))
     {
-        /* Only code segments. */
-        if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE))
+        Log(("jmpf %04x:%08RX64 -> not a code selector (u4Type=%#x).\n", uSel, offSeg, Desc.Legacy.Gen.u4Type));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+    }
+
+    /* L vs D. */
+    if (   Desc.Legacy.Gen.u1Long
+        && Desc.Legacy.Gen.u1DefBig
+        && IEM_IS_LONG_MODE(pIemCpu))
+    {
+        Log(("jmpf %04x:%08RX64 -> both L and D are set.\n", uSel, offSeg));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+    }
+
+    /* DPL/RPL/CPL check, where conforming segments makes a difference. */
+    if (Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CONF)
+    {
+        if (pIemCpu->uCpl < Desc.Legacy.Gen.u2Dpl)
         {
-            Log(("jmpf %04x:%08x -> not a code selector (u4Type=%#x).\n", uSel, offSeg, Desc.Legacy.Gen.u4Type));
+            Log(("jmpf %04x:%08RX64 -> DPL violation (conforming); DPL=%d CPL=%u\n",
+                 uSel, offSeg, Desc.Legacy.Gen.u2Dpl, pIemCpu->uCpl));
             return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
         }
-
-        /* L vs D. */
-        if (   Desc.Legacy.Gen.u1Long
-            && Desc.Legacy.Gen.u1DefBig
-            && IEM_IS_LONG_MODE(pIemCpu))
+    }
+    else
+    {
+        if (pIemCpu->uCpl != Desc.Legacy.Gen.u2Dpl)
         {
-            Log(("jmpf %04x:%08x -> both L and D are set.\n", uSel, offSeg));
+            Log(("jmpf %04x:%08RX64 -> CPL != DPL; DPL=%d CPL=%u\n", uSel, offSeg, Desc.Legacy.Gen.u2Dpl, pIemCpu->uCpl));
             return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
         }
-
-        /* DPL/RPL/CPL check, where conforming segments makes a difference. */
-        if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CONF))
+        if ((uSel & X86_SEL_RPL) > pIemCpu->uCpl)
         {
-            if (Desc.Legacy.Gen.u2Dpl > pIemCpu->uCpl)
-            {
-                Log(("jmpf %04x:%08x -> DPL violation (conforming); DPL=%d CPL=%u\n",
-                     uSel, offSeg, Desc.Legacy.Gen.u2Dpl, pIemCpu->uCpl));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
-            }
+            Log(("jmpf %04x:%08RX64 -> RPL > DPL; RPL=%d CPL=%u\n", uSel, offSeg, (uSel & X86_SEL_RPL), pIemCpu->uCpl));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
         }
-        else
-        {
-            if (Desc.Legacy.Gen.u2Dpl != pIemCpu->uCpl)
-            {
-                Log(("jmpf %04x:%08x -> CPL != DPL; DPL=%d CPL=%u\n", uSel, offSeg, Desc.Legacy.Gen.u2Dpl, pIemCpu->uCpl));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
-            }
-            if ((uSel & X86_SEL_RPL) > pIemCpu->uCpl)
-            {
-                Log(("jmpf %04x:%08x -> RPL > DPL; RPL=%d CPL=%u\n", uSel, offSeg, (uSel & X86_SEL_RPL), pIemCpu->uCpl));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
-            }
-        }
+    }
 
-        /* Limit check. (Should alternatively check for non-canonical addresses
-           here, but that is ruled out by offSeg being 32-bit, right?) */
-        uint64_t u64Base;
-        uint32_t cbLimit = X86DESC_LIMIT(Desc.Legacy);
-        if (Desc.Legacy.Gen.u1Granularity)
-            cbLimit = (cbLimit << PAGE_SHIFT) | PAGE_OFFSET_MASK;
-        if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
-            u64Base = 0;
-        else
-        {
-            if (offSeg > cbLimit)
-            {
-                Log(("jmpf %04x:%08x -> out of bounds (%#x)\n", uSel, offSeg, cbLimit));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
-            }
-            u64Base = X86DESC_BASE(Desc.Legacy);
-        }
+    /* Chop the high bits if 16-bit (Intel says so). */
+    if (enmEffOpSize == IEMMODE_16BIT)
+        offSeg &= UINT16_MAX;
 
-        /*
-         * Ok, everything checked out fine.  Now set the accessed bit before
-         * committing the result into CS, CSHID and RIP.
-         */
-        if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+    /* Limit check. (Should alternatively check for non-canonical addresses
+       here, but that is ruled out by offSeg being 32-bit, right?) */
+    uint64_t u64Base;
+    uint32_t cbLimit = X86DESC_LIMIT_G(&Desc.Legacy);
+    if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
+        u64Base = 0;
+    else
+    {
+        if (offSeg > cbLimit)
         {
-            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uSel);
-            if (rcStrict != VINF_SUCCESS)
-                return rcStrict;
-#ifdef IEM_VERIFICATION_MODE /** @todo check what VT-x and AMD-V does. */
-            Desc.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
-#endif
+            Log(("jmpf %04x:%08RX64 -> out of bounds (%#x)\n", uSel, offSeg, cbLimit));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
         }
-
-        /* commit */
-        pCtx->rip = offSeg;
-        pCtx->cs  = uSel & (X86_SEL_MASK | X86_SEL_LDT);
-        pCtx->cs |= pIemCpu->uCpl; /** @todo is this right for conforming segs? or in general? */
-        pCtx->csHid.Attr.u   = (Desc.Legacy.u >> (16+16+8)) & UINT32_C(0xf0ff);
-        pCtx->csHid.u32Limit = cbLimit;
-        pCtx->csHid.u64Base  = u64Base;
-        /** @todo check if the hidden bits are loaded correctly for 64-bit
-         *        mode.  */
-        return VINF_SUCCESS;
+        u64Base = X86DESC_BASE(&Desc.Legacy);
     }
 
     /*
-     * System selector.
+     * Ok, everything checked out fine.  Now set the accessed bit before
+     * committing the result into CS, CSHID and RIP.
      */
-    if (IEM_IS_LONG_MODE(pIemCpu))
-        switch (Desc.Legacy.Gen.u4Type)
-        {
-            case AMD64_SEL_TYPE_SYS_LDT:
-            case AMD64_SEL_TYPE_SYS_TSS_AVAIL:
-            case AMD64_SEL_TYPE_SYS_TSS_BUSY:
-            case AMD64_SEL_TYPE_SYS_CALL_GATE:
-            case AMD64_SEL_TYPE_SYS_INT_GATE:
-            case AMD64_SEL_TYPE_SYS_TRAP_GATE:
-                /* Call various functions to do the work. */
-                AssertFailedReturn(VERR_NOT_IMPLEMENTED);
-            default:
-                Log(("jmpf %04x:%08x -> wrong sys selector (64-bit): %d\n", uSel, offSeg, Desc.Legacy.Gen.u4Type));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
-
-        }
-    switch (Desc.Legacy.Gen.u4Type)
+    if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
     {
-        case X86_SEL_TYPE_SYS_286_TSS_AVAIL:
-        case X86_SEL_TYPE_SYS_LDT:
-        case X86_SEL_TYPE_SYS_286_CALL_GATE:
-        case X86_SEL_TYPE_SYS_TASK_GATE:
-        case X86_SEL_TYPE_SYS_286_INT_GATE:
-        case X86_SEL_TYPE_SYS_286_TRAP_GATE:
-        case X86_SEL_TYPE_SYS_386_TSS_AVAIL:
-        case X86_SEL_TYPE_SYS_386_CALL_GATE:
-        case X86_SEL_TYPE_SYS_386_INT_GATE:
-        case X86_SEL_TYPE_SYS_386_TRAP_GATE:
-            /* Call various functions to do the work. */
-            AssertFailedReturn(VERR_NOT_IMPLEMENTED);
-
-        case X86_SEL_TYPE_SYS_286_TSS_BUSY:
-        case X86_SEL_TYPE_SYS_386_TSS_BUSY:
-            /* Call various functions to do the work. */
-            AssertFailedReturn(VERR_NOT_IMPLEMENTED);
-
-        default:
-            Log(("jmpf %04x:%08x -> wrong sys selector (32-bit): %d\n", uSel, offSeg, Desc.Legacy.Gen.u4Type));
-            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+        rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uSel);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+#ifdef IEM_VERIFICATION_MODE /** @todo check what VT-x and AMD-V does. */
+        Desc.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+#endif
     }
+
+    /* commit */
+    pCtx->rip = offSeg;
+    pCtx->cs.Sel         = uSel & X86_SEL_MASK_OFF_RPL;
+    pCtx->cs.Sel        |= pIemCpu->uCpl; /** @todo is this right for conforming segs? or in general? */
+    pCtx->cs.ValidSel    = pCtx->cs.Sel;
+    pCtx->cs.fFlags      = CPUMSELREG_FLAGS_VALID;
+    pCtx->cs.Attr.u      = X86DESC_GET_HID_ATTR(&Desc.Legacy);
+    pCtx->cs.u32Limit    = cbLimit;
+    pCtx->cs.u64Base     = u64Base;
+    /** @todo check if the hidden bits are loaded correctly for 64-bit
+     *        mode.  */
+    return VINF_SUCCESS;
 }
 
 
 /**
  * Implements far calls.
  *
- * @param   uSel        The selector.
- * @param   offSeg      The segment offset.
- * @param   enmOpSize   The operand size (in case we need it).
+ * This very similar to iemCImpl_FarJmp.
+ *
+ * @param   uSel            The selector.
+ * @param   offSeg          The segment offset.
+ * @param   enmEffOpSize    The operand size (in case we need it).
  */
-IEM_CIMPL_DEF_3(iemCImpl_callf, uint16_t, uSel, uint64_t, offSeg, IEMMODE, enmOpSize)
+IEM_CIMPL_DEF_3(iemCImpl_callf, uint16_t, uSel, uint64_t, offSeg, IEMMODE, enmEffOpSize)
 {
     PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);
     VBOXSTRICTRC    rcStrict;
     uint64_t        uNewRsp;
-    void           *pvRet;
+    RTPTRUNION      uPtrRet;
 
     /*
      * Real mode and V8086 mode are easy.  The only snag seems to be that
@@ -939,11 +1053,11 @@ IEM_CIMPL_DEF_3(iemCImpl_callf, uint16_t, uSel, uint64_t, offSeg, IEMMODE, enmOp
     if (   pIemCpu->enmCpuMode == IEMMODE_16BIT
         && IEM_IS_REAL_OR_V86_MODE(pIemCpu))
     {
-        Assert(enmOpSize == IEMMODE_16BIT || enmOpSize == IEMMODE_32BIT);
+        Assert(enmEffOpSize == IEMMODE_16BIT || enmEffOpSize == IEMMODE_32BIT);
 
         /* Check stack first - may #SS(0). */
-        rcStrict = iemMemStackPushBeginSpecial(pIemCpu, enmOpSize == IEMMODE_32BIT ? 6 : 4,
-                                               &pvRet, &uNewRsp);
+        rcStrict = iemMemStackPushBeginSpecial(pIemCpu, enmEffOpSize == IEMMODE_32BIT ? 6 : 4,
+                                               &uPtrRet.pv, &uNewRsp);
         if (rcStrict != VINF_SUCCESS)
             return rcStrict;
 
@@ -952,33 +1066,182 @@ IEM_CIMPL_DEF_3(iemCImpl_callf, uint16_t, uSel, uint64_t, offSeg, IEMMODE, enmOp
             return iemRaiseGeneralProtectionFault0(pIemCpu);
 
         /* Everything is fine, push the return address. */
-        if (enmOpSize == IEMMODE_16BIT)
+        if (enmEffOpSize == IEMMODE_16BIT)
         {
-            ((uint16_t *)pvRet)[0] = pCtx->ip + cbInstr;
-            ((uint16_t *)pvRet)[1] = pCtx->cs;
+            uPtrRet.pu16[0] = pCtx->ip + cbInstr;
+            uPtrRet.pu16[1] = pCtx->cs.Sel;
         }
         else
         {
-            ((uint32_t *)pvRet)[0] = pCtx->eip + cbInstr;
-            ((uint16_t *)pvRet)[3] = pCtx->cs;
+            uPtrRet.pu32[0] = pCtx->eip + cbInstr;
+            uPtrRet.pu16[3] = pCtx->cs.Sel;
         }
-        rcStrict = iemMemStackPushCommitSpecial(pIemCpu, pvRet, uNewRsp);
+        rcStrict = iemMemStackPushCommitSpecial(pIemCpu, uPtrRet.pv, uNewRsp);
         if (rcStrict != VINF_SUCCESS)
             return rcStrict;
 
         /* Branch. */
         pCtx->rip           = offSeg;
-        pCtx->cs            = uSel;
-        pCtx->csHid.u64Base = (uint32_t)uSel << 4;
-        /** @todo Does REM reset the accessed bit here to? (See on jmp far16
-         *        after disabling PE.) Check with VT-x and AMD-V. */
-#ifdef IEM_VERIFICATION_MODE
-        pCtx->csHid.Attr.u  &= ~X86_SEL_TYPE_ACCESSED;
-#endif
+        pCtx->cs.Sel        = uSel;
+        pCtx->cs.ValidSel   = uSel;
+        pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.u64Base    = (uint32_t)uSel << 4;
         return VINF_SUCCESS;
     }
 
-    AssertFailedReturn(VERR_NOT_IMPLEMENTED);
+    /*
+     * Protected mode. Need to parse the specified descriptor...
+     */
+    if (!(uSel & X86_SEL_MASK_OFF_RPL))
+    {
+        Log(("callf %04x:%08RX64 -> invalid selector, #GP(0)\n", uSel, offSeg));
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+
+    /* Fetch the descriptor. */
+    IEMSELDESC Desc;
+    rcStrict = iemMemFetchSelDesc(pIemCpu, &Desc, uSel);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /*
+     * Deal with it according to its type.  We do the standard code selectors
+     * here and dispatch the system selectors to worker functions.
+     */
+    if (!Desc.Legacy.Gen.u1DescType)
+        return IEM_CIMPL_CALL_4(iemCImpl_BranchSysSel, uSel, IEMBRANCH_CALL, enmEffOpSize, &Desc);
+
+    /* Only code segments. */
+    if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE))
+    {
+        Log(("callf %04x:%08RX64 -> not a code selector (u4Type=%#x).\n", uSel, offSeg, Desc.Legacy.Gen.u4Type));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+    }
+
+    /* L vs D. */
+    if (   Desc.Legacy.Gen.u1Long
+        && Desc.Legacy.Gen.u1DefBig
+        && IEM_IS_LONG_MODE(pIemCpu))
+    {
+        Log(("callf %04x:%08RX64 -> both L and D are set.\n", uSel, offSeg));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+    }
+
+    /* DPL/RPL/CPL check, where conforming segments makes a difference. */
+    if (Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CONF)
+    {
+        if (pIemCpu->uCpl < Desc.Legacy.Gen.u2Dpl)
+        {
+            Log(("callf %04x:%08RX64 -> DPL violation (conforming); DPL=%d CPL=%u\n",
+                 uSel, offSeg, Desc.Legacy.Gen.u2Dpl, pIemCpu->uCpl));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+        }
+    }
+    else
+    {
+        if (pIemCpu->uCpl != Desc.Legacy.Gen.u2Dpl)
+        {
+            Log(("callf %04x:%08RX64 -> CPL != DPL; DPL=%d CPL=%u\n", uSel, offSeg, Desc.Legacy.Gen.u2Dpl, pIemCpu->uCpl));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+        }
+        if ((uSel & X86_SEL_RPL) > pIemCpu->uCpl)
+        {
+            Log(("callf %04x:%08RX64 -> RPL > DPL; RPL=%d CPL=%u\n", uSel, offSeg, (uSel & X86_SEL_RPL), pIemCpu->uCpl));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+        }
+    }
+
+    /* Is it there? */
+    if (!Desc.Legacy.Gen.u1Present)
+    {
+        Log(("callf %04x:%08RX64 -> segment not present\n", uSel, offSeg));
+        return iemRaiseSelectorNotPresentBySelector(pIemCpu, uSel);
+    }
+
+    /* Check stack first - may #SS(0). */
+    /** @todo check how operand prefix affects pushing of CS! Does callf 16:32 in
+     *        16-bit code cause a two or four byte CS to be pushed? */
+    rcStrict = iemMemStackPushBeginSpecial(pIemCpu,
+                                           enmEffOpSize == IEMMODE_64BIT   ? 8+8
+                                           : enmEffOpSize == IEMMODE_32BIT ? 4+4 : 2+2,
+                                           &uPtrRet.pv, &uNewRsp);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /* Chop the high bits if 16-bit (Intel says so). */
+    if (enmEffOpSize == IEMMODE_16BIT)
+        offSeg &= UINT16_MAX;
+
+    /* Limit / canonical check. */
+    uint64_t u64Base;
+    uint32_t cbLimit = X86DESC_LIMIT_G(&Desc.Legacy);
+    if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
+    {
+        if (!IEM_IS_CANONICAL(offSeg))
+        {
+            Log(("callf %04x:%016RX64 - not canonical -> #GP\n", uSel, offSeg));
+            return iemRaiseNotCanonical(pIemCpu);
+        }
+        u64Base = 0;
+    }
+    else
+    {
+        if (offSeg > cbLimit)
+        {
+            Log(("callf %04x:%08RX64 -> out of bounds (%#x)\n", uSel, offSeg, cbLimit));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
+        }
+        u64Base = X86DESC_BASE(&Desc.Legacy);
+    }
+
+    /*
+     * Now set the accessed bit before
+     * writing the return address to the stack and committing the result into
+     * CS, CSHID and RIP.
+     */
+    /** @todo Testcase: Need to check WHEN exactly the accessed bit is set. */
+    if (!(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+    {
+        rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uSel);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+#ifdef IEM_VERIFICATION_MODE /** @todo check what VT-x and AMD-V does. */
+        Desc.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+#endif
+    }
+
+    /* stack */
+    if (enmEffOpSize == IEMMODE_16BIT)
+    {
+        uPtrRet.pu16[0] = pCtx->ip + cbInstr;
+        uPtrRet.pu16[1] = pCtx->cs.Sel;
+    }
+    else if (enmEffOpSize == IEMMODE_32BIT)
+    {
+        uPtrRet.pu32[0] = pCtx->eip + cbInstr;
+        uPtrRet.pu32[1] = pCtx->cs.Sel; /** @todo Testcase: What is written to the high word when callf is pushing CS? */
+    }
+    else
+    {
+        uPtrRet.pu64[0] = pCtx->rip + cbInstr;
+        uPtrRet.pu64[1] = pCtx->cs.Sel; /** @todo Testcase: What is written to the high words when callf is pushing CS? */
+    }
+    rcStrict = iemMemStackPushCommitSpecial(pIemCpu, uPtrRet.pv, uNewRsp);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /* commit */
+    pCtx->rip = offSeg;
+    pCtx->cs.Sel         = uSel & X86_SEL_MASK_OFF_RPL;
+    pCtx->cs.Sel        |= pIemCpu->uCpl;
+    pCtx->cs.ValidSel    = pCtx->cs.Sel;
+    pCtx->cs.fFlags      = CPUMSELREG_FLAGS_VALID;
+    pCtx->cs.Attr.u      = X86DESC_GET_HID_ATTR(&Desc.Legacy);
+    pCtx->cs.u32Limit    = cbLimit;
+    pCtx->cs.u64Base     = u64Base;
+    /** @todo check if the hidden bits are loaded correctly for 64-bit
+     *        mode.  */
+    return VINF_SUCCESS;
 }
 
 
@@ -993,7 +1256,35 @@ IEM_CIMPL_DEF_2(iemCImpl_retf, IEMMODE, enmEffOpSize, uint16_t, cbPop)
 {
     PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);
     VBOXSTRICTRC    rcStrict;
+    RTCPTRUNION     uPtrFrame;
     uint64_t        uNewRsp;
+    uint64_t        uNewRip;
+    uint16_t        uNewCs;
+    NOREF(cbInstr);
+
+    /*
+     * Read the stack values first.
+     */
+    uint32_t        cbRetPtr = enmEffOpSize == IEMMODE_16BIT ? 2+2
+                             : enmEffOpSize == IEMMODE_32BIT ? 4+4 : 8+8;
+    rcStrict = iemMemStackPopBeginSpecial(pIemCpu, cbRetPtr, &uPtrFrame.pv, &uNewRsp);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+    if (enmEffOpSize == IEMMODE_16BIT)
+    {
+        uNewRip = uPtrFrame.pu16[0];
+        uNewCs  = uPtrFrame.pu16[1];
+    }
+    else if (enmEffOpSize == IEMMODE_32BIT)
+    {
+        uNewRip = uPtrFrame.pu32[0];
+        uNewCs  = uPtrFrame.pu16[2];
+    }
+    else
+    {
+        uNewRip = uPtrFrame.pu64[0];
+        uNewCs  = uPtrFrame.pu16[4];
+    }
 
     /*
      * Real mode and V8086 mode are easy.
@@ -1002,46 +1293,344 @@ IEM_CIMPL_DEF_2(iemCImpl_retf, IEMMODE, enmEffOpSize, uint16_t, cbPop)
         && IEM_IS_REAL_OR_V86_MODE(pIemCpu))
     {
         Assert(enmEffOpSize == IEMMODE_32BIT || enmEffOpSize == IEMMODE_16BIT);
-        uint16_t const *pu16Frame;
-        rcStrict = iemMemStackPopBeginSpecial(pIemCpu, enmEffOpSize == IEMMODE_32BIT ? 8 : 4,
-                                              (void const **)&pu16Frame, &uNewRsp);
-        if (rcStrict != VINF_SUCCESS)
-            return rcStrict;
-        uint32_t uNewEip;
-        uint16_t uNewCS;
-        if (enmEffOpSize == IEMMODE_32BIT)
-        {
-            uNewCS  = pu16Frame[2];
-            uNewEip = RT_MAKE_U32(pu16Frame[0], pu16Frame[1]);
-        }
-        else
-        {
-            uNewCS  = pu16Frame[1];
-            uNewEip = pu16Frame[0];
-        }
         /** @todo check how this is supposed to work if sp=0xfffe. */
 
         /* Check the limit of the new EIP. */
         /** @todo Intel pseudo code only does the limit check for 16-bit
          *        operands, AMD does not make any distinction. What is right? */
-        if (uNewEip > pCtx->csHid.u32Limit)
+        if (uNewRip > pCtx->cs.u32Limit)
             return iemRaiseSelectorBounds(pIemCpu, X86_SREG_CS, IEM_ACCESS_INSTRUCTION);
 
         /* commit the operation. */
-        rcStrict = iemMemStackPopCommitSpecial(pIemCpu, pu16Frame, uNewRsp);
+        rcStrict = iemMemStackPopCommitSpecial(pIemCpu, uPtrFrame.pv, uNewRsp);
         if (rcStrict != VINF_SUCCESS)
             return rcStrict;
-        pCtx->rip           = uNewEip;
-        pCtx->cs            = uNewCS;
-        pCtx->csHid.u64Base = (uint32_t)uNewCS << 4;
+        pCtx->rip           = uNewRip;
+        pCtx->cs.Sel        = uNewCs;
+        pCtx->cs.ValidSel   = uNewCs;
+        pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.u64Base    = (uint32_t)uNewCs << 4;
         /** @todo do we load attribs and limit as well? */
         if (cbPop)
             iemRegAddToRsp(pCtx, cbPop);
         return VINF_SUCCESS;
     }
 
-    AssertFailed();
-    return VERR_NOT_IMPLEMENTED;
+    /*
+     * Protected mode is complicated, of course.
+     */
+    if (!(uNewCs & X86_SEL_MASK_OFF_RPL))
+    {
+        Log(("retf %04x:%08RX64 -> invalid selector, #GP(0)\n", uNewCs, uNewRip));
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+
+    /* Fetch the descriptor. */
+    IEMSELDESC DescCs;
+    rcStrict = iemMemFetchSelDesc(pIemCpu, &DescCs, uNewCs);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /* Can only return to a code selector. */
+    if (   !DescCs.Legacy.Gen.u1DescType
+        || !(DescCs.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE) )
+    {
+        Log(("retf %04x:%08RX64 -> not a code selector (u1DescType=%u u4Type=%#x).\n",
+             uNewCs, uNewRip, DescCs.Legacy.Gen.u1DescType, DescCs.Legacy.Gen.u4Type));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+
+    /* L vs D. */
+    if (   DescCs.Legacy.Gen.u1Long /** @todo Testcase: far return to a selector with both L and D set. */
+        && DescCs.Legacy.Gen.u1DefBig
+        && IEM_IS_LONG_MODE(pIemCpu))
+    {
+        Log(("retf %04x:%08RX64 -> both L & D set.\n", uNewCs, uNewRip));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+
+    /* DPL/RPL/CPL checks. */
+    if ((uNewCs & X86_SEL_RPL) < pIemCpu->uCpl)
+    {
+        Log(("retf %04x:%08RX64 -> RPL < CPL(%d).\n", uNewCs, uNewRip, pIemCpu->uCpl));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+
+    if (DescCs.Legacy.Gen.u4Type & X86_SEL_TYPE_CONF)
+    {
+        if ((uNewCs & X86_SEL_RPL) < DescCs.Legacy.Gen.u2Dpl)
+        {
+            Log(("retf %04x:%08RX64 -> DPL violation (conforming); DPL=%u RPL=%u\n",
+                 uNewCs, uNewRip, DescCs.Legacy.Gen.u2Dpl, (uNewCs & X86_SEL_RPL)));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+        }
+    }
+    else
+    {
+        if ((uNewCs & X86_SEL_RPL) != DescCs.Legacy.Gen.u2Dpl)
+        {
+            Log(("retf %04x:%08RX64 -> RPL != DPL; DPL=%u RPL=%u\n",
+                 uNewCs, uNewRip, DescCs.Legacy.Gen.u2Dpl, (uNewCs & X86_SEL_RPL)));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+        }
+    }
+
+    /* Is it there? */
+    if (!DescCs.Legacy.Gen.u1Present)
+    {
+        Log(("retf %04x:%08RX64 -> segment not present\n", uNewCs, uNewRip));
+        return iemRaiseSelectorNotPresentBySelector(pIemCpu, uNewCs);
+    }
+
+    /*
+     * Return to outer privilege? (We'll typically have entered via a call gate.)
+     */
+    if ((uNewCs & X86_SEL_RPL) != pIemCpu->uCpl)
+    {
+        /* Read the return pointer, it comes before the parameters. */
+        RTCPTRUNION uPtrStack;
+        rcStrict = iemMemStackPopContinueSpecial(pIemCpu, cbPop + cbRetPtr, &uPtrStack.pv, &uNewRsp);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+        uint16_t uNewOuterSs;
+        uint64_t uNewOuterRsp;
+        if (enmEffOpSize == IEMMODE_16BIT)
+        {
+            uNewOuterRsp = uPtrFrame.pu16[0];
+            uNewOuterSs  = uPtrFrame.pu16[1];
+        }
+        else if (enmEffOpSize == IEMMODE_32BIT)
+        {
+            uNewOuterRsp = uPtrFrame.pu32[0];
+            uNewOuterSs  = uPtrFrame.pu16[2];
+        }
+        else
+        {
+            uNewOuterRsp = uPtrFrame.pu64[0];
+            uNewOuterSs  = uPtrFrame.pu16[4];
+        }
+
+        /* Check for NULL stack selector (invalid in ring-3 and non-long mode)
+           and read the selector. */
+        IEMSELDESC DescSs;
+        if (!(uNewOuterSs & X86_SEL_MASK_OFF_RPL))
+        {
+            if (   !DescCs.Legacy.Gen.u1Long
+                || (uNewOuterSs & X86_SEL_RPL) == 3)
+            {
+                Log(("retf %04x:%08RX64 %04x:%08RX64 -> invalid stack selector, #GP\n",
+                     uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp));
+                return iemRaiseGeneralProtectionFault0(pIemCpu);
+            }
+            /** @todo Testcase: Return far to ring-1 or ring-2 with SS=0. */
+            iemMemFakeStackSelDesc(&DescSs, (uNewOuterSs & X86_SEL_RPL));
+        }
+        else
+        {
+            /* Fetch the descriptor for the new stack segment. */
+            rcStrict = iemMemFetchSelDesc(pIemCpu, &DescSs, uNewOuterSs);
+            if (rcStrict != VINF_SUCCESS)
+                return rcStrict;
+        }
+
+        /* Check that RPL of stack and code selectors match. */
+        if ((uNewCs & X86_SEL_RPL) != (uNewOuterSs & X86_SEL_RPL))
+        {
+            Log(("retf %04x:%08RX64 %04x:%08RX64 - SS.RPL != CS.RPL -> #GP(SS)\n", uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewOuterSs);
+        }
+
+        /* Must be a writable data segment. */
+        if (   !DescSs.Legacy.Gen.u1DescType
+            || (DescSs.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE)
+            || !(DescSs.Legacy.Gen.u4Type & X86_SEL_TYPE_WRITE) )
+        {
+            Log(("retf %04x:%08RX64 %04x:%08RX64 - SS not a writable data segment (u1DescType=%u u4Type=%#x) -> #GP(SS).\n",
+                 uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp, DescSs.Legacy.Gen.u1DescType, DescSs.Legacy.Gen.u4Type));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewOuterSs);
+        }
+
+        /* L vs D. (Not mentioned by intel.) */
+        if (   DescSs.Legacy.Gen.u1Long /** @todo Testcase: far return to a stack selector with both L and D set. */
+            && DescSs.Legacy.Gen.u1DefBig
+            && IEM_IS_LONG_MODE(pIemCpu))
+        {
+            Log(("retf %04x:%08RX64 %04x:%08RX64 - SS has both L & D set -> #GP(SS).\n",
+                 uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp, DescSs.Legacy.Gen.u1DescType, DescSs.Legacy.Gen.u4Type));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewOuterSs);
+        }
+
+        /* DPL/RPL/CPL checks. */
+        if (DescSs.Legacy.Gen.u2Dpl != (uNewCs & X86_SEL_RPL))
+        {
+            Log(("retf %04x:%08RX64 %04x:%08RX64 - SS.DPL(%u) != CS.RPL (%u) -> #GP(SS).\n",
+                 uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp, DescSs.Legacy.Gen.u2Dpl, uNewCs & X86_SEL_RPL));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewOuterSs);
+        }
+
+        /* Is it there? */
+        if (!DescSs.Legacy.Gen.u1Present)
+        {
+            Log(("retf %04x:%08RX64 %04x:%08RX64 - SS not present -> #NP(SS).\n", uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp));
+            return iemRaiseSelectorNotPresentBySelector(pIemCpu, uNewCs);
+        }
+
+        /* Calc SS limit.*/
+        uint32_t cbLimitSs = X86DESC_LIMIT_G(&DescSs.Legacy);
+
+        /* Is RIP canonical or within CS.limit? */
+        uint64_t u64Base;
+        uint32_t cbLimitCs = X86DESC_LIMIT_G(&DescCs.Legacy);
+
+        if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
+        {
+            if (!IEM_IS_CANONICAL(uNewRip))
+            {
+                Log(("retf %04x:%08RX64 %04x:%08RX64 - not canonical -> #GP.\n", uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp));
+                return iemRaiseNotCanonical(pIemCpu);
+            }
+            u64Base = 0;
+        }
+        else
+        {
+            if (uNewRip > cbLimitCs)
+            {
+                Log(("retf %04x:%08RX64 %04x:%08RX64 - out of bounds (%#x)-> #GP(CS).\n",
+                     uNewCs, uNewRip, uNewOuterSs, uNewOuterRsp, cbLimitCs));
+                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+            }
+            u64Base = X86DESC_BASE(&DescCs.Legacy);
+        }
+
+        /*
+         * Now set the accessed bit before
+         * writing the return address to the stack and committing the result into
+         * CS, CSHID and RIP.
+         */
+        /** @todo Testcase: Need to check WHEN exactly the CS accessed bit is set. */
+        if (!(DescCs.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+        {
+            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewCs);
+            if (rcStrict != VINF_SUCCESS)
+                return rcStrict;
+#ifdef IEM_VERIFICATION_MODE /** @todo check what VT-x and AMD-V does. */
+            DescCs.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+#endif
+        }
+        /** @todo Testcase: Need to check WHEN exactly the SS accessed bit is set. */
+        if (!(DescSs.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+        {
+            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewOuterSs);
+            if (rcStrict != VINF_SUCCESS)
+                return rcStrict;
+#ifdef IEM_VERIFICATION_MODE /** @todo check what VT-x and AMD-V does. */
+            DescSs.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+#endif
+        }
+
+        /* commit */
+        rcStrict = iemMemStackPopCommitSpecial(pIemCpu, uPtrFrame.pv, uNewRsp);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+        if (enmEffOpSize == IEMMODE_16BIT)
+            pCtx->rip           = uNewRip & UINT16_MAX; /** @todo Testcase: When exactly does this occur? With call it happens prior to the limit check according to Intel... */
+        else
+            pCtx->rip           = uNewRip;
+        pCtx->cs.Sel            = uNewCs;
+        pCtx->cs.ValidSel       = uNewCs;
+        pCtx->cs.fFlags         = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.Attr.u         = X86DESC_GET_HID_ATTR(&DescCs.Legacy);
+        pCtx->cs.u32Limit       = cbLimitCs;
+        pCtx->cs.u64Base        = u64Base;
+        pCtx->rsp               = uNewRsp;
+        pCtx->ss.Sel            = uNewOuterSs;
+        pCtx->ss.ValidSel       = uNewOuterSs;
+        pCtx->ss.fFlags         = CPUMSELREG_FLAGS_VALID;
+        pCtx->ss.Attr.u         = X86DESC_GET_HID_ATTR(&DescSs.Legacy);
+        pCtx->ss.u32Limit       = cbLimitSs;
+        if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
+            pCtx->ss.u64Base    = 0;
+        else
+            pCtx->ss.u64Base    = X86DESC_BASE(&DescSs.Legacy);
+
+        pIemCpu->uCpl           = (uNewCs & X86_SEL_RPL);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->ds);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->es);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->fs);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->gs);
+
+        /** @todo check if the hidden bits are loaded correctly for 64-bit
+         *        mode. */
+
+        if (cbPop)
+            iemRegAddToRsp(pCtx, cbPop);
+
+        /* Done! */
+    }
+    /*
+     * Return to the same privilege level
+     */
+    else
+    {
+        /* Limit / canonical check. */
+        uint64_t u64Base;
+        uint32_t cbLimitCs = X86DESC_LIMIT_G(&DescCs.Legacy);
+
+        if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
+        {
+            if (!IEM_IS_CANONICAL(uNewRip))
+            {
+                Log(("retf %04x:%08RX64 - not canonical -> #GP\n", uNewCs, uNewRip));
+                return iemRaiseNotCanonical(pIemCpu);
+            }
+            u64Base = 0;
+        }
+        else
+        {
+            if (uNewRip > cbLimitCs)
+            {
+                Log(("retf %04x:%08RX64 -> out of bounds (%#x)\n", uNewCs, uNewRip, cbLimitCs));
+                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+            }
+            u64Base = X86DESC_BASE(&DescCs.Legacy);
+        }
+
+        /*
+         * Now set the accessed bit before
+         * writing the return address to the stack and committing the result into
+         * CS, CSHID and RIP.
+         */
+        /** @todo Testcase: Need to check WHEN exactly the accessed bit is set. */
+        if (!(DescCs.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+        {
+            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewCs);
+            if (rcStrict != VINF_SUCCESS)
+                return rcStrict;
+#ifdef IEM_VERIFICATION_MODE /** @todo check what VT-x and AMD-V does. */
+            DescCs.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+#endif
+        }
+
+        /* commit */
+        rcStrict = iemMemStackPopCommitSpecial(pIemCpu, uPtrFrame.pv, uNewRsp);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+        if (enmEffOpSize == IEMMODE_16BIT)
+            pCtx->rip       = uNewRip & UINT16_MAX; /** @todo Testcase: When exactly does this occur? With call it happens prior to the limit check according to Intel... */
+        else
+            pCtx->rip       = uNewRip;
+        pCtx->cs.Sel        = uNewCs;
+        pCtx->cs.ValidSel   = uNewCs;
+        pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.Attr.u     = X86DESC_GET_HID_ATTR(&DescCs.Legacy);
+        pCtx->cs.u32Limit   = cbLimitCs;
+        pCtx->cs.u64Base    = u64Base;
+        /** @todo check if the hidden bits are loaded correctly for 64-bit
+         *        mode.  */
+        if (cbPop)
+            iemRegAddToRsp(pCtx, cbPop);
+    }
+    return VINF_SUCCESS;
 }
 
 
@@ -1058,6 +1647,7 @@ IEM_CIMPL_DEF_2(iemCImpl_retf, IEMMODE, enmEffOpSize, uint16_t, cbPop)
 IEM_CIMPL_DEF_2(iemCImpl_retn, IEMMODE, enmEffOpSize, uint16_t, cbPop)
 {
     PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);
+    NOREF(cbInstr);
 
     /* Fetch the RSP from the stack. */
     VBOXSTRICTRC    rcStrict;
@@ -1087,9 +1677,9 @@ IEM_CIMPL_DEF_2(iemCImpl_retn, IEMMODE, enmEffOpSize, uint16_t, cbPop)
      *        of it.  The canonical test is performed here and for call. */
     if (enmEffOpSize != IEMMODE_64BIT)
     {
-        if (NewRip.DWords.dw0 > pCtx->csHid.u32Limit)
+        if (NewRip.DWords.dw0 > pCtx->cs.u32Limit)
         {
-            Log(("retn newrip=%llx - out of bounds (%x) -> #GP\n", NewRip.u, pCtx->csHid.u32Limit));
+            Log(("retn newrip=%llx - out of bounds (%x) -> #GP\n", NewRip.u, pCtx->cs.u32Limit));
             return iemRaiseSelectorBounds(pIemCpu, X86_SREG_CS, IEM_ACCESS_INSTRUCTION);
         }
     }
@@ -1113,6 +1703,121 @@ IEM_CIMPL_DEF_2(iemCImpl_retn, IEMMODE, enmEffOpSize, uint16_t, cbPop)
 
 
 /**
+ * Implements enter.
+ *
+ * We're doing this in C because the instruction is insane, even for the
+ * u8NestingLevel=0 case dealing with the stack is tedious.
+ *
+ * @param   enmEffOpSize    The effective operand size.
+ */
+IEM_CIMPL_DEF_3(iemCImpl_enter, IEMMODE, enmEffOpSize, uint16_t, cbFrame, uint8_t, cParameters)
+{
+    PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);
+
+    /* Push RBP, saving the old value in TmpRbp. */
+    RTUINT64U       NewRsp; NewRsp.u = pCtx->rsp;
+    RTUINT64U       TmpRbp; TmpRbp.u = pCtx->rbp;
+    RTUINT64U       NewRbp;
+    VBOXSTRICTRC    rcStrict;
+    if (enmEffOpSize == IEMMODE_64BIT)
+    {
+        rcStrict = iemMemStackPushU64Ex(pIemCpu, TmpRbp.u, &NewRsp);
+        NewRbp = NewRsp;
+    }
+    else if (pCtx->ss.Attr.n.u1DefBig)
+    {
+        rcStrict = iemMemStackPushU32Ex(pIemCpu, TmpRbp.DWords.dw0, &NewRsp);
+        NewRbp = NewRsp;
+    }
+    else
+    {
+        rcStrict = iemMemStackPushU16Ex(pIemCpu, TmpRbp.Words.w0, &NewRsp);
+        NewRbp = NewRsp;
+    }
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /* Copy the parameters (aka nesting levels by Intel). */
+    cParameters &= 0x1f;
+    if (cParameters > 0)
+    {
+        switch (enmEffOpSize)
+        {
+            case IEMMODE_16BIT:
+                if (pCtx->ss.Attr.n.u1DefBig)
+                    TmpRbp.DWords.dw0 -= 2;
+                else
+                    TmpRbp.Words.w0   -= 2;
+                do
+                {
+                    uint16_t u16Tmp;
+                    rcStrict = iemMemStackPopU16Ex(pIemCpu, &u16Tmp, &TmpRbp);
+                    if (rcStrict != VINF_SUCCESS)
+                        break;
+                    rcStrict = iemMemStackPushU16Ex(pIemCpu, u16Tmp, &NewRsp);
+                } while (--cParameters > 0 && rcStrict == VINF_SUCCESS);
+                break;
+
+            case IEMMODE_32BIT:
+                if (pCtx->ss.Attr.n.u1DefBig)
+                    TmpRbp.DWords.dw0 -= 4;
+                else
+                    TmpRbp.Words.w0   -= 4;
+                do
+                {
+                    uint32_t u32Tmp;
+                    rcStrict = iemMemStackPopU32Ex(pIemCpu, &u32Tmp, &TmpRbp);
+                    if (rcStrict != VINF_SUCCESS)
+                        break;
+                    rcStrict = iemMemStackPushU32Ex(pIemCpu, u32Tmp, &NewRsp);
+                } while (--cParameters > 0 && rcStrict == VINF_SUCCESS);
+                break;
+
+            case IEMMODE_64BIT:
+                TmpRbp.u -= 8;
+                do
+                {
+                    uint64_t u64Tmp;
+                    rcStrict = iemMemStackPopU64Ex(pIemCpu, &u64Tmp, &TmpRbp);
+                    if (rcStrict != VINF_SUCCESS)
+                        break;
+                    rcStrict = iemMemStackPushU64Ex(pIemCpu, u64Tmp, &NewRsp);
+                } while (--cParameters > 0 && rcStrict == VINF_SUCCESS);
+                break;
+
+            IEM_NOT_REACHED_DEFAULT_CASE_RET();
+        }
+        if (rcStrict != VINF_SUCCESS)
+            return VINF_SUCCESS;
+
+        /* Push the new RBP */
+        if (enmEffOpSize == IEMMODE_64BIT)
+            rcStrict = iemMemStackPushU64Ex(pIemCpu, NewRbp.u, &NewRsp);
+        else if (pCtx->ss.Attr.n.u1DefBig)
+            rcStrict = iemMemStackPushU32Ex(pIemCpu, NewRbp.DWords.dw0, &NewRsp);
+        else
+            rcStrict = iemMemStackPushU16Ex(pIemCpu, NewRbp.Words.w0, &NewRsp);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+
+    }
+
+    /* Recalc RSP. */
+    iemRegSubFromRspEx(&NewRsp, cbFrame, pCtx);
+
+    /** @todo Should probe write access at the new RSP according to AMD. */
+
+    /* Commit it. */
+    pCtx->rbp = NewRbp.u;
+    pCtx->rsp = NewRsp.u;
+    iemRegAddToRip(pIemCpu, cbInstr);
+
+    return VINF_SUCCESS;
+}
+
+
+
+/**
  * Implements leave.
  *
  * We're doing this in C because messing with the stack registers is annoying
@@ -1126,16 +1831,16 @@ IEM_CIMPL_DEF_1(iemCImpl_leave, IEMMODE, enmEffOpSize)
 
     /* Calculate the intermediate RSP from RBP and the stack attributes. */
     RTUINT64U       NewRsp;
-    if (pCtx->ssHid.Attr.n.u1Long)
+    if (pCtx->ss.Attr.n.u1Long)
+        NewRsp.u = pCtx->rbp;
+    else if (pCtx->ss.Attr.n.u1DefBig)
+        NewRsp.u = pCtx->ebp;
+    else
     {
         /** @todo Check that LEAVE actually preserve the high EBP bits. */
         NewRsp.u = pCtx->rsp;
         NewRsp.Words.w0 = pCtx->bp;
     }
-    else if (pCtx->ssHid.Attr.n.u1DefBig)
-        NewRsp.u = pCtx->ebp;
-    else
-        NewRsp.u = pCtx->rbp;
 
     /* Pop RBP according to the operand size. */
     VBOXSTRICTRC    rcStrict;
@@ -1194,6 +1899,7 @@ IEM_CIMPL_DEF_2(iemCImpl_int, uint8_t, u8Int, bool, fIsBpInstr)
 IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
 {
     PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+    NOREF(cbInstr);
 
     /*
      * iret throws an exception if VME isn't enabled.
@@ -1209,7 +1915,7 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
     Assert(enmEffOpSize == IEMMODE_32BIT || enmEffOpSize == IEMMODE_16BIT);
     VBOXSTRICTRC    rcStrict;
     RTCPTRUNION     uFrame;
-    uint16_t        uNewCS;
+    uint16_t        uNewCs;
     uint32_t        uNewEip;
     uint32_t        uNewFlags;
     uint64_t        uNewRsp;
@@ -1219,7 +1925,7 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
         if (rcStrict != VINF_SUCCESS)
             return rcStrict;
         uNewEip    = uFrame.pu32[0];
-        uNewCS     = (uint16_t)uFrame.pu32[1];
+        uNewCs     = (uint16_t)uFrame.pu32[1];
         uNewFlags  = uFrame.pu32[2];
         uNewFlags &= X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF
                    | X86_EFL_TF | X86_EFL_IF | X86_EFL_DF | X86_EFL_OF | X86_EFL_IOPL | X86_EFL_NT
@@ -1233,7 +1939,7 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
         if (rcStrict != VINF_SUCCESS)
             return rcStrict;
         uNewEip    = uFrame.pu16[0];
-        uNewCS     = uFrame.pu16[1];
+        uNewCs     = uFrame.pu16[1];
         uNewFlags  = uFrame.pu16[2];
         uNewFlags &= X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF
                    | X86_EFL_TF | X86_EFL_IF | X86_EFL_DF | X86_EFL_OF | X86_EFL_IOPL | X86_EFL_NT;
@@ -1248,7 +1954,7 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
      */
     /** @todo Only the AMD pseudo code check the limit here, what's
      *        right? */
-    if (uNewEip > pCtx->csHid.u32Limit)
+    if (uNewEip > pCtx->cs.u32Limit)
         return iemRaiseSelectorBounds(pIemCpu, X86_SREG_CS, IEM_ACCESS_INSTRUCTION);
 
     /*
@@ -1284,13 +1990,42 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
     if (rcStrict != VINF_SUCCESS)
         return rcStrict;
     pCtx->rip           = uNewEip;
-    pCtx->cs            = uNewCS;
-    pCtx->csHid.u64Base = (uint32_t)uNewCS << 4;
+    pCtx->cs.Sel        = uNewCs;
+    pCtx->cs.ValidSel   = uNewCs;
+    pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+    pCtx->cs.u64Base    = (uint32_t)uNewCs << 4;
     /** @todo do we load attribs and limit as well? */
     Assert(uNewFlags & X86_EFL_1);
     pCtx->eflags.u      = uNewFlags;
 
     return VINF_SUCCESS;
+}
+
+
+/**
+ * Implements iret for protected mode returning to V8086 mode.
+ *
+ * @param   enmEffOpSize    The effective operand size.
+ * @param   uNewEip         The new EIP.
+ * @param   uNewCs          The new CS.
+ * @param   uNewFlags       The new EFLAGS.
+ * @param   uNewRsp         The RSP after the initial IRET frame.
+ */
+IEM_CIMPL_DEF_5(iemCImpl_iret_prot_v8086, IEMMODE, enmEffOpSize, uint32_t, uNewEip, uint16_t, uNewCs,
+                uint32_t, uNewFlags, uint64_t, uNewRsp)
+{
+    IEM_RETURN_ASPECT_NOT_IMPLEMENTED();
+}
+
+
+/**
+ * Implements iret for protected mode returning via a nested task.
+ *
+ * @param   enmEffOpSize    The effective operand size.
+ */
+IEM_CIMPL_DEF_1(iemCImpl_iret_prot_NestedTask, IEMMODE, enmEffOpSize)
+{
+    IEM_RETURN_ASPECT_NOT_IMPLEMENTED();
 }
 
 
@@ -1302,166 +2037,293 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_real_v8086, IEMMODE, enmEffOpSize)
 IEM_CIMPL_DEF_1(iemCImpl_iret_prot, IEMMODE, enmEffOpSize)
 {
     PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+    NOREF(cbInstr);
 
     /*
      * Nested task return.
      */
     if (pCtx->eflags.Bits.u1NT)
-    {
-        AssertFailedReturn(VERR_NOT_IMPLEMENTED);
-    }
+        return IEM_CIMPL_CALL_1(iemCImpl_iret_prot_NestedTask, enmEffOpSize);
+
     /*
      * Normal return.
+     *
+     * Do the stack bits, but don't commit RSP before everything checks
+     * out right.
      */
+    Assert(enmEffOpSize == IEMMODE_32BIT || enmEffOpSize == IEMMODE_16BIT);
+    VBOXSTRICTRC    rcStrict;
+    RTCPTRUNION     uFrame;
+    uint16_t        uNewCs;
+    uint32_t        uNewEip;
+    uint32_t        uNewFlags;
+    uint64_t        uNewRsp;
+    if (enmEffOpSize == IEMMODE_32BIT)
+    {
+        rcStrict = iemMemStackPopBeginSpecial(pIemCpu, 12, &uFrame.pv, &uNewRsp);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+        uNewEip    = uFrame.pu32[0];
+        uNewCs     = (uint16_t)uFrame.pu32[1];
+        uNewFlags  = uFrame.pu32[2];
+    }
     else
     {
-        /*
-         * Do the stack bits, but don't commit RSP before everything checks
-         * out right.
-         */
-        Assert(enmEffOpSize == IEMMODE_32BIT || enmEffOpSize == IEMMODE_16BIT);
-        VBOXSTRICTRC    rcStrict;
-        RTCPTRUNION     uFrame;
-        uint16_t        uNewCS;
-        uint32_t        uNewEip;
-        uint32_t        uNewFlags;
-        uint64_t        uNewRsp;
+        rcStrict = iemMemStackPopBeginSpecial(pIemCpu, 6, &uFrame.pv, &uNewRsp);
+        if (rcStrict != VINF_SUCCESS)
+            return rcStrict;
+        uNewEip    = uFrame.pu16[0];
+        uNewCs     = uFrame.pu16[1];
+        uNewFlags  = uFrame.pu16[2];
+    }
+    rcStrict = iemMemCommitAndUnmap(pIemCpu, (void *)uFrame.pv, IEM_ACCESS_STACK_R); /* don't use iemMemStackPopCommitSpecial here. */
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /*
+     * We're hopefully not returning to V8086 mode...
+     */
+    if (   (uNewFlags & X86_EFL_VM)
+        && pIemCpu->uCpl == 0)
+        return IEM_CIMPL_CALL_5(iemCImpl_iret_prot_v8086, enmEffOpSize, uNewEip, uNewCs, uNewFlags, uNewRsp);
+
+    /*
+     * Protected mode.
+     */
+    /* Read the CS descriptor. */
+    if (!(uNewCs & X86_SEL_MASK_OFF_RPL))
+    {
+        Log(("iret %04x:%08x -> invalid CS selector, #GP(0)\n", uNewCs, uNewEip));
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+
+    IEMSELDESC DescCS;
+    rcStrict = iemMemFetchSelDesc(pIemCpu, &DescCS, uNewCs);
+    if (rcStrict != VINF_SUCCESS)
+    {
+        Log(("iret %04x:%08x - rcStrict=%Rrc when fetching CS\n", uNewCs, uNewEip, VBOXSTRICTRC_VAL(rcStrict)));
+        return rcStrict;
+    }
+
+    /* Must be a code descriptor. */
+    if (!DescCS.Legacy.Gen.u1DescType)
+    {
+        Log(("iret %04x:%08x - CS is system segment (%#x) -> #GP\n", uNewCs, uNewEip, DescCS.Legacy.Gen.u4Type));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+    if (!(DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE))
+    {
+        Log(("iret %04x:%08x - not code segment (%#x) -> #GP\n", uNewCs, uNewEip, DescCS.Legacy.Gen.u4Type));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+
+    /* Privilege checks. */
+    if ((uNewCs & X86_SEL_RPL) < pIemCpu->uCpl)
+    {
+        Log(("iret %04x:%08x - RPL < CPL (%d) -> #GP\n", uNewCs, uNewEip, pIemCpu->uCpl));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+    if (   (DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_CONF)
+        && (uNewCs & X86_SEL_RPL) < DescCS.Legacy.Gen.u2Dpl)
+    {
+        Log(("iret %04x:%08x - RPL < DPL (%d) -> #GP\n", uNewCs, uNewEip, DescCS.Legacy.Gen.u2Dpl));
+        return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCs);
+    }
+
+    /* Present? */
+    if (!DescCS.Legacy.Gen.u1Present)
+    {
+        Log(("iret %04x:%08x - CS not present -> #NP\n", uNewCs, uNewEip));
+        return iemRaiseSelectorNotPresentBySelector(pIemCpu, uNewCs);
+    }
+
+    uint32_t cbLimitCS = X86DESC_LIMIT_G(&DescCS.Legacy);
+
+    /*
+     * Return to outer level?
+     */
+    if ((uNewCs & X86_SEL_RPL) != pIemCpu->uCpl)
+    {
+        uint16_t    uNewSS;
+        uint32_t    uNewESP;
         if (enmEffOpSize == IEMMODE_32BIT)
         {
-            rcStrict = iemMemStackPopBeginSpecial(pIemCpu, 12, &uFrame.pv, &uNewRsp);
+            rcStrict = iemMemStackPopContinueSpecial(pIemCpu, 8, &uFrame.pv, &uNewRsp);
             if (rcStrict != VINF_SUCCESS)
                 return rcStrict;
-            uNewEip    = uFrame.pu32[0];
-            uNewCS     = (uint16_t)uFrame.pu32[1];
-            uNewFlags  = uFrame.pu32[2];
+            uNewESP = uFrame.pu32[0];
+            uNewSS  = (uint16_t)uFrame.pu32[1];
         }
         else
         {
-            rcStrict = iemMemStackPopBeginSpecial(pIemCpu, 6, &uFrame.pv, &uNewRsp);
+            rcStrict = iemMemStackPopContinueSpecial(pIemCpu, 8, &uFrame.pv, &uNewRsp);
             if (rcStrict != VINF_SUCCESS)
                 return rcStrict;
-            uNewEip    = uFrame.pu16[0];
-            uNewCS     = uFrame.pu16[1];
-            uNewFlags  = uFrame.pu16[2];
+            uNewESP = uFrame.pu16[0];
+            uNewSS  = uFrame.pu16[1];
         }
-        rcStrict = iemMemCommitAndUnmap(pIemCpu, (void *)uFrame.pv, IEM_ACCESS_STACK_R); /* don't use iemMemStackPopCommitSpecial here. */
+        rcStrict = iemMemCommitAndUnmap(pIemCpu, (void *)uFrame.pv, IEM_ACCESS_STACK_R);
         if (rcStrict != VINF_SUCCESS)
             return rcStrict;
 
-        /*
-         * What are we returning to?
-         */
-        if (   (uNewFlags & X86_EFL_VM)
-            && pIemCpu->uCpl == 0)
+        /* Read the SS descriptor. */
+        if (!(uNewSS & X86_SEL_MASK_OFF_RPL))
         {
-            /* V8086 mode! */
-            AssertFailedReturn(VERR_NOT_IMPLEMENTED);
+            Log(("iret %04x:%08x/%04x:%08x -> invalid SS selector, #GP(0)\n", uNewCs, uNewEip, uNewSS, uNewESP));
+            return iemRaiseGeneralProtectionFault0(pIemCpu);
         }
-        else
-        {
-            /*
-             * Protected mode.
-             */
-            /* Read the CS descriptor. */
-            if (!(uNewCS & (X86_SEL_MASK | X86_SEL_LDT)))
-            {
-                Log(("iret %04x:%08x -> invalid CS selector, #GP(0)\n", uNewCS, uNewEip));
-                return iemRaiseGeneralProtectionFault0(pIemCpu);
-            }
 
-            IEMSELDESC DescCS;
-            rcStrict = iemMemFetchSelDesc(pIemCpu, &DescCS, uNewCS);
+        IEMSELDESC DescSS;
+        rcStrict = iemMemFetchSelDesc(pIemCpu, &DescSS, uNewSS);
+        if (rcStrict != VINF_SUCCESS)
+        {
+            Log(("iret %04x:%08x/%04x:%08x - %Rrc when fetching SS\n",
+                 uNewCs, uNewEip, uNewSS, uNewESP, VBOXSTRICTRC_VAL(rcStrict)));
+            return rcStrict;
+        }
+
+        /* Privilege checks. */
+        if ((uNewSS & X86_SEL_RPL) != (uNewCs & X86_SEL_RPL))
+        {
+            Log(("iret %04x:%08x/%04x:%08x -> SS.RPL != CS.RPL -> #GP\n", uNewCs, uNewEip, uNewSS, uNewESP));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewSS);
+        }
+        if (DescSS.Legacy.Gen.u2Dpl != (uNewCs & X86_SEL_RPL))
+        {
+            Log(("iret %04x:%08x/%04x:%08x -> SS.DPL (%d) != CS.RPL -> #GP\n",
+                 uNewCs, uNewEip, uNewSS, uNewESP, DescSS.Legacy.Gen.u2Dpl));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewSS);
+        }
+
+        /* Must be a writeable data segment descriptor. */
+        if (!DescSS.Legacy.Gen.u1DescType)
+        {
+            Log(("iret %04x:%08x/%04x:%08x -> SS is system segment (%#x) -> #GP\n",
+                 uNewCs, uNewEip, uNewSS, uNewESP, DescSS.Legacy.Gen.u4Type));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewSS);
+        }
+        if ((DescSS.Legacy.Gen.u4Type & (X86_SEL_TYPE_CODE | X86_SEL_TYPE_WRITE)) != X86_SEL_TYPE_WRITE)
+        {
+            Log(("iret %04x:%08x/%04x:%08x - not writable data segment (%#x) -> #GP\n",
+                 uNewCs, uNewEip, uNewSS, uNewESP, DescSS.Legacy.Gen.u4Type));
+            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewSS);
+        }
+
+        /* Present? */
+        if (!DescSS.Legacy.Gen.u1Present)
+        {
+            Log(("iret %04x:%08x/%04x:%08x -> SS not present -> #SS\n", uNewCs, uNewEip, uNewSS, uNewESP));
+            return iemRaiseStackSelectorNotPresentBySelector(pIemCpu, uNewSS);
+        }
+
+        uint32_t cbLimitSs = X86DESC_LIMIT_G(&DescSS.Legacy);
+
+        /* Check EIP. */
+        if (uNewEip > cbLimitCS)
+        {
+            Log(("iret %04x:%08x/%04x:%08x -> EIP is out of bounds (%#x) -> #GP(0)\n",
+                 uNewCs, uNewEip, uNewSS, uNewESP, cbLimitCS));
+            return iemRaiseSelectorBoundsBySelector(pIemCpu, uNewCs);
+        }
+
+        /*
+         * Commit the changes, marking CS and SS accessed first since
+         * that may fail.
+         */
+        if (!(DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+        {
+            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewCs);
             if (rcStrict != VINF_SUCCESS)
                 return rcStrict;
-
-            /* Must be a code descriptor. */
-            if (!DescCS.Legacy.Gen.u1DescType)
-            {
-                Log(("iret %04x:%08x - CS is system segment (%#x) -> #GP\n", uNewCS, uNewEip, DescCS.Legacy.Gen.u4Type));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCS);
-            }
-            if (!(DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE))
-            {
-                Log(("iret %04x:%08x - not code segment (%#x) -> #GP\n", uNewCS, uNewEip, DescCS.Legacy.Gen.u4Type));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCS);
-            }
-
-            /* Privilege checks. */
-            if ((uNewCS & X86_SEL_RPL) < pIemCpu->uCpl)
-            {
-                Log(("iret %04x:%08x - RPL < CPL (%d) -> #GP\n", uNewCS, uNewEip, pIemCpu->uCpl));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCS);
-            }
-            if (   (DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_CONF)
-                && (uNewCS & X86_SEL_RPL) < DescCS.Legacy.Gen.u2Dpl)
-            {
-                Log(("iret %04x:%08x - RPL < DPL (%d) -> #GP\n", uNewCS, uNewEip, DescCS.Legacy.Gen.u2Dpl));
-                return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewCS);
-            }
-
-            /* Present? */
-            if (!DescCS.Legacy.Gen.u1Present)
-            {
-                Log(("iret %04x:%08x - CS not present -> #NP\n", uNewCS, uNewEip));
-                return iemRaiseSelectorNotPresentBySelector(pIemCpu, uNewCS);
-            }
-
-            uint32_t cbLimitCS = X86DESC_LIMIT(DescCS.Legacy);
-            if (DescCS.Legacy.Gen.u1Granularity)
-                cbLimitCS = (cbLimitCS << PAGE_SHIFT) | PAGE_OFFSET_MASK;
-
-            /*
-             * Different level?
-             */
-            if ((uNewCS & X86_SEL_RPL) != pIemCpu->uCpl)
-            {
-                AssertFailedReturn(VERR_NOT_IMPLEMENTED);
-            }
-            /*
-             * Same level.
-             */
-            else
-            {
-                /* Check EIP. */
-                if (uNewEip > cbLimitCS)
-                {
-                    Log(("iret %04x:%08x - EIP is out of bounds (%#x) -> #GP(0)\n", uNewCS, uNewEip, cbLimitCS));
-                    return iemRaiseSelectorBoundsBySelector(pIemCpu, uNewCS);
-                }
-
-                /*
-                 * Commit the changes, marking CS first since it may fail.
-                 */
-                if (!(DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
-                {
-                    rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewCS);
-                    if (rcStrict != VINF_SUCCESS)
-                        return rcStrict;
-                    DescCS.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
-                }
-
-                pCtx->rip               = uNewEip;
-                pCtx->cs                = uNewCS;
-                pCtx->csHid.Attr.u      = X86DESC_GET_HID_ATTR(DescCS.Legacy);
-                pCtx->csHid.u32Limit    = cbLimitCS;
-                pCtx->csHid.u64Base     = X86DESC_BASE(DescCS.Legacy);
-                pCtx->rsp               = uNewRsp;
-
-                uint32_t fEFlagsMask = X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF  | X86_EFL_SF
-                                     | X86_EFL_TF | X86_EFL_DF | X86_EFL_OF | X86_EFL_NT;
-                if (enmEffOpSize != IEMMODE_16BIT)
-                    fEFlagsMask |= X86_EFL_RF | X86_EFL_AC | X86_EFL_ID;
-                if (pIemCpu->uCpl == 0)
-                    fEFlagsMask |= X86_EFL_IF | X86_EFL_IOPL | X86_EFL_VIF | X86_EFL_VIP; /* VM is 0 */
-                else if (pIemCpu->uCpl <= pCtx->eflags.Bits.u2IOPL)
-                    fEFlagsMask |= X86_EFL_IF;
-                pCtx->eflags.u         &= ~fEFlagsMask;
-                pCtx->eflags.u         |= fEFlagsMask & uNewFlags;
-                /* Done! */
-            }
+            DescCS.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
         }
-    }
+        if (!(DescSS.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+        {
+            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewSS);
+            if (rcStrict != VINF_SUCCESS)
+                return rcStrict;
+            DescSS.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+        }
 
+        pCtx->rip           = uNewEip;
+        pCtx->cs.Sel        = uNewCs;
+        pCtx->cs.ValidSel   = uNewCs;
+        pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.Attr.u     = X86DESC_GET_HID_ATTR(&DescCS.Legacy);
+        pCtx->cs.u32Limit   = cbLimitCS;
+        pCtx->cs.u64Base    = X86DESC_BASE(&DescCS.Legacy);
+        pCtx->rsp           = uNewESP;
+        pCtx->ss.Sel        = uNewSS;
+        pCtx->ss.ValidSel   = uNewSS;
+        pCtx->ss.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->ss.Attr.u     = X86DESC_GET_HID_ATTR(&DescSS.Legacy);
+        pCtx->ss.u32Limit   = cbLimitSs;
+        pCtx->ss.u64Base    = X86DESC_BASE(&DescSS.Legacy);
+
+        uint32_t fEFlagsMask = X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF  | X86_EFL_SF
+                             | X86_EFL_TF | X86_EFL_DF | X86_EFL_OF | X86_EFL_NT;
+        if (enmEffOpSize != IEMMODE_16BIT)
+            fEFlagsMask |= X86_EFL_RF | X86_EFL_AC | X86_EFL_ID;
+        if (pIemCpu->uCpl == 0)
+            fEFlagsMask |= X86_EFL_IF | X86_EFL_IOPL | X86_EFL_VIF | X86_EFL_VIP; /* VM is 0 */
+        else if (pIemCpu->uCpl <= pCtx->eflags.Bits.u2IOPL)
+            fEFlagsMask |= X86_EFL_IF;
+        pCtx->eflags.u     &= ~fEFlagsMask;
+        pCtx->eflags.u     |= fEFlagsMask & uNewFlags;
+
+        pIemCpu->uCpl       = uNewCs & X86_SEL_RPL;
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->ds);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->es);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->fs);
+        iemHlpAdjustSelectorForNewCpl(pIemCpu, uNewCs & X86_SEL_RPL, &pCtx->gs);
+
+        /* Done! */
+
+    }
+    /*
+     * Return to the same level.
+     */
+    else
+    {
+        /* Check EIP. */
+        if (uNewEip > cbLimitCS)
+        {
+            Log(("iret %04x:%08x - EIP is out of bounds (%#x) -> #GP(0)\n", uNewCs, uNewEip, cbLimitCS));
+            return iemRaiseSelectorBoundsBySelector(pIemCpu, uNewCs);
+        }
+
+        /*
+         * Commit the changes, marking CS first since it may fail.
+         */
+        if (!(DescCS.Legacy.Gen.u4Type & X86_SEL_TYPE_ACCESSED))
+        {
+            rcStrict = iemMemMarkSelDescAccessed(pIemCpu, uNewCs);
+            if (rcStrict != VINF_SUCCESS)
+                return rcStrict;
+            DescCS.Legacy.Gen.u4Type |= X86_SEL_TYPE_ACCESSED;
+        }
+
+        pCtx->rip           = uNewEip;
+        pCtx->cs.Sel        = uNewCs;
+        pCtx->cs.ValidSel   = uNewCs;
+        pCtx->cs.fFlags     = CPUMSELREG_FLAGS_VALID;
+        pCtx->cs.Attr.u     = X86DESC_GET_HID_ATTR(&DescCS.Legacy);
+        pCtx->cs.u32Limit   = cbLimitCS;
+        pCtx->cs.u64Base    = X86DESC_BASE(&DescCS.Legacy);
+        pCtx->rsp           = uNewRsp;
+
+        uint32_t fEFlagsMask = X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF  | X86_EFL_SF
+                             | X86_EFL_TF | X86_EFL_DF | X86_EFL_OF | X86_EFL_NT;
+        if (enmEffOpSize != IEMMODE_16BIT)
+            fEFlagsMask |= X86_EFL_RF | X86_EFL_AC | X86_EFL_ID;
+        if (pIemCpu->uCpl == 0)
+            fEFlagsMask |= X86_EFL_IF | X86_EFL_IOPL | X86_EFL_VIF | X86_EFL_VIP; /* VM is 0 */
+        else if (pIemCpu->uCpl <= pCtx->eflags.Bits.u2IOPL)
+            fEFlagsMask |= X86_EFL_IF;
+        pCtx->eflags.u         &= ~fEFlagsMask;
+        pCtx->eflags.u         |= fEFlagsMask & uNewFlags;
+        /* Done! */
+    }
     return VINF_SUCCESS;
 }
 
@@ -1477,7 +2339,8 @@ IEM_CIMPL_DEF_1(iemCImpl_iret_long, IEMMODE, enmEffOpSize)
     //VBOXSTRICTRC    rcStrict;
     //uint64_t        uNewRsp;
 
-    return VERR_NOT_IMPLEMENTED;
+    NOREF(pIemCpu); NOREF(cbInstr); NOREF(enmEffOpSize);
+    IEM_RETURN_ASPECT_NOT_IMPLEMENTED();
 }
 
 
@@ -1509,7 +2372,7 @@ IEM_CIMPL_DEF_1(iemCImpl_iret, IEMMODE, enmEffOpSize)
  */
 IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
 {
-    PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);
+    /*PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);*/
     uint16_t       *pSel = iemSRegRef(pIemCpu, iSegReg);
     PCPUMSELREGHID  pHid = iemSRegGetHid(pIemCpu, iSegReg);
 
@@ -1523,6 +2386,7 @@ IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
     {
         *pSel           = uSel;
         pHid->u64Base   = (uint32_t)uSel << 4;
+#if 0 /* AMD Volume 2, chapter 4.1 - "real mode segmentation" - states that limit and attributes are untouched. */
         /** @todo Does the CPU actually load limits and attributes in the
          *        real/V8086 mode segment load case?  It doesn't for CS in far
          *        jumps...  Affects unreal mode.  */
@@ -1533,7 +2397,7 @@ IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
         pHid->Attr.n.u4Type     = iSegReg != X86_SREG_CS
                                 ? X86_SEL_TYPE_RW
                                 : X86_SEL_TYPE_READ | X86_SEL_TYPE_CODE;
-
+#endif
         iemRegAddToRip(pIemCpu, cbInstr);
         return VINF_SUCCESS;
     }
@@ -1544,7 +2408,7 @@ IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
      * Check if it's a null segment selector value first, that's OK for DS, ES,
      * FS and GS.  If not null, then we have to load and parse the descriptor.
      */
-    if (!(uSel & (X86_SEL_MASK | X86_SEL_LDT)))
+    if (!(uSel & X86_SEL_MASK_OFF_RPL))
     {
         if (iSegReg == X86_SREG_SS)
         {
@@ -1604,12 +2468,6 @@ IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
     }
     if (iSegReg == X86_SREG_SS) /* SS gets different treatment */
     {
-        if (   (Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE)
-            || !(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_WRITE) )
-        {
-            Log(("load sreg SS, %#x - code or read only (%#x) -> #GP\n", uSel, Desc.Legacy.Gen.u4Type));
-            return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uSel);
-        }
         if (    (Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_CODE)
             || !(Desc.Legacy.Gen.u4Type & X86_SEL_TYPE_WRITE) )
         {
@@ -1669,17 +2527,14 @@ IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
         return iemRaiseSelectorNotPresentBySelector(pIemCpu, uSel);
     }
 
-    /* The the base and limit. */
+    /* The base and limit. */
+    uint32_t cbLimit = X86DESC_LIMIT_G(&Desc.Legacy);
     uint64_t u64Base;
-    uint32_t cbLimit = X86DESC_LIMIT(Desc.Legacy);
-    if (Desc.Legacy.Gen.u1Granularity)
-        cbLimit = (cbLimit << PAGE_SHIFT) | PAGE_OFFSET_MASK;
-
     if (   pIemCpu->enmCpuMode == IEMMODE_64BIT
         && iSegReg < X86_SREG_FS)
         u64Base = 0;
     else
-        u64Base = X86DESC_BASE(Desc.Legacy);
+        u64Base = X86DESC_BASE(&Desc.Legacy);
 
     /*
      * Ok, everything checked out fine.  Now set the accessed bit before
@@ -1695,7 +2550,7 @@ IEM_CIMPL_DEF_2(iemCImpl_LoadSReg, uint8_t, iSegReg, uint16_t, uSel)
 
     /* commit */
     *pSel = uSel;
-    pHid->Attr.u   = (Desc.Legacy.u >> (16+16+8)) & UINT32_C(0xf0ff); /** @todo do we have a define for 0xf0ff? */
+    pHid->Attr.u   = X86DESC_GET_HID_ATTR(&Desc.Legacy);
     pHid->u32Limit = cbLimit;
     pHid->u64Base  = u64Base;
 
@@ -1798,7 +2653,7 @@ IEM_CIMPL_DEF_5(iemCImpl_load_SReg_Greg,
                 uint8_t,  iGReg,
                 IEMMODE,  enmEffOpSize)
 {
-    PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);
+    /*PCPUMCTX        pCtx = pIemCpu->CTX_SUFF(pCtx);*/
     VBOXSTRICTRC    rcStrict;
 
     /*
@@ -1886,15 +2741,14 @@ IEM_CIMPL_DEF_3(iemCImpl_lidt, uint8_t, iEffSeg, RTGCPTR, GCPtrEffSrc, IEMMODE, 
     if (rcStrict == VINF_SUCCESS)
     {
         if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-            rcStrict = CPUMSetGuestIDTR(IEMCPU_TO_VMCPU(pIemCpu), GCPtrBase, cbLimit);
+            CPUMSetGuestIDTR(IEMCPU_TO_VMCPU(pIemCpu), GCPtrBase, cbLimit);
         else
         {
             PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
             pCtx->idtr.cbIdt = cbLimit;
             pCtx->idtr.pIdt  = GCPtrBase;
         }
-        if (rcStrict == VINF_SUCCESS)
-            iemRegAddToRip(pIemCpu, cbInstr);
+        iemRegAddToRip(pIemCpu, cbInstr);
     }
     return rcStrict;
 }
@@ -1931,17 +2785,19 @@ IEM_CIMPL_DEF_1(iemCImpl_lldt, uint16_t, uNewLdt)
     /*
      * Now, loading a NULL selector is easy.
      */
-    if ((uNewLdt & X86_SEL_MASK) == 0)
+    if (!(uNewLdt & X86_SEL_MASK_OFF_RPL))
     {
         Log(("lldt %04x: Loading NULL selector.\n",  uNewLdt));
         /** @todo check if the actual value is loaded or if it's always 0. */
         if (!IEM_VERIFICATION_ENABLED(pIemCpu))
             CPUMSetGuestLDTR(IEMCPU_TO_VMCPU(pIemCpu), 0);
         else
-            pCtx->ldtr = 0;
-        pCtx->ldtrHid.Attr.u   = 0;
-        pCtx->ldtrHid.u64Base  = 0;
-        pCtx->ldtrHid.u32Limit = 0;
+            pCtx->ldtr.Sel = 0;
+        pCtx->ldtr.ValidSel = 0;
+        pCtx->ldtr.fFlags   = CPUMSELREG_FLAGS_VALID;
+        pCtx->ldtr.Attr.u   = 0;
+        pCtx->ldtr.u64Base  = 0;
+        pCtx->ldtr.u32Limit = 0;
 
         iemRegAddToRip(pIemCpu, cbInstr);
         return VINF_SUCCESS;
@@ -1959,29 +2815,29 @@ IEM_CIMPL_DEF_1(iemCImpl_lldt, uint16_t, uNewLdt)
     if (Desc.Legacy.Gen.u1DescType)
     {
         Log(("lldt %#x - not system selector (type %x) -> #GP\n", uNewLdt, Desc.Legacy.Gen.u4Type));
-        return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK);
+        return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK_OFF_RPL);
     }
     if (Desc.Legacy.Gen.u4Type != X86_SEL_TYPE_SYS_LDT)
     {
         Log(("lldt %#x - not LDT selector (type %x) -> #GP\n", uNewLdt, Desc.Legacy.Gen.u4Type));
-        return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK);
+        return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK_OFF_RPL);
     }
     uint64_t u64Base;
     if (!IEM_IS_LONG_MODE(pIemCpu))
-        u64Base = X86DESC_BASE(Desc.Legacy);
+        u64Base = X86DESC_BASE(&Desc.Legacy);
     else
     {
         if (Desc.Long.Gen.u5Zeros)
         {
             Log(("lldt %#x - u5Zeros=%#x -> #GP\n", uNewLdt, Desc.Long.Gen.u5Zeros));
-            return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK);
+            return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK_OFF_RPL);
         }
 
-        u64Base = X86DESC64_BASE(Desc.Long);
+        u64Base = X86DESC64_BASE(&Desc.Long);
         if (!IEM_IS_CANONICAL(u64Base))
         {
             Log(("lldt %#x - non-canonical base address %#llx -> #GP\n", uNewLdt, u64Base));
-            return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK);
+            return iemRaiseGeneralProtectionFault(pIemCpu, uNewLdt & X86_SEL_MASK_OFF_RPL);
         }
     }
 
@@ -1997,12 +2853,14 @@ IEM_CIMPL_DEF_1(iemCImpl_lldt, uint16_t, uNewLdt)
      */
 /** @todo check if the actual value is loaded or if the RPL is dropped */
     if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-        CPUMSetGuestLDTR(IEMCPU_TO_VMCPU(pIemCpu), uNewLdt & X86_SEL_MASK);
+        CPUMSetGuestLDTR(IEMCPU_TO_VMCPU(pIemCpu), uNewLdt & X86_SEL_MASK_OFF_RPL);
     else
-        pCtx->ldtr = uNewLdt & X86_SEL_MASK;
-    pCtx->ldtrHid.Attr.u   = X86DESC_GET_HID_ATTR(Desc.Legacy);
-    pCtx->ldtrHid.u32Limit = X86DESC_LIMIT(Desc.Legacy);
-    pCtx->ldtrHid.u64Base  = u64Base;
+        pCtx->ldtr.Sel  = uNewLdt & X86_SEL_MASK_OFF_RPL;
+    pCtx->ldtr.ValidSel = uNewLdt & X86_SEL_MASK_OFF_RPL;
+    pCtx->ldtr.fFlags   = CPUMSELREG_FLAGS_VALID;
+    pCtx->ldtr.Attr.u   = X86DESC_GET_HID_ATTR(&Desc.Legacy);
+    pCtx->ldtr.u32Limit = X86DESC_LIMIT_G(&Desc.Legacy);
+    pCtx->ldtr.u64Base  = u64Base;
 
     iemRegAddToRip(pIemCpu, cbInstr);
     return VINF_SUCCESS;
@@ -2036,7 +2894,7 @@ IEM_CIMPL_DEF_1(iemCImpl_ltr, uint16_t, uNewTr)
         Log(("ltr %04x - LDT selector -> #GP\n", uNewTr));
         return iemRaiseGeneralProtectionFaultBySelector(pIemCpu, uNewTr);
     }
-    if ((uNewTr & X86_SEL_MASK) == 0)
+    if (!(uNewTr & X86_SEL_MASK_OFF_RPL))
     {
         Log(("ltr %04x - NULL selector -> #GP(0)\n", uNewTr));
         return iemRaiseGeneralProtectionFault0(pIemCpu);
@@ -2054,31 +2912,31 @@ IEM_CIMPL_DEF_1(iemCImpl_ltr, uint16_t, uNewTr)
     if (Desc.Legacy.Gen.u1DescType)
     {
         Log(("ltr %#x - not system selector (type %x) -> #GP\n", uNewTr, Desc.Legacy.Gen.u4Type));
-        return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK);
+        return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK_OFF_RPL);
     }
     if (   Desc.Legacy.Gen.u4Type != X86_SEL_TYPE_SYS_386_TSS_AVAIL /* same as AMD64_SEL_TYPE_SYS_TSS_AVAIL */
         && (   Desc.Legacy.Gen.u4Type != X86_SEL_TYPE_SYS_286_TSS_AVAIL
             || IEM_IS_LONG_MODE(pIemCpu)) )
     {
         Log(("ltr %#x - not an available TSS selector (type %x) -> #GP\n", uNewTr, Desc.Legacy.Gen.u4Type));
-        return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK);
+        return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK_OFF_RPL);
     }
     uint64_t u64Base;
     if (!IEM_IS_LONG_MODE(pIemCpu))
-        u64Base = X86DESC_BASE(Desc.Legacy);
+        u64Base = X86DESC_BASE(&Desc.Legacy);
     else
     {
         if (Desc.Long.Gen.u5Zeros)
         {
             Log(("ltr %#x - u5Zeros=%#x -> #GP\n", uNewTr, Desc.Long.Gen.u5Zeros));
-            return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK);
+            return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK_OFF_RPL);
         }
 
-        u64Base = X86DESC64_BASE(Desc.Long);
+        u64Base = X86DESC64_BASE(&Desc.Long);
         if (!IEM_IS_CANONICAL(u64Base))
         {
             Log(("ltr %#x - non-canonical base address %#llx -> #GP\n", uNewTr, u64Base));
-            return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK);
+            return iemRaiseGeneralProtectionFault(pIemCpu, uNewTr & X86_SEL_MASK_OFF_RPL);
         }
     }
 
@@ -2116,12 +2974,14 @@ IEM_CIMPL_DEF_1(iemCImpl_ltr, uint16_t, uNewTr)
      */
 /** @todo check if the actual value is loaded or if the RPL is dropped */
     if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-        CPUMSetGuestTR(IEMCPU_TO_VMCPU(pIemCpu), uNewTr & X86_SEL_MASK);
+        CPUMSetGuestTR(IEMCPU_TO_VMCPU(pIemCpu), uNewTr & X86_SEL_MASK_OFF_RPL);
     else
-        pCtx->tr = uNewTr & X86_SEL_MASK;
-    pCtx->trHid.Attr.u   = X86DESC_GET_HID_ATTR(Desc.Legacy);
-    pCtx->trHid.u32Limit = X86DESC_LIMIT(Desc.Legacy);
-    pCtx->trHid.u64Base  = u64Base;
+        pCtx->tr.Sel  = uNewTr & X86_SEL_MASK_OFF_RPL;
+    pCtx->tr.ValidSel = uNewTr & X86_SEL_MASK_OFF_RPL;
+    pCtx->tr.fFlags   = CPUMSELREG_FLAGS_VALID;
+    pCtx->tr.Attr.u   = X86DESC_GET_HID_ATTR(&Desc.Legacy);
+    pCtx->tr.u32Limit = X86DESC_LIMIT_G(&Desc.Legacy);
+    pCtx->tr.u64Base  = u64Base;
 
     iemRegAddToRip(pIemCpu, cbInstr);
     return VINF_SUCCESS;
@@ -2151,7 +3011,7 @@ IEM_CIMPL_DEF_2(iemCImpl_mov_Rd_Cd, uint8_t, iGReg, uint8_t, iCrReg)
         case 4: crX = pCtx->cr4; break;
         case 8:
             if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-                AssertFailedReturn(VERR_NOT_IMPLEMENTED); /** @todo implement CR8 reading and writing. */
+                IEM_RETURN_ASPECT_NOT_IMPLEMENTED_LOG(("Implement CR8/TPR read\n")); /** @todo implement CR8 reading and writing. */
             else
                 crX = 0xff;
             break;
@@ -2231,7 +3091,7 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
                     Log(("Trying to enabled long mode paging without CR4.PAE set\n"));
                     return iemRaiseGeneralProtectionFault0(pIemCpu);
                 }
-                if (pCtx->csHid.Attr.n.u1Long)
+                if (pCtx->cs.Attr.n.u1Long)
                 {
                     Log(("Trying to enabled long mode paging with a long CS descriptor loaded.\n"));
                     return iemRaiseGeneralProtectionFault0(pIemCpu);
@@ -2244,10 +3104,7 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
              * Change CR0.
              */
             if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-            {
-                rc = CPUMSetGuestCR0(pVCpu, uNewCrX);
-                AssertRCSuccessReturn(rc, RT_FAILURE_NP(rc) ? rc : VERR_INTERNAL_ERROR_3);
-            }
+                CPUMSetGuestCR0(pVCpu, uNewCrX);
             else
                 pCtx->cr0 = uNewCrX;
             Assert(pCtx->cr0 == uNewCrX);
@@ -2284,7 +3141,6 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
                     /* ignore informational status codes */
                 }
                 rcStrict = PGMChangeMode(pVCpu, pCtx->cr0, pCtx->cr4, pCtx->msrEFER);
-                /** @todo Status code management.  */
             }
             else
                 rcStrict = VINF_SUCCESS;
@@ -2350,7 +3206,6 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
                     rc = PGMFlushTLB(pVCpu, pCtx->cr3, !(pCtx->cr3 & X86_CR4_PGE));
                     AssertRCReturn(rc, rc);
                     /* ignore informational status codes */
-                    /** @todo status code management */
                 }
             }
             rcStrict = VINF_SUCCESS;
@@ -2363,7 +3218,7 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
          */
         case 4:
         {
-            uint64_t const uOldCrX = pCtx->cr0;
+            uint64_t const uOldCrX = pCtx->cr4;
 
             /* reserved bits */
             uint32_t fValid = X86_CR4_VME | X86_CR4_PVI
@@ -2411,7 +3266,11 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
             {
                 /* SELM - VME may change things wrt to the TSS shadowing. */
                 if ((uNewCrX ^ uOldCrX) & X86_CR4_VME)
+                {
+                    Log(("iemCImpl_load_CrX: VME %d -> %d => Setting VMCPU_FF_SELM_SYNC_TSS\n",
+                         RT_BOOL(uOldCrX & X86_CR4_VME), RT_BOOL(uNewCrX & X86_CR4_VME) ));
                     VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
+                }
 
                 /* PGM - flushing and mode. */
                 if (    (uNewCrX & (X86_CR0_PG | X86_CR0_WP | X86_CR0_PE))
@@ -2422,7 +3281,6 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
                     /* ignore informational status codes */
                 }
                 rcStrict = PGMChangeMode(pVCpu, pCtx->cr0, pCtx->cr4, pCtx->msrEFER);
-                /** @todo Status code management.  */
             }
             else
                 rcStrict = VINF_SUCCESS;
@@ -2434,7 +3292,7 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
          */
         case 8:
             if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-                AssertFailedReturn(VERR_NOT_IMPLEMENTED); /** @todo implement CR8 reading and writing. */
+                IEM_RETURN_ASPECT_NOT_IMPLEMENTED_LOG(("Implement CR8/TPR read\n")); /** @todo implement CR8 reading and writing. */
             else
                 rcStrict = VINF_SUCCESS;
             break;
@@ -2445,11 +3303,14 @@ IEM_CIMPL_DEF_2(iemCImpl_load_CrX, uint8_t, iCrReg, uint64_t, uNewCrX)
     /*
      * Advance the RIP on success.
      */
-    /** @todo Status code management.  */
-    if (rcStrict == VINF_SUCCESS)
+    if (RT_SUCCESS(rcStrict))
+    {
+        if (rcStrict != VINF_SUCCESS)
+            rcStrict = iemSetPassUpStatus(pIemCpu, rcStrict);
         iemRegAddToRip(pIemCpu, cbInstr);
-    return rcStrict;
+    }
 
+    return rcStrict;
 }
 
 
@@ -2678,6 +3539,33 @@ IEM_CIMPL_DEF_2(iemCImpl_mov_Dd_Rd, uint8_t, iDrReg, uint8_t, iGReg)
 
 
 /**
+ * Implements 'INVLPG m'.
+ *
+ * @param   GCPtrPage       The effective address of the page to invalidate.
+ * @remarks Updates the RIP.
+ */
+IEM_CIMPL_DEF_1(iemCImpl_invlpg, uint8_t, GCPtrPage)
+{
+    /* ring-0 only. */
+    if (pIemCpu->uCpl != 0)
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    Assert(!pIemCpu->CTX_SUFF(pCtx)->eflags.Bits.u1VM);
+
+    int rc = PGMInvalidatePage(IEMCPU_TO_VMCPU(pIemCpu), GCPtrPage);
+    iemRegAddToRip(pIemCpu, cbInstr);
+
+    if (rc == VINF_SUCCESS)
+        return VINF_SUCCESS;
+    if (rc == VINF_PGM_SYNC_CR3)
+        return iemSetPassUpStatus(pIemCpu, rc);
+
+    AssertMsg(rc == VINF_EM_RAW_EMULATE_INSTR || RT_FAILURE_NP(rc), ("%Rrc\n", rc));
+    Log(("PGMInvalidatePage(%RGv) -> %Rrc\n", rc));
+    return rc;
+}
+
+
+/**
  * Implements RDTSC.
  */
 IEM_CIMPL_DEF_0(iemCImpl_rdtsc)
@@ -2706,6 +3594,40 @@ IEM_CIMPL_DEF_0(iemCImpl_rdtsc)
 #ifdef IEM_VERIFICATION_MODE
     pIemCpu->fIgnoreRaxRdx = true;
 #endif
+
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Implements RDMSR.
+ */
+IEM_CIMPL_DEF_0(iemCImpl_rdmsr)
+{
+    PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+
+    /*
+     * Check preconditions.
+     */
+    if (!IEM_IS_INTEL_CPUID_FEATURE_PRESENT_EDX(X86_CPUID_FEATURE_EDX_MSR))
+        return iemRaiseUndefinedOpcode(pIemCpu);
+    if (pIemCpu->uCpl != 0)
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+
+    /*
+     * Do the job.
+     */
+    RTUINT64U uValue;
+    int rc = CPUMQueryGuestMsr(IEMCPU_TO_VMCPU(pIemCpu), pCtx->ecx, &uValue.u);
+    if (rc != VINF_SUCCESS)
+    {
+        AssertMsgReturn(rc == VERR_CPUM_RAISE_GP_0, ("%Rrc\n", rc), VERR_IPE_UNEXPECTED_STATUS);
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+
+    pCtx->rax = uValue.au32[0];
+    pCtx->rdx = uValue.au32[1];
 
     iemRegAddToRip(pIemCpu, cbInstr);
     return VINF_SUCCESS;
@@ -2748,8 +3670,10 @@ IEM_CIMPL_DEF_2(iemCImpl_in, uint16_t, u16Port, uint8_t, cbReg)
         }
         iemRegAddToRip(pIemCpu, cbInstr);
         pIemCpu->cPotentialExits++;
+        if (rcStrict != VINF_SUCCESS)
+            rcStrict = iemSetPassUpStatus(pIemCpu, rcStrict);
     }
-    /** @todo massage rcStrict. */
+
     return rcStrict;
 }
 
@@ -2783,7 +3707,7 @@ IEM_CIMPL_DEF_2(iemCImpl_out, uint16_t, u16Port, uint8_t, cbReg)
             ||  pCtx->eflags.Bits.u1VM) )
     {
         /** @todo I/O port permission bitmap check */
-        AssertFailedReturn(VERR_NOT_IMPLEMENTED);
+        IEM_RETURN_ASPECT_NOT_IMPLEMENTED_LOG(("Implement I/O permission bitmap checks.\n"));
     }
 
     /*
@@ -2797,18 +3721,19 @@ IEM_CIMPL_DEF_2(iemCImpl_out, uint16_t, u16Port, uint8_t, cbReg)
         case 4: u32Value = pCtx->eax; break;
         default: AssertFailedReturn(VERR_INTERNAL_ERROR_3);
     }
-    VBOXSTRICTRC rc;
+    VBOXSTRICTRC rcStrict;
     if (!IEM_VERIFICATION_ENABLED(pIemCpu))
-        rc = IOMIOPortWrite(IEMCPU_TO_VM(pIemCpu), u16Port, u32Value, cbReg);
+        rcStrict = IOMIOPortWrite(IEMCPU_TO_VM(pIemCpu), u16Port, u32Value, cbReg);
     else
-        rc = iemVerifyFakeIOPortWrite(pIemCpu, u16Port, u32Value, cbReg);
-    if (IOM_SUCCESS(rc))
+        rcStrict = iemVerifyFakeIOPortWrite(pIemCpu, u16Port, u32Value, cbReg);
+    if (IOM_SUCCESS(rcStrict))
     {
         iemRegAddToRip(pIemCpu, cbInstr);
         pIemCpu->cPotentialExits++;
-        /** @todo massage rc. */
+        if (rcStrict != VINF_SUCCESS)
+            rcStrict = iemSetPassUpStatus(pIemCpu, rcStrict);
     }
-    return rc;
+    return rcStrict;
 }
 
 
@@ -2896,6 +3821,7 @@ IEM_CIMPL_DEF_0(iemCImpl_sti)
         pCtx->eflags.Bits.u1IF = 1;
 
     iemRegAddToRip(pIemCpu, cbInstr);
+    /** @todo don't do this unconditionally... */
     EMSetInhibitInterruptsPC(IEMCPU_TO_VMCPU(pIemCpu), pCtx->rip);
     return VINF_SUCCESS;
 }
@@ -2955,11 +3881,12 @@ IEM_CIMPL_DEF_1(iemCImpl_aad, uint8_t, bImm)
 /**
  * Implements 'AAM'.
  *
- * @param   enmEffOpSize    The effective operand size.
+ * @param   bImm            The immediate operand. Cannot be 0.
  */
 IEM_CIMPL_DEF_1(iemCImpl_aam, uint8_t, bImm)
 {
     PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+    Assert(bImm != 0); /* #DE on 0 is handled in the decoder. */
 
     uint16_t const ax = pCtx->ax;
     uint8_t const  al = (uint8_t)ax % bImm;
@@ -2972,6 +3899,7 @@ IEM_CIMPL_DEF_1(iemCImpl_aam, uint8_t, bImm)
     iemRegAddToRip(pIemCpu, cbInstr);
     return VINF_SUCCESS;
 }
+
 
 
 
@@ -3028,7 +3956,8 @@ IEM_CIMPL_DEF_1(iemCImpl_finit, bool, fCheckXcpts)
 
     if (pCtx->cr0 & (X86_CR0_EM | X86_CR0_TS))
         return iemRaiseDeviceNotAvailable(pIemCpu);
-    /** @todo trigger pending exceptions:
+
+    NOREF(fCheckXcpts); /** @todo trigger pending exceptions:
         if (fCheckXcpts && TODO )
         return iemRaiseMathFault(pIemCpu);
      */
@@ -3061,6 +3990,528 @@ IEM_CIMPL_DEF_1(iemCImpl_finit, bool, fCheckXcpts)
     return VINF_SUCCESS;
 }
 
+
+/**
+ * Implements 'FXSAVE'.
+ *
+ * @param   iEffSeg         The effective segment.
+ * @param   GCPtrEff        The address of the image.
+ * @param   enmEffOpSize    The operand size (only REX.W really matters).
+ */
+IEM_CIMPL_DEF_3(iemCImpl_fxsave, uint8_t, iEffSeg, RTGCPTR, GCPtrEff, IEMMODE, enmEffOpSize)
+{
+    PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+
+    /*
+     * Raise exceptions.
+     */
+    if (pCtx->cr0 & X86_CR0_EM)
+        return iemRaiseUndefinedOpcode(pIemCpu);
+    if (pCtx->cr0 & (X86_CR0_TS | X86_CR0_EM))
+        return iemRaiseDeviceNotAvailable(pIemCpu);
+    if (GCPtrEff & 15)
+    {
+        /** @todo CPU/VM detection possible! \#AC might not be signal for
+         * all/any misalignment sizes, intel says its an implementation detail. */
+        if (   (pCtx->cr0 & X86_CR0_AM)
+            && pCtx->eflags.Bits.u1AC
+            && pIemCpu->uCpl == 3)
+            return iemRaiseAlignmentCheckException(pIemCpu);
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+    AssertReturn(iemFRegIsFxSaveFormat(pIemCpu), VERR_IEM_IPE_2);
+
+    /*
+     * Access the memory.
+     */
+    void *pvMem512;
+    VBOXSTRICTRC rcStrict = iemMemMap(pIemCpu, &pvMem512, 512, iEffSeg, GCPtrEff, IEM_ACCESS_DATA_W | IEM_ACCESS_PARTIAL_WRITE);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+    PX86FXSTATE pDst = (PX86FXSTATE)pvMem512;
+
+    /*
+     * Store the registers.
+     */
+    /** @todo CPU/VM detection possible! If CR4.OSFXSR=0 MXCSR it's
+     * implementation specific whether MXCSR and XMM0-XMM7 are saved. */
+
+    /* common for all formats */
+    pDst->FCW           = pCtx->fpu.FCW;
+    pDst->FSW           = pCtx->fpu.FSW;
+    pDst->FTW           = pCtx->fpu.FTW & UINT16_C(0xff);
+    pDst->FOP           = pCtx->fpu.FOP;
+    pDst->MXCSR         = pCtx->fpu.MXCSR;
+    pDst->MXCSR_MASK    = pCtx->fpu.MXCSR_MASK;
+    for (uint32_t i = 0; i < RT_ELEMENTS(pDst->aRegs); i++)
+    {
+        /** @todo Testcase: What actually happens to the 6 reserved bytes? I'm clearing
+         *        them for now... */
+        pDst->aRegs[i].au32[0] = pCtx->fpu.aRegs[i].au32[0];
+        pDst->aRegs[i].au32[1] = pCtx->fpu.aRegs[i].au32[1];
+        pDst->aRegs[i].au32[2] = pCtx->fpu.aRegs[i].au32[2] & UINT32_C(0xffff);
+        pDst->aRegs[i].au32[3] = 0;
+    }
+
+    /* FPU IP, CS, DP and DS. */
+    /** @todo FPU IP, CS, DP and DS cannot be implemented correctly without extra
+     * state information. :-/
+     * Storing zeros now to prevent any potential leakage of host info. */
+    pDst->FPUIP  = 0;
+    pDst->CS     = 0;
+    pDst->Rsrvd1 = 0;
+    pDst->FPUDP  = 0;
+    pDst->DS     = 0;
+    pDst->Rsrvd2 = 0;
+
+    /* XMM registers. */
+    if (   !(pCtx->msrEFER & MSR_K6_EFER_FFXSR)
+        || pIemCpu->enmCpuMode != IEMMODE_64BIT
+        || pIemCpu->uCpl != 0)
+    {
+        uint32_t cXmmRegs = enmEffOpSize == IEMMODE_64BIT ? 16 : 8;
+        for (uint32_t i = 0; i < cXmmRegs; i++)
+            pDst->aXMM[i] = pCtx->fpu.aXMM[i];
+        /** @todo Testcase: What happens to the reserved XMM registers? Untouched,
+         *        right? */
+    }
+
+    /*
+     * Commit the memory.
+     */
+    rcStrict = iemMemCommitAndUnmap(pIemCpu, pvMem512, IEM_ACCESS_DATA_W | IEM_ACCESS_PARTIAL_WRITE);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Implements 'FXRSTOR'.
+ *
+ * @param   GCPtrEff        The address of the image.
+ * @param   enmEffOpSize    The operand size (only REX.W really matters).
+ */
+IEM_CIMPL_DEF_3(iemCImpl_fxrstor, uint8_t, iEffSeg, RTGCPTR, GCPtrEff, IEMMODE, enmEffOpSize)
+{
+    PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+
+    /*
+     * Raise exceptions.
+     */
+    if (pCtx->cr0 & X86_CR0_EM)
+        return iemRaiseUndefinedOpcode(pIemCpu);
+    if (pCtx->cr0 & (X86_CR0_TS | X86_CR0_EM))
+        return iemRaiseDeviceNotAvailable(pIemCpu);
+    if (GCPtrEff & 15)
+    {
+        /** @todo CPU/VM detection possible! \#AC might not be signal for
+         * all/any misalignment sizes, intel says its an implementation detail. */
+        if (   (pCtx->cr0 & X86_CR0_AM)
+            && pCtx->eflags.Bits.u1AC
+            && pIemCpu->uCpl == 3)
+            return iemRaiseAlignmentCheckException(pIemCpu);
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+    AssertReturn(iemFRegIsFxSaveFormat(pIemCpu), VERR_IEM_IPE_2);
+
+    /*
+     * Access the memory.
+     */
+    void *pvMem512;
+    VBOXSTRICTRC rcStrict = iemMemMap(pIemCpu, &pvMem512, 512, iEffSeg, GCPtrEff, IEM_ACCESS_DATA_R);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+    PCX86FXSTATE pSrc = (PCX86FXSTATE)pvMem512;
+
+    /*
+     * Check the state for stuff which will GP(0).
+     */
+    uint32_t const fMXCSR      = pSrc->MXCSR;
+    uint32_t const fMXCSR_MASK = pCtx->fpu.MXCSR_MASK ? pCtx->fpu.MXCSR_MASK : UINT32_C(0xffbf);
+    if (fMXCSR & ~fMXCSR_MASK)
+    {
+        Log(("fxrstor: MXCSR=%#x (MXCSR_MASK=%#x) -> #GP(0)\n", fMXCSR, fMXCSR_MASK));
+        return iemRaiseGeneralProtectionFault0(pIemCpu);
+    }
+
+    /*
+     * Load the registers.
+     */
+    /** @todo CPU/VM detection possible! If CR4.OSFXSR=0 MXCSR it's
+     * implementation specific whether MXCSR and XMM0-XMM7 are restored. */
+
+    /* common for all formats */
+    pCtx->fpu.FCW       = pSrc->FCW;
+    pCtx->fpu.FSW       = pSrc->FSW;
+    pCtx->fpu.FTW       = pSrc->FTW & UINT16_C(0xff);
+    pCtx->fpu.FOP       = pSrc->FOP;
+    pCtx->fpu.MXCSR     = fMXCSR;
+    /* (MXCSR_MASK is read-only) */
+    for (uint32_t i = 0; i < RT_ELEMENTS(pSrc->aRegs); i++)
+    {
+        pCtx->fpu.aRegs[i].au32[0] = pSrc->aRegs[i].au32[0];
+        pCtx->fpu.aRegs[i].au32[1] = pSrc->aRegs[i].au32[1];
+        pCtx->fpu.aRegs[i].au32[2] = pSrc->aRegs[i].au32[2] & UINT32_C(0xffff);
+        pCtx->fpu.aRegs[i].au32[3] = 0;
+    }
+
+    /* FPU IP, CS, DP and DS. */
+    if (pIemCpu->enmCpuMode == IEMMODE_64BIT)
+    {
+        pCtx->fpu.FPUIP  = pSrc->FPUIP;
+        pCtx->fpu.CS     = pSrc->CS;
+        pCtx->fpu.Rsrvd1 = pSrc->Rsrvd1;
+        pCtx->fpu.FPUDP  = pSrc->FPUDP;
+        pCtx->fpu.DS     = pSrc->DS;
+        pCtx->fpu.Rsrvd2 = pSrc->Rsrvd2;
+    }
+    else
+    {
+        pCtx->fpu.FPUIP  = pSrc->FPUIP;
+        pCtx->fpu.CS     = pSrc->CS;
+        pCtx->fpu.Rsrvd1 = 0;
+        pCtx->fpu.FPUDP  = pSrc->FPUDP;
+        pCtx->fpu.DS     = pSrc->DS;
+        pCtx->fpu.Rsrvd2 = 0;
+    }
+
+    /* XMM registers. */
+    if (   !(pCtx->msrEFER & MSR_K6_EFER_FFXSR)
+        || pIemCpu->enmCpuMode != IEMMODE_64BIT
+        || pIemCpu->uCpl != 0)
+    {
+        uint32_t cXmmRegs = enmEffOpSize == IEMMODE_64BIT ? 16 : 8;
+        for (uint32_t i = 0; i < cXmmRegs; i++)
+            pCtx->fpu.aXMM[i] = pSrc->aXMM[i];
+    }
+
+    /*
+     * Commit the memory.
+     */
+    rcStrict = iemMemCommitAndUnmap(pIemCpu, pvMem512, IEM_ACCESS_DATA_R);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Commmon routine for fnstenv and fnsave.
+ *
+ * @param   uPtr                Where to store the state.
+ * @param   pCtx                The CPU context.
+ */
+static void iemCImplCommonFpuStoreEnv(PIEMCPU pIemCpu, IEMMODE enmEffOpSize, RTPTRUNION uPtr, PCCPUMCTX pCtx)
+{
+    if (enmEffOpSize == IEMMODE_16BIT)
+    {
+        uPtr.pu16[0] = pCtx->fpu.FCW;
+        uPtr.pu16[1] = pCtx->fpu.FSW;
+        uPtr.pu16[2] = iemFpuCalcFullFtw(pCtx);
+        if (IEM_IS_REAL_OR_V86_MODE(pIemCpu))
+        {
+            /** @todo Testcase: How does this work when the FPUIP/CS was saved in
+             *        protected mode or long mode and we save it in real mode?  And vice
+             *        versa?  And with 32-bit operand size?  I think CPU is storing the
+             *        effective address ((CS << 4) + IP) in the offset register and not
+             *        doing any address calculations here. */
+            uPtr.pu16[3] = (uint16_t)pCtx->fpu.FPUIP;
+            uPtr.pu16[4] = ((pCtx->fpu.FPUIP >> 4) & UINT16_C(0xf000)) | pCtx->fpu.FOP;
+            uPtr.pu16[5] = (uint16_t)pCtx->fpu.FPUDP;
+            uPtr.pu16[6] = (pCtx->fpu.FPUDP  >> 4) & UINT16_C(0xf000);
+        }
+        else
+        {
+            uPtr.pu16[3] = pCtx->fpu.FPUIP;
+            uPtr.pu16[4] = pCtx->fpu.CS;
+            uPtr.pu16[5] = pCtx->fpu.FPUDP;
+            uPtr.pu16[6] = pCtx->fpu.DS;
+        }
+    }
+    else
+    {
+        /** @todo Testcase: what is stored in the "gray" areas? (figure 8-9 and 8-10) */
+        uPtr.pu16[0*2] = pCtx->fpu.FCW;
+        uPtr.pu16[1*2] = pCtx->fpu.FSW;
+        uPtr.pu16[2*2] = iemFpuCalcFullFtw(pCtx);
+        if (IEM_IS_REAL_OR_V86_MODE(pIemCpu))
+        {
+            uPtr.pu16[3*2]  = (uint16_t)pCtx->fpu.FPUIP;
+            uPtr.pu32[4]    = ((pCtx->fpu.FPUIP & UINT32_C(0xffff0000)) >> 4) | pCtx->fpu.FOP;
+            uPtr.pu16[5*2]  = (uint16_t)pCtx->fpu.FPUDP;
+            uPtr.pu32[6]    = (pCtx->fpu.FPUDP  & UINT32_C(0xffff0000)) >> 4;
+        }
+        else
+        {
+            uPtr.pu32[3]    = pCtx->fpu.FPUIP;
+            uPtr.pu16[4*2]  = pCtx->fpu.CS;
+            uPtr.pu16[4*2+1]= pCtx->fpu.FOP;
+            uPtr.pu32[5]    = pCtx->fpu.FPUDP;
+            uPtr.pu16[6*2]  = pCtx->fpu.DS;
+        }
+    }
+}
+
+
+/**
+ * Commmon routine for fnstenv and fnsave.
+ *
+ * @param   uPtr                Where to store the state.
+ * @param   pCtx                The CPU context.
+ */
+static void iemCImplCommonFpuRestoreEnv(PIEMCPU pIemCpu, IEMMODE enmEffOpSize, RTCPTRUNION uPtr, PCPUMCTX pCtx)
+{
+    if (enmEffOpSize == IEMMODE_16BIT)
+    {
+        pCtx->fpu.FCW = uPtr.pu16[0];
+        pCtx->fpu.FSW = uPtr.pu16[1];
+        pCtx->fpu.FTW = uPtr.pu16[2];
+        if (IEM_IS_REAL_OR_V86_MODE(pIemCpu))
+        {
+            pCtx->fpu.FPUIP = uPtr.pu16[3] | ((uint32_t)(uPtr.pu16[4] & UINT16_C(0xf000)) << 4);
+            pCtx->fpu.FPUDP = uPtr.pu16[5] | ((uint32_t)(uPtr.pu16[6] & UINT16_C(0xf000)) << 4);
+            pCtx->fpu.FOP   = uPtr.pu16[4] & UINT16_C(0x07ff);
+            pCtx->fpu.CS    = 0;
+            pCtx->fpu.DS    = 0;
+        }
+        else
+        {
+            pCtx->fpu.FPUIP = uPtr.pu16[3];
+            pCtx->fpu.CS    = uPtr.pu16[4];
+            pCtx->fpu.FPUDP = uPtr.pu16[5];
+            pCtx->fpu.DS    = uPtr.pu16[6];
+            /** @todo Testcase: Is FOP cleared when doing 16-bit protected mode fldenv? */
+        }
+    }
+    else
+    {
+        pCtx->fpu.FCW = uPtr.pu16[0*2];
+        pCtx->fpu.FSW = uPtr.pu16[1*2];
+        pCtx->fpu.FTW = uPtr.pu16[2*2];
+        if (IEM_IS_REAL_OR_V86_MODE(pIemCpu))
+        {
+            pCtx->fpu.FPUIP = uPtr.pu16[3*2] | ((uPtr.pu32[4] & UINT32_C(0x0ffff000)) << 4);
+            pCtx->fpu.FOP   = uPtr.pu32[4] & UINT16_C(0x07ff);
+            pCtx->fpu.FPUDP = uPtr.pu16[5*2] | ((uPtr.pu32[6] & UINT32_C(0x0ffff000)) << 4);
+            pCtx->fpu.CS    = 0;
+            pCtx->fpu.DS    = 0;
+        }
+        else
+        {
+            pCtx->fpu.FPUIP = uPtr.pu32[3];
+            pCtx->fpu.CS    = uPtr.pu16[4*2];
+            pCtx->fpu.FOP   = uPtr.pu16[4*2+1];
+            pCtx->fpu.FPUDP = uPtr.pu32[5];
+            pCtx->fpu.DS    = uPtr.pu16[6*2];
+        }
+    }
+
+    /* Make adjustments. */
+    pCtx->fpu.FTW = iemFpuCompressFtw(pCtx->fpu.FTW);
+    pCtx->fpu.FCW &= ~X86_FCW_ZERO_MASK;
+    iemFpuRecalcExceptionStatus(pCtx);
+    /** @todo Testcase: Check if ES and/or B are automatically cleared if no
+     *        exceptions are pending after loading the saved state? */
+}
+
+
+/**
+ * Implements 'FNSTENV'.
+ *
+ * @param   enmEffOpSize    The operand size (only REX.W really matters).
+ * @param   iEffSeg         The effective segment register for @a GCPtrEff.
+ * @param   GCPtrEffDst     The address of the image.
+ */
+IEM_CIMPL_DEF_3(iemCImpl_fnstenv, IEMMODE, enmEffOpSize, uint8_t, iEffSeg, RTGCPTR, GCPtrEffDst)
+{
+    PCPUMCTX     pCtx = pIemCpu->CTX_SUFF(pCtx);
+    RTPTRUNION   uPtr;
+    VBOXSTRICTRC rcStrict = iemMemMap(pIemCpu, &uPtr.pv, enmEffOpSize == IEMMODE_16BIT ? 14 : 28,
+                                      iEffSeg, GCPtrEffDst, IEM_ACCESS_DATA_W | IEM_ACCESS_PARTIAL_WRITE);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    iemCImplCommonFpuStoreEnv(pIemCpu, enmEffOpSize, uPtr, pCtx);
+
+    rcStrict = iemMemCommitAndUnmap(pIemCpu, uPtr.pv, IEM_ACCESS_DATA_W | IEM_ACCESS_PARTIAL_WRITE);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    /* Note: C0, C1, C2 and C3 are documented as undefined, we leave them untouched! */
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Implements 'FLDENV'.
+ *
+ * @param   enmEffOpSize    The operand size (only REX.W really matters).
+ * @param   iEffSeg         The effective segment register for @a GCPtrEff.
+ * @param   GCPtrEffSrc     The address of the image.
+ */
+IEM_CIMPL_DEF_3(iemCImpl_fldenv, IEMMODE, enmEffOpSize, uint8_t, iEffSeg, RTGCPTR, GCPtrEffSrc)
+{
+    PCPUMCTX     pCtx = pIemCpu->CTX_SUFF(pCtx);
+    RTCPTRUNION  uPtr;
+    VBOXSTRICTRC rcStrict = iemMemMap(pIemCpu, (void **)&uPtr.pv, enmEffOpSize == IEMMODE_16BIT ? 14 : 28,
+                                      iEffSeg, GCPtrEffSrc, IEM_ACCESS_DATA_R);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    iemCImplCommonFpuRestoreEnv(pIemCpu, enmEffOpSize, uPtr, pCtx);
+
+    rcStrict = iemMemCommitAndUnmap(pIemCpu, (void *)uPtr.pv, IEM_ACCESS_DATA_R);
+    if (rcStrict != VINF_SUCCESS)
+        return rcStrict;
+
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Implements 'FLDCW'.
+ *
+ * @param   u16Fcw          The new FCW.
+ */
+IEM_CIMPL_DEF_1(iemCImpl_fldcw, uint16_t, u16Fcw)
+{
+    PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+
+    /** @todo Testcase: Check what happens when trying to load X86_FCW_PC_RSVD. */
+    /** @todo Testcase: Try see what happens when trying to set undefined bits
+     *        (other than 6 and 7).  Currently ignoring them. */
+    /** @todo Testcase: Test that it raises and loweres the FPU exception bits
+     *        according to FSW. (This is was is currently implemented.) */
+    pCtx->fpu.FCW = u16Fcw & ~X86_FCW_ZERO_MASK;
+    iemFpuRecalcExceptionStatus(pCtx);
+
+    /* Note: C0, C1, C2 and C3 are documented as undefined, we leave them untouched! */
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+
+/**
+ * Implements the underflow case of fxch.
+ *
+ * @param   iStReg              The other stack register.
+ */
+IEM_CIMPL_DEF_1(iemCImpl_fxch_underflow, uint8_t, iStReg)
+{
+    PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+
+    unsigned const iReg1 = X86_FSW_TOP_GET(pCtx->fpu.FSW);
+    unsigned const iReg2 = (iReg1 + iStReg) & X86_FSW_TOP_SMASK;
+    Assert(!(RT_BIT(iReg1) & pCtx->fpu.FTW) || !(RT_BIT(iReg2) & pCtx->fpu.FTW));
+
+    /** @todo Testcase: fxch underflow. Making assumptions that underflowed
+     *        registers are read as QNaN and then exchanged. This could be
+     *        wrong... */
+    if (pCtx->fpu.FCW & X86_FCW_IM)
+    {
+        if (RT_BIT(iReg1) & pCtx->fpu.FTW)
+        {
+            if (RT_BIT(iReg2) & pCtx->fpu.FTW)
+                iemFpuStoreQNan(&pCtx->fpu.aRegs[0].r80);
+            else
+                pCtx->fpu.aRegs[0].r80 = pCtx->fpu.aRegs[iStReg].r80;
+            iemFpuStoreQNan(&pCtx->fpu.aRegs[iStReg].r80);
+        }
+        else
+        {
+            pCtx->fpu.aRegs[iStReg].r80 = pCtx->fpu.aRegs[0].r80;
+            iemFpuStoreQNan(&pCtx->fpu.aRegs[0].r80);
+        }
+        pCtx->fpu.FSW &= ~X86_FSW_C_MASK;
+        pCtx->fpu.FSW |= X86_FSW_C1 | X86_FSW_IE | X86_FSW_SF;
+    }
+    else
+    {
+        /* raise underflow exception, don't change anything. */
+        pCtx->fpu.FSW &= ~(X86_FSW_TOP_MASK | X86_FSW_XCPT_MASK);
+        pCtx->fpu.FSW |= X86_FSW_C1 | X86_FSW_IE | X86_FSW_SF | X86_FSW_ES | X86_FSW_B;
+    }
+    iemFpuUpdateOpcodeAndIpWorker(pIemCpu, pCtx);
+
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Implements 'FCOMI', 'FCOMIP', 'FUCOMI', and 'FUCOMIP'.
+ *
+ * @param   cToAdd              1 or 7.
+ */
+IEM_CIMPL_DEF_3(iemCImpl_fcomi_fucomi, uint8_t, iStReg, PFNIEMAIMPLFPUR80EFL, pfnAImpl, bool, fPop)
+{
+    PCPUMCTX pCtx = pIemCpu->CTX_SUFF(pCtx);
+    Assert(iStReg < 8);
+
+    /*
+     * Raise exceptions.
+     */
+    if (pCtx->cr0 & (X86_CR0_EM | X86_CR0_TS))
+        return iemRaiseDeviceNotAvailable(pIemCpu);
+    uint16_t u16Fsw = pCtx->fpu.FSW;
+    if (u16Fsw & X86_FSW_ES)
+        return iemRaiseMathFault(pIemCpu);
+
+    /*
+     * Check if any of the register accesses causes #SF + #IA.
+     */
+    unsigned const iReg1 = X86_FSW_TOP_GET(u16Fsw);
+    unsigned const iReg2 = (iReg1 + iStReg) & X86_FSW_TOP_SMASK;
+    if ((pCtx->fpu.FTW & (RT_BIT(iReg1) | RT_BIT(iReg2))) == (RT_BIT(iReg1) | RT_BIT(iReg2)))
+    {
+        uint32_t u32Eflags = pfnAImpl(&pCtx->fpu, &u16Fsw, &pCtx->fpu.aRegs[0].r80, &pCtx->fpu.aRegs[iStReg].r80);
+        pCtx->fpu.FSW &= ~X86_FSW_C1;
+        pCtx->fpu.FSW |= u16Fsw & ~X86_FSW_TOP_MASK;
+        if (   !(u16Fsw & X86_FSW_IE)
+            || (pCtx->fpu.FCW & X86_FCW_IM) )
+        {
+            pCtx->eflags.u &= ~(X86_EFL_OF | X86_EFL_SF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_PF | X86_EFL_CF);
+            pCtx->eflags.u |= pCtx->eflags.u & (X86_EFL_ZF | X86_EFL_PF | X86_EFL_CF);
+        }
+    }
+    else if (pCtx->fpu.FCW & X86_FCW_IM)
+    {
+        /* Masked underflow. */
+        pCtx->fpu.FSW &= ~X86_FSW_C1;
+        pCtx->fpu.FSW |= X86_FSW_IE | X86_FSW_SF;
+        pCtx->eflags.u &= ~(X86_EFL_OF | X86_EFL_SF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_PF | X86_EFL_CF);
+        pCtx->eflags.u |= X86_EFL_ZF | X86_EFL_PF | X86_EFL_CF;
+    }
+    else
+    {
+        /* Raise underflow - don't touch EFLAGS or TOP. */
+        pCtx->fpu.FSW &= ~X86_FSW_C1;
+        pCtx->fpu.FSW |= X86_FSW_IE | X86_FSW_SF | X86_FSW_ES | X86_FSW_B;
+        fPop = false;
+    }
+
+    /*
+     * Pop if necessary.
+     */
+    if (fPop)
+    {
+        pCtx->fpu.FTW &= ~RT_BIT(iReg1);
+        pCtx->fpu.FSW &= X86_FSW_TOP_MASK;
+        pCtx->fpu.FSW |= ((iReg1 + 7) & X86_FSW_TOP_SMASK) << X86_FSW_TOP_SHIFT;
+    }
+
+    iemFpuUpdateOpcodeAndIpWorker(pIemCpu, pCtx);
+    iemRegAddToRip(pIemCpu, cbInstr);
+    return VINF_SUCCESS;
+}
 
 /** @} */
 

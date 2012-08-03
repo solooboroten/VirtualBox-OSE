@@ -1,4 +1,4 @@
-/* $Id: VBoxInternalManage.cpp 37925 2011-07-13 15:31:10Z vboxsync $ */
+/* $Id: VBoxInternalManage.cpp 41245 2012-05-10 16:57:08Z vboxsync $ */
 /** @file
  * VBoxManage - The 'internalcommands' command.
  *
@@ -141,16 +141,16 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         "         problems. It is completely unsupported and will change in\n"
         "         incompatible ways without warning.\n",
 
-        (u64Cmd & USAGE_LOADSYMS)
-        ? "  loadsyms <vmname>|<uuid> <symfile> [delta] [module] [module address]\n"
-          "      This will instruct DBGF to load the given symbolfile\n"
-          "      during initialization.\n"
+        (u64Cmd & USAGE_LOADMAP)
+        ? "  loadmap <vmname>|<uuid> <symfile> <address> [module] [subtrahend] [segment]\n"
+          "      This will instruct DBGF to load the given map file\n"
+          "      during initialization.  (See also loadmap in the debugger.)\n"
           "\n"
         : "",
-        (u64Cmd & USAGE_UNLOADSYMS)
-        ? "  unloadsyms <vmname>|<uuid> <symfile>\n"
-          "      Removes <symfile> from the list of symbol files that\n"
-          "      should be loaded during DBF initialization.\n"
+        (u64Cmd & USAGE_LOADSYMS)
+        ? "  loadsyms <vmname>|<uuid> <symfile> [delta] [module] [module address]\n"
+          "      This will instruct DBGF to load the given symbol file\n"
+          "      during initialization.\n"
           "\n"
         : "",
         (u64Cmd & USAGE_SETHDUUID)
@@ -215,6 +215,13 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
           "            [-dstformat VDI|VMDK|VHD|RAW]\n"
           "            <inputfile> <outputfile>\n"
           "       converts hard disk images between formats\n"
+          "\n"
+        : "",
+        (u64Cmd & USAGE_REPAIRHD)
+        ? "  repairhd [-dry-run]\n"
+          "           [-format VDI|VMDK|VHD|...]\n"
+          "           <filename>\n"
+          "       Tries to repair corrupted disk images\n"
           "\n"
         : "",
 #ifdef RT_OS_WINDOWS
@@ -510,6 +517,81 @@ static int CmdLoadSyms(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, C
 }
 
 
+/**
+ * Identical to the 'loadmap' command.
+ */
+static int CmdLoadMap(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
+{
+    HRESULT rc;
+
+    /*
+     * Get the VM
+     */
+    ComPtr<IMachine> machine;
+    CHECK_ERROR_RET(aVirtualBox, FindMachine(Bstr(argv[0]).raw(),
+                                             machine.asOutParam()), 1);
+
+    /*
+     * Parse the command.
+     */
+    const char *pszFilename;
+    uint64_t    ModuleAddress = UINT64_MAX;
+    const char *pszModule = NULL;
+    uint64_t    offSubtrahend = 0;
+    uint32_t    iSeg = UINT32_MAX;
+
+    /* filename */
+    if (argc < 2)
+        return errorArgument("Missing the filename argument!\n");
+    pszFilename = argv[1];
+
+    /* address */
+    if (argc < 3)
+        return errorArgument("Missing the module address argument!\n");
+    int irc = RTStrToUInt64Ex(argv[2], NULL, 0, &ModuleAddress);
+    if (RT_FAILURE(irc))
+        return errorArgument(argv[0], "Failed to read module address '%s', rc=%Rrc\n", argv[2], rc);
+
+    /* name (optional) */
+    if (argc > 3)
+        pszModule = argv[3];
+
+    /* subtrahend (optional) */
+    if (argc > 4)
+    {
+        irc = RTStrToUInt64Ex(argv[4], NULL, 0, &offSubtrahend);
+        if (RT_FAILURE(irc))
+            return errorArgument(argv[0], "Failed to read subtrahend '%s', rc=%Rrc\n", argv[4], rc);
+    }
+
+    /* segment (optional) */
+    if (argc > 5)
+    {
+        irc = RTStrToUInt32Ex(argv[5], NULL, 0, &iSeg);
+        if (RT_FAILURE(irc))
+            return errorArgument(argv[0], "Failed to read segment number '%s', rc=%Rrc\n", argv[5], rc);
+    }
+
+    /*
+     * Add extra data.
+     */
+    Utf8Str KeyStr;
+    HRESULT hrc = NewUniqueKey(machine, "VBoxInternal/DBGF/loadmap", KeyStr);
+    if (SUCCEEDED(hrc))
+        hrc = SetString(machine, "VBoxInternal/DBGF/loadmap", KeyStr.c_str(), "Filename", pszFilename);
+    if (SUCCEEDED(hrc))
+        hrc = SetUInt64(machine, "VBoxInternal/DBGF/loadmap", KeyStr.c_str(), "Address", ModuleAddress);
+    if (SUCCEEDED(hrc) && pszModule != NULL)
+        hrc = SetString(machine, "VBoxInternal/DBGF/loadmap", KeyStr.c_str(), "Name", pszModule);
+    if (SUCCEEDED(hrc) && offSubtrahend != 0)
+        hrc = SetUInt64(machine, "VBoxInternal/DBGF/loadmap", KeyStr.c_str(), "Subtrahend", offSubtrahend);
+    if (SUCCEEDED(hrc) && iSeg != UINT32_MAX)
+        hrc = SetUInt64(machine, "VBoxInternal/DBGF/loadmap", KeyStr.c_str(), "Segment", iSeg);
+
+    return FAILED(hrc);
+}
+
+
 static DECLCALLBACK(void) handleVDError(void *pvUser, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list va)
 {
     RTMsgErrorV(pszFormat, va);
@@ -571,15 +653,12 @@ static int CmdSetHDUUID(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, 
     PVBOXHDD pDisk = NULL;
 
     PVDINTERFACE     pVDIfs = NULL;
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = handleVDMessage;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
 
-    rc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                        &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    rc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                        NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(rc);
 
     rc = VDCreate(pVDIfs, enmType, &pDisk);
@@ -634,15 +713,12 @@ static int CmdDumpHDInfo(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
     PVBOXHDD pDisk = NULL;
 
     PVDINTERFACE     pVDIfs = NULL;
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = handleVDMessage;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
 
-    rc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                        &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    rc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                        NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(rc);
 
     rc = VDCreate(pVDIfs, enmType, &pDisk);
@@ -653,7 +729,7 @@ static int CmdDumpHDInfo(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
     }
 
     /* Open the image */
-    rc = VDOpen(pDisk, pszFormat, argv[0], VD_OPEN_FLAGS_INFO, NULL);
+    rc = VDOpen(pDisk, pszFormat, argv[0], VD_OPEN_FLAGS_READONLY | VD_OPEN_FLAGS_INFO, NULL);
     if (RT_FAILURE(rc))
     {
         RTMsgError("Cannot open the image: %Rrc", rc);
@@ -1038,32 +1114,137 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     }
     else
     {
+        /*
+         * Could be raw image, remember error code and try to get the size first
+         * before failing.
+         */
         vrc = RTErrConvertFromWin32(GetLastError());
-        RTMsgError("Cannot get the geometry of the raw disk '%s': %Rrc", rawdisk.c_str(), vrc);
-        goto out;
+        if (RT_FAILURE(RTFileGetSize(hRawFile, &cbSize)))
+        {
+            RTMsgError("Cannot get the geometry of the raw disk '%s': %Rrc", rawdisk.c_str(), vrc);
+            goto out;
+        }
+        else
+            vrc = VINF_SUCCESS;
     }
 #elif defined(RT_OS_LINUX)
     struct stat DevStat;
-    if (!fstat(RTFileToNative(hRawFile), &DevStat) && S_ISBLK(DevStat.st_mode))
+    if(!fstat(RTFileToNative(hRawFile), &DevStat))
     {
+        if (S_ISBLK(DevStat.st_mode))
+        {
 #ifdef BLKGETSIZE64
-        /* BLKGETSIZE64 is broken up to 2.4.17 and in many 2.5.x. In 2.6.0
-         * it works without problems. */
-        struct utsname utsname;
-        if (    uname(&utsname) == 0
-            &&  (   (strncmp(utsname.release, "2.5.", 4) == 0 && atoi(&utsname.release[4]) >= 18)
-                 || (strncmp(utsname.release, "2.", 2) == 0 && atoi(&utsname.release[2]) >= 6)))
-        {
-            uint64_t cbBlk;
-            if (!ioctl(RTFileToNative(hRawFile), BLKGETSIZE64, &cbBlk))
-                cbSize = cbBlk;
-        }
+            /* BLKGETSIZE64 is broken up to 2.4.17 and in many 2.5.x. In 2.6.0
+             * it works without problems. */
+            struct utsname utsname;
+            if (    uname(&utsname) == 0
+                &&  (   (strncmp(utsname.release, "2.5.", 4) == 0 && atoi(&utsname.release[4]) >= 18)
+                     || (strncmp(utsname.release, "2.", 2) == 0 && atoi(&utsname.release[2]) >= 6)))
+            {
+                uint64_t cbBlk;
+                if (!ioctl(RTFileToNative(hRawFile), BLKGETSIZE64, &cbBlk))
+                    cbSize = cbBlk;
+            }
 #endif /* BLKGETSIZE64 */
-        if (!cbSize)
+            if (!cbSize)
+            {
+                long cBlocks;
+                if (!ioctl(RTFileToNative(hRawFile), BLKGETSIZE, &cBlocks))
+                    cbSize = (uint64_t)cBlocks << 9;
+                else
+                {
+                    vrc = RTErrConvertFromErrno(errno);
+                    RTMsgError("Cannot get the size of the raw disk '%s': %Rrc", rawdisk.c_str(), vrc);
+                    goto out;
+                }
+            }
+        }
+        else if (S_ISREG(DevStat.st_mode))
         {
-            long cBlocks;
-            if (!ioctl(RTFileToNative(hRawFile), BLKGETSIZE, &cBlocks))
-                cbSize = (uint64_t)cBlocks << 9;
+            vrc = RTFileGetSize(hRawFile, &cbSize);
+            if (RT_FAILURE(vrc))
+            {
+                RTMsgError("Failed to get size of file '%s': %Rrc", rawdisk.c_str(), vrc);
+                goto out;
+            }
+            else if (fRelative)
+            {
+                RTMsgError("The -relative parameter is invalid for raw images");
+                vrc = VERR_INVALID_PARAMETER;
+                goto out;
+            }
+        }
+        else
+        {
+            RTMsgError("File '%s' is no block device", rawdisk.c_str());
+            vrc = VERR_INVALID_PARAMETER;
+            goto out;
+        }
+    }
+    else
+    {
+        vrc = RTErrConvertFromErrno(errno);
+        RTMsgError("Failed to get file informtation for raw disk '%s': %Rrc",
+                   rawdisk.c_str(), vrc);
+    }
+#elif defined(RT_OS_DARWIN)
+    struct stat DevStat;
+    if (!fstat(RTFileToNative(hRawFile), &DevStat))
+    {
+        if (S_ISBLK(DevStat.st_mode))
+        {
+            uint64_t cBlocks;
+            uint32_t cbBlock;
+            if (!ioctl(RTFileToNative(hRawFile), DKIOCGETBLOCKCOUNT, &cBlocks))
+            {
+                if (!ioctl(RTFileToNative(hRawFile), DKIOCGETBLOCKSIZE, &cbBlock))
+                    cbSize = cBlocks * cbBlock;
+                else
+                {
+                    RTMsgError("Cannot get the block size for file '%s': %Rrc", rawdisk.c_str(), vrc);
+                    vrc = RTErrConvertFromErrno(errno);
+                    goto out;
+                }
+            }
+            else
+            {
+                vrc = RTErrConvertFromErrno(errno);
+                RTMsgError("Cannot get the block count for file '%s': %Rrc", rawdisk.c_str(), vrc);
+                goto out;
+            }
+        }
+        else if (S_ISREG(DevStat.st_mode))
+        {
+            fRelative = false; /* Must be false for raw image files. */
+            vrc = RTFileGetSize(hRawFile, &cbSize);
+            if (RT_FAILURE(vrc))
+            {
+                RTMsgError("Failed to get size of file '%s': %Rrc", rawdisk.c_str(), vrc);
+                goto out;
+            }
+        }
+        else
+        {
+            RTMsgError("File '%s' is neither block device nor regular file", rawdisk.c_str());
+            vrc = VERR_INVALID_PARAMETER;
+            goto out;
+        }
+    }
+    else
+    {
+        vrc = RTErrConvertFromErrno(errno);
+        RTMsgError("Failed to get file informtation for raw disk '%s': %Rrc",
+                   rawdisk.c_str(), vrc);
+    }
+#elif defined(RT_OS_SOLARIS)
+    struct stat DevStat;
+    if (!fstat(RTFileToNative(hRawFile), &DevStat))
+    {
+        if (S_ISBLK(DevStat.st_mode) || S_ISCHR(DevStat.st_mode))
+        {
+            struct dk_minfo mediainfo;
+            if (!ioctl(RTFileToNative(hRawFile), DKIOCGMEDIAINFO, &mediainfo))
+                cbSize = mediainfo.dki_capacity * mediainfo.dki_lbsize;
             else
             {
                 vrc = RTErrConvertFromErrno(errno);
@@ -1071,85 +1252,66 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
                 goto out;
             }
         }
-    }
-    else
-    {
-        RTMsgError("File '%s' is no block device", rawdisk.c_str());
-        vrc = VERR_INVALID_PARAMETER;
-        goto out;
-    }
-#elif defined(RT_OS_DARWIN)
-    struct stat DevStat;
-    if (!fstat(RTFileToNative(hRawFile), &DevStat) && S_ISBLK(DevStat.st_mode))
-    {
-        uint64_t cBlocks;
-        uint32_t cbBlock;
-        if (!ioctl(RTFileToNative(hRawFile), DKIOCGETBLOCKCOUNT, &cBlocks))
+        else if (S_ISREG(DevStat.st_mode))
         {
-            if (!ioctl(RTFileToNative(hRawFile), DKIOCGETBLOCKSIZE, &cbBlock))
-                cbSize = cBlocks * cbBlock;
-            else
+            vrc = RTFileGetSize(hRawFile, &cbSize);
+            if (RT_FAILURE(vrc))
             {
-                RTMsgError("Cannot get the block size for file '%s': %Rrc", rawdisk.c_str(), vrc);
-                vrc = RTErrConvertFromErrno(errno);
+                RTMsgError("Failed to get size of file '%s': %Rrc", rawdisk.c_str(), vrc);
                 goto out;
             }
         }
         else
         {
-            vrc = RTErrConvertFromErrno(errno);
-            RTMsgError("Cannot get the block count for file '%s': %Rrc", rawdisk.c_str(), vrc);
+            RTMsgError("File '%s' is no block or char device", rawdisk.c_str());
+            vrc = VERR_INVALID_PARAMETER;
             goto out;
         }
     }
     else
     {
-        RTMsgError("File '%s' is no block device", rawdisk.c_str());
-        vrc = VERR_INVALID_PARAMETER;
-        goto out;
-    }
-#elif defined(RT_OS_SOLARIS)
-    struct stat DevStat;
-    if (!fstat(RTFileToNative(hRawFile), &DevStat) && (   S_ISBLK(DevStat.st_mode)
-                                      || S_ISCHR(DevStat.st_mode)))
-    {
-        struct dk_minfo mediainfo;
-        if (!ioctl(RTFileToNative(hRawFile), DKIOCGMEDIAINFO, &mediainfo))
-            cbSize = mediainfo.dki_capacity * mediainfo.dki_lbsize;
-        else
-        {
-            vrc = RTErrConvertFromErrno(errno);
-            RTMsgError("Cannot get the size of the raw disk '%s': %Rrc", rawdisk.c_str(), vrc);
-            goto out;
-        }
-    }
-    else
-    {
-        RTMsgError("File '%s' is no block or char device", rawdisk.c_str());
-        vrc = VERR_INVALID_PARAMETER;
-        goto out;
+        vrc = RTErrConvertFromErrno(errno);
+        RTMsgError("Failed to get file informtation for raw disk '%s': %Rrc",
+                   rawdisk.c_str(), vrc);
     }
 #elif defined(RT_OS_FREEBSD)
     struct stat DevStat;
-    if (!fstat(RTFileToNative(hRawFile), &DevStat) && S_ISCHR(DevStat.st_mode))
+    if (!fstat(RTFileToNative(hRawFile), &DevStat))
     {
-        off_t cbMedia = 0;
-        if (!ioctl(RTFileToNative(hRawFile), DIOCGMEDIASIZE, &cbMedia))
+        if (S_ISCHR(DevStat.st_mode))
         {
-            cbSize = cbMedia;
+            off_t cbMedia = 0;
+            if (!ioctl(RTFileToNative(hRawFile), DIOCGMEDIASIZE, &cbMedia))
+                cbSize = cbMedia;
+            else
+            {
+                vrc = RTErrConvertFromErrno(errno);
+                RTMsgError("Cannot get the block count for file '%s': %Rrc", rawdisk.c_str(), vrc);
+                goto out;
+            }
+        }
+        else if (S_ISREG(DevStat.st_mode))
+        {
+            if (fRelative)
+            {
+                RTMsgError("The -relative parameter is invalid for raw images");
+                vrc = VERR_INVALID_PARAMETER;
+                goto out;
+            }
+            cbSize = DevStat.st_size;
         }
         else
         {
-            vrc = RTErrConvertFromErrno(errno);
-            RTMsgError("Cannot get the block count for file '%s': %Rrc", rawdisk.c_str(), vrc);
+            RTMsgError("File '%s' is neither character device nor regular file", rawdisk.c_str());
+            vrc = VERR_INVALID_PARAMETER;
             goto out;
         }
     }
     else
     {
-        RTMsgError("File '%s' is no character device", rawdisk.c_str());
-        vrc = VERR_INVALID_PARAMETER;
-        goto out;
+        vrc = RTErrConvertFromErrno(errno);
+        RTMsgError("Failed to get file informtation for raw disk '%s': %Rrc",
+                   rawdisk.c_str(), vrc);
     }
 #else /* all unrecognized OSes */
     /* Hopefully this works on all other hosts. If it doesn't, it'll just fail
@@ -1417,27 +1579,27 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     RTFileClose(hRawFile);
 
 #ifdef DEBUG_klaus
-    RTPrintf("#            start         length    startoffset  partdataptr  device\n");
-    for (unsigned i = 0; i < RawDescriptor.cPartDescs; i++)
+    if (!RawDescriptor.fRawDisk)
     {
-        RTPrintf("%2u  %14RU64 %14RU64 %14RU64 %#18p %s\n", i,
-                 RawDescriptor.pPartDescs[i].uStart,
-                 RawDescriptor.pPartDescs[i].cbData,
-                 RawDescriptor.pPartDescs[i].uStartOffset,
-                 RawDescriptor.pPartDescs[i].pvPartitionData,
-                 RawDescriptor.pPartDescs[i].pszRawDevice);
+        RTPrintf("#            start         length    startoffset  partdataptr  device\n");
+        for (unsigned i = 0; i < RawDescriptor.cPartDescs; i++)
+        {
+            RTPrintf("%2u  %14RU64 %14RU64 %14RU64 %#18p %s\n", i,
+                     RawDescriptor.pPartDescs[i].uStart,
+                     RawDescriptor.pPartDescs[i].cbData,
+                     RawDescriptor.pPartDescs[i].uStartOffset,
+                     RawDescriptor.pPartDescs[i].pvPartitionData,
+                     RawDescriptor.pPartDescs[i].pszRawDevice);
+        }
     }
 #endif
 
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = handleVDMessage;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
 
-    vrc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                         &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    rc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                        NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(vrc);
 
     vrc = VDCreate(pVDIfs, VDTYPE_HDD, &pDisk); /* Raw VMDK's are harddisk only. */
@@ -1530,15 +1692,12 @@ static int CmdRenameVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
     PVBOXHDD pDisk = NULL;
 
     PVDINTERFACE     pVDIfs = NULL;
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = handleVDMessage;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
 
-    int vrc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                             &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    int vrc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                             NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(vrc);
 
     vrc = VDCreate(pVDIfs, VDTYPE_HDD, &pDisk);
@@ -1614,15 +1773,12 @@ static int CmdConvertToRaw(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBo
     PVBOXHDD pDisk = NULL;
 
     PVDINTERFACE     pVDIfs = NULL;
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = handleVDMessage;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
 
-    int vrc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                             &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    int vrc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                             NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(vrc);
 
     /** @todo: Support convert to raw for floppy and DVD images too. */
@@ -1786,15 +1942,12 @@ static int CmdConvertHardDisk(int argc, char **argv, ComPtr<IVirtualBox> aVirtua
 
 
     PVDINTERFACE     pVDIfs = NULL;
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = handleVDMessage;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
 
-    vrc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                         &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    vrc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                         NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(vrc);
 
     do
@@ -1858,6 +2011,87 @@ static int CmdConvertHardDisk(int argc, char **argv, ComPtr<IVirtualBox> aVirtua
         VDCloseAll(pDstDisk);
     if (pSrcDisk)
         VDCloseAll(pSrcDisk);
+
+    return RT_SUCCESS(vrc) ? 0 : 1;
+}
+
+/**
+ * Tries to repair a corrupted hard disk image.
+ *
+ * @returns VBox status code
+ */
+static int CmdRepairHardDisk(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
+{
+    Utf8Str image;
+    Utf8Str format;
+    int vrc;
+    bool fDryRun = false;
+    PVBOXHDD pDisk = NULL;
+
+    /* Parse the arguments. */
+    for (int i = 0; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-dry-run") == 0)
+        {
+            fDryRun = true;
+        }
+        else if (strcmp(argv[i], "-format") == 0)
+        {
+            if (argc <= i + 1)
+            {
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            }
+            i++;
+            format = argv[i];
+        }
+        else if (image.isEmpty())
+        {
+            image = argv[i];
+        }
+        else
+        {
+            return errorSyntax(USAGE_REPAIRHD, "Invalid parameter '%s'", argv[i]);
+        }
+    }
+
+    if (image.isEmpty())
+        return errorSyntax(USAGE_REPAIRHD, "Mandatory input image parameter missing");
+
+    PVDINTERFACE     pVDIfs = NULL;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = handleVDMessage;
+
+    vrc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                         NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
+    AssertRC(vrc);
+
+    do
+    {
+        /* Try to determine input image format */
+        if (format.isEmpty())
+        {
+            char *pszFormat = NULL;
+            VDTYPE enmSrcType = VDTYPE_INVALID;
+
+            vrc = VDGetFormat(NULL /* pVDIfsDisk */, NULL /* pVDIfsImage */,
+                              image.c_str(), &pszFormat, &enmSrcType);
+            if (RT_FAILURE(vrc) && (vrc != VERR_VD_IMAGE_CORRUPTED))
+            {
+                RTMsgError("No file format specified and autodetect failed - please specify format: %Rrc", vrc);
+                break;
+            }
+            format = pszFormat;
+            RTStrFree(pszFormat);
+        }
+
+        uint32_t fFlags = 0;
+        if (fDryRun)
+            fFlags |= VD_REPAIR_DRY_RUN;
+
+        vrc = VDRepair(pVDIfs, NULL, image.c_str(), format.c_str(), fFlags);
+    }
+    while (0);
 
     return RT_SUCCESS(vrc) ? 0 : 1;
 }
@@ -2125,6 +2359,8 @@ int handleInternalCommands(HandlerArg *a)
      * The 'string switch' on command name.
      */
     const char *pszCmd = a->argv[0];
+    if (!strcmp(pszCmd, "loadmap"))
+        return CmdLoadMap(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
     if (!strcmp(pszCmd, "loadsyms"))
         return CmdLoadSyms(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
     //if (!strcmp(pszCmd, "unloadsyms"))
@@ -2153,6 +2389,8 @@ int handleInternalCommands(HandlerArg *a)
         return CmdGeneratePasswordHash(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
     if (!strcmp(pszCmd, "gueststats"))
         return CmdGuestStats(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
+    if (!strcmp(pszCmd, "repairhd"))
+        return CmdRepairHardDisk(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
 
     /* default: */
     return errorSyntax(USAGE_ALL, "Invalid command '%s'", a->argv[0]);

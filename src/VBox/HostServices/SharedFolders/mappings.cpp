@@ -14,10 +14,18 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
+#ifdef UNITTEST
+# include "testcase/tstSharedFolderService.h"
+#endif
+
 #include "mappings.h"
 #include <iprt/alloc.h>
 #include <iprt/assert.h>
 #include <iprt/string.h>
+
+#ifdef UNITTEST
+# include "teststubs.h"
+#endif
 
 /* Shared folders order in the saved state and in the FolderMapping can differ.
  * So a translation array of root handle is needed.
@@ -104,7 +112,7 @@ static SHFLROOT vbsfMappingGetRootFromIndex(SHFLROOT iMapping)
     return SHFL_ROOT_NIL;
 }
 
-static MAPPING *vbsfMappingGetByName (PRTUTF16 utf16Name, SHFLROOT *pRoot)
+static MAPPING *vbsfMappingGetByName (PRTUTF16 pwszName, SHFLROOT *pRoot)
 {
     unsigned i;
 
@@ -112,7 +120,7 @@ static MAPPING *vbsfMappingGetByName (PRTUTF16 utf16Name, SHFLROOT *pRoot)
     {
         if (FolderMapping[i].fValid == true)
         {
-            if (!RTUtf16LocaleICmp(FolderMapping[i].pMapName->String.ucs2, utf16Name))
+            if (!RTUtf16LocaleICmp(FolderMapping[i].pMapName->String.ucs2, pwszName))
             {
                 SHFLROOT root = vbsfMappingGetRootFromIndex(i);
 
@@ -169,11 +177,21 @@ static void vbsfRootHandleRemove(SHFLROOT iMapping)
 
 
 
+#ifdef UNITTEST
+/** Unit test the SHFL_FN_ADD_MAPPING API.  Located here as a form of API
+ * documentation. */
+void testMappingsAdd(RTTEST hTest)
+{
+    /* If the number or types of parameters are wrong the API should fail. */
+    testMappingsAddBadParameters(hTest);
+    /* Add tests as required... */
+}
+#endif
 /*
  * We are always executed from one specific HGCM thread. So thread safe.
  */
 int vbsfMappingsAdd(PSHFLSTRING pFolderName, PSHFLSTRING pMapName,
-                    uint32_t fWritable, uint32_t fAutoMount)
+                    bool fWritable, bool fAutoMount, bool fSymlinksCreate)
 {
     unsigned i;
 
@@ -198,47 +216,39 @@ int vbsfMappingsAdd(PSHFLSTRING pFolderName, PSHFLSTRING pMapName,
     {
         if (FolderMapping[i].fValid == false)
         {
-            FolderMapping[i].pFolderName = (PSHFLSTRING)RTMemAlloc(ShflStringSizeOfBuffer(pFolderName));
-            Assert(FolderMapping[i].pFolderName);
-            if (FolderMapping[i].pFolderName == NULL)
-                return VERR_NO_MEMORY;
-
-            FolderMapping[i].pFolderName->u16Length = pFolderName->u16Length;
-            FolderMapping[i].pFolderName->u16Size   = pFolderName->u16Size;
-            memcpy(FolderMapping[i].pFolderName->String.ucs2, pFolderName->String.ucs2, pFolderName->u16Size);
+            int rc = RTUtf16ToUtf8(pFolderName->String.ucs2, &FolderMapping[i].pszFolderName);
+            AssertRCReturn(rc, rc);
 
             FolderMapping[i].pMapName = (PSHFLSTRING)RTMemAlloc(ShflStringSizeOfBuffer(pMapName));
-            Assert(FolderMapping[i].pMapName);
-            if (FolderMapping[i].pMapName == NULL)
+            if (!FolderMapping[i].pMapName)
+            {
+                RTStrFree(FolderMapping[i].pszFolderName);
+                AssertFailed();
                 return VERR_NO_MEMORY;
+            }
 
             FolderMapping[i].pMapName->u16Length = pMapName->u16Length;
             FolderMapping[i].pMapName->u16Size   = pMapName->u16Size;
             memcpy(FolderMapping[i].pMapName->String.ucs2, pMapName->String.ucs2, pMapName->u16Size);
 
-            FolderMapping[i].fValid     = true;
-            FolderMapping[i].cMappings  = 0;
-            FolderMapping[i].fWritable  = !!fWritable;
-            FolderMapping[i].fAutoMount = !!fAutoMount;
+            FolderMapping[i].fValid          = true;
+            FolderMapping[i].cMappings       = 0;
+            FolderMapping[i].fWritable       = fWritable;
+            FolderMapping[i].fAutoMount      = fAutoMount;
+            FolderMapping[i].fSymlinksCreate = fSymlinksCreate;
 
             /* Check if the host file system is case sensitive */
             RTFSPROPERTIES prop;
-            char *utf8Root, *asciiroot;
+            char *pszAsciiRoot;
 
-            int rc = RTUtf16ToUtf8(FolderMapping[i].pFolderName->String.ucs2, &utf8Root);
-            AssertRC(rc);
-
+            rc = RTStrUtf8ToCurrentCP(&pszAsciiRoot, FolderMapping[i].pszFolderName);
             if (RT_SUCCESS(rc))
             {
-                rc = RTStrUtf8ToCurrentCP(&asciiroot, utf8Root);
-                if (RT_SUCCESS(rc))
-                {
-                    rc = RTFsQueryProperties(asciiroot, &prop);
-                    AssertRC(rc);
-                    RTStrFree(asciiroot);
-                }
-                RTStrFree(utf8Root);
+                rc = RTFsQueryProperties(pszAsciiRoot, &prop);
+                AssertRC(rc);
+                RTStrFree(pszAsciiRoot);
             }
+
             FolderMapping[i].fHostCaseSensitive = RT_SUCCESS(rc) ? prop.fCaseSensitive : false;
             vbsfRootHandleAdd(i);
             break;
@@ -254,6 +264,16 @@ int vbsfMappingsAdd(PSHFLSTRING pFolderName, PSHFLSTRING pMapName,
     return VINF_SUCCESS;
 }
 
+#ifdef UNITTEST
+/** Unit test the SHFL_FN_REMOVE_MAPPING API.  Located here as a form of API
+ * documentation. */
+void testMappingsRemove(RTTEST hTest)
+{
+    /* If the number or types of parameters are wrong the API should fail. */
+    testMappingsRemoveBadParameters(hTest);
+    /* Add tests as required... */
+}
+#endif
 int vbsfMappingsRemove(PSHFLSTRING pMapName)
 {
     unsigned i;
@@ -273,11 +293,11 @@ int vbsfMappingsRemove(PSHFLSTRING pMapName)
                     return VERR_PERMISSION_DENIED;
                 }
 
-                RTMemFree(FolderMapping[i].pFolderName);
+                RTStrFree(FolderMapping[i].pszFolderName);
                 RTMemFree(FolderMapping[i].pMapName);
-                FolderMapping[i].pFolderName = NULL;
-                FolderMapping[i].pMapName    = NULL;
-                FolderMapping[i].fValid      = false;
+                FolderMapping[i].pszFolderName = NULL;
+                FolderMapping[i].pMapName      = NULL;
+                FolderMapping[i].fValid        = false;
                 vbsfRootHandleRemove(i);
                 break;
             }
@@ -293,43 +313,42 @@ int vbsfMappingsRemove(PSHFLSTRING pMapName)
     return VINF_SUCCESS;
 }
 
-PCRTUTF16 vbsfMappingsQueryHostRoot(SHFLROOT root, uint32_t *pcbRoot)
+const char* vbsfMappingsQueryHostRoot(SHFLROOT root)
 {
     MAPPING *pFolderMapping = vbsfMappingGetByRoot(root);
-    if (pFolderMapping == NULL)
-    {
-        AssertFailed();
-        return NULL;
-    }
-
-    *pcbRoot = pFolderMapping->pFolderName->u16Size;
-    return &pFolderMapping->pFolderName->String.ucs2[0];
+    AssertReturn(pFolderMapping, NULL);
+    return pFolderMapping->pszFolderName;
 }
 
 bool vbsfIsGuestMappingCaseSensitive(SHFLROOT root)
 {
     MAPPING *pFolderMapping = vbsfMappingGetByRoot(root);
-    if (pFolderMapping == NULL)
-    {
-        AssertFailed();
-        return false;
-    }
-
+    AssertReturn(pFolderMapping, false);
     return pFolderMapping->fGuestCaseSensitive;
 }
 
 bool vbsfIsHostMappingCaseSensitive(SHFLROOT root)
 {
     MAPPING *pFolderMapping = vbsfMappingGetByRoot(root);
-    if (pFolderMapping == NULL)
-    {
-        AssertFailed();
-        return false;
-    }
-
+    AssertReturn(pFolderMapping, false);
     return pFolderMapping->fHostCaseSensitive;
 }
 
+#ifdef UNITTEST
+/** Unit test the SHFL_FN_QUERY_MAPPINGS API.  Located here as a form of API
+ * documentation (or should it better be inline in include/VBox/shflsvc.h?) */
+void testMappingsQuery(RTTEST hTest)
+{
+    /* The API should return all mappings if we provide enough buffers. */
+    testMappingsQuerySimple(hTest);
+    /* If we provide too few buffers that should be signalled correctly. */
+    testMappingsQueryTooFewBuffers(hTest);
+    /* The SHFL_MF_AUTOMOUNT flag means return only auto-mounted mappings. */
+    testMappingsQueryAutoMount(hTest);
+    /* The mappings return array must have numberOfMappings entries. */
+    testMappingsQueryArrayWrongSize(hTest);
+}
+#endif
 /**
  * Note: If pMappings / *pcMappings is smaller than the actual amount of mappings
  *       that *could* have been returned *pcMappings contains the required buffer size
@@ -375,6 +394,19 @@ int vbsfMappingsQuery(PSHFLCLIENTDATA pClient, PSHFLMAPPING pMappings, uint32_t 
     return rc;
 }
 
+#ifdef UNITTEST
+/** Unit test the SHFL_FN_QUERY_MAP_NAME API.  Located here as a form of API
+ * documentation. */
+void testMappingsQueryName(RTTEST hTest)
+{
+    /* If we query an valid mapping it should be returned. */
+    testMappingsQueryNameValid(hTest);
+    /* If we query an invalid mapping that should be signalled. */
+    testMappingsQueryNameInvalid(hTest);
+    /* If we pass in a bad string buffer that should be detected. */
+    testMappingsQueryNameBadBuffer(hTest);
+}
+#endif
 int vbsfMappingsQueryName(PSHFLCLIENTDATA pClient, SHFLROOT root, SHFLSTRING *pString)
 {
     int rc = VINF_SUCCESS;
@@ -397,8 +429,18 @@ int vbsfMappingsQueryName(PSHFLCLIENTDATA pClient, SHFLROOT root, SHFLSTRING *pS
 
     if (pFolderMapping->fValid == true)
     {
-        pString->u16Length = pFolderMapping->pMapName->u16Length;
-        memcpy(pString->String.ucs2, pFolderMapping->pMapName->String.ucs2, pString->u16Size);
+        if (pString->u16Size < pFolderMapping->pMapName->u16Size)
+        {
+            Log(("vbsfMappingsQuery: passed string too short (%d < %d bytes)!\n",
+                pString->u16Size,  pFolderMapping->pMapName->u16Size));
+            rc = VERR_INVALID_PARAMETER;
+        }
+        else
+        {
+            pString->u16Length = pFolderMapping->pMapName->u16Length;
+            memcpy(pString->String.ucs2, pFolderMapping->pMapName->String.ucs2,
+                   pFolderMapping->pMapName->u16Size);
+        }
     }
     else
         rc = VERR_FILE_NOT_FOUND;
@@ -412,14 +454,10 @@ int vbsfMappingsQueryWritable(PSHFLCLIENTDATA pClient, SHFLROOT root, bool *fWri
 {
     int rc = VINF_SUCCESS;
 
-    LogFlow(("vbsfMappingsQueryWritable: pClient = %p, root = %d\n",
-             pClient, root));
+    LogFlow(("vbsfMappingsQueryWritable: pClient = %p, root = %d\n", pClient, root));
 
     MAPPING *pFolderMapping = vbsfMappingGetByRoot(root);
-    if (pFolderMapping == NULL)
-    {
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertReturn(pFolderMapping, VERR_INVALID_PARAMETER);
 
     if (pFolderMapping->fValid == true)
         *fWritable = pFolderMapping->fWritable;
@@ -435,14 +473,10 @@ int vbsfMappingsQueryAutoMount(PSHFLCLIENTDATA pClient, SHFLROOT root, bool *fAu
 {
     int rc = VINF_SUCCESS;
 
-    LogFlow(("vbsfMappingsQueryAutoMount: pClient = %p, root = %d\n",
-             pClient, root));
+    LogFlow(("vbsfMappingsQueryAutoMount: pClient = %p, root = %d\n", pClient, root));
 
     MAPPING *pFolderMapping = vbsfMappingGetByRoot(root);
-    if (pFolderMapping == NULL)
-    {
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertReturn(pFolderMapping, VERR_INVALID_PARAMETER);
 
     if (pFolderMapping->fValid == true)
         *fAutoMount = pFolderMapping->fAutoMount;
@@ -454,8 +488,49 @@ int vbsfMappingsQueryAutoMount(PSHFLCLIENTDATA pClient, SHFLROOT root, bool *fAu
     return rc;
 }
 
+int vbsfMappingsQuerySymlinksCreate(PSHFLCLIENTDATA pClient, SHFLROOT root, bool *fSymlinksCreate)
+{
+    int rc = VINF_SUCCESS;
+
+    LogFlow(("vbsfMappingsQueryAutoMount: pClient = %p, root = %d\n", pClient, root));
+
+    MAPPING *pFolderMapping = vbsfMappingGetByRoot(root);
+    AssertReturn(pFolderMapping, VERR_INVALID_PARAMETER);
+
+    if (pFolderMapping->fValid == true)
+        *fSymlinksCreate = pFolderMapping->fSymlinksCreate;
+    else
+        rc = VERR_FILE_NOT_FOUND;
+
+    LogFlow(("vbsfMappingsQueryAutoMount:SymlinksCreate return rc = %Rrc\n", rc));
+
+    return rc;
+}
+
+#ifdef UNITTEST
+/** Unit test the SHFL_FN_MAP_FOLDER API.  Located here as a form of API
+ * documentation. */
+void testMapFolder(RTTEST hTest)
+{
+    /* If we try to map a valid name we should get the root. */
+    testMapFolderValid(hTest);
+    /* If we try to map a valid name we should get VERR_FILE_NOT_FOUND. */
+    testMapFolderInvalid(hTest);
+    /* If we map a folder twice we can unmap it twice.
+     * Currently unmapping too often is only asserted but not signalled. */
+    testMapFolderTwice(hTest);
+    /* The delimiter should be converted in e.g. file delete operations. */
+    testMapFolderDelimiter(hTest);
+    /* Test case sensitive mapping by opening a file with the wrong case. */
+    testMapFolderCaseSensitive(hTest);
+    /* Test case insensitive mapping by opening a file with the wrong case. */
+    testMapFolderCaseInsensitive(hTest);
+    /* If the number or types of parameters are wrong the API should fail. */
+    testMapFolderBadParameters(hTest);
+}
+#endif
 int vbsfMapFolder(PSHFLCLIENTDATA pClient, PSHFLSTRING pszMapName,
-                  RTUTF16 delimiter, bool fCaseSensitive, SHFLROOT *pRoot)
+                  RTUTF16 pwszDelimiter, bool fCaseSensitive, SHFLROOT *pRoot)
 {
     MAPPING *pFolderMapping = NULL;
 
@@ -470,11 +545,11 @@ int vbsfMapFolder(PSHFLCLIENTDATA pClient, PSHFLSTRING pszMapName,
 
     if (pClient->PathDelimiter == 0)
     {
-        pClient->PathDelimiter = delimiter;
+        pClient->PathDelimiter = pwszDelimiter;
     }
     else
     {
-        Assert(delimiter == pClient->PathDelimiter);
+        Assert(pwszDelimiter == pClient->PathDelimiter);
     }
 
     if (BIT_FLAG(pClient->fu32Flags, SHFL_CF_UTF8))
@@ -505,6 +580,20 @@ int vbsfMapFolder(PSHFLCLIENTDATA pClient, PSHFLSTRING pszMapName,
     return VINF_SUCCESS;
 }
 
+#ifdef UNITTEST
+/** Unit test the SHFL_FN_UNMAP_FOLDER API.  Located here as a form of API
+ * documentation. */
+void testUnmapFolder(RTTEST hTest)
+{
+    /* Unmapping a mapped folder should succeed.
+     * If the folder is not mapped this is only asserted, not signalled. */
+    testUnmapFolderValid(hTest);
+    /* Unmapping a non-existant root should fail. */
+    testUnmapFolderInvalid(hTest);
+    /* If the number or types of parameters are wrong the API should fail. */
+    testUnmapFolderBadParameters(hTest);
+}
+#endif
 int vbsfUnmapFolder(PSHFLCLIENTDATA pClient, SHFLROOT root)
 {
     int rc = VINF_SUCCESS;

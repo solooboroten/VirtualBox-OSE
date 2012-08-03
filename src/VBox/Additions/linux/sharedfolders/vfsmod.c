@@ -198,6 +198,7 @@ static int sf_read_super_aux(struct super_block *sb, void *data, int flags)
     struct sf_glob_info *sf_g;
     SHFLFSOBJINFO fsinfo;
     struct vbsf_mount_info_new *info;
+    bool fInodePut = true;
 
     TRACE();
     if (!data)
@@ -239,6 +240,7 @@ static int sf_read_super_aux(struct super_block *sb, void *data, int flags)
     sf_i->path->u16Size = 2;
     sf_i->path->String.utf8[0] = '/';
     sf_i->path->String.utf8[1] = 0;
+    sf_i->force_reread = 0;
 
     err = sf_stat(__func__, sf_g, sf_i->path, &fsinfo, 0);
     if (err)
@@ -277,10 +279,13 @@ static int sf_read_super_aux(struct super_block *sb, void *data, int flags)
         goto fail3;
     }
 
-    if (sf_init_backing_dev(sf_g, info->name))
+    if (sf_init_backing_dev(sf_g))
     {
         err = -EINVAL;
         LogFunc(("could not init bdi\n"));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 25)
+        unlock_new_inode(iroot);
+#endif
         goto fail4;
     }
 
@@ -291,11 +296,18 @@ static int sf_read_super_aux(struct super_block *sb, void *data, int flags)
     unlock_new_inode(iroot);
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
+    droot = d_make_root(iroot);
+#else
     droot = d_alloc_root(iroot);
+#endif
     if (!droot)
     {
         err = -ENOMEM;  /* XXX */
         LogFunc(("d_alloc_root failed\n"));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
+        fInodePut = false;
+#endif
         goto fail5;
     }
 
@@ -307,7 +319,8 @@ fail5:
     sf_done_backing_dev(sf_g);
 
 fail4:
-    iput(iroot);
+    if (fInodePut)
+        iput(iroot);
 
 fail3:
     kfree(sf_i->path);
@@ -361,7 +374,11 @@ static void sf_evict_inode(struct inode *inode)
 
     TRACE();
     truncate_inode_pages(&inode->i_data, 0);
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+    clear_inode(inode);
+# else
     end_writeback(inode);
+# endif
 
     sf_i = GET_INODE_INFO(inode);
     if (!sf_i)
@@ -411,8 +428,47 @@ static int sf_statfs(struct dentry *dentry, STRUCT_STATFS *stat)
 
 static int sf_remount_fs(struct super_block *sb, int *flags, char *data)
 {
-    TRACE();
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 23)
+    struct sf_glob_info *sf_g;
+    struct vbsf_mount_info_new *info;
+    struct sf_inode_info *sf_i;
+    struct inode *iroot;
+    SHFLFSOBJINFO fsinfo;
+    int err;
+
+    printk(KERN_DEBUG "ENTER: sf_remount_fs\n");
+    sf_g = GET_GLOB_INFO(sb);
+    BUG_ON(!sf_g);
+    BUG_ON(data[0] != 0);
+    info = (struct vbsf_mount_info_new *)data;
+    BUG_ON(   info->signature[0] != VBSF_MOUNT_SIGNATURE_BYTE_0
+           || info->signature[1] != VBSF_MOUNT_SIGNATURE_BYTE_1
+           || info->signature[2] != VBSF_MOUNT_SIGNATURE_BYTE_2);
+
+    sf_g->uid = info->uid;
+    sf_g->gid = info->gid;
+    sf_g->ttl = info->ttl;
+    sf_g->dmode = info->dmode;
+    sf_g->fmode = info->fmode;
+    sf_g->dmask = info->dmask;
+    sf_g->fmask = info->fmask;
+
+    iroot = ilookup(sb, 0);
+    if (!iroot)
+    {
+        printk(KERN_DEBUG "can't find root inode\n");
+        return -ENOSYS;
+    }
+    sf_i = GET_INODE_INFO(iroot);
+    err = sf_stat(__func__, sf_g, sf_i->path, &fsinfo, 0);
+    BUG_ON(err != 0);
+    sf_init_inode(sf_g, iroot, &fsinfo);
+    /*unlock_new_inode(iroot);*/
+    printk(KERN_DEBUG "LEAVE: sf_remount_fs\n");
+    return 0;
+#else
     return -ENOSYS;
+#endif
 }
 
 static struct super_operations sf_super_ops =
@@ -484,7 +540,7 @@ static struct file_system_type vboxsf_fs_type =
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
 static int follow_symlinks = 0;
-module_param(follow_symlinks, bool, 0);
+module_param(follow_symlinks, int, 0);
 MODULE_PARM_DESC(follow_symlinks, "Let host resolve symlinks rather than showing them");
 #endif
 

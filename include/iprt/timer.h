@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -149,7 +149,7 @@ RTDECL(int) RTTimerCreateEx(PRTTIMER *ppTimer, uint64_t u64NanoInterval, uint32_
 RTDECL(int) RTTimerDestroy(PRTTIMER pTimer);
 
 /**
- * Stops an active timer.
+ * Starts a suspended timer.
  *
  * @returns IPRT status code.
  * @retval  VERR_INVALID_HANDLE if pTimer isn't valid.
@@ -269,7 +269,7 @@ RTDECL(bool) RTTimerCanDoHighResolution(void);
 /**
  * Timer callback function for low res timers.
  *
- * This is identfical to FNRTTIMER except for the first parameter, so
+ * This is identical to FNRTTIMER except for the first parameter, so
  * see FNRTTIMER for details.
  *
  * @param   hTimerLR    The low resolution timer handle.
@@ -353,6 +353,24 @@ RTDECL(int) RTTimerLRStart(RTTIMERLR hTimerLR, uint64_t u64First);
  * @see     RTTimerLRStart
  */
 RTDECL(int) RTTimerLRStop(RTTIMERLR hTimerLR);
+
+/**
+ * Changes the interval of a low resolution timer.
+ *
+ * If the timer is active, the next tick will occure immediately just like with
+ * RTTimerLRStart() when u64First parameter is zero.
+ *
+ * @returns IPRT status code.
+ * @retval  VERR_INVALID_HANDLE if pTimer isn't valid.
+ * @retval  VERR_NOT_SUPPORTED if not supported.
+ *
+ * @param   hTimerLR            The low resolution timer to update.
+ * @param   u64NanoInterval     The interval between timer ticks specified in
+ *                              nanoseconds.  This is rounded to the fit the
+ *                              system timer granularity.
+ * @remarks Callable from the timer callback.
+ */
+RTDECL(int) RTTimerLRChangeInterval(RTTIMERLR hTimerLR, uint64_t u64NanoInterval);
 
 /** @} */
 

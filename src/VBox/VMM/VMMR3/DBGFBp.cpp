@@ -1,4 +1,4 @@
-/* $Id: DBGFBp.cpp 35694 2011-01-24 17:35:59Z vboxsync $ */
+/* $Id: DBGFBp.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, Breakpoint Management.
  */
@@ -22,7 +22,11 @@
 #define LOG_GROUP LOG_GROUP_DBGF
 #include <VBox/vmm/dbgf.h>
 #include <VBox/vmm/selm.h>
-#include <VBox/vmm/rem.h>
+#ifdef VBOX_WITH_REM
+# include <VBox/vmm/rem.h>
+#else
+# include <VBox/vmm/iem.h>
+#endif
 #include "DBGFInternal.h"
 #include <VBox/vmm/vm.h>
 #include <VBox/vmm/mm.h>
@@ -56,7 +60,7 @@ RT_C_DECLS_END
  * Initialize the breakpoint stuff.
  *
  * @returns VINF_SUCCESS
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 int dbgfR3BpInit(PVM pVM)
 {
@@ -92,7 +96,7 @@ int dbgfR3BpInit(PVM pVM)
  *
  * @returns Pointer to the allocated breakpoint.
  * @returns NULL if we're out of breakpoints.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   enmType The type to allocate.
  */
 static PDBGFBP dbgfR3BpAlloc(PVM pVM, DBGFBPTYPE enmType)
@@ -145,7 +149,7 @@ static PDBGFBP dbgfR3BpAlloc(PVM pVM, DBGFBPTYPE enmType)
  *
  * @returns Pointer to the allocated breakpoint.
  * @returns NULL if the breakpoint is invalid.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   iBp     The breakpoint id.
  */
 static PDBGFBP dbgfR3BpGet(PVM pVM, uint32_t iBp)
@@ -187,7 +191,7 @@ static PDBGFBP dbgfR3BpGet(PVM pVM, uint32_t iBp)
  *
  * @returns Pointer to the allocated breakpoint.
  * @returns NULL if the breakpoint is invalid.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   enmType The breakpoint type.
  * @param   GCPtr   The breakpoint address.
  */
@@ -233,7 +237,7 @@ static PDBGFBP dbgfR3BpGetByAddr(PVM pVM, DBGFBPTYPE enmType, RTGCUINTPTR GCPtr)
 /**
  * Frees a breakpoint.
  *
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   pBp     The breakpoint to free.
  */
 static void dbgfR3BpFree(PVM pVM, PDBGFBP pBp)
@@ -268,7 +272,7 @@ static void dbgfR3BpFree(PVM pVM, PDBGFBP pBp)
  * Sets a breakpoint (int 3 based).
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pAddress    The address of the breakpoint.
  * @param   iHitTrigger The hit count at which the breakpoint start triggering.
  *                      Use 0 (or 1) if it's gonna trigger at once.
@@ -280,10 +284,10 @@ static void dbgfR3BpFree(PVM pVM, PDBGFBP pBp)
 VMMR3DECL(int) DBGFR3BpSet(PVM pVM, PCDBGFADDRESS pAddress, uint64_t iHitTrigger, uint64_t iHitDisable, uint32_t *piBp)
 {
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
     /** @todo SMP? */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpSetInt3, 5, pVM, pAddress, &iHitTrigger, &iHitDisable, piBp);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpSetInt3, 5, pVM, pAddress, &iHitTrigger, &iHitDisable, piBp);
     LogFlow(("DBGFR3BpSet: returns %Rrc\n", rc));
     return rc;
 }
@@ -293,7 +297,7 @@ VMMR3DECL(int) DBGFR3BpSet(PVM pVM, PCDBGFADDRESS pAddress, uint64_t iHitTrigger
  * Sets a breakpoint (int 3 based).
  *
  * @returns VBox status code.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pAddress        The address of the breakpoint.
  * @param   piHitTrigger    The hit count at which the breakpoint start triggering.
  *                          Use 0 (or 1) if it's gonna trigger at once.
@@ -365,7 +369,7 @@ static DECLCALLBACK(int) dbgfR3BpSetInt3(PVM pVM, PCDBGFADDRESS pAddress, uint64
  * This is used to implement both DBGFR3BpSetReg() and DBGFR3BpEnable().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pBp         The breakpoint.
  */
 static int dbgfR3BpInt3Arm(PVM pVM, PDBGFBP pBp)
@@ -395,7 +399,7 @@ static int dbgfR3BpInt3Arm(PVM pVM, PDBGFBP pBp)
  * This is used to implement both DBGFR3BpClear() and DBGFR3BpDisable().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pBp         The breakpoint.
  */
 static int dbgfR3BpInt3Disarm(PVM pVM, PDBGFBP pBp)
@@ -421,7 +425,7 @@ static int dbgfR3BpInt3Disarm(PVM pVM, PDBGFBP pBp)
  * Sets a register breakpoint.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pAddress    The address of the breakpoint.
  * @param   iHitTrigger The hit count at which the breakpoint start triggering.
  *                      Use 0 (or 1) if it's gonna trigger at once.
@@ -438,9 +442,9 @@ VMMR3DECL(int) DBGFR3BpSetReg(PVM pVM, PCDBGFADDRESS pAddress, uint64_t iHitTrig
 {
     /** @todo SMP - broadcast, VT-x/AMD-V. */
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpSetReg, 7, pVM, pAddress, &iHitTrigger, &iHitDisable, fType, cb, piBp);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpSetReg, 7, pVM, pAddress, &iHitTrigger, &iHitDisable, fType, cb, piBp);
     LogFlow(("DBGFR3BpSetReg: returns %Rrc\n", rc));
     return rc;
 
@@ -451,7 +455,7 @@ VMMR3DECL(int) DBGFR3BpSetReg(PVM pVM, PCDBGFADDRESS pAddress, uint64_t iHitTrig
  * Sets a register breakpoint.
  *
  * @returns VBox status code.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pAddress        The address of the breakpoint.
  * @param   piHitTrigger    The hit count at which the breakpoint start triggering.
  *                          Use 0 (or 1) if it's gonna trigger at once.
@@ -558,7 +562,7 @@ static DECLCALLBACK(int) dbgfR3BpSetReg(PVM pVM, PCDBGFADDRESS pAddress, uint64_
  * This is used to implement both DBGFR3BpSetReg() and DBGFR3BpEnable().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pBp         The breakpoint.
  */
 static int dbgfR3BpRegArm(PVM pVM, PDBGFBP pBp)
@@ -576,7 +580,7 @@ static int dbgfR3BpRegArm(PVM pVM, PDBGFBP pBp)
  * This is used to implement both DBGFR3BpClear() and DBGFR3BpDisable().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pBp         The breakpoint.
  */
 static int dbgfR3BpRegDisarm(PVM pVM, PDBGFBP pBp)
@@ -593,7 +597,7 @@ static int dbgfR3BpRegDisarm(PVM pVM, PDBGFBP pBp)
  * Sets a recompiler breakpoint.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pAddress    The address of the breakpoint.
  * @param   iHitTrigger The hit count at which the breakpoint start triggering.
  *                      Use 0 (or 1) if it's gonna trigger at once.
@@ -605,9 +609,9 @@ static int dbgfR3BpRegDisarm(PVM pVM, PDBGFBP pBp)
 VMMR3DECL(int) DBGFR3BpSetREM(PVM pVM, PCDBGFADDRESS pAddress, uint64_t iHitTrigger, uint64_t iHitDisable, uint32_t *piBp)
 {
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpSetREM, 5, pVM, pAddress, &iHitTrigger, &iHitDisable, piBp);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpSetREM, 5, pVM, pAddress, &iHitTrigger, &iHitDisable, piBp);
     LogFlow(("DBGFR3BpSetREM: returns %Rrc\n", rc));
     return rc;
 }
@@ -617,7 +621,7 @@ VMMR3DECL(int) DBGFR3BpSetREM(PVM pVM, PCDBGFADDRESS pAddress, uint64_t iHitTrig
  * EMT worker for DBGFR3BpSetREM().
  *
  * @returns VBox status code.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pAddress        The address of the breakpoint.
  * @param   piHitTrigger    The hit count at which the breakpoint start triggering.
  *                          Use 0 (or 1) if it's gonna trigger at once.
@@ -649,7 +653,11 @@ static DECLCALLBACK(int) dbgfR3BpSetREM(PVM pVM, PCDBGFADDRESS pAddress, uint64_
     {
         int rc = VINF_SUCCESS;
         if (!pBp->fEnabled)
+#ifdef VBOX_WITH_REM
             rc = REMR3BreakpointSet(pVM, pBp->GCPtr);
+#else
+            rc = IEMBreakpointSet(pVM, pBp->GCPtr);
+#endif
         if (RT_SUCCESS(rc))
         {
             rc = VINF_DBGF_BP_ALREADY_EXIST;
@@ -673,7 +681,11 @@ static DECLCALLBACK(int) dbgfR3BpSetREM(PVM pVM, PCDBGFADDRESS pAddress, uint64_
     /*
      * Now ask REM to set the breakpoint.
      */
+#ifdef VBOX_WITH_REM
     int rc = REMR3BreakpointSet(pVM, pAddress->FlatPtr);
+#else
+    int rc = IEMBreakpointSet(pVM, pAddress->FlatPtr);
+#endif
     if (RT_SUCCESS(rc))
     {
         if (piBp)
@@ -690,16 +702,16 @@ static DECLCALLBACK(int) dbgfR3BpSetREM(PVM pVM, PCDBGFADDRESS pAddress, uint64_
  * Clears a breakpoint.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   iBp         The id of the breakpoint which should be removed (cleared).
  * @thread  Any thread.
  */
 VMMR3DECL(int) DBGFR3BpClear(PVM pVM, uint32_t iBp)
 {
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpClear, 2, pVM, iBp);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpClear, 2, pVM, iBp);
     LogFlow(("DBGFR3BpClear: returns %Rrc\n", rc));
     return rc;
 }
@@ -709,7 +721,7 @@ VMMR3DECL(int) DBGFR3BpClear(PVM pVM, uint32_t iBp)
  * EMT worker for DBGFR3BpClear().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   iBp         The id of the breakpoint which should be removed (cleared).
  * @thread  EMT
  * @internal
@@ -741,12 +753,15 @@ static DECLCALLBACK(int) dbgfR3BpClear(PVM pVM, uint32_t iBp)
                 break;
 
             case DBGFBPTYPE_REM:
+#ifdef VBOX_WITH_REM
                 rc = REMR3BreakpointClear(pVM, pBp->GCPtr);
+#else
+                rc = IEMBreakpointClear(pVM, pBp->GCPtr);
+#endif
                 break;
 
             default:
-                AssertMsgFailed(("Invalid enmType=%d!\n", pBp->enmType));
-                return VERR_INTERNAL_ERROR;
+                AssertMsgFailedReturn(("Invalid enmType=%d!\n", pBp->enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
         }
         AssertRCReturn(rc, rc);
     }
@@ -763,16 +778,16 @@ static DECLCALLBACK(int) dbgfR3BpClear(PVM pVM, uint32_t iBp)
  * Enables a breakpoint.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   iBp         The id of the breakpoint which should be enabled.
  * @thread  Any thread.
  */
 VMMR3DECL(int) DBGFR3BpEnable(PVM pVM, uint32_t iBp)
 {
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpEnable, 2, pVM, iBp);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpEnable, 2, pVM, iBp);
     LogFlow(("DBGFR3BpEnable: returns %Rrc\n", rc));
     return rc;
 }
@@ -782,7 +797,7 @@ VMMR3DECL(int) DBGFR3BpEnable(PVM pVM, uint32_t iBp)
  * EMT worker for DBGFR3BpEnable().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   iBp         The id of the breakpoint which should be enabled.
  * @thread  EMT
  * @internal
@@ -818,12 +833,15 @@ static DECLCALLBACK(int) dbgfR3BpEnable(PVM pVM, uint32_t iBp)
             break;
 
         case DBGFBPTYPE_REM:
+#ifdef VBOX_WITH_REM
             rc = REMR3BreakpointSet(pVM, pBp->GCPtr);
+#else
+            rc = IEMBreakpointSet(pVM, pBp->GCPtr);
+#endif
             break;
 
         default:
-            AssertMsgFailed(("Invalid enmType=%d!\n", pBp->enmType));
-            return VERR_INTERNAL_ERROR;
+            AssertMsgFailedReturn(("Invalid enmType=%d!\n", pBp->enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
     }
     if (RT_FAILURE(rc))
         pBp->fEnabled = false;
@@ -836,16 +854,16 @@ static DECLCALLBACK(int) dbgfR3BpEnable(PVM pVM, uint32_t iBp)
  * Disables a breakpoint.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   iBp         The id of the breakpoint which should be disabled.
  * @thread  Any thread.
  */
 VMMR3DECL(int) DBGFR3BpDisable(PVM pVM, uint32_t iBp)
 {
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpDisable, 2, pVM, iBp);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpDisable, 2, pVM, iBp);
     LogFlow(("DBGFR3BpDisable: returns %Rrc\n", rc));
     return rc;
 }
@@ -855,7 +873,7 @@ VMMR3DECL(int) DBGFR3BpDisable(PVM pVM, uint32_t iBp)
  * EMT worker for DBGFR3BpDisable().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   iBp         The id of the breakpoint which should be disabled.
  * @thread  EMT
  * @internal
@@ -891,12 +909,15 @@ static DECLCALLBACK(int) dbgfR3BpDisable(PVM pVM, uint32_t iBp)
             break;
 
         case DBGFBPTYPE_REM:
+#ifdef VBOX_WITH_REM
             rc = REMR3BreakpointClear(pVM, pBp->GCPtr);
+#else
+            rc = IEMBreakpointClear(pVM, pBp->GCPtr);
+#endif
             break;
 
         default:
-            AssertMsgFailed(("Invalid enmType=%d!\n", pBp->enmType));
-            return VERR_INTERNAL_ERROR;
+            AssertMsgFailedReturn(("Invalid enmType=%d!\n", pBp->enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
     }
 
     return rc;
@@ -907,7 +928,7 @@ static DECLCALLBACK(int) dbgfR3BpDisable(PVM pVM, uint32_t iBp)
  * Enumerate the breakpoints.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pfnCallback The callback function.
  * @param   pvUser      The user argument to pass to the callback.
  * @thread  Any thread but the callback will be called from EMT.
@@ -915,9 +936,9 @@ static DECLCALLBACK(int) dbgfR3BpDisable(PVM pVM, uint32_t iBp)
 VMMR3DECL(int) DBGFR3BpEnum(PVM pVM, PFNDBGFBPENUM pfnCallback, void *pvUser)
 {
     /*
-     * This must be done in EMT.
+     * This must be done on EMT.
      */
-    int rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpEnum, 3, pVM, pfnCallback, pvUser);
+    int rc = VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3BpEnum, 3, pVM, pfnCallback, pvUser);
     LogFlow(("DBGFR3BpClear: returns %Rrc\n", rc));
     return rc;
 }
@@ -927,7 +948,7 @@ VMMR3DECL(int) DBGFR3BpEnum(PVM pVM, PFNDBGFBPENUM pfnCallback, void *pvUser)
  * EMT worker for DBGFR3BpEnum().
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pfnCallback The callback function.
  * @param   pvUser      The user argument to pass to the callback.
  * @thread  EMT

@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
+# $Id: Makefile.kmk 41477 2012-05-29 11:43:27Z vboxsync $
 ## @file
 # Sub-Makefile for the OS/2 specific part of the guest additions.
 #
 
 #
-# Copyright (C) 2006-2007 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -16,7 +16,7 @@
 #
 
 SUB_DEPTH = ../../../..
-include	$(KBUILD_PATH)/subheader.kmk
+include $(KBUILD_PATH)/subheader.kmk
 
 # Make sure our Config.kmk is included.
 ifndef VBOX_ADDITIONS_OS2_CONFIG_KMK_INCLUDED
@@ -27,10 +27,11 @@ endif
 # The sub-makefiles.
 #
 ifndef VBOX_OSE
- include $(PATH_SUB_CURRENT)/VBoxGradd/Makefile.kmk
- include $(PATH_SUB_CURRENT)/VBoxGrext/Makefile.kmk
+# include $(PATH_SUB_CURRENT)/VBoxGradd/Makefile.kmk
+# include $(PATH_SUB_CURRENT)/VBoxGrext/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Bin/Makefile.kmk
 endif
-include $(PATH_SUB_CURRENT)/VBoxSF/Makefile.kmk
+#include $(PATH_SUB_CURRENT)/VBoxSF/Makefile.kmk
 
-include	$(KBUILD_PATH)/subfooter.kmk
+include $(FILE_KBUILD_SUB_FOOTER)
 

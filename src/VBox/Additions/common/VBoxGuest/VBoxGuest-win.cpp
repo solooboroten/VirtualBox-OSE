@@ -21,6 +21,7 @@
 #include "VBoxGuestInternal.h"
 
 #include <iprt/asm.h>
+#include <iprt/asm-amd64-x86.h>
 
 #include <VBox/log.h>
 #include <VBox/VBoxGuestLib.h>
@@ -44,6 +45,7 @@ static NTSTATUS vboxguestwinCreate(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS vboxguestwinClose(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS vboxguestwinIOCtl(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS vboxguestwinInternalIOCtl(PDEVICE_OBJECT pDevObj, PIRP pIrp);
+static NTSTATUS vboxguestwinRegistryReadDWORD(ULONG ulRoot, PCWSTR pwszPath, PWSTR pwszName, PULONG puValue);
 static NTSTATUS vboxguestwinSystemControl(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS vboxguestwinShutdown(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS vboxguestwinNotSupportedStub(PDEVICE_OBJECT pDevObj, PIRP pIrp);
@@ -108,6 +110,9 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
                     break;
                 case 1: /* Note: Also could be Windows 2008 Server R2! */
                     g_winVersion = WIN7;
+                    break;
+                case 2:
+                    g_winVersion = WIN8;
                     break;
                 default:
                     Log(("VBoxGuest::DriverEntry: Unknown version of Windows (%u.%u), refusing!\n",
@@ -487,6 +492,16 @@ NTSTATUS vboxguestwinInit(PDRIVER_OBJECT pDrvObj, PDEVICE_OBJECT pDevObj, PUNICO
 
     if (RT_SUCCESS(rc))
     {
+        ULONG ulValue = 0;
+        NTSTATUS s = vboxguestwinRegistryReadDWORD(RTL_REGISTRY_SERVICES, L"VBoxGuest", L"LoggingEnabled",
+                                                   &ulValue);
+        if (NT_SUCCESS(s))
+        {
+            pDevExt->fLoggingEnabled = ulValue >= 0xFF;
+            if (pDevExt->fLoggingEnabled)
+                Log(("Logging to release log enabled (0x%x)", ulValue));
+        }
+
         /* Ready to rumble! */
         Log(("VBoxGuest::vboxguestwinInit: Device is ready!\n"));
         VBOXGUEST_UPDATE_DEVSTATE(pDevExt, WORKING);
@@ -514,6 +529,26 @@ NTSTATUS vboxguestwinCleanup(PDEVICE_OBJECT pDevObj)
     PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pDevObj->DeviceExtension;
     if (pDevExt)
     {
+
+#if 0 /* @todo: test & enable cleaning global session data */
+#ifdef VBOX_WITH_HGCM
+        if (pDevExt->win.s.pKernelSession)
+        {
+            VBoxGuestCloseSession(pDevExt, pDevExt->win.s.pKernelSession);
+            pDevExt->win.s.pKernelSession = NULL;
+        }
+#endif
+#endif
+
+        if (pDevExt->win.s.pInterruptObject)
+        {
+            IoDisconnectInterrupt(pDevExt->win.s.pInterruptObject);
+            pDevExt->win.s.pInterruptObject = NULL;
+        }
+
+        /* @todo: cleanup the rest stuff */
+
+
 #ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
         hlpDeregisterBugCheckCallback(pDevExt); /* ignore failure! */
 #endif
@@ -710,7 +745,7 @@ static NTSTATUS vboxguestwinIOCtl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             {
                 KUSER_SHARED_DATA *pSharedUserData = (KUSER_SHARED_DATA *)KI_USER_SHARED_DATA;
 
-                pDevExt->fVRDPEnabled            = TRUE;
+                pDevExt->fVRDPEnabled            = true;
                 LogRel(("VBoxGuest::vboxguestwinIOCtl: ENABLE_VRDP_SESSION: Current active console ID: 0x%08X\n",
                         pSharedUserData->ActiveConsoleId));
                 pDevExt->ulOldActiveConsoleId    = pSharedUserData->ActiveConsoleId;
@@ -727,7 +762,7 @@ static NTSTATUS vboxguestwinIOCtl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             {
                 KUSER_SHARED_DATA *pSharedUserData = (KUSER_SHARED_DATA *)KI_USER_SHARED_DATA;
 
-                pDevExt->fVRDPEnabled            = FALSE;
+                pDevExt->fVRDPEnabled            = false;
                 Log(("VBoxGuest::vboxguestwinIOCtl: DISABLE_VRDP_SESSION: Current active console ID: 0x%08X\n",
                      pSharedUserData->ActiveConsoleId));
                 pSharedUserData->ActiveConsoleId = pDevExt->ulOldActiveConsoleId;
@@ -808,7 +843,7 @@ static NTSTATUS vboxguestwinInternalIOCtl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
     switch (uCmd)
     {
-        case VBOXGUEST_IOCTL_INTERNAL_SET_MOUSE_NOTIFY_CALLBACK:
+        case VBOXGUEST_IOCTL_SET_MOUSE_NOTIFY_CALLBACK:
         {
             PVOID pvBuf = pStack->Parameters.Others.Argument1;
             size_t cbData = (size_t)pStack->Parameters.Others.Argument2;
@@ -820,12 +855,12 @@ static NTSTATUS vboxguestwinInternalIOCtl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
                 break;
             }
 
-            KIRQL OldIrql;
             VBoxGuestMouseSetNotifyCallback *pInfo = (VBoxGuestMouseSetNotifyCallback*)pvBuf;
+
             /* we need a lock here to avoid concurrency with the set event functionality */
+            KIRQL OldIrql;
             KeAcquireSpinLock(&pDevExt->win.s.MouseEventAccessLock, &OldIrql);
-            pDevExt->win.s.pfnMouseNotify =  pInfo->pfnNotify;
-            pDevExt->win.s.pvMouseNotify =  pInfo->pvNotify;
+            pDevExt->MouseNotifyCallback = *pInfo;
             KeReleaseSpinLock(&pDevExt->win.s.MouseEventAccessLock, OldIrql);
 
             Status = STATUS_SUCCESS;
@@ -927,8 +962,7 @@ NTSTATUS vboxguestwinNotSupportedStub(PDEVICE_OBJECT pDevObj, PIRP pIrp)
  * @param   pIrp        Interrupt request packet.
  * @param   pContext    Context specific pointer.
  */
-void vboxguestwinDpcHandler(PKDPC pDPC, PDEVICE_OBJECT pDevObj,
-                            PIRP pIrp, PVOID pContext)
+void vboxguestwinDpcHandler(PKDPC pDPC, PDEVICE_OBJECT pDevObj, PIRP pIrp, PVOID pContext)
 {
     PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pDevObj->DeviceExtension;
     Log(("VBoxGuest::vboxguestwinGuestDpcHandler: pDevExt=0x%p\n", pDevExt));
@@ -936,19 +970,19 @@ void vboxguestwinDpcHandler(PKDPC pDPC, PDEVICE_OBJECT pDevObj,
     /* test & reset the counter */
     if (ASMAtomicXchgU32(&pDevExt->u32MousePosChangedSeq, 0))
     {
-        Assert(KeGetCurrentIrql() == DISPATCH_LEVEL);
         /* we need a lock here to avoid concurrency with the set event ioctl handler thread,
          * i.e. to prevent the event from destroyed while we're using it */
+        Assert(KeGetCurrentIrql() == DISPATCH_LEVEL);
         KeAcquireSpinLockAtDpcLevel(&pDevExt->win.s.MouseEventAccessLock);
-        if (pDevExt->win.s.pfnMouseNotify)
-        {
-            pDevExt->win.s.pfnMouseNotify(pDevExt->win.s.pvMouseNotify);
-        }
+
+        if (pDevExt->MouseNotifyCallback.pfnNotify)
+            pDevExt->MouseNotifyCallback.pfnNotify(pDevExt->MouseNotifyCallback.pvUser);
+
         KeReleaseSpinLockFromDpcLevel(&pDevExt->win.s.MouseEventAccessLock);
     }
 
     /* Process the wake-up list we were asked by the scheduling a DPC
-     *  in vboxguestwinIsrHandler(). */
+     * in vboxguestwinIsrHandler(). */
     VBoxGuestWaitDoWakeUps(pDevExt);
 }
 
@@ -999,6 +1033,43 @@ void VBoxGuestNativeISRMousePollEvent(PVBOXGUESTDEVEXT pDevExt)
     /* nothing to do here - i.e. since we can not KeSetEvent from ISR level,
      * we rely on the pDevExt->u32MousePosChangedSeq to be set to a non-zero value on a mouse event
      * and queue the DPC in our ISR routine in that case doing KeSetEvent from the DPC routine */
+}
+
+
+/**
+ * Queries (gets) a DWORD value from the registry.
+ *
+ * @return  NTSTATUS
+ * @param   ulRoot      Relative path root. See RTL_REGISTRY_SERVICES or RTL_REGISTRY_ABSOLUTE.
+ * @param   pwszPath    Path inside path root.
+ * @param   pwszName    Actual value name to look up.
+ * @param   puValue     On input this can specify the default value (if RTL_REGISTRY_OPTIONAL is
+ *                      not specified in ulRoot), on output this will retrieve the looked up
+ *                      registry value if found.
+ */
+NTSTATUS vboxguestwinRegistryReadDWORD(ULONG ulRoot, PCWSTR pwszPath, PWSTR pwszName,
+                                       PULONG puValue)
+{
+    if (!pwszPath || !pwszName || !puValue)
+        return STATUS_INVALID_PARAMETER;
+
+    ULONG ulDefault = *puValue;
+
+    RTL_QUERY_REGISTRY_TABLE  tblQuery[2];
+    RtlZeroMemory(tblQuery, sizeof(tblQuery));
+    /** @todo Add RTL_QUERY_REGISTRY_TYPECHECK! */
+    tblQuery[0].Flags         = RTL_QUERY_REGISTRY_DIRECT;
+    tblQuery[0].Name          = pwszName;
+    tblQuery[0].EntryContext  = puValue;
+    tblQuery[0].DefaultType   = REG_DWORD;
+    tblQuery[0].DefaultData   = &ulDefault;
+    tblQuery[0].DefaultLength = sizeof(ULONG);
+
+    return RtlQueryRegistryValues(ulRoot,
+                                  pwszPath,
+                                  &tblQuery[0],
+                                  NULL /* Context */,
+                                  NULL /* Environment */);
 }
 
 
@@ -1255,6 +1326,14 @@ VBOXOSTYPE vboxguestwinVersionToOSType(winVersion_t winVer)
 #endif
             break;
 
+        case WIN8:
+#if ARCH_BITS == 64
+            enmOsType = VBOXOSTYPE_Win8_x64;
+#else
+            enmOsType = VBOXOSTYPE_Win8;
+#endif
+            break;
+
         default:
             /* We don't know, therefore NT family. */
             enmOsType = VBOXOSTYPE_WinNT;
@@ -1318,3 +1397,119 @@ static void vboxguestwinDoTests()
 
 #endif /* DEBUG */
 
+#ifdef VBOX_WITH_DPC_LATENCY_CHECKER
+#pragma pack(1)
+typedef struct DPCSAMPLE
+{
+    LARGE_INTEGER PerfDelta;
+    LARGE_INTEGER PerfCounter;
+    LARGE_INTEGER PerfFrequency;
+    uint64_t u64TSC;
+} DPCSAMPLE;
+
+typedef struct DPCDATA
+{
+    KDPC Dpc;
+    KTIMER Timer;
+    KSPIN_LOCK SpinLock;
+
+    ULONG ulTimerRes;
+
+    LARGE_INTEGER DueTime;
+
+    BOOLEAN fFinished;
+
+    LARGE_INTEGER PerfCounterPrev;
+
+    int iSampleCount;
+    DPCSAMPLE aSamples[8192];
+} DPCDATA;
+#pragma pack(1)
+
+#define VBOXGUEST_DPC_TAG 'DPCS'
+
+static VOID DPCDeferredRoutine(struct _KDPC *Dpc,
+                               PVOID DeferredContext,
+                               PVOID SystemArgument1,
+                               PVOID SystemArgument2)
+{
+    DPCDATA *pData = (DPCDATA *)DeferredContext;
+
+    KeAcquireSpinLockAtDpcLevel(&pData->SpinLock);
+
+    if (pData->iSampleCount >= RT_ELEMENTS(pData->aSamples))
+    {
+        pData->fFinished = 1;
+        KeReleaseSpinLockFromDpcLevel(&pData->SpinLock);
+        return;
+    }
+
+    DPCSAMPLE *pSample = &pData->aSamples[pData->iSampleCount++];
+
+    pSample->u64TSC = ASMReadTSC();
+    pSample->PerfCounter = KeQueryPerformanceCounter(&pSample->PerfFrequency);
+    pSample->PerfDelta.QuadPart = pSample->PerfCounter.QuadPart - pData->PerfCounterPrev.QuadPart;
+
+    pData->PerfCounterPrev.QuadPart = pSample->PerfCounter.QuadPart;
+
+    KeSetTimer(&pData->Timer, pData->DueTime, &pData->Dpc);
+
+    KeReleaseSpinLockFromDpcLevel(&pData->SpinLock);
+}
+
+int VBoxGuestCommonIOCtl_DPC(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSESSION pSession,
+                             void *pvData, size_t cbData, size_t *pcbDataReturned)
+{
+    int rc = VINF_SUCCESS;
+
+    /* Allocate a non paged memory for samples and related data. */
+    DPCDATA *pData = (DPCDATA *)ExAllocatePoolWithTag(NonPagedPool, sizeof(DPCDATA), VBOXGUEST_DPC_TAG);
+
+    if (!pData)
+    {
+        RTLogBackdoorPrintf("VBoxGuest: DPC: DPCDATA allocation failed.\n");
+        return VERR_NO_MEMORY;
+    }
+
+    KeInitializeDpc(&pData->Dpc, DPCDeferredRoutine, pData);
+    KeInitializeTimer(&pData->Timer);
+    KeInitializeSpinLock(&pData->SpinLock);
+
+    pData->fFinished = 0;
+    pData->iSampleCount = 0;
+    pData->PerfCounterPrev.QuadPart = 0;
+
+    pData->ulTimerRes = ExSetTimerResolution(1000 * 10, 1);
+    pData->DueTime.QuadPart = -(int64_t)pData->ulTimerRes / 10;
+
+    /* Start the DPC measurements. */
+    KeSetTimer(&pData->Timer, pData->DueTime, &pData->Dpc);
+
+    while (!pData->fFinished)
+    {
+        LARGE_INTEGER Interval;
+        Interval.QuadPart = -100 * 1000 * 10;
+        KeDelayExecutionThread(KernelMode, TRUE, &Interval);
+    }
+
+    ExSetTimerResolution(0, 0);
+
+    /* Log everything to the host. */
+    RTLogBackdoorPrintf("DPC: ulTimerRes = %d\n", pData->ulTimerRes);
+    int i;
+    for (i = 0; i < pData->iSampleCount; i++)
+    {
+        DPCSAMPLE *pSample = &pData->aSamples[i];
+
+        RTLogBackdoorPrintf("[%d] pd %lld pc %lld pf %lld t %lld\n",
+                i,
+                pSample->PerfDelta.QuadPart,
+                pSample->PerfCounter.QuadPart,
+                pSample->PerfFrequency.QuadPart,
+                pSample->u64TSC);
+    }
+
+    ExFreePoolWithTag(pData, VBOXGUEST_DPC_TAG);
+    return rc;
+}
+#endif /* VBOX_WITH_DPC_LATENCY_CHECKER */

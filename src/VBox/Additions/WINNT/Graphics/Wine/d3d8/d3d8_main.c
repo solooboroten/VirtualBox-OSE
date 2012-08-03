@@ -28,6 +28,8 @@
  * of the LGPL is applied is otherwise unspecified.
  */
 
+#define VBOX_WINE_DEBUG_DEFINES
+
 #include "config.h"
 #include "initguid.h"
 #include "d3d8_private.h"

@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 38158 2011-07-25 13:13:51Z vboxsync $
+# $Id: Makefile.kmk 41477 2012-05-29 11:43:27Z vboxsync $
 ## @file
 # Makefile for the VirtualBox X11 keyboard library
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -75,7 +75,8 @@ $$(VBoxKeyboard-Tarball_0_OUTDIR)/vboxkeyboard.tar.bz2: \
 	$(call MSG_L1,Packing $@)
 	$(QUIET)$(RM) -f -- $@ $(patsubst %.bz2,%,$@)
 ifdef VBOX_GTAR
-	$(QUIET)$(VBOX_GTAR) --owner 0 --group 0 --ignore-failed-read -cjRf $@ \
+	$(QUIET)$(VBOX_GTAR) --dereference --owner 0 --group 0 --ignore-failed-read \
+		-cjRf $@ \
  		-C $(PATH_STAGE)/$(VBoxKeyboard-Files_INST).. VBoxKeyboard
 else
 	$(QUIET)tar -cjf $@ \
@@ -85,5 +86,5 @@ endif
 
 
 
-include $(KBUILD_PATH)/subfooter.kmk
+include $(FILE_KBUILD_SUB_FOOTER)
 

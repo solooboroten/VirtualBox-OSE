@@ -5,7 +5,7 @@
  *      (plus static gSOAP server code) to implement the actual webservice
  *      server, to which clients can connect.
  *
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,6 +22,7 @@
 // vbox headers
 #include <VBox/com/com.h>
 #include <VBox/com/array.h>
+#include <VBox/com/string.h>
 #include <VBox/com/ErrorInfo.h>
 #include <VBox/com/errorprint.h>
 #include <VBox/com/EventQueue.h>
@@ -29,8 +30,6 @@
 #include <VBox/VBoxAuth.h>
 #include <VBox/version.h>
 #include <VBox/log.h>
-
-#include <package-generated.h>
 
 #include <iprt/buildconfig.h>
 #include <iprt/ctype.h>
@@ -41,12 +40,15 @@
 #include <iprt/process.h>
 #include <iprt/rand.h>
 #include <iprt/semaphore.h>
+#include <iprt/critsect.h>
 #include <iprt/string.h>
 #include <iprt/thread.h>
 #include <iprt/time.h>
 #include <iprt/path.h>
 #include <iprt/system.h>
 #include <iprt/base64.h>
+#include <iprt/stream.h>
+#include <iprt/asm.h>
 
 // workaround for compile problems on gcc 4.1
 #ifdef __GNUC__
@@ -66,6 +68,16 @@
 
 // include generated namespaces table
 #include "vboxwebsrv.nsmap"
+
+RT_C_DECLS_BEGIN
+
+// declarations for the generated WSDL text
+extern DECLIMPORT(const unsigned char) g_abVBoxWebWSDL[];
+extern DECLIMPORT(const unsigned) g_cbVBoxWebWSDL;
+
+RT_C_DECLS_END
+
+static void WebLogSoapError(struct soap *soap);
 
 /****************************************************************************
  *
@@ -108,17 +120,29 @@ int                     g_iWatchdogCheckInterval = 5;
 const char              *g_pcszBindToHost = NULL;       // host; NULL = localhost
 unsigned int            g_uBindToPort = 18083;          // port
 unsigned int            g_uBacklog = 100;               // backlog = max queue size for requests
+
+#ifdef WITH_OPENSSL
+bool                    g_fSSL = false;                 // if SSL is enabled
+const char              *g_pcszKeyFile = NULL;          // server key file
+const char              *g_pcszPassword = NULL;         // password for server key
+const char              *g_pcszCACert = NULL;           // file with trusted CA certificates
+const char              *g_pcszCAPath = NULL;           // directory with trusted CA certificates
+const char              *g_pcszDHFile = NULL;           // DH file name or DH key length in bits, NULL=use RSA
+const char              *g_pcszRandFile = NULL;         // file with random data seed
+const char              *g_pcszSID = "vboxwebsrv";      // server ID for SSL session cache
+#endif /* WITH_OPENSSL */
+
 unsigned int            g_cMaxWorkerThreads = 100;      // max. no. of worker threads
 unsigned int            g_cMaxKeepAlive = 100;          // maximum number of soap requests in one connection
+
+const char              *g_pcszAuthentication = NULL;   // web service authentication
 
 uint32_t                g_cHistory = 10;                // enable log rotation, 10 files
 uint32_t                g_uHistoryFileTime = RT_SEC_1DAY; // max 1 day per file
 uint64_t                g_uHistoryFileSize = 100 * _1M; // max 100MB per file
 bool                    g_fVerbose = false;             // be verbose
 
-#if defined(RT_OS_DARWIN) || defined(RT_OS_LINUX) || defined (RT_OS_SOLARIS) || defined(RT_OS_FREEBSD)
 bool                    g_fDaemonize = false;           // run in background.
-#endif
 
 const WSDLT_ID          g_EmptyWSDLID;                  // for NULL MORs
 
@@ -171,10 +195,20 @@ static const RTGETOPTDEF g_aOptions[]
 #endif
         { "--host",             'H', RTGETOPT_REQ_STRING },
         { "--port",             'p', RTGETOPT_REQ_UINT32 },
+#ifdef WITH_OPENSSL
+        { "--ssl",              's', RTGETOPT_REQ_NOTHING },
+        { "--keyfile",          'K', RTGETOPT_REQ_STRING },
+        { "--passwordfile",     'a', RTGETOPT_REQ_STRING },
+        { "--cacert",           'c', RTGETOPT_REQ_STRING },
+        { "--capath",           'C', RTGETOPT_REQ_STRING },
+        { "--dhfile",           'D', RTGETOPT_REQ_STRING },
+        { "--randfile",         'r', RTGETOPT_REQ_STRING },
+#endif /* WITH_OPENSSL */
         { "--timeout",          't', RTGETOPT_REQ_UINT32 },
         { "--check-interval",   'i', RTGETOPT_REQ_UINT32 },
         { "--threads",          'T', RTGETOPT_REQ_UINT32 },
         { "--keepalive",        'k', RTGETOPT_REQ_UINT32 },
+        { "--authentication",   'A', RTGETOPT_REQ_STRING },
         { "--verbose",          'v', RTGETOPT_REQ_NOTHING },
         { "--pidfile",          'P', RTGETOPT_REQ_STRING },
         { "--logfile",          'F', RTGETOPT_REQ_STRING },
@@ -217,6 +251,36 @@ void DisplayHelp()
                 pcszDescr = "The port to bind to (18083).";
                 break;
 
+#ifdef WITH_OPENSSL
+            case 's':
+                pcszDescr = "Enable SSL/TLS encryption.";
+                break;
+
+            case 'K':
+                pcszDescr = "Server key and certificate file, PEM format (\"\").";
+                break;
+
+            case 'a':
+                pcszDescr = "File name for password to server key (\"\").";
+                break;
+
+            case 'c':
+                pcszDescr = "CA certificate file, PEM format (\"\").";
+                break;
+
+            case 'C':
+                pcszDescr = "CA certificate path (\"\").";
+                break;
+
+            case 'D':
+                pcszDescr = "DH file name or DH key length in bits (\"\").";
+                break;
+
+            case 'r':
+                pcszDescr = "File containing seed for random number generator (\"\").";
+                break;
+#endif /* WITH_OPENSSL */
+
             case 't':
                 pcszDescr = "Session timeout in seconds; 0 = disable timeouts (" DEFAULT_TIMEOUT_SECS_STRING ").";
                 break;
@@ -227,6 +291,10 @@ void DisplayHelp()
 
             case 'k':
                 pcszDescr = "Maximum number of requests before a socket will be closed (100).";
+                break;
+
+            case 'A':
+                pcszDescr = "Authentication method for the webservice (\"\").";
                 break;
 
             case 'i':
@@ -288,6 +356,7 @@ public:
     {
         // make a copy of the soap struct for the new thread
         m_soap = soap_copy(soap);
+        m_soap->fget = fnHttpGet;
 
         /* The soap.max_keep_alive value can be set to the maximum keep-alive calls allowed,
          * which is important to avoid a client from holding a thread indefinitely.
@@ -315,6 +384,17 @@ public:
     }
 
     void process();
+
+    static int fnHttpGet(struct soap *soap)
+    {
+        char *s = strchr(soap->path, '?');
+        if (!s || strcmp(s, "?wsdl"))
+            return SOAP_GET_METHOD;
+        soap_response(soap, SOAP_HTML);
+        soap_send_raw(soap, (const char *)g_abVBoxWebWSDL, g_cbVBoxWebWSDL);
+        soap_end_send(soap);
+        return SOAP_OK;
+    }
 
     /**
      * Static function that can be passed to RTThreadCreate and that calls
@@ -495,7 +575,16 @@ void SoapThread::process()
         m_soap->send_timeout = 60;
         m_soap->recv_timeout = 60;
         // process the request; this goes into the COM code in methodmaps.cpp
-        soap_serve(m_soap);
+        do {
+#ifdef WITH_OPENSSL
+            if (g_fSSL && soap_ssl_accept(m_soap))
+            {
+                WebLogSoapError(m_soap);
+                break;
+            }
+#endif /* WITH_OPENSSL */
+            soap_serve(m_soap);
+        } while (0);
 
         soap_destroy(m_soap); // clean up class instances
         soap_end(m_soap); // clean up everything and close socket
@@ -611,6 +700,7 @@ void WebLog(const char *pszFormat, ...)
  * Helper for printing SOAP error messages.
  * @param soap
  */
+/*static*/
 void WebLogSoapError(struct soap *soap)
 {
     if (soap_check_state(soap))
@@ -626,73 +716,112 @@ void WebLogSoapError(struct soap *soap)
            (ppcszDetail && *ppcszDetail) ? *ppcszDetail : "no details available");
 }
 
-static void WebLogHeaderFooter(PRTLOGGER pLoggerRelease, RTLOGPHASE enmPhase, PFNRTLOGPHASEMSG pfnLog)
+#ifdef WITH_OPENSSL
+/****************************************************************************
+ *
+ * OpenSSL convenience functions for multithread support
+ *
+ ****************************************************************************/
+
+static RTCRITSECT *g_pSSLMutexes = NULL;
+
+struct CRYPTO_dynlock_value
 {
-    /* some introductory information */
-    static RTTIMESPEC s_TimeSpec;
-    char szTmp[256];
-    if (enmPhase == RTLOGPHASE_BEGIN)
-        RTTimeNow(&s_TimeSpec);
-    RTTimeSpecToString(&s_TimeSpec, szTmp, sizeof(szTmp));
+    RTCRITSECT mutex;
+};
 
-    switch (enmPhase)
+static unsigned long CRYPTO_id_function()
+{
+    return RTThreadNativeSelf();
+}
+
+static void CRYPTO_locking_function(int mode, int n, const char * /*file*/, int /*line*/)
+{
+    if (mode & CRYPTO_LOCK)
+        RTCritSectEnter(&g_pSSLMutexes[n]);
+    else
+        RTCritSectLeave(&g_pSSLMutexes[n]);
+}
+
+static struct CRYPTO_dynlock_value *CRYPTO_dyn_create_function(const char * /*file*/, int /*line*/)
+{
+    static uint32_t s_iCritSectDynlock = 0;
+    struct CRYPTO_dynlock_value *value = (struct CRYPTO_dynlock_value *)RTMemAlloc(sizeof(struct CRYPTO_dynlock_value));
+    if (value)
+        RTCritSectInitEx(&value->mutex, RTCRITSECT_FLAGS_NO_LOCK_VAL,
+                         NIL_RTLOCKVALCLASS, RTLOCKVAL_SUB_CLASS_NONE,
+                         "openssl-dyn-%u", ASMAtomicIncU32(&s_iCritSectDynlock) - 1);
+
+    return value;
+}
+
+static void CRYPTO_dyn_lock_function(int mode, struct CRYPTO_dynlock_value *value, const char * /*file*/, int /*line*/)
+{
+    if (mode & CRYPTO_LOCK)
+        RTCritSectEnter(&value->mutex);
+    else
+        RTCritSectLeave(&value->mutex);
+}
+
+static void CRYPTO_dyn_destroy_function(struct CRYPTO_dynlock_value *value, const char * /*file*/, int /*line*/)
+{
+    if (value)
     {
-        case RTLOGPHASE_BEGIN:
-        {
-            pfnLog(pLoggerRelease,
-                   "VirtualBox web service %s r%u %s (%s %s) release log\n"
-#ifdef VBOX_BLEEDING_EDGE
-                   "EXPERIMENTAL build " VBOX_BLEEDING_EDGE "\n"
-#endif
-                   "Log opened %s\n",
-                   VBOX_VERSION_STRING, RTBldCfgRevision(), VBOX_BUILD_TARGET,
-                   __DATE__, __TIME__, szTmp);
-
-            int vrc = RTSystemQueryOSInfo(RTSYSOSINFO_PRODUCT, szTmp, sizeof(szTmp));
-            if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
-                pfnLog(pLoggerRelease, "OS Product: %s\n", szTmp);
-            vrc = RTSystemQueryOSInfo(RTSYSOSINFO_RELEASE, szTmp, sizeof(szTmp));
-            if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
-                pfnLog(pLoggerRelease, "OS Release: %s\n", szTmp);
-            vrc = RTSystemQueryOSInfo(RTSYSOSINFO_VERSION, szTmp, sizeof(szTmp));
-            if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
-                pfnLog(pLoggerRelease, "OS Version: %s\n", szTmp);
-            if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
-                pfnLog(pLoggerRelease, "OS Service Pack: %s\n", szTmp);
-
-            /* the package type is interesting for Linux distributions */
-            char szExecName[RTPATH_MAX];
-            char *pszExecName = RTProcGetExecutablePath(szExecName, sizeof(szExecName));
-            pfnLog(pLoggerRelease,
-                   "Executable: %s\n"
-                   "Process ID: %u\n"
-                   "Package type: %s"
-#ifdef VBOX_OSE
-                   " (OSE)"
-#endif
-                   "\n",
-                   pszExecName ? pszExecName : "unknown",
-                   RTProcSelf(),
-                   VBOX_PACKAGE_STRING);
-            break;
-        }
-
-        case RTLOGPHASE_PREROTATE:
-            pfnLog(pLoggerRelease, "Log rotated - Log started %s\n", szTmp);
-            break;
-
-        case RTLOGPHASE_POSTROTATE:
-            pfnLog(pLoggerRelease, "Log continuation - Log started %s\n", szTmp);
-            break;
-
-        case RTLOGPHASE_END:
-            pfnLog(pLoggerRelease, "End of log file - Log started %s\n", szTmp);
-            break;
-
-        default:
-            /* nothing */;
+        RTCritSectDelete(&value->mutex);
+        free(value);
     }
 }
+
+static int CRYPTO_thread_setup()
+{
+    int num_locks = CRYPTO_num_locks();
+    g_pSSLMutexes = (RTCRITSECT *)RTMemAlloc(num_locks * sizeof(RTCRITSECT));
+    if (!g_pSSLMutexes)
+        return SOAP_EOM;
+
+    for (int i = 0; i < num_locks; i++)
+    {
+        int rc = RTCritSectInitEx(&g_pSSLMutexes[i], RTCRITSECT_FLAGS_NO_LOCK_VAL,
+                                  NIL_RTLOCKVALCLASS, RTLOCKVAL_SUB_CLASS_NONE,
+                                  "openssl-%d", i);
+        if (RT_FAILURE(rc))
+        {
+            for ( ; i >= 0; i--)
+                RTCritSectDelete(&g_pSSLMutexes[i]);
+            RTMemFree(g_pSSLMutexes);
+            g_pSSLMutexes = NULL;
+            return SOAP_EOM;
+        }
+    }
+
+    CRYPTO_set_id_callback(CRYPTO_id_function);
+    CRYPTO_set_locking_callback(CRYPTO_locking_function);
+    CRYPTO_set_dynlock_create_callback(CRYPTO_dyn_create_function);
+    CRYPTO_set_dynlock_lock_callback(CRYPTO_dyn_lock_function);
+    CRYPTO_set_dynlock_destroy_callback(CRYPTO_dyn_destroy_function);
+
+    return SOAP_OK;
+}
+
+static void CRYPTO_thread_cleanup()
+{
+    if (!g_pSSLMutexes)
+        return;
+
+    CRYPTO_set_id_callback(NULL);
+    CRYPTO_set_locking_callback(NULL);
+    CRYPTO_set_dynlock_create_callback(NULL);
+    CRYPTO_set_dynlock_lock_callback(NULL);
+    CRYPTO_set_dynlock_destroy_callback(NULL);
+
+    int num_locks = CRYPTO_num_locks();
+    for (int i = 0; i < num_locks; i++)
+        RTCritSectDelete(&g_pSSLMutexes[i]);
+
+    RTMemFree(g_pSSLMutexes);
+    g_pSSLMutexes = NULL;
+}
+#endif /* WITH_OPENSSL */
 
 /****************************************************************************
  *
@@ -702,9 +831,27 @@ static void WebLogHeaderFooter(PRTLOGGER pLoggerRelease, RTLOGPHASE enmPhase, PF
 
 void doQueuesLoop()
 {
+#ifdef WITH_OPENSSL
+    if (g_fSSL && CRYPTO_thread_setup())
+    {
+        WebLog("Failed to set up OpenSSL thread mutex!");
+        exit(RTEXITCODE_FAILURE);
+    }
+#endif /* WITH_OPENSSL */
+
     // set up gSOAP
     struct soap soap;
     soap_init(&soap);
+
+#ifdef WITH_OPENSSL
+    if (g_fSSL && soap_ssl_server_context(&soap, SOAP_SSL_DEFAULT, g_pcszKeyFile,
+                                         g_pcszPassword, g_pcszCACert, g_pcszCAPath,
+                                         g_pcszDHFile, g_pcszRandFile, g_pcszSID))
+    {
+        WebLogSoapError(&soap);
+        exit(RTEXITCODE_FAILURE);
+    }
+#endif /* WITH_OPENSSL */
 
     soap.bind_flags |= SO_REUSEADDR;
             // avoid EADDRINUSE on bind()
@@ -718,9 +865,14 @@ void doQueuesLoop()
         WebLogSoapError(&soap);
     else
     {
-        WebLog("Socket connection successful: host = %s, port = %u, master socket = %d\n",
+        WebLog("Socket connection successful: host = %s, port = %u, %smaster socket = %d\n",
                (g_pcszBindToHost) ? g_pcszBindToHost : "default (localhost)",
                g_uBindToPort,
+#ifdef WITH_OPENSSL
+               g_fSSL ? "SSL, " : "",
+#else /* !WITH_OPENSSL */
+               "",
+#endif /*!WITH_OPENSSL */
                m);
 
         // initialize thread queue, mutex and eventsem
@@ -745,6 +897,11 @@ void doQueuesLoop()
         }
     }
     soap_done(&soap); // close master socket and detach environment
+
+#ifdef WITH_OPENSSL
+    if (g_fSSL)
+        CRYPTO_thread_cleanup();
+#endif /* WITH_OPENSSL */
 }
 
 /**
@@ -783,15 +940,15 @@ static CComModule _Module;
 int main(int argc, char *argv[])
 {
     // initialize runtime
-    int rc = RTR3Init();
+    int rc = RTR3InitExe(argc, &argv, 0);
     if (RT_FAILURE(rc))
         return RTMsgInitFailure(rc);
 
     // store a log prefix for this thread
     g_mapThreads[RTThreadSelf()] = "[M  ]";
 
-    RTStrmPrintf(g_pStdErr, VBOX_PRODUCT " web service version " VBOX_VERSION_STRING "\n"
-                            "(C) 2005-" VBOX_C_YEAR " " VBOX_VENDOR "\n"
+    RTStrmPrintf(g_pStdErr, VBOX_PRODUCT " web service Version " VBOX_VERSION_STRING "\n"
+                            "(C) 2007-" VBOX_C_YEAR " " VBOX_VENDOR "\n"
                             "All rights reserved.\n");
 
     int c;
@@ -818,6 +975,57 @@ int main(int argc, char *argv[])
             case 'p':
                 g_uBindToPort = ValueUnion.u32;
                 break;
+
+#ifdef WITH_OPENSSL
+            case 's':
+                g_fSSL = true;
+                break;
+
+            case 'K':
+                g_pcszKeyFile = ValueUnion.psz;
+                break;
+
+            case 'a':
+                if (ValueUnion.psz[0] == '\0')
+                    g_pcszPassword = NULL;
+                else
+                {
+                    PRTSTREAM StrmIn;
+                    if (!strcmp(ValueUnion.psz, "-"))
+                        StrmIn = g_pStdIn;
+                    else
+                    {
+                        int vrc = RTStrmOpen(ValueUnion.psz, "r", &StrmIn);
+                        if (RT_FAILURE(vrc))
+                            return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to open password file (%s, %Rrc)", ValueUnion.psz, vrc);
+                    }
+                    char szPasswd[512];
+                    int vrc = RTStrmGetLine(StrmIn, szPasswd, sizeof(szPasswd));
+                    if (RT_FAILURE(vrc))
+                        return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to read password (%s, %Rrc)", ValueUnion.psz, vrc);
+                    g_pcszPassword = RTStrDup(szPasswd);
+                    memset(szPasswd, '\0', sizeof(szPasswd));
+                    if (StrmIn != g_pStdIn)
+                        RTStrmClose(StrmIn);
+                }
+                break;
+
+            case 'c':
+                g_pcszCACert = ValueUnion.psz;
+                break;
+
+            case 'C':
+                g_pcszCAPath = ValueUnion.psz;
+                break;
+
+            case 'D':
+                g_pcszDHFile = ValueUnion.psz;
+                break;
+
+            case 'r':
+                g_pcszRandFile = ValueUnion.psz;
+                break;
+#endif /* WITH_OPENSSL */
 
             case 't':
                 g_iWatchdogTimeoutSecs = ValueUnion.u32;
@@ -855,6 +1063,10 @@ int main(int argc, char *argv[])
                 g_cMaxKeepAlive = ValueUnion.u32;
                 break;
 
+            case 'A':
+                g_pcszAuthentication = ValueUnion.psz;
+                break;
+
             case 'h':
                 DisplayHelp();
                 return 0;
@@ -878,28 +1090,16 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* create release logger */
-    PRTLOGGER pLoggerRelease;
-    static const char * const s_apszGroups[] = VBOX_LOGGROUP_NAMES;
-    RTUINT fFlags = RTLOGFLAGS_PREFIX_THREAD | RTLOGFLAGS_PREFIX_TIME_PROG;
-#if defined(RT_OS_WINDOWS) || defined(RT_OS_OS2)
-    fFlags |= RTLOGFLAGS_USECRLF;
-#endif
-    char szError[RTPATH_MAX + 128] = "";
-    int vrc = RTLogCreateEx(&pLoggerRelease, fFlags, "all",
-                            "VBOXWEBSRV_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups, RTLOGDEST_STDOUT,
-                            WebLogHeaderFooter, g_cHistory, g_uHistoryFileSize, g_uHistoryFileTime,
-                            szError, sizeof(szError), pszLogFile);
-    if (RT_SUCCESS(vrc))
-    {
-        /* register this logger as the release logger */
-        RTLogRelSetDefaultInstance(pLoggerRelease);
-
-        /* Explicitly flush the log in case of VBOXWEBSRV_RELEASE_LOG=buffered. */
-        RTLogFlush(pLoggerRelease);
-    }
-    else
-        return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to open release log (%s, %Rrc)", szError, vrc);
+    /* create release logger, to stdout */
+    char szError[RTPATH_MAX + 128];
+    rc = com::VBoxLogRelCreate("web service", g_fDaemonize ? NULL : pszLogFile,
+                               RTLOGFLAGS_PREFIX_THREAD | RTLOGFLAGS_PREFIX_TIME_PROG,
+                               "all", "VBOXWEBSRV_RELEASE_LOG",
+                               RTLOGDEST_STDOUT, UINT32_MAX /* cMaxEntriesPerGroup */,
+                               g_cHistory, g_uHistoryFileTime, g_uHistoryFileSize,
+                               szError, sizeof(szError));
+    if (RT_FAILURE(rc))
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to open release log (%s, %Rrc)", szError, rc);
 
 #if defined(RT_OS_DARWIN) || defined(RT_OS_LINUX) || defined (RT_OS_SOLARIS) || defined(RT_OS_FREEBSD)
     if (g_fDaemonize)
@@ -907,44 +1107,50 @@ int main(int argc, char *argv[])
         /* prepare release logging */
         char szLogFile[RTPATH_MAX];
 
-        rc = com::GetVBoxUserHomeDirectory(szLogFile, sizeof(szLogFile));
-        if (RT_FAILURE(rc))
-             return RTMsgErrorExit(RTEXITCODE_FAILURE, "could not get base directory for logging: %Rrc", rc);
-        rc = RTPathAppend(szLogFile, sizeof(szLogFile), "vboxwebsrv.log");
-        if (RT_FAILURE(rc))
-             return RTMsgErrorExit(RTEXITCODE_FAILURE, "could not construct logging path: %Rrc", rc);
+        if (!pszLogFile || !*pszLogFile)
+        {
+            rc = com::GetVBoxUserHomeDirectory(szLogFile, sizeof(szLogFile));
+            if (RT_FAILURE(rc))
+                 return RTMsgErrorExit(RTEXITCODE_FAILURE, "could not get base directory for logging: %Rrc", rc);
+            rc = RTPathAppend(szLogFile, sizeof(szLogFile), "vboxwebsrv.log");
+            if (RT_FAILURE(rc))
+                 return RTMsgErrorExit(RTEXITCODE_FAILURE, "could not construct logging path: %Rrc", rc);
+            pszLogFile = szLogFile;
+        }
 
         rc = RTProcDaemonizeUsingFork(false /* fNoChDir */, false /* fNoClose */, pszPidFile);
         if (RT_FAILURE(rc))
             return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to daemonize, rc=%Rrc. exiting.", rc);
 
-        /* create release logger */
-        PRTLOGGER pLoggerReleaseFile;
-        static const char * const s_apszGroupsFile[] = VBOX_LOGGROUP_NAMES;
-        RTUINT fFlagsFile = RTLOGFLAGS_PREFIX_THREAD | RTLOGFLAGS_PREFIX_TIME_PROG;
-#if defined(RT_OS_WINDOWS) || defined(RT_OS_OS2)
-        fFlagsFile |= RTLOGFLAGS_USECRLF;
-#endif
-        char szErrorFile[RTPATH_MAX + 128] = "";
-        int vrc = RTLogCreateEx(&pLoggerReleaseFile, fFlagsFile, "all",
-                                "VBOXWEBSRV_RELEASE_LOG", RT_ELEMENTS(s_apszGroupsFile), s_apszGroupsFile, RTLOGDEST_FILE,
-                                WebLogHeaderFooter, g_cHistory, g_uHistoryFileSize, g_uHistoryFileTime,
-                                szErrorFile, sizeof(szErrorFile), szLogFile);
-        if (RT_SUCCESS(vrc))
-        {
-            /* register this logger as the release logger */
-            RTLogRelSetDefaultInstance(pLoggerReleaseFile);
-
-            /* Explicitly flush the log in case of VBOXWEBSRV_RELEASE_LOG=buffered. */
-            RTLogFlush(pLoggerReleaseFile);
-        }
-        else
-            return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to open release log (%s, %Rrc)", szErrorFile, vrc);
+        /* create release logger, to file */
+        rc = com::VBoxLogRelCreate("web service", pszLogFile,
+                                   RTLOGFLAGS_PREFIX_THREAD | RTLOGFLAGS_PREFIX_TIME_PROG,
+                                   "all", "VBOXWEBSRV_RELEASE_LOG",
+                                   RTLOGDEST_FILE, UINT32_MAX /* cMaxEntriesPerGroup */,
+                                   g_cHistory, g_uHistoryFileTime, g_uHistoryFileSize,
+                                   szError, sizeof(szError));
+        if (RT_FAILURE(rc))
+            return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to open release log (%s, %Rrc)", szError, rc);
     }
 #endif
 
+    // initialize SOAP SSL support if enabled
+#ifdef WITH_OPENSSL
+    if (g_fSSL)
+        soap_ssl_init();
+#endif /* WITH_OPENSSL */
+
     // initialize COM/XPCOM
     HRESULT hrc = com::Initialize();
+#ifdef VBOX_WITH_XPCOM
+    if (hrc == NS_ERROR_FILE_ACCESS_DENIED)
+    {
+        char szHome[RTPATH_MAX] = "";
+        com::GetVBoxUserHomeDirectory(szHome, sizeof(szHome));
+        return RTMsgErrorExit(RTEXITCODE_FAILURE,
+               "Failed to initialize COM because the global settings directory '%s' is not accessible!", szHome);
+    }
+#endif
     if (FAILED(hrc))
         return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to initialize COM! hrc=%Rhrc\n", hrc);
 
@@ -968,6 +1174,15 @@ int main(int argc, char *argv[])
     {
         RTMsgError("Failed to get VirtualBox object (rc=%Rhrc)!", hrc);
         return RTEXITCODE_FAILURE;
+    }
+
+    // set the authentication method if requested
+    if (g_pVirtualBox && g_pcszAuthentication && g_pcszAuthentication[0])
+    {
+        ComPtr<ISystemProperties> pSystemProperties;
+        g_pVirtualBox->COMGETTER(SystemProperties)(pSystemProperties.asOutParam());
+        if (pSystemProperties)
+            pSystemProperties->COMSETTER(WebServiceAuthLibrary)(com::Bstr(g_pcszAuthentication).raw());
     }
 
     /* VirtualBoxClient events registration. */
@@ -1092,6 +1307,15 @@ int fntWatchdog(RTTHREAD ThreadSelf, void *pvUser)
             }
             else
                 ++it;
+        }
+
+        // re-set the authentication method in case it has been changed
+        if (g_pVirtualBox && g_pcszAuthentication && g_pcszAuthentication[0])
+        {
+            ComPtr<ISystemProperties> pSystemProperties;
+            g_pVirtualBox->COMGETTER(SystemProperties)(pSystemProperties.asOutParam());
+            if (pSystemProperties)
+                pSystemProperties->COMSETTER(WebServiceAuthLibrary)(com::Bstr(g_pcszAuthentication).raw());
         }
     }
 
@@ -1418,9 +1642,9 @@ int WebServiceSession::authenticate(const char *pcszUsername,
         util::AutoReadLock vlock(g_pVirtualBoxLockHandle COMMA_LOCKVAL_SRC_POS);
         pVirtualBox = g_pVirtualBox;
     }
-    pVirtualBox.queryInterfaceTo(ppVirtualBox);
     if (pVirtualBox.isNull())
         return rc;
+    pVirtualBox.queryInterfaceTo(ppVirtualBox);
 
     util::AutoReadLock lock(g_pAuthLibLockHandle COMMA_LOCKVAL_SRC_POS);
 
@@ -1457,13 +1681,17 @@ int WebServiceSession::authenticate(const char *pcszUsername,
                 }
 
                 if (RT_FAILURE(rc = RTLdrGetSymbol(hlibAuth, AUTHENTRY3_NAME, (void**)&pfnAuthEntry3)))
+                {
                     WEBDEBUG(("%s(): Could not resolve import '%s'. Error code: %Rrc\n", __FUNCTION__, AUTHENTRY3_NAME, rc));
 
-                if (RT_FAILURE(rc = RTLdrGetSymbol(hlibAuth, AUTHENTRY2_NAME, (void**)&pfnAuthEntry2)))
-                    WEBDEBUG(("%s(): Could not resolve import '%s'. Error code: %Rrc\n", __FUNCTION__, AUTHENTRY2_NAME, rc));
+                    if (RT_FAILURE(rc = RTLdrGetSymbol(hlibAuth, AUTHENTRY2_NAME, (void**)&pfnAuthEntry2)))
+                    {
+                        WEBDEBUG(("%s(): Could not resolve import '%s'. Error code: %Rrc\n", __FUNCTION__, AUTHENTRY2_NAME, rc));
 
-                if (RT_FAILURE(rc = RTLdrGetSymbol(hlibAuth, AUTHENTRY_NAME, (void**)&pfnAuthEntry)))
-                    WEBDEBUG(("%s(): Could not resolve import '%s'. Error code: %Rrc\n", __FUNCTION__, AUTHENTRY_NAME, rc));
+                        if (RT_FAILURE(rc = RTLdrGetSymbol(hlibAuth, AUTHENTRY_NAME, (void**)&pfnAuthEntry)))
+                            WEBDEBUG(("%s(): Could not resolve import '%s'. Error code: %Rrc\n", __FUNCTION__, AUTHENTRY_NAME, rc));
+                    }
+                }
 
                 if (pfnAuthEntry || pfnAuthEntry2 || pfnAuthEntry3)
                     fAuthLibLoaded = true;

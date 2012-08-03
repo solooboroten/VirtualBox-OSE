@@ -1,4 +1,4 @@
-/* $Id: tstSupLoadModule.cpp 35188 2010-12-16 15:13:07Z vboxsync $ */
+/* $Id: tstSupLoadModule.cpp 40812 2012-04-07 10:13:10Z vboxsync $ */
 /** @file
  * SUP Testcase - Test SUPR3LoadModule.
  */
@@ -44,20 +44,20 @@ int main(int argc, char **argv)
     /*
      * Init.
      */
-    int rc = RTR3InitAndSUPLib();
+    int rc = RTR3InitExe(argc, &argv, RTR3INIT_FLAGS_SUPLIB);
     if (RT_FAILURE(rc))
-    {
-        RTMsgError("RTR3InitAndSUPLib failed with rc=%Rrc\n", rc);
-        return 1;
-    }
+        return RTMsgInitFailure(rc);
 
     /*
      * Process arguments.
      */
     static const RTGETOPTDEF s_aOptions[] =
     {
-        { "--help",             'h', RTGETOPT_REQ_NOTHING } /* (dummy entry) */
+        { "--keep",             'k', RTGETOPT_REQ_NOTHING },
+        { "--no-keep",          'n', RTGETOPT_REQ_NOTHING },
     };
+
+    bool fKeepLoaded = false;
 
     int ch;
     RTGETOPTUNION ValueUnion;
@@ -80,21 +80,32 @@ int main(int argc, char **argv)
                 }
                 RTPrintf("Loaded '%s' at %p\n", ValueUnion.psz, pvImageBase);
 
-                rc = SUPR3FreeModule(pvImageBase);
-                if (RT_FAILURE(rc))
+                if (!fKeepLoaded)
                 {
-                    RTMsgError("%Rrc when attempting to load '%s'\n", rc, ValueUnion.psz);
-                    return 1;
+                    rc = SUPR3FreeModule(pvImageBase);
+                    if (RT_FAILURE(rc))
+                    {
+                        RTMsgError("%Rrc when attempting to load '%s'\n", rc, ValueUnion.psz);
+                        return 1;
+                    }
                 }
                 break;
             }
+
+            case 'k':
+                fKeepLoaded = true;
+                break;
+
+            case 'n':
+                fKeepLoaded = false;
+                break;
 
             case 'h':
                 RTPrintf("%s [mod1 [mod2...]]\n");
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: 35188 $\n");
+                RTPrintf("$Revision: 40812 $\n");
                 return 0;
 
             default:

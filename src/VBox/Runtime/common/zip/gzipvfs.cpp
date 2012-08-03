@@ -1,10 +1,10 @@
-/* $Id: gzipvfs.cpp 34049 2010-11-13 01:31:07Z vboxsync $ */
+/* $Id: gzipvfs.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
 /** @file
  * IPRT - GZIP Compressor and Decompressor I/O Stream.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,6 +40,21 @@
 
 #include <zlib.h>
 
+#if defined(RT_OS_OS2) || defined(RT_OS_SOLARIS) || defined(RT_OS_WINDOWS)
+/**
+ * Drag in the missing zlib symbols.
+ */
+PFNRT g_apfnRTZlibDeps[] =
+{
+    (PFNRT)gzrewind,
+    (PFNRT)gzread,
+    (PFNRT)gzopen,
+    (PFNRT)gzwrite,
+    (PFNRT)gzclose,
+    (PFNRT)gzdopen,
+    NULL
+};
+#endif /* RT_OS_OS2 || RT_OS_SOLARIS || RT_OS_WINDOWS */
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -170,25 +185,27 @@ static int rtZipGzipConvertErrFromZlib(PRTZIPGZIPSTREAM pThis, int rc)
 
         case Z_BUF_ERROR:
             /* This isn't fatal. */
-            return VINF_SUCCESS;
+            return VINF_SUCCESS; /** @todo The code in zip.cpp treats Z_BUF_ERROR as fatal... */
 
-        case Z_ERRNO:
         case Z_STREAM_ERROR:
+            pThis->fFatalError = true;
+            return VERR_ZIP_CORRUPTED;
+
         case Z_DATA_ERROR:
+            pThis->fFatalError = true;
+            return pThis->fDecompress ? VERR_ZIP_CORRUPTED : VERR_ZIP_ERROR;
+
         case Z_MEM_ERROR:
+            pThis->fFatalError = true;
+            return VERR_ZIP_NO_MEMORY;
+
         case Z_VERSION_ERROR:
             pThis->fFatalError = true;
-            switch (rc)
-            {
-                case Z_ERRNO:           return VERR_INTERNAL_ERROR_5;
-                case Z_STREAM_ERROR:    return VERR_INTERNAL_ERROR_3;
-                case Z_DATA_ERROR:      return VERR_ZIP_ERROR;
-                case Z_MEM_ERROR:       return VERR_ZIP_NO_MEMORY;
-                case Z_VERSION_ERROR:   return VERR_ZIP_UNSUPPORTED_VERSION;
-            }
-            /* not reached */
+            return VERR_ZIP_UNSUPPORTED_VERSION;
 
+        case Z_ERRNO: /* We shouldn't see this status! */
         default:
+            AssertMsgFailed(("%d\n", rc));
             if (rc >= 0)
                 return VINF_SUCCESS;
             pThis->fFatalError = true;
@@ -340,6 +357,7 @@ static DECLCALLBACK(int) rtZipGzip_Read(void *pvThis, RTFOFF off, PCRTSGBUF pSgB
     PRTZIPGZIPSTREAM pThis = (PRTZIPGZIPSTREAM)pvThis;
     int              rc;
 
+    AssertReturn(off == -1, VERR_INVALID_PARAMETER);
     if (!pThis->fDecompress)
         return VERR_ACCESS_DENIED;
 
@@ -380,11 +398,13 @@ static DECLCALLBACK(int) rtZipGzip_Write(void *pvThis, RTFOFF off, PCRTSGBUF pSg
     PRTZIPGZIPSTREAM pThis = (PRTZIPGZIPSTREAM)pvThis;
     //int              rc;
 
+    AssertReturn(off == -1, VERR_INVALID_PARAMETER);
     NOREF(fBlocking);
     if (pThis->fDecompress)
         return VERR_ACCESS_DENIED;
 
     /** @todo implement compression. */
+    NOREF(pSgBuf); NOREF(pcbWritten);
     return VERR_NOT_IMPLEMENTED;
 }
 
@@ -510,7 +530,6 @@ RTDECL(int) RTZipGzipDecompressIoStream(RTVFSIOSTREAM hVfsIosIn, uint32_t fFlags
              *        prebuffer what we read in the input buffer so it can
              *        be handed on to zlib later on.
              */
-            size_t cbRead = 0;
             rc = RTVfsIoStrmRead(pThis->hVfsIos, pThis->abBuffer, sizeof(RTZIPGZIPHDR), true /*fBlocking*/, NULL /*pcbRead*/);
             if (RT_SUCCESS(rc))
             {

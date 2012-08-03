@@ -1,4 +1,4 @@
-/* $Id: tcp_timer.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: tcp_timer.h 41855 2012-06-21 05:46:27Z vboxsync $ */
 /** @file
  * NAT - TCP timer (declarations/defines).
  */
@@ -151,6 +151,4 @@ struct tcpcb;
 void tcp_fasttimo (PNATState);
 void tcp_slowtimo (PNATState);
 void tcp_canceltimers (struct tcpcb *);
-struct tcpcb * tcp_timers (PNATState, register struct tcpcb *, int);
-
 #endif

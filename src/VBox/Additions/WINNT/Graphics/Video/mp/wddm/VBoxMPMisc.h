@@ -1,4 +1,4 @@
-/* $Id: VBoxMPMisc.h 37734 2011-07-01 16:36:39Z vboxsync $ */
+/* $Id: VBoxMPMisc.h 42128 2012-07-12 16:31:42Z vboxsync $ */
 
 /** @file
  * VBox WDDM Miniport driver
@@ -18,6 +18,8 @@
 
 #ifndef ___VBoxMPMisc_h__
 #define ___VBoxMPMisc_h__
+
+#include "../../common/VBoxVideoTools.h"
 
 DECLINLINE(void) vboxVideoLeDetach(LIST_ENTRY *pList, LIST_ENTRY *pDstList)
 {
@@ -149,5 +151,68 @@ NTSTATUS vboxVideoAMgrCtxAllocSubmit(PVBOXMP_DEVEXT pDevExt, PVBOXVIDEOCM_ALLOC_
 
 VOID vboxWddmSleep(uint32_t u32Val);
 VOID vboxWddmCounterU32Wait(uint32_t volatile * pu32, uint32_t u32Val);
+
+NTSTATUS vboxUmdDumpBuf(PVBOXDISPIFESCAPE_DBGDUMPBUF pBuf, uint32_t cbBuffer);
+
+#if 0
+/* wine shrc handle -> allocation map */
+VOID vboxShRcTreeInit(PVBOXMP_DEVEXT pDevExt);
+VOID vboxShRcTreeTerm(PVBOXMP_DEVEXT pDevExt);
+BOOLEAN vboxShRcTreePut(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_ALLOCATION pAlloc);
+PVBOXWDDM_ALLOCATION vboxShRcTreeGet(PVBOXMP_DEVEXT pDevExt, HANDLE hSharedRc);
+BOOLEAN vboxShRcTreeRemove(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_ALLOCATION pAlloc);
+#endif
+
+/* visible rects */
+typedef struct VBOXWDDMVR_LIST
+{
+    LIST_ENTRY ListHead;
+    UINT cEntries;
+} VBOXWDDMVR_LIST, *PVBOXWDDMVR_LIST;
+
+DECLINLINE(UINT) VBoxWddmVrListRectsCount(PVBOXWDDMVR_LIST pList)
+{
+    return pList->cEntries;
+}
+
+DECLINLINE(BOOLEAN) VBoxWddmVrListIsEmpty(PVBOXWDDMVR_LIST pList)
+{
+    return !VBoxWddmVrListRectsCount(pList);
+}
+
+DECLINLINE(void) VBoxWddmVrListInit(PVBOXWDDMVR_LIST pList)
+{
+    InitializeListHead(&pList->ListHead);
+    pList->cEntries = 0;
+}
+
+void VBoxWddmVrListClear(PVBOXWDDMVR_LIST pList);
+
+void VBoxWddmVrListTranslate(PVBOXWDDMVR_LIST pList, LONG x, LONG y);
+
+NTSTATUS VBoxWddmVrListRectsAdd(PVBOXWDDMVR_LIST pList, UINT cRects, const PRECT aRects, BOOLEAN *pfChanged);
+NTSTATUS VBoxWddmVrListRectsSubst(PVBOXWDDMVR_LIST pList, UINT cRects, const PRECT aRects, BOOLEAN *pfChanged);
+NTSTATUS VBoxWddmVrListRectsGet(PVBOXWDDMVR_LIST pList, UINT cRects, PRECT aRects);
+
+NTSTATUS VBoxWddmVrInit();
+void VBoxWddmVrTerm();
+
+NTSTATUS vboxWddmDrvCfgInit(PUNICODE_STRING pRegStr);
+
+#ifdef VBOX_VDMA_WITH_WATCHDOG
+NTSTATUS vboxWddmWdInit(PVBOXMP_DEVEXT pDevExt);
+NTSTATUS vboxWddmWdTerm(PVBOXMP_DEVEXT pDevExt);
+#endif
+
+NTSTATUS VBoxWddmSlEnableVSyncNotification(PVBOXMP_DEVEXT pDevExt, BOOLEAN fEnable);
+NTSTATUS VBoxWddmSlGetScanLine(PVBOXMP_DEVEXT pDevExt, DXGKARG_GETSCANLINE *pSl);
+NTSTATUS VBoxWddmSlInit(PVBOXMP_DEVEXT pDevExt);
+NTSTATUS VBoxWddmSlTerm(PVBOXMP_DEVEXT pDevExt);
+
+#ifdef VBOX_WDDM_WIN8
+void vboxWddmDiInitDefault(DXGK_DISPLAY_INFORMATION *pInfo, PHYSICAL_ADDRESS PhAddr, D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId);
+void vboxWddmDiToAllocData(PVBOXMP_DEVEXT pDevExt, const DXGK_DISPLAY_INFORMATION *pInfo, struct VBOXWDDM_ALLOC_DATA *pAllocData);
+void vboxWddmDmAdjustDefaultVramLocations(PVBOXMP_DEVEXT pDevExt, D3DDDI_VIDEO_PRESENT_SOURCE_ID ModifiedVidPnSourceId);
+#endif
 
 #endif /* #ifndef ___VBoxMPMisc_h__ */

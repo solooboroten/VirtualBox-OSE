@@ -1,4 +1,4 @@
-/* $Id: tstCFGM.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstCFGM.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * Testcase for CFGM.
  */
@@ -38,7 +38,7 @@ int main()
     /*
      * Init runtime.
      */
-    RTR3InitAndSUPLib();
+    RTR3InitExeNoArguments(RTR3INIT_FLAGS_SUPLIB);
 
     /*
      * Create empty VM structure and init SSM.

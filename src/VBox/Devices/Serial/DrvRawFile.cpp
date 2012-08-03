@@ -1,4 +1,4 @@
-/* $Id: DrvRawFile.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: DrvRawFile.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
 /** @file
  * VBox stream drivers - Raw file output.
  */
@@ -37,9 +37,6 @@
 *******************************************************************************/
 /** Converts a pointer to DRVRAWFILE::IMedia to a PDRVRAWFILE. */
 #define PDMISTREAM_2_DRVRAWFILE(pInterface) ( (PDRVRAWFILE)((uintptr_t)pInterface - RT_OFFSETOF(DRVRAWFILE, IStream)) )
-
-/** Converts a pointer to PDMDRVINS::IBase to a PPDMDRVINS. */
-#define PDMIBASE_2_DRVINS(pInterface)   ( (PPDMDRVINS)((uintptr_t)pInterface - RT_OFFSETOF(PDMDRVINS, IBase)) )
 
 
 /*******************************************************************************
@@ -97,7 +94,7 @@ static DECLCALLBACK(int) drvRawFileWrite(PPDMISTREAM pInterface, const void *pvB
  */
 static DECLCALLBACK(void *) drvRawFileQueryInterface(PPDMIBASE pInterface, const char *pszIID)
 {
-    PPDMDRVINS  pDrvIns = PDMIBASE_2_DRVINS(pInterface);
+    PPDMDRVINS  pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
     PDRVRAWFILE pThis   = PDMINS_2_DATA(pDrvIns, PDRVRAWFILE);
 
     PDMIBASE_RETURN_INTERFACE(pszIID, PDMIBASE, &pDrvIns->IBase);
@@ -214,7 +211,7 @@ const PDMDRVREG g_DrvRawFile =
     /* fClass. */
     PDM_DRVREG_CLASS_STREAM,
     /* cMaxInstances */
-    ~0,
+    ~0U,
     /* cbInstance */
     sizeof(DRVRAWFILE),
     /* pfnConstruct */

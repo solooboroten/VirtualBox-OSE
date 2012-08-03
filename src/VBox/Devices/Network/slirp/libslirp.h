@@ -1,4 +1,4 @@
-/* $Id: libslirp.h 38111 2011-07-22 06:05:36Z vboxsync $ */
+/* $Id: libslirp.h 41453 2012-05-26 03:40:24Z vboxsync $ */
 /** @file
  * NAT - slirp interface.
  */
@@ -46,7 +46,7 @@ struct mbuf;
 extern "C" {
 #endif
 
-int slirp_init(PNATState *, uint32_t, uint32_t, bool, bool, int, void *);
+int slirp_init(PNATState *, uint32_t, uint32_t, bool, bool, int, int, void *);
 void slirp_register_statistics(PNATState pData, PPDMDRVINS pDrvIns);
 void slirp_deregister_statistics(PNATState pData, PPDMDRVINS pDrvIns);
 void slirp_term(PNATState);
@@ -127,11 +127,6 @@ HANDLE *slirp_get_events(PNATState pData);
 void slirp_register_external_event(PNATState pData, HANDLE hEvent, int index);
 #endif /* RT_OS_WINDOWS */
 
-#ifdef VBOX_WITH_SLIRP_MT
-void slirp_process_queue(PNATState pData);
-void *slirp_get_queue(PNATState pData);
-#endif
-
 struct mbuf *slirp_ext_m_get(PNATState pData, size_t cbMin, void **ppvBuf, size_t *pcbBuf);
 void slirp_ext_m_free(PNATState pData, struct mbuf *, uint8_t *pu8Buf);
 
@@ -146,6 +141,10 @@ unsigned int slirp_get_timeout_ms(PNATState pData);
  */
 int slirp_get_nsock(PNATState pData);
 # endif
+
+#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
+void  slirp_add_host_resolver_mapping(PNATState pData, const char *pszHostName, const char *pszHostNamePattern, uint32_t u32HostIP);
+#endif
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-/* $Id: tstRTPipe.cpp 33806 2010-11-05 17:20:15Z vboxsync $ */
+/* $Id: tstRTPipe.cpp 39690 2011-12-30 13:06:50Z vboxsync $ */
 /** @file
  * IPRT Testcase - RTPipe.
  */
@@ -50,7 +50,7 @@ static const char g_szTest5Message[] = "This is test #5, everything is working f
 
 static RTEXITCODE tstRTPipe5Child(const char *pszPipe)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (RT_FAILURE(rc))
         return RTMsgInitFailure(rc);
 
@@ -127,7 +127,7 @@ static void tstRTPipe5(void)
 
 static RTEXITCODE tstRTPipe4Child(const char *pszPipe)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (RT_FAILURE(rc))
         return RTMsgInitFailure(rc);
 
@@ -350,9 +350,12 @@ static void tstRTPipe1(void)
     cbWritten = ~(size_t)2;
     RTTESTI_CHECK_RC_RETV(RTPipeWrite(hPipeW, "BigQ", 4, &cbWritten), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbWritten == 4);
-    cbRead = ~(size_t)0;
     RTTESTI_CHECK_RC_RETV(RTPipeSelectOne(hPipeR, 0), VINF_SUCCESS);
     RTTESTI_CHECK_RC_RETV(RTPipeSelectOne(hPipeR, 1), VINF_SUCCESS);
+    cbRead = ~(size_t)0;
+    RTTESTI_CHECK_RC_RETV(RTPipeQueryReadable(hPipeR, &cbRead), VINF_SUCCESS);
+    RTTESTI_CHECK_MSG(cbRead == cbWritten, ("cbRead=%zu cbWritten=%zu\n", cbRead, cbWritten));
+    cbRead = ~(size_t)0;
     RTTESTI_CHECK_RC_RETV(RTPipeRead(hPipeR, abBuf, sizeof(abBuf), &cbRead), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbRead == 4);
     RTTESTI_CHECK_RETV(!memcmp(abBuf, "BigQ", 4));
@@ -361,18 +364,33 @@ static void tstRTPipe1(void)
     RTTESTI_CHECK_RC_RETV(RTPipeWrite(hPipeW, "H2G2", 4, &cbWritten), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbWritten == 4);
     cbRead = ~(size_t)0;
+    RTTESTI_CHECK_RC_RETV(RTPipeQueryReadable(hPipeR, &cbRead), VINF_SUCCESS);
+    RTTESTI_CHECK_MSG(cbRead == cbWritten, ("cbRead=%zu cbWritten=%zu\n", cbRead, cbWritten));
+    cbRead = ~(size_t)0;
     RTTESTI_CHECK_RC_RETV(RTPipeRead(hPipeR, &abBuf[0], 1, &cbRead), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbRead == 1);
+    cbRead = ~(size_t)0;
+    RTTESTI_CHECK_RC_RETV(RTPipeQueryReadable(hPipeR, &cbRead), VINF_SUCCESS);
+    RTTESTI_CHECK_MSG(cbRead == cbWritten - 1, ("cbRead=%zu cbWritten=%zu\n", cbRead, cbWritten));
     cbRead = ~(size_t)0;
     RTTESTI_CHECK_RC_RETV(RTPipeRead(hPipeR, &abBuf[1], 1, &cbRead), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbRead == 1);
     cbRead = ~(size_t)0;
+    RTTESTI_CHECK_RC_RETV(RTPipeQueryReadable(hPipeR, &cbRead), VINF_SUCCESS);
+    RTTESTI_CHECK_MSG(cbRead == cbWritten - 2, ("cbRead=%zu cbWritten=%zu\n", cbRead, cbWritten));
+    cbRead = ~(size_t)0;
     RTTESTI_CHECK_RC_RETV(RTPipeRead(hPipeR, &abBuf[2], 1, &cbRead), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbRead == 1);
+    cbRead = ~(size_t)0;
+    RTTESTI_CHECK_RC_RETV(RTPipeQueryReadable(hPipeR, &cbRead), VINF_SUCCESS);
+    RTTESTI_CHECK_MSG(cbRead == cbWritten - 3, ("cbRead=%zu cbWritten=%zu\n", cbRead, cbWritten));
     cbRead = ~(size_t)0;
     RTTESTI_CHECK_RC_RETV(RTPipeRead(hPipeR, &abBuf[3], 1, &cbRead), VINF_SUCCESS);
     RTTESTI_CHECK_RETV(cbRead == 1);
     RTTESTI_CHECK_RETV(!memcmp(abBuf, "H2G2", 4));
+    cbRead = ~(size_t)0;
+    RTTESTI_CHECK_RC_RETV(RTPipeQueryReadable(hPipeR, &cbRead), VINF_SUCCESS);
+    RTTESTI_CHECK_MSG(cbRead == cbWritten - 4, ("cbRead=%zu cbWritten=%zu\n", cbRead, cbWritten));
 
     RTTESTI_CHECK_RC_RETV(RTPipeClose(hPipeR), VINF_SUCCESS);
     RTTESTI_CHECK_RC_RETV(RTPipeClose(hPipeW), VINF_SUCCESS);

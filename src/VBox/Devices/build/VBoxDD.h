@@ -1,4 +1,4 @@
-/* $Id: VBoxDD.h 37781 2011-07-05 13:35:29Z vboxsync $ */
+/* $Id: VBoxDD.h 40652 2012-03-26 16:36:16Z vboxsync $ */
 /** @file
  * Built-in drivers & devices (part 1) header.
  */
@@ -110,6 +110,9 @@ extern const PDMDRVREG g_DrvVDE;
 extern const PDMDRVREG g_DrvIntNet;
 extern const PDMDRVREG g_DrvDedicatedNic;
 extern const PDMDRVREG g_DrvNAT;
+#ifdef VBOX_WITH_NETSHAPER
+extern const PDMDRVREG g_DrvNetShaper;
+#endif /* VBOX_WITH_NETSHAPER */
 extern const PDMDRVREG g_DrvNetSniffer;
 extern const PDMDRVREG g_DrvAUDIO;
 extern const PDMDRVREG g_DrvACPI;
@@ -122,6 +125,9 @@ extern const PDMDRVREG g_DrvHostParallel;
 extern const PDMDRVREG g_DrvHostSerial;
 #ifdef VBOX_WITH_DRV_DISK_INTEGRITY
 extern const PDMDRVREG g_DrvDiskIntegrity;
+#endif
+#ifdef VBOX_WITH_PCI_PASSTHROUGH_IMPL
+extern const PDMDRVREG g_DrvPciRaw;
 #endif
 
 #ifdef VBOX_WITH_USB

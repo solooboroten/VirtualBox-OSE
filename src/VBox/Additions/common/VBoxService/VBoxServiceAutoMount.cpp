@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceAutoMount.cpp 37832 2011-07-08 10:13:18Z vboxsync $ */
+/* $Id: VBoxServiceAutoMount.cpp 41443 2012-05-25 07:52:59Z vboxsync $ */
 /** @file
  * VBoxService - Auto-mounting for Shared Folders.
  */
@@ -82,7 +82,8 @@ static DECLCALLBACK(int) VBoxServiceAutoMountOption(const char **ppszShort, int 
     NOREF(argc);
     NOREF(argv);
     NOREF(pi);
-    return VINF_SUCCESS;
+
+    return -1;
 }
 
 
@@ -331,7 +332,8 @@ static int VBoxServiceAutoMountSharedFolder(const char *pszShareName, const char
                     break;
 
                 case 3:
-                    VBoxServiceError("VBoxServiceAutoMountWorker: Could not add an entry to the mount table: %s\n", strerror(errno));
+                    /* VBoxServiceError("VBoxServiceAutoMountWorker: Could not add an entry to the mount table: %s\n", strerror(errno)); */
+                    errno = 0;
                     break;
 
                 default:
@@ -438,7 +440,7 @@ static int VBoxServiceAutoMountProcessMappings(PVBGLR3SHAREDFOLDERMAPPING paMapp
                         struct vbsf_mount_opts mount_opts =
                         {
                             0,                     /* uid */
-                            grp_vboxsf->gr_gid,    /* gid */
+                            (int)grp_vboxsf->gr_gid, /* gid */
                             0,                     /* ttl */
                             0770,                  /* dmode, owner and group "vboxsf" have full access */
                             0770,                  /* fmode, owner and group "vboxsf" have full access */
@@ -527,13 +529,10 @@ DECLCALLBACK(int) VBoxServiceAutoMountWorker(bool volatile *pfShutdown)
             VBoxServiceError("VBoxServiceAutoMountWorker: Error while getting the shared folder directory, rc = %Rrc\n", rc);
         VbglR3SharedFolderFreeMappings(paMappings);
     }
+    else if (RT_FAILURE(rc))
+        VBoxServiceError("VBoxServiceAutoMountWorker: Error while getting the shared folder mappings, rc = %Rrc\n", rc);
     else
-    {
-        if (RT_FAILURE(rc))
-            VBoxServiceError("VBoxServiceAutoMountWorker: Error while getting the shared folder mappings, rc = %Rrc\n", rc);
-        else if (!cMappings)
-            VBoxServiceVerbose(3, "VBoxServiceAutoMountWorker: No shared folder mappings fouund\n");
-    }
+        VBoxServiceVerbose(3, "VBoxServiceAutoMountWorker: No shared folder mappings found\n");
 
     /*
      * Because this thread is a one-timer at the moment we don't want to break/change

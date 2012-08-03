@@ -1,4 +1,4 @@
-/* $Id: VBoxTray.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxTray.cpp 42003 2012-07-03 14:57:45Z vboxsync $ */
 /** @file
  * VBoxTray - Guest Additions Tray Application
  */
@@ -30,6 +30,8 @@
 #include "VBoxHostVersion.h"
 #include "VBoxSharedFolders.h"
 #include "VBoxIPC.h"
+#include "VBoxLA.h"
+#include "VBoxMMR.h"
 #include <VBoxHook.h>
 #include "resource.h"
 #include <malloc.h>
@@ -106,6 +108,20 @@ static VBOXSERVICEINFO vboxServiceTable[] =
         VBoxIPCThread,
         VBoxIPCDestroy
     },
+    {
+        "Location Awareness",
+        VBoxLAInit,
+        VBoxLAThread,
+        VBoxLADestroy
+    },
+#ifdef VBOX_WITH_MMR
+    {
+        "Multimedia Redirection",
+        VBoxMMRInit,
+        VBoxMMRThread,
+        VBoxMMRDestroy
+    },
+#endif
     {
         NULL
     }
@@ -679,7 +695,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     LogRel(("VBoxTray: %s r%s\n", RTBldCfgVersion(), RTBldCfgRevisionStr()));
 
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (RT_SUCCESS(rc))
     {
         rc = VbglR3Init();

@@ -1,10 +1,10 @@
-; $Id: $
-;; @file
+; $Id$
+; @file
 ; VBoxGuestAdditionsUninstall.nsh - Guest Additions uninstallation.
 ;
 
 ;
-; Copyright (C) 2006-2011 Oracle Corporation
+; Copyright (C) 2006-2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -84,6 +84,7 @@ Function ${un}Uninstall
   StrCmp $g_strWinVersion "2003" w2k    ; Windows 2003 Server
   StrCmp $g_strWinVersion "Vista" vista ; Windows Vista
   StrCmp $g_strWinVersion "7" vista     ; Windows 7
+  StrCmp $g_strWinVersion "8" vista     ; Windows 8
 
   ${If} $g_bForceInstall == "true"
     Goto vista ; Assume newer OS than we know of ...
@@ -141,6 +142,7 @@ Function ${un}UninstallInstDir
   StrCmp $g_strWinVersion "2003" w2k    ; Windows 2003 Server
   StrCmp $g_strWinVersion "Vista" vista ; Windows Vista
   StrCmp $g_strWinVersion "7" vista     ; Windows 7
+  StrCmp $g_strWinVersion "8" vista     ; Windows 8
 
   ${If} $g_bForceInstall == "true"
     Goto vista ; Assume newer OS than we know of ...

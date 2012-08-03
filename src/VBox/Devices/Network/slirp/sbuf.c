@@ -1,4 +1,4 @@
-/* $Id: sbuf.c 37936 2011-07-14 03:54:41Z vboxsync $ */
+/* $Id: sbuf.c 39409 2011-11-24 15:28:32Z vboxsync $ */
 /** @file
  * NAT - sbuf implemenation.
  */
@@ -73,6 +73,7 @@ sbdrop(struct sbuf *sb, int num)
 void
 sbreserve(PNATState pData, struct sbuf *sb, int size)
 {
+    NOREF(pData);
     if (sb->sb_data)
     {
         /* Already alloced, realloc if necessary */
@@ -201,6 +202,9 @@ void
 sbappendsb(PNATState pData, struct sbuf *sb, struct mbuf *m)
 {
     int len, n,  nn;
+#ifndef VBOX_WITH_STATISTICS
+    NOREF(pData);
+#endif
 
     len = m_length(m, NULL);
 

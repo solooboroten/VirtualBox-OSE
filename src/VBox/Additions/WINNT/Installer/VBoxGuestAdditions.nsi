@@ -1,10 +1,10 @@
-; $Id: VBoxGuestAdditions.nsi 37815 2011-07-07 11:27:46Z vboxsync $
-;; @file
+; $Id: VBoxGuestAdditions.nsi 41432 2012-05-24 12:05:44Z vboxsync $
+; @file
 ; VBoxGuestAdditions.nsi - Main file for Windows Guest Additions installation.
 ;
 
 ;
-; Copyright (C) 2011 Oracle Corporation
+; Copyright (C) 2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -204,6 +204,7 @@ RequestExecutionLevel highest
 ; Internal parameters
 Var g_iSystemMode                       ; Current system mode (0 = Normal boot, 1 = Fail-safe boot, 2 = Fail-safe with network boot)
 Var g_strSystemDir                      ; Windows system directory
+Var g_strSysWow64                       ; The SysWow64 directory on 64-bit systems
 Var g_strCurUser                        ; Current user using the system
 Var g_strAddVerMaj                      ; Installed Guest Additions: Major version
 Var g_strAddVerMin                      ; Installed Guest Additions: Minor version
@@ -212,6 +213,7 @@ Var g_strAddVerRev                      ; Installed Guest Additions: SVN revisio
 Var g_strWinVersion                     ; Current Windows version we're running on
 Var g_bLogEnable                        ; Do logging when installing? "true" or "false"
 Var g_bWithWDDM                         ; Install the WDDM driver instead of the XPDM one
+Var g_bCapDllCache                      ; Capability: Does the (Windows) guest have have a DLL cache which needs to be taken care of?
 Var g_bCapWDDM                          ; Capability: Is the guest able to handle/use our WDDM driver?
 
 ; Command line parameters - these can be set/modified
@@ -548,33 +550,19 @@ Function CheckForInstalledComponents
   ; regardless whether the user used "/with_autologon" or not
   ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL"
   ${If} $0 == "VBoxGINA.dll"
-    DetailPrint "Found already installed auto-logon support ..."
     StrCpy $g_bWithAutoLogon "true"
+  ${EndIf}
+  
+  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}" ""
+  ${If} $0 == "VBoxCredProv.dll"
+    StrCpy $g_bWithAutoLogon "true"  
+  ${EndIf}
+  
+  ${If} $g_bWithAutoLogon == "true"
+    DetailPrint "Found already installed auto-logon support ..."
   ${EndIf}
 
   Pop $0
-
-FunctionEnd
-
-Function Common_CopyFiles
-
-  SetOutPath "$INSTDIR"
-  SetOverwrite on
-
-!ifdef VBOX_WITH_LICENSE_INSTALL_RTF
-  ; Copy license file (if any) into the installation directory
-  FILE "/oname=${LICENSE_FILE_RTF}" "$%VBOX_BRAND_LICENSE_RTF%"
-!endif
-
-  FILE "$%VBOX_PATH_DIFX%\DIFxAPI.dll"
-  FILE "$%PATH_OUT%\bin\additions\VBoxDrvInst.exe"
-
-  FILE "$%PATH_OUT%\bin\additions\VBoxVideo.inf"
-!ifdef VBOX_SIGN_ADDITIONS
-  FILE "$%PATH_OUT%\bin\additions\VBoxVideo.cat"
-!endif
-
-  FILE "iexplore.ico"
 
 FunctionEnd
 
@@ -613,6 +601,10 @@ Section $(VBOX_COMPONENT_MAIN) SEC01
   DetailPrint "Debug!"
 !endif
 
+  ;
+  ; Here starts the main dispatcher (based on guest OS)
+  ;
+
   ; Which OS are we using?
 !if $%BUILD_TARGET_ARCH% == "x86"       ; 32-bit
   StrCmp $g_strWinVersion "NT4" nt4     ; Windows NT 4.0
@@ -622,6 +614,7 @@ Section $(VBOX_COMPONENT_MAIN) SEC01
   StrCmp $g_strWinVersion "2003" w2k    ; Windows 2003 Server
   StrCmp $g_strWinVersion "Vista" vista ; Windows Vista
   StrCmp $g_strWinVersion "7" vista     ; Windows 7
+  StrCmp $g_strWinVersion "8" vista     ; Windows 8
 
   ${If} $g_bForceInstall == "true"
     Goto vista ; Assume newer OS than we know of ...
@@ -649,21 +642,24 @@ nt4: ; Windows NT4
   goto success
 !endif
 
-vista: ; Windows Vista / Windows 7
-
-  ; Copy some common files ...
-  Call Common_CopyFiles
-
-  Call W2K_Main     ; First install stuff from Windows 2000 / XP
-  Call Vista_Main   ; ... and some specific stuff for Vista / Windows 7
-  goto success
-
 w2k: ; Windows 2000 and XP ...
 
   ; Copy some common files ...
   Call Common_CopyFiles
 
   Call W2K_Main
+  goto success
+
+vista: ; Windows Vista / Windows 7 / Windows 8
+
+  ; Check requirments; this function can abort the installation if necessary!
+  Call Vista_CheckForRequirements
+
+  ; Copy some common files ...
+  Call Common_CopyFiles
+
+  Call W2K_Main     ; First install stuff from Windows 2000 / XP
+  Call Vista_Main   ; ... and some specific stuff for Vista / Windows 7
   goto success
 
 notsupported:
@@ -722,6 +718,10 @@ install:
   ${Else} ; Use VBoxGINA on older Windows OSes (< Vista)
     !insertmacro ReplaceDLL "$%PATH_OUT%\bin\additions\VBoxGINA.dll" "$g_strSystemDir\VBoxGINA.dll" "$INSTDIR"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL" "VBoxGINA.dll"
+    ; Add Windows notification package callbacks for VBoxGINA
+    WriteRegStr   HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon\Notify\VBoxGINA" "DLLName" "VBoxGINA.dll"
+    WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon\Notify\VBoxGINA" "Impersonate" 0
+    WriteRegStr   HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon\Notify\VBoxGINA" "StopScreenSaver" "WnpScreenSaverStop"
   ${EndIf}
 
 skip:
@@ -732,32 +732,44 @@ exit:
 
 SectionEnd
 
-; Prepares the access rights for replacing a WRP protected file
+; Prepares the access rights for replacing
+; a WRP (Windows Resource Protection) protected file
 Function PrepareWRPFile
 
   Pop $0
 
-  IfFileExists "$g_strSystemDir\takeown.exe" 0 +2
+  ${IfNot} ${FileExists} "$0"
+    LogText "WRP: File $0 does not exist, skipping"
+    Return
+  ${EndIf}
+
+  ${If} ${FileExists} "$g_strSystemDir\takeown.exe"
     nsExec::ExecToLog '"$g_strSystemDir\takeown.exe" /F "$0"'
+    Pop $1 ; Ret value
+    LogText "WRP: Taking ownership for $0 returned: $1"
+  ${Else}
+    LogText "WRP: Warning: takeown.exe not found, skipping"
+  ${EndIf}
+
   AccessControl::SetFileOwner "$0" "(S-1-5-32-545)"
   Pop $1
-  DetailPrint "Setting file owner for '$0': $1"
+  DetailPrint "WRP: Setting file owner for $0 returned: $1"
+
   AccessControl::GrantOnFile "$0" "(S-1-5-32-545)" "FullAccess"
   Pop $1
-  DetailPrint "Setting access rights for '$0': $1"
+  DetailPrint "WRP: Setting access rights for $0 returned: $1"
 
 !if $%VBOX_WITH_GUEST_INSTALL_HELPER% == "1"
   !ifdef WFP_FILE_EXCEPTION
     VBoxGuestInstallHelper::DisableWFP "$0"
     Pop $1 ; Get return value (ignored for now)
-    DetailPrint "Setting WFP exception for '$0': $1"
+    DetailPrint "WRP: Setting WFP exception for $0 returned: $1"
   !endif
 !endif
 
 FunctionEnd
 
 ; Direct3D support
-!if $%VBOX_WITH_CROGL% == "1"
 Section /o $(VBOX_COMPONENT_D3D) SEC03
 
 !if $%VBOX_WITH_WDDM% == "1"
@@ -775,40 +787,39 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
 
   SetOutPath $g_strSystemDir
   DetailPrint "Installing Direct3D support ..."
-  !if $%BUILD_TARGET_ARCH% == "x86"
-    FILE "$%PATH_OUT%\bin\additions\libWine.dll"
-  !endif
   FILE "$%PATH_OUT%\bin\additions\VBoxD3D8.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxD3D9.dll"
   FILE "$%PATH_OUT%\bin\additions\wined3d.dll"
 
+  ;
   ; Update DLL cache
-  SetOutPath "$g_strSystemDir\dllcache"
-  IfFileExists "$g_strSystemDir\dllcache\msd3d8.dll" +1
-    CopyFiles /SILENT "$g_strSystemDir\dllcache\d3d8.dll" "$g_strSystemDir\dllcache\msd3d8.dll"
-  IfFileExists "$g_strSystemDir\dllcache\msd3d9.dll" +1
-    CopyFiles /SILENT "$g_strSystemDir\dllcache\d3d9.dll" "$g_strSystemDir\dllcache\msd3d9.dll"
+  ;
+  ${If} $g_bCapDllCache == "true"
+    ${If} ${FileExists} "$g_strSystemDir\dllcache"
+      SetOutPath "$g_strSystemDir\dllcache"
+      ${CopyFileEx} "" "$g_strSystemDir\dllcache\d3d8.dll" "$g_strSystemDir\dllcache\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+      ${CopyFileEx} "" "$g_strSystemDir\dllcache\d3d9.dll" "$g_strSystemDir\dllcache\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
 
-  Push "$g_strSystemDir\dllcache\d3d8.dll"
-  Call PrepareWRPFile
+      Push "$g_strSystemDir\dllcache\d3d8.dll"
+      Call PrepareWRPFile
 
-  Push "$g_strSystemDir\dllcache\d3d9.dll"
-  Call PrepareWRPFile
+      Push "$g_strSystemDir\dllcache\d3d9.dll"
+      Call PrepareWRPFile
 
-  ; Exchange DLLs
-  !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\dllcache\d3d8.dll" "$TEMP"
-  !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\dllcache\d3d9.dll" "$TEMP"
-
-  ; If exchange above failed, do it on reboot
-  !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\dllcache\d3d8.dll" "$TEMP"
-  !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\dllcache\d3d9.dll" "$TEMP"
-
+      ; Exchange DLLs
+      ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\dllcache\d3d8.dll" "$TEMP"
+      ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\dllcache\d3d9.dll" "$TEMP"
+    ${Else}
+        DetailPrint "DLL cache does not exist, skipping"
+    ${EndIf}
+  ${EndIf}
+    
+  ;
   ; Save original DLLs (only if msd3d*.dll does not exist) ...
+  ;
   SetOutPath $g_strSystemDir
-  IfFileExists "$g_strSystemDir\msd3d8.dll" +1
-    CopyFiles /SILENT "$g_strSystemDir\d3d8.dll" "$g_strSystemDir\msd3d8.dll"
-  IfFileExists "$g_strSystemDir\msd3d9.dll" +1
-    CopyFiles /SILENT "$g_strSystemDir\d3d9.dll" "$g_strSystemDir\msd3d9.dll"
+  ${CopyFileEx} "" "$g_strSystemDir\d3d8.dll" "$g_strSystemDir\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  ${CopyFileEx} "" "$g_strSystemDir\d3d9.dll" "$g_strSystemDir\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
 
   Push "$g_strSystemDir\d3d8.dll"
   Call PrepareWRPFile
@@ -817,68 +828,60 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
   Call PrepareWRPFile
 
   ; Exchange DLLs
-  !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\d3d8.dll" "$TEMP"
-  !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\d3d9.dll" "$TEMP"
+  ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\d3d8.dll" "$TEMP"
+  ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\d3d9.dll" "$TEMP"
 
-  ; If exchange above failed, do it on reboot
-  !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\d3d8.dll" "$TEMP"
-  !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\d3d9.dll" "$TEMP"
-
-  !if $%BUILD_TARGET_ARCH% == "amd64"
-    ; Only 64-bit installer: Also copy 32-bit DLLs on 64-bit target arch in
-    ; Wow64 node (32-bit sub system)
-    ${EnableX64FSRedirection}
-    SetOutPath $SYSDIR
-    DetailPrint "Installing Direct3D support (Wow64) ..."
-    FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\libWine.dll"
+!if $%BUILD_TARGET_ARCH% == "amd64"
+    ; Only 64-bit installer:
+    ; Also copy 32-bit DLLs on 64-bit Windows in SysWOW64 node
+    SetOutPath $g_strSysWow64
+    DetailPrint "Installing Direct3D support for 32-bit applications (SysWOW64: $g_strSysWow64) ..."
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\VBoxD3D8.dll"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\VBoxD3D9.dll"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\wined3d.dll"
 
+    ;
     ; Update DLL cache
-    SetOutPath "$SYSDIR\dllcache"
-    IfFileExists "$SYSDIR\dllcache\msd3d8.dll" +1
-      CopyFiles /SILENT "$SYSDIR\dllcache\d3d8.dll" "$SYSDIR\dllcache\msd3d8.dll"
-    IfFileExists "$SYSDIR\dllcache\msd3d9.dll" +1
-      CopyFiles /SILENT "$SYSDIR\dllcache\d3d9.dll" "$SYSDIR\dllcache\msd3d9.dll"
+    ;
+    ${If} $g_bCapDllCache == "true"
+      ${If} ${FileExists} "$g_strSysWow64\dllcache"
+        SetOutPath "$g_strSysWow64\dllcache"
+        ${CopyFileEx} "" "$g_strSysWow64\dllcache\d3d8.dll" "$g_strSysWow64\dllcache\msd3d8.dll" "Microsoft Corporation" "x86"
+        ${CopyFileEx} "" "$g_strSysWow64\dllcache\d3d9.dll" "$g_strSysWow64\dllcache\msd3d9.dll" "Microsoft Corporation" "x86"
 
-    Push "$SYSDIR\dllcache\d3d8.dll"
-    Call PrepareWRPFile
+        Push "$g_strSysWow64\dllcache\d3d8.dll"
+        Call PrepareWRPFile
 
-    Push "$SYSDIR\dllcache\d3d9.dll"
-    Call PrepareWRPFile
+        Push "$g_strSysWow64\dllcache\d3d9.dll"
+        Call PrepareWRPFile
 
-    ; Exchange DLLs
-    !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$SYSDIR\dllcache\d3d8.dll" "$TEMP"
-    !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$SYSDIR\dllcache\d3d9.dll" "$TEMP"
+        ; Exchange DLLs
+        ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$g_strSysWow64\dllcache\d3d8.dll" "$TEMP"
+        ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$g_strSysWow64\dllcache\d3d9.dll" "$TEMP"
+      ${Else}
+        DetailPrint "DLL cache does not exist, skipping"
+      ${EndIf}
+    ${EndIf}
 
-    ; If exchange above failed, do it on reboot
-    !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$SYSDIR\dllcache\d3d8.dll" "$TEMP"
-    !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$SYSDIR\dllcache\d3d9.dll" "$TEMP"
+    ;
+    ; Update original DLLs
+    ;
 
     ; Save original DLLs (only if msd3d*.dll does not exist) ...
-    SetOutPath $SYSDIR
-    IfFileExists "$SYSDIR\dllcache\msd3d8.dll" +1
-      CopyFiles /SILENT "$SYSDIR\d3d8.dll" "$SYSDIR\msd3d8.dll"
-    IfFileExists "$SYSDIR\dllcache\msd3d9.dll" +1
-      CopyFiles /SILENT "$SYSDIR\d3d9.dll" "$SYSDIR\msd3d9.dll"
+    ${CopyFileEx} "" "$g_strSysWow64\d3d8.dll" "$g_strSysWow64\msd3d8.dll" "Microsoft Corporation" "x86"
+    ${CopyFileEx} "" "$g_strSysWow64\d3d9.dll" "$g_strSysWow64\msd3d9.dll" "Microsoft Corporation" "x86"
 
-    Push "$SYSDIR\d3d8.dll"
+    Push "$g_strSysWow64\d3d8.dll"
     Call PrepareWRPFile
 
-    Push "$SYSDIR\d3d9.dll"
+    Push "$g_strSysWow64\d3d9.dll"
     Call PrepareWRPFile
 
     ; Exchange DLLs
-    !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$SYSDIR\d3d8.dll" "$TEMP"
-    !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$SYSDIR\d3d9.dll" "$TEMP"
+    ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$g_strSysWow64\d3d8.dll" "$TEMP"
+    ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$g_strSysWow64\d3d9.dll" "$TEMP"
 
-    ; If exchange above failed, do it on reboot
-    !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$SYSDIR\d3d8.dll" "$TEMP"
-    !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$SYSDIR\d3d9.dll" "$TEMP"
-
-    ${DisableX64FSRedirection}
-  !endif ; amd64
+!endif ; amd64
   Goto done
 
 error:
@@ -895,7 +898,6 @@ done:
 exit:
 
 SectionEnd
-!endif ; VBOX_WITH_CROGL
 
 !ifdef USE_MUI
   ;Assign language strings to sections
@@ -946,6 +948,16 @@ Section -Post
   ; Tune TcpWindowSize for a better network throughput
   WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" "TcpWindowSize" 64240
 
+  ; Add Sun Ray  client info keys
+  ; Note: We only need 32-bit keys (HKLM\Software / HKLM\Software\Wow6432Node)
+!if $%BUILD_TARGET_ARCH% == "amd64"
+  WriteRegStr HKLM "SOFTWARE\Wow6432Node\Oracle\Sun Ray\ClientInfoAgent\ReconnectActions" "" ""
+  WriteRegStr HKLM "SOFTWARE\Wow6432Node\Oracle\Sun Ray\ClientInfoAgent\DisconnectActions" "" ""
+!else
+  WriteRegStr HKLM "SOFTWARE\Oracle\Sun Ray\ClientInfoAgent\ReconnectActions" "" ""
+  WriteRegStr HKLM "SOFTWARE\Oracle\Sun Ray\ClientInfoAgent\DisconnectActions" "" ""
+!endif
+
   DetailPrint "Installation completed."
 
 SectionEnd
@@ -960,6 +972,8 @@ Function .onSelChange
   SectionGetFlags ${SEC03} $0
   ${If} $0 == ${SF_SELECTED}
 
+    StrCpy $g_bWithD3D "true"
+
 !if $%VBOX_WITH_WDDM% == "1"
     ; If we're able to use the WDDM driver just use it instead of the replaced
     ; D3D components below
@@ -970,7 +984,7 @@ Function .onSelChange
       ; can opt-in for installing WDDM or still go for the old (XPDM) way -- safe mode still required!
       ;
       MessageBox MB_ICONQUESTION|MB_YESNO $(VBOX_COMPONENT_D3D_OR_WDDM) /SD IDNO IDYES d3d_install
-      ; Display an uncoditional hint about needed VRAM sizes
+      ; Display an unconditional hint about needed VRAM sizes
       ; Note: We also could use the PCI configuration space (WMI: Win32_SystemSlot Class) for querying
       ;       the current VRAM size, but let's keep it simple for now
       MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_HINT_VRAM) /SD IDOK
@@ -980,7 +994,7 @@ Function .onSelChange
 
 d3d_install:
 
-!endif
+!endif ; $%VBOX_WITH_WDDM% == "1"
 
     ${If} $g_bForceInstall != "true"
       ; Do not install on < XP
@@ -1000,13 +1014,19 @@ d3d_install:
         Goto d3d_disable
       ${EndIf}
     ${EndIf}
+
   ${Else} ; D3D unselected again
-    StrCpy $g_bWithWDDM "false"
+
+    ${If} $g_strWinVersion != "8" ; On Windows 8 WDDM is mandatory
+      StrCpy $g_bWithWDDM "false"
+    ${EndIf}
+
   ${EndIf}
   Goto exit
 
 d3d_disable:
 
+  StrCpy $g_bWithD3D "false"
   IntOp $0 $0 & ${SECTION_OFF} ; Unselect section again
   SectionSetFlags ${SEC03} $0
   Goto exit
@@ -1044,6 +1064,8 @@ FunctionEnd
 ; This function is called at the very beginning of installer execution
 Function .onInit
 
+  Push $0
+
   ; Init values
   StrCpy $g_iSystemMode "0"
   StrCpy $g_strCurUser "<None>"
@@ -1071,8 +1093,13 @@ Function .onInit
   StrCpy $g_bWithD3D "false"
   StrCpy $g_bOnlyExtract "false"
   StrCpy $g_bWithWDDM "false"
+  StrCpy $g_bCapDllCache "false"
   StrCpy $g_bCapWDDM "false"
   StrCpy $g_bPostInstallStatus "false"
+
+  ; We need a special directory set to SysWOW64 because some
+  ; shell operations don't support file redirection (yet)
+  StrCpy $g_strSysWow64 "$WINDIR\SysWOW64"
 
   SetErrorLevel 0
   ClearErrors
@@ -1159,6 +1186,12 @@ Function .onInit
     SectionSetFlags ${SEC03} ${SF_SELECTED}
   ${EndIf}
 !endif
+  ; On Windows 8 we always select the 3D section and
+  ; disable it so that it cannot be deselected again
+  ${If} $g_strWinVersion == "8"
+    IntOp $0 ${SF_SELECTED} | ${SF_RO}
+    SectionSetFlags ${SEC03} $0
+  ${EndIf}
 
 !ifdef USE_MUI
   ; Display language selection dialog (will be hidden in silent mode!)
@@ -1179,6 +1212,8 @@ Function .onInit
   Call SetAppMode32
 
 !endif ; UNINSTALLER_ONLY
+
+  Pop $0
 
 FunctionEnd
 
@@ -1215,6 +1250,10 @@ proceed:
 
   ; Set system directory
   StrCpy $g_strSystemDir "$SYSDIR"
+
+  ; We need a special directory set to SysWOW64 because some
+  ; shell operations don't support file redirection (yet)
+  StrCpy $g_strSysWow64 "$WINDIR\SysWOW64"
 
   ; Retrieve Windows version we're running on and store it in $g_strWinVersion
   Call un.GetWindowsVer

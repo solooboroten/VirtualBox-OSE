@@ -28,7 +28,6 @@ static SPUFunctions *feedbackSPUInit( int id, SPU *child, SPU *self,
 		unsigned int context_id,
 		unsigned int num_contexts )
 {
-	CRContext *ctx;
 	(void) context_id;
 	(void) num_contexts;
 

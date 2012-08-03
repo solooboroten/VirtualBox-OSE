@@ -1,4 +1,4 @@
-/* $Id: socket.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: socket.h 41855 2012-06-21 05:46:27Z vboxsync $ */
 /** @file
  * NAT - socket handling (declarations/defines).
  */
@@ -28,9 +28,6 @@
 
 #ifndef _SLIRP_SOCKET_H_
 #define _SLIRP_SOCKET_H_
-#ifdef VBOX_WITH_SLIRP_MT
-#include <iprt/critsect.h>
-#endif
 
 #define SO_EXPIRE 240000
 #define SO_EXPIREFAST 10000
@@ -84,10 +81,6 @@ struct socket
 
     struct sbuf     so_rcv;      /* Receive buffer */
     struct sbuf     so_snd;      /* Send buffer */
-#ifdef VBOX_WITH_SLIRP_MT
-    RTCRITSECT      so_mutex;
-    int             so_deleted;
-#endif
 #ifndef RT_OS_WINDOWS
     int so_poll_index;
 #endif /* !RT_OS_WINDOWS */
@@ -105,42 +98,45 @@ struct socket
 #endif
     /* required for port-forwarding */
     struct libalias *so_la;
+    /* libalias might attach the socket and we want to notify libalias we're freeing it */
+    void *so_pvLnk;
+#ifdef VBOX_WITH_NAT_UDP_SOCKET_CLONE
+    struct socket *so_cloneOf; /* pointer to master instance */
+    int so_cCloneCounter;      /* number of clones */
+#endif
+    /** These flags (''fUnderPolling'' and ''fShouldBeRemoved'') introduced to
+     *  to let polling routine gain control over freeing socket whatever level of
+     *  TCP/IP initiated socket releasing.
+     *  So polling routine when start processing socket alter it's state to
+     *  ''fUnderPolling'' to 1, and clean (set to 0) when it finish.
+     *  When polling routine calls functions it should be ensure on return,
+     *  whether ''fShouldBeRemoved'' set or not, and depending on state call
+     *  ''sofree'' or continue socket processing.
+     *  On ''fShouldBeRemoved'' equal to 1, polling routine should call ''sofree'',
+     *  clearing ''fUnderPolling'' to do real freeng of the socket and removing from
+     *  the queue.
+     *  @todo: perhaps, to simplefy the things we need some helper function.
+     *  @note: it's used like a bool, I use 'int' to avoid compiler warnings
+     *  appearing if [-Wc++-compat] used.
+     */
+    int fUnderPolling;
+    /** This flag used by ''sofree'' function in following manner
+     *
+     *  fUnderPolling = 1, then we don't remove socket from the queue, just
+     *  alter value ''fShouldBeRemoved'' to 1, else we do removal.
+     */
+    int fShouldBeRemoved;
 };
 
-#ifdef VBOX_WITH_SLIRP_MT
-# define SOCKET_LOCK(so)                                                \
-    do {                                                                \
-        int rc;                                                         \
-        /* Assert(strcmp(RTThreadSelfName(), "EMT") != 0); */           \
-        Log2(("lock:%s:%d L on %R[natsock]\n", __FUNCTION__, __LINE__, (so))); \
-        Assert(!RTCritSectIsOwner(&(so)->so_mutex));                    \
-        rc = RTCritSectEnter(&(so)->so_mutex);                          \
-        AssertRC(rc);                                                   \
-    } while (0)
-# define SOCKET_UNLOCK(so)                                              \
-    do {                                                                \
-        int rc;                                                         \
-        if ((so) != NULL) Log2(("lock:%s:%d U on %R[natsock]\n", __FUNCTION__, __LINE__, (so))); \
-        rc = RTCritSectLeave(&(so)->so_mutex);                          \
-        Assert(rc);                                                     \
-    } while (0)
-# define SOCKET_LOCK_CREATE(so)                                         \
-    do {                                                                \
-        int rc;                                                         \
-        rc = RTCritSectInit(&(so)->so_mutex);                           \
-        AssertRC(rc);                                                   \
-    } while (0)
-# define SOCKET_LOCK_DESTROY(so)                                        \
-    do {                                                                \
-        int rc = RTCritSectDelete(&(so)->so_mutex);                     \
-        AssertRC(rc);                                                   \
-    } while (0)
-#else
+/* this function inform libalias about socket close */
+void slirpDeleteLinkSocket(void *pvLnk);
+
+
 # define SOCKET_LOCK(so) do {} while (0)
 # define SOCKET_UNLOCK(so) do {} while (0)
 # define SOCKET_LOCK_CREATE(so) do {} while (0)
 # define SOCKET_LOCK_DESTROY(so) do {} while (0)
-#endif
+
 /*
  * Socket state bits. (peer means the host on the Internet,
  * local host means the host on the other end of the modem)
@@ -172,9 +168,6 @@ void so_init (void);
 struct socket * solookup (struct socket *, struct in_addr, u_int, struct in_addr, u_int);
 struct socket * socreate (void);
 void sofree (PNATState, struct socket *);
-#ifdef VBOX_WITH_SLIRP_MT
-void soread_queue (PNATState, struct socket *, int *);
-#endif
 int soread (PNATState, struct socket *);
 void sorecvoob (PNATState, struct socket *);
 int sosendoob (struct socket *);
@@ -190,5 +183,22 @@ void sofcantrcvmore (struct  socket *);
 void sofcantsendmore (struct socket *);
 void soisfdisconnected (struct socket *);
 void sofwdrain (struct socket *);
+
+/**
+ * Creates copy of UDP socket with specified addr
+ * fBindSocket - in case we want bind a real socket.
+ * @return copy of the socket with f_addr equal to u32ForeignAddr
+ */
+#ifdef VBOX_WITH_NAT_UDP_SOCKET_CLONE
+struct socket * soCloneUDPSocketWithForegnAddr(PNATState pData, bool fBindSocket, struct socket *pSo, uint32_t u32ForeignAddr);
+struct socket *soLookUpClonedUDPSocket(PNATState pData, const struct socket *pcSo, uint32_t u32ForeignAddress);
+#endif
+
+static inline int soIgnorableErrorCode(int iErrorCode)
+{
+    return (   iErrorCode == EINPROGRESS
+            || iErrorCode == EAGAIN
+            || iErrorCode == EWOULDBLOCK);
+}
 
 #endif /* _SOCKET_H_ */

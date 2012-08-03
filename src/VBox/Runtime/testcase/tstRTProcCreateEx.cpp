@@ -1,4 +1,4 @@
-/* $Id: tstRTProcCreateEx.cpp 33806 2010-11-05 17:20:15Z vboxsync $ */
+/* $Id: tstRTProcCreateEx.cpp 39835 2012-01-23 12:50:30Z vboxsync $ */
 /** @file
  * IPRT Testcase - RTProcCreateEx.
  */
@@ -73,7 +73,7 @@ static const char * const g_apszArgs4[] =
 
 static int tstRTCreateProcEx5Child(int argc, char **argv)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (rc)
         return RTMsgInitFailure(rc);
 
@@ -156,7 +156,7 @@ static void tstRTCreateProcEx5(const char *pszUser, const char *pszPassword)
                                          NULL, NULL, "non-existing-user", "wrong-password", &hProc), VERR_AUTHENTICATION_FAILURE);
     /* Test for invalid application. */
     RTTESTI_CHECK_RC_RETV(RTProcCreateEx("non-existing-app", apszArgs, RTENV_DEFAULT, 0 /*fFlags*/, NULL,
-                                         NULL, NULL, NULL, NULL, &hProc), VERR_PATH_NOT_FOUND);
+                                         NULL, NULL, NULL, NULL, &hProc), VERR_FILE_NOT_FOUND);
     /* Test a (hopefully) valid user/password logon (given by parameters of this function). */
     RTTESTI_CHECK_RC_RETV(RTProcCreateEx(g_szExecName, apszArgs, RTENV_DEFAULT, 0 /*fFlags*/, NULL,
                                          NULL, NULL, pszUser, pszPassword, &hProc), VINF_SUCCESS);
@@ -172,7 +172,7 @@ static void tstRTCreateProcEx5(const char *pszUser, const char *pszPassword)
 
 static int tstRTCreateProcEx4Child(int argc, char **argv)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (rc)
         return RTMsgInitFailure(rc);
 
@@ -207,7 +207,7 @@ static void tstRTCreateProcEx4(void)
 
 static int tstRTCreateProcEx3Child(void)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (rc)
         return RTMsgInitFailure(rc);
 
@@ -277,7 +277,7 @@ static void tstRTCreateProcEx3(void)
 
 static int tstRTCreateProcEx2Child(void)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (rc)
         return RTMsgInitFailure(rc);
 
@@ -344,7 +344,7 @@ static void tstRTCreateProcEx2(void)
 
 static int tstRTCreateProcEx1Child(void)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (rc)
         return RTMsgInitFailure(rc);
     RTPrintf("it works");

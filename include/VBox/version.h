@@ -53,7 +53,7 @@
 # define VBOX_FULL_VERSION_MAKE(uMajor, uMinor, uBuild) \
     (  (uint32_t)((uMajor) &   0xff) << 24 \
      | (uint32_t)((uMinor) &   0xff) << 16 \
-     | (uint32_t)((uMinor) & 0xffff)       \
+     | (uint32_t)((uBuild) & 0xffff)       \
     )
 
 /** Combined version number. */
@@ -65,6 +65,29 @@
 # define VBOX_FULL_VERSION_GET_MINOR(uFullVer)  ( ((uFullVer) >> 16) &   0xffU )
 /** Get the build version number from a VBOX_FULL_VERSION style number. */
 # define VBOX_FULL_VERSION_GET_BUILD(uFullVer)  ( ((uFullVer)      ) & 0xffffU )
+
+/**
+ * Make a short version number for use in 16 bit version fields.
+ *
+ * The returned number can be used in normal integer comparsions and will yield
+ * the expected results.
+ *
+ * @param   uMajor      The major version number.
+ * @param   uMinor      The minor version number.
+ * @returns Short version number.
+ */
+# define VBOX_SHORT_VERSION_MAKE(uMajor, uMinor) \
+    (  (uint16_t)((uMajor) &   0xff) << 8 \
+     | (uint16_t)((uMinor) &   0xff)      \
+    )
+
+/** Combined short version number. */
+# define VBOX_SHORT_VERSION               \
+    VBOX_SHORT_VERSION_MAKE(VBOX_VERSION_MAJOR, VBOX_VERSION_MINOR)
+/** Get the major version number from a VBOX_SHORT_VERSION style number. */
+# define VBOX_SHORT_VERSION_GET_MAJOR(uShortVer)  ( ((uShortVer) >> 8) &   0xffU )
+/** Get the minor version number from a VBOX_SHORT_VERSION style number. */
+# define VBOX_SHORT_VERSION_GET_MINOR(uShortVer)  ( (uShortVer) &   0xffU )
 
 #endif /* !RC_INVOKED */
 

@@ -3,7 +3,7 @@
 #
 
 #
-# Copyright (C) 2006-2011 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -15,6 +15,7 @@
 #
 
 %define %SPEC% 1
+%define %OSE% 1
 %{!?python_sitelib: %define python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print get_python_lib()")}
 
 Summary:   Oracle VM VirtualBox
@@ -109,39 +110,56 @@ cd icons
 cd -
 rmdir icons
 mv virtualbox.xml $RPM_BUILD_ROOT/usr/share/mime/packages
-for i in VBoxManage VBoxSVC VBoxSDL VirtualBox VBoxHeadless VBoxExtPackHelperApp VBoxBalloonCtrl vboxwebsrv webtest; do
+for i in VBoxManage VBoxSVC VBoxSDL VirtualBox VBoxHeadless VBoxExtPackHelperApp VBoxBalloonCtrl VBoxAutostart; do
   mv $i $RPM_BUILD_ROOT/usr/lib/virtualbox; done
+if %WEBSVC%; then
+  for i in vboxwebsrv webtest; do
+    mv $i $RPM_BUILD_ROOT/usr/lib/virtualbox; done
+fi
 for i in VBoxSDL VirtualBox VBoxHeadless VBoxNetDHCP VBoxNetAdpCtl; do
   chmod 4511 $RPM_BUILD_ROOT/usr/lib/virtualbox/$i; done
+if [ -d ExtensionPacks/VNC ]; then
+  mv ExtensionPacks/VNC $RPM_BUILD_ROOT/usr/lib/virtualbox/ExtensionPacks
+fi
 mv VBoxTunctl $RPM_BUILD_ROOT/usr/bin
+%if %{?is_ose:0}%{!?is_ose:1}
 for d in /lib/modules/*; do
   if [ -L $d/build ]; then
     rm -f /tmp/vboxdrv-Module.symvers
-    ./src/vboxhost/vboxdrv/build_in_tmp \
+    ./src/vboxhost/build_in_tmp \
       --save-module-symvers /tmp/vboxdrv-Module.symvers \
+      --module-source `pwd`/src/vboxhost/vboxdrv \
       KBUILD_VERBOSE= KERN_DIR=$d/build MODULE_DIR=$RPM_BUILD_ROOT/$d/misc -j4 \
       %INSTMOD%
-    ./src/vboxhost/vboxnetflt/build_in_tmp \
+    ./src/vboxhost/build_in_tmp \
       --use-module-symvers /tmp/vboxdrv-Module.symvers \
+      --module-source `pwd`/src/vboxhost/vboxnetflt \
       KBUILD_VERBOSE= KERN_DIR=$d/build MODULE_DIR=$RPM_BUILD_ROOT/$d/misc -j4 \
       %INSTMOD%
-    ./src/vboxhost/vboxnetadp/build_in_tmp \
+    ./src/vboxhost/build_in_tmp \
       --use-module-symvers /tmp/vboxdrv-Module.symvers \
+      --module-source `pwd`/src/vboxhost/vboxnetadp \
       KBUILD_VERBOSE= KERN_DIR=$d/build MODULE_DIR=$RPM_BUILD_ROOT/$d/misc -j4 \
       %INSTMOD%
-    ./src/vboxhost/vboxpci/build_in_tmp \
+    ./src/vboxhost/build_in_tmp \
       --use-module-symvers /tmp/vboxdrv-Module.symvers \
+      --module-source `pwd`/src/vboxhost/vboxpci \
       KBUILD_VERBOSE= KERN_DIR=$d/build MODULE_DIR=$RPM_BUILD_ROOT/$d/misc -j4 \
       %INSTMOD%
   fi
 done
-mv kchmviewer $RPM_BUILD_ROOT/usr/lib/virtualbox
-for i in rdesktop-vrdp.tar.gz rdesktop-vrdp-keymaps additions/VBoxGuestAdditions.iso; do
+%endif
+%if %{?is_ose:0}%{!?is_ose:1}
+  mv kchmviewer $RPM_BUILD_ROOT/usr/lib/virtualbox
+  for i in rdesktop-vrdp.tar.gz rdesktop-vrdp-keymaps; do
+    mv $i $RPM_BUILD_ROOT/usr/share/virtualbox; done
+  mv rdesktop-vrdp $RPM_BUILD_ROOT/usr/bin
+%endif
+for i in additions/VBoxGuestAdditions.iso; do
   mv $i $RPM_BUILD_ROOT/usr/share/virtualbox; done
 if [ -d accessible ]; then
   mv accessible $RPM_BUILD_ROOT/usr/lib/virtualbox
 fi
-mv rdesktop-vrdp $RPM_BUILD_ROOT/usr/bin
 install -D -m 755 vboxdrv.init $RPM_BUILD_ROOT%{_initrddir}/vboxdrv
 %if %{?rpm_suse:1}%{!?rpm_suse:0}
 ln -sf ../etc/init.d/vboxdrv $RPM_BUILD_ROOT/sbin/rcvboxdrv
@@ -163,6 +181,8 @@ ln -s VBox $RPM_BUILD_ROOT/usr/bin/VBoxHeadless
 ln -s VBox $RPM_BUILD_ROOT/usr/bin/vboxheadless
 ln -s VBox $RPM_BUILD_ROOT/usr/bin/VBoxBalloonCtrl
 ln -s VBox $RPM_BUILD_ROOT/usr/bin/vboxballoonctrl
+ln -s VBox $RPM_BUILD_ROOT/usr/bin/VBoxAutostart
+ln -s VBox $RPM_BUILD_ROOT/usr/bin/vboxautostart
 ln -s VBox $RPM_BUILD_ROOT/usr/bin/vboxwebsrv
 ln -s /usr/share/virtualbox/src/vboxhost $RPM_BUILD_ROOT/usr/src/vboxhost-%VER%
 mv virtualbox.desktop $RPM_BUILD_ROOT/usr/share/applications/virtualbox.desktop
@@ -218,7 +238,7 @@ fi
 
 
 %post
-#include installer-utils.sh
+#include installer-common.sh
 
 LOG="/var/log/vbox-install.log"
 
@@ -238,18 +258,7 @@ rm -f /etc/vbox/module_not_compiled
 
 # XXX SELinux: allow text relocation entries
 %if %{?rpm_redhat:1}%{!?rpm_redhat:0}
-if [ -x /usr/bin/chcon ]; then
-  chcon -t texrel_shlib_t /usr/lib/virtualbox/*VBox* > /dev/null 2>&1
-  chcon -t texrel_shlib_t /usr/lib/virtualbox/VirtualBox.so > /dev/null 2>&1
-  chcon -t texrel_shlib_t /usr/lib/virtualbox/VBoxAuth.so > /dev/null 2>&1
-  chcon -t texrel_shlib_t /usr/lib/virtualbox/components/VBox*.so > /dev/null 2>&1
-  chcon -t java_exec_t    /usr/lib/virtualbox/VirtualBox > /dev/null 2>&1
-  chcon -t java_exec_t    /usr/lib/virtualbox/VBoxSDL > /dev/null 2>&1
-  chcon -t java_exec_t    /usr/lib/virtualbox/VBoxHeadless > /dev/null 2>&1
-  chcon -t java_exec_t    /usr/lib/virtualbox/VBoxExtPackHelperApp > /dev/null 2>&1
-  chcon -t java_exec_t    /usr/lib/virtualbox/VBoxBalloonCtrl > /dev/null 2>&1
-  chcon -t java_exec_t    /usr/lib/virtualbox/vboxwebsrv > /dev/null 2>&1
-fi
+set_selinux_permissions /usr/lib/virtualbox /usr/share/virtualbox
 %endif
 
 # create users groups (disable with INSTALL_NO_GROUP=1 in /etc/default/virtualbox)
@@ -409,9 +418,9 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %defattr(-,root,root)
-%doc LICENSE
+%doc %{!?is_ose: LICENSE}
 %doc UserManual*.pdf
-%doc VirtualBox*.chm
+%doc %{!?is_ose: VirtualBox*.chm}
 %{_initrddir}/vboxdrv
 %{_initrddir}/vboxballoonctrl-service
 %{_initrddir}/vboxweb-service

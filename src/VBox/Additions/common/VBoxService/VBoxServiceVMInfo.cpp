@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceVMInfo.cpp 38224 2011-07-28 14:53:13Z vboxsync $ */
+/* $Id: VBoxServiceVMInfo.cpp 42154 2012-07-13 23:00:53Z vboxsync $ */
 /** @file
  * VBoxService - Virtual Machine Information for the Host.
  */
@@ -21,6 +21,10 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #ifdef RT_OS_WINDOWS
+# ifdef TARGET_NT4 /* HACK ALERT! PMIB_IPSTATS undefined if 0x0400 with newer SDKs. */
+#  undef _WIN32_WINNT
+#  define _WIN32_WINNT 0x0500
+# endif
 # include <winsock2.h>
 # include <iphlpapi.h>
 # include <ws2tcpip.h>
@@ -80,6 +84,24 @@ static uint32_t                 g_cVMInfoLoggedInUsers = UINT32_MAX;
 static VBOXSERVICEVEPROPCACHE   g_VMInfoPropCache;
 /** The VM session ID. Changes whenever the VM is restored or reset. */
 static uint64_t                 g_idVMInfoSession;
+
+
+
+/**
+ * Signals the event so that a re-enumeration of VM-specific
+ * information (like logged in users) can happen.
+ *
+ * @return  IPRT status code.
+ */
+int VBoxServiceVMInfoSignal(void)
+{
+    /* Trigger a re-enumeration of all logged-in users by unblocking
+     * the multi event semaphore of the VMInfo thread. */
+    if (g_hVMInfoEvent)
+        return RTSemEventMultiSignal(g_hVMInfoEvent);
+
+    return VINF_SUCCESS;
+}
 
 
 /** @copydoc VBOXSERVICE::pfnPreInit */
@@ -261,7 +283,7 @@ static int vboxserviceVMInfoWriteUsers(void)
     while (   (ut_user = getutxent())
            && RT_SUCCESS(rc))
     {
-        VBoxServiceVerbose(4, "VMInfo/Users: Found logged in user \"%s\"\n",
+        VBoxServiceVerbose(4, "Found logged in user \"%s\"\n",
                            ut_user->ut_user);
         if (cUsersInList > cListSize)
         {
@@ -329,7 +351,7 @@ static int vboxserviceVMInfoWriteUsers(void)
         {
             static int s_iVMInfoBitchedOOM = 0;
             if (s_iVMInfoBitchedOOM++ < 3)
-                VBoxServiceVerbose(0, "VMInfo/Users: Warning: Not enough memory available to enumerate users! Keeping old value (%u)\n",
+                VBoxServiceVerbose(0, "Warning: Not enough memory available to enumerate users! Keeping old value (%u)\n",
                                    g_cVMInfoLoggedInUsers);
             cUsersInList = g_cVMInfoLoggedInUsers;
         }
@@ -337,7 +359,7 @@ static int vboxserviceVMInfoWriteUsers(void)
             cUsersInList = 0;
     }
 
-    VBoxServiceVerbose(4, "VMInfo/Users: cUsersInList: %u, pszUserList: %s, rc=%Rrc\n",
+    VBoxServiceVerbose(4, "cUsersInList: %u, pszUserList: %s, rc=%Rrc\n",
                        cUsersInList, pszUserList ? pszUserList : "<NULL>", rc);
 
     if (pszUserList && cUsersInList > 0)
@@ -811,6 +833,13 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             rc = rc2;
             break;
         }
+        else if (RT_LIKELY(RT_SUCCESS(rc2)))
+        {
+            /* Reset event semaphore if it got triggered. */
+            rc2 = RTSemEventMultiReset(g_hVMInfoEvent);
+            if (RT_FAILURE(rc2))
+                rc2 = VBoxServiceError("VMInfo: RTSemEventMultiReset failed; rc2=%Rrc\n", rc2);
+        }
     }
 
 #ifdef RT_OS_WINDOWS
@@ -831,8 +860,6 @@ static DECLCALLBACK(void) VBoxServiceVMInfoStop(void)
 /** @copydoc VBOXSERVICE::pfnTerm */
 static DECLCALLBACK(void) VBoxServiceVMInfoTerm(void)
 {
-    int rc;
-
     if (g_hVMInfoEvent != NIL_RTSEMEVENTMULTI)
     {
         /** @todo temporary solution: Zap all values which are not valid
@@ -848,7 +875,7 @@ static DECLCALLBACK(void) VBoxServiceVMInfoTerm(void)
          *        since it remembers what we've written. */
         /* Delete the "../Net" branch. */
         const char *apszPat[1] = { "/VirtualBox/GuestInfo/Net/*" };
-        rc = VbglR3GuestPropDelSet(g_uVMInfoGuestPropSvcClientID, &apszPat[0], RT_ELEMENTS(apszPat));
+        int rc = VbglR3GuestPropDelSet(g_uVMInfoGuestPropSvcClientID, &apszPat[0], RT_ELEMENTS(apszPat));
 
         /* Destroy property cache. */
         VBoxServicePropCacheDestroy(&g_VMInfoPropCache);

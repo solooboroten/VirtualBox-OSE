@@ -1,7 +1,6 @@
+/* $Id: regops.c 40900 2012-04-13 12:33:25Z vboxsync $ */
 /** @file
- *
- * vboxsf -- VirtualBox Guest Additions for Linux:
- * Regular file inode and file operations
+ * vboxsf - VBox Linux Shared Folders, Regular file inode and file operations.
  */
 
 /*
@@ -22,7 +21,7 @@
 
 #include "vfsmod.h"
 
-static void *alloc_bounch_buffer(size_t *tmp_sizep, PRTCCPHYS physp, size_t
+static void *alloc_bounce_buffer(size_t *tmp_sizep, PRTCCPHYS physp, size_t
                                  xfer_size, const char *caller)
 {
     size_t tmp_size;
@@ -50,7 +49,7 @@ static void *alloc_bounch_buffer(size_t *tmp_sizep, PRTCCPHYS physp, size_t
     return tmp;
 }
 
-static void free_bounch_buffer(void *tmp)
+static void free_bounce_buffer(void *tmp)
 {
     kfree (tmp);
 }
@@ -126,7 +125,7 @@ static ssize_t sf_reg_read(struct file *file, char *buf, size_t size, loff_t *of
     if (!size)
         return 0;
 
-    tmp = alloc_bounch_buffer(&tmp_size, &tmp_phys, size, __PRETTY_FUNCTION__);
+    tmp = alloc_bounce_buffer(&tmp_size, &tmp_phys, size, __PRETTY_FUNCTION__);
     if (!tmp)
         return -ENOMEM;
 
@@ -159,11 +158,11 @@ static ssize_t sf_reg_read(struct file *file, char *buf, size_t size, loff_t *of
     }
 
     *off += total_bytes_read;
-    free_bounch_buffer(tmp);
+    free_bounce_buffer(tmp);
     return total_bytes_read;
 
 fail:
-    free_bounch_buffer(tmp);
+    free_bounce_buffer(tmp);
     return err;
 }
 
@@ -213,7 +212,7 @@ static ssize_t sf_reg_write(struct file *file, const char *buf, size_t size, lof
     if (!size)
         return 0;
 
-    tmp = alloc_bounch_buffer(&tmp_size, &tmp_phys, size, __PRETTY_FUNCTION__);
+    tmp = alloc_bounce_buffer(&tmp_size, &tmp_phys, size, __PRETTY_FUNCTION__);
     if (!tmp)
         return -ENOMEM;
 
@@ -259,11 +258,11 @@ static ssize_t sf_reg_write(struct file *file, const char *buf, size_t size, lof
         inode->i_size = *off;
 
     sf_i->force_restat = 1;
-    free_bounch_buffer(tmp);
+    free_bounce_buffer(tmp);
     return total_bytes_written;
 
 fail:
-    free_bounch_buffer(tmp);
+    free_bounce_buffer(tmp);
     return err;
 }
 
@@ -429,6 +428,16 @@ static int sf_reg_release(struct inode *inode, struct file *file)
     BUG_ON(!sf_g);
     BUG_ON(!sf_r);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 25)
+    /* See the smbfs source (file.c). mmap in particular can cause data to be
+     * written to the file after it is closed, which we can't cope with.  We
+     * copy and paste the body of filemap_write_and_wait() here as it was not
+     * defined before 2.6.6 and not exported until quite a bit later. */
+    /* filemap_write_and_wait(inode->i_mapping); */
+    if (   inode->i_mapping->nrpages
+        && filemap_fdatawrite(inode->i_mapping) != -EIO)
+        filemap_fdatawait(inode->i_mapping);
+#endif
     rc = vboxCallClose(&client_handle, &sf_g->map, sf_r->handle);
     if (RT_FAILURE(rc))
         LogFunc(("vboxCallClose failed rc=%Rrc\n", rc));

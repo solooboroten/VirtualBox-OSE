@@ -1,10 +1,10 @@
-; $Id: $
-;; @file
+; $Id$
+; @file
 ; VBoxGuestAdditionsCommon.nsh - Common / shared utility functions.
 ;
 
 ;
-; Copyright (C) 2006-2011 Oracle Corporation
+; Copyright (C) 2006-2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -14,6 +14,28 @@
 ; VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 ; hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 ;
+
+Function Common_CopyFiles
+
+  SetOutPath "$INSTDIR"
+  SetOverwrite on
+
+!ifdef VBOX_WITH_LICENSE_INSTALL_RTF
+  ; Copy license file (if any) into the installation directory
+  FILE "/oname=${LICENSE_FILE_RTF}" "$%VBOX_BRAND_LICENSE_RTF%"
+!endif
+
+  FILE "$%VBOX_PATH_DIFX%\DIFxAPI.dll"
+  FILE "$%PATH_OUT%\bin\additions\VBoxDrvInst.exe"
+
+  FILE "$%PATH_OUT%\bin\additions\VBoxVideo.inf"
+!ifdef VBOX_SIGN_ADDITIONS
+  FILE "$%PATH_OUT%\bin\additions\VBoxVideo.cat"
+!endif
+
+  FILE "iexplore.ico"
+
+FunctionEnd
 
 !ifndef UNINSTALLER_ONLY
 Function ExtractFiles
@@ -52,11 +74,6 @@ Function ExtractFiles
   SetOutPath "$0\VBoxVideo\OpenGL"
   FILE "$%PATH_OUT%\bin\additions\d3d8.dll"
   FILE "$%PATH_OUT%\bin\additions\d3d9.dll"
-  !if $%BUILD_TARGET_ARCH% == "x86"
-    ; libWine is used for 32bit d3d only
-    ; @todo: remove it for 32bit as well
-    FILE "$%PATH_OUT%\bin\additions\libWine.dll"
-  !endif
   FILE "$%PATH_OUT%\bin\additions\VBoxD3D8.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxD3D9.dll"
   FILE "$%PATH_OUT%\bin\additions\wined3d.dll"
@@ -66,7 +83,6 @@ Function ExtractFiles
     SetOutPath "$0\VBoxVideo\OpenGL\SysWow64"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll"
-    FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\libWine.dll"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\VBoxOGLarrayspu.dll"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\VBoxOGLcrutil.dll"
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\VBoxOGLerrorspu.dll"
@@ -81,7 +97,7 @@ Function ExtractFiles
 !endif
 
 !if $%VBOX_WITH_WDDM% == "1"
-  ; WDDM Video driver
+  ; WDDM Video driver for Vista and 7
   SetOutPath "$0\VBoxVideoWddm"
 
   !ifdef VBOX_SIGN_ADDITIONS
@@ -120,6 +136,48 @@ Function ExtractFiles
       FILE "$%PATH_OUT%\bin\additions\wined3dwddm-x86.dll"
     !endif ; $%VBOX_WITH_CROGL% == "1"
   !endif ; $%BUILD_TARGET_ARCH% == "amd64"
+  
+  !if $%VBOX_WITH_WDDM_W8% == "1"
+  ; WDDM Video driver for Win8
+  SetOutPath "$0\VBoxVideoW8"
+
+    !ifdef VBOX_SIGN_ADDITIONS
+      FILE "$%PATH_OUT%\bin\additions\VBoxVideoW8.cat"
+    !endif
+    FILE "$%PATH_OUT%\bin\additions\VBoxVideoW8.sys"
+    FILE "$%PATH_OUT%\bin\additions\VBoxVideoW8.inf"
+    FILE "$%PATH_OUT%\bin\additions\VBoxDispD3D.dll"
+
+    !if $%VBOX_WITH_CROGL% == "1"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLarrayspu.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLcrutil.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLerrorspu.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLpackspu.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLpassthroughspu.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLfeedbackspu.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGL.dll"
+
+      FILE "$%PATH_OUT%\bin\additions\VBoxD3D9wddm.dll"
+      FILE "$%PATH_OUT%\bin\additions\wined3dwddm.dll"
+    !endif ; $%VBOX_WITH_CROGL% == "1"
+
+    !if $%BUILD_TARGET_ARCH% == "amd64"
+      FILE "$%PATH_OUT%\bin\additions\VBoxDispD3D-x86.dll"
+
+      !if $%VBOX_WITH_CROGL% == "1"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGLarrayspu-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGLcrutil-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGLerrorspu-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGLpackspu-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGLpassthroughspu-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGLfeedbackspu-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\VBoxOGL-x86.dll"
+
+        FILE "$%PATH_OUT%\bin\additions\VBoxD3D9wddm-x86.dll"
+        FILE "$%PATH_OUT%\bin\additions\wined3dwddm-x86.dll"
+      !endif ; $%VBOX_WITH_CROGL% == "1"
+    !endif ; $%BUILD_TARGET_ARCH% == "amd64"
+  !endif ; $%VBOX_WITH_WDDM_W8% == "1"
 !endif ; $%VBOX_WITH_WDDM% == "1"
 
   ; Mouse driver
@@ -162,6 +220,10 @@ Function ExtractFiles
   SetOutPath "$0\VBoxSF"
   FILE "$%PATH_OUT%\bin\additions\VBoxSF.sys"
   FILE "$%PATH_OUT%\bin\additions\VBoxMRXNP.dll"
+  !if $%BUILD_TARGET_ARCH% == "amd64"
+    ; Only 64-bit installer: Also copy 32-bit DLLs on 64-bit target
+    FILE "$%PATH_OUT%\bin\additions\VBoxMRXNP-x86.dll"
+  !endif
 
   ; Auto-Logon
   SetOutPath "$0\AutoLogon"
@@ -511,10 +573,16 @@ FunctionEnd
 Function ${un}CheckForWDDMCapability
 
 !if $%VBOX_WITH_WDDM% == "1"
-  ; If we're on a 32-bit Windows Vista / 7 we can use the WDDM driver
+  ; If we're on a 32-bit Windows Vista / 7 / 8 we can use the WDDM driver
   ${If} $g_strWinVersion == "Vista"
   ${OrIf} $g_strWinVersion == "7"
+  ${OrIf} $g_strWinVersion == "8"
     StrCpy $g_bCapWDDM "true"
+  ${EndIf}
+  ; If we're on Windows 8 we *have* to use the WDDM driver, so select it
+  ; by default
+  ${If} $g_strWinVersion == "8"
+    StrCpy $g_bWithWDDM "true"
   ${EndIf}
 !endif
 
@@ -531,6 +599,13 @@ Function ${un}CheckForCapabilities
   ; Retrieve system mode and store result in
   System::Call 'user32::GetSystemMetrics(i ${SM_CLEANBOOT}) i .r0'
   StrCpy $g_iSystemMode $0
+
+  ; Does the guest have a DLL cache?
+  ${If} $g_strWinVersion == "Vista"
+  ${OrIf} $g_strWinVersion == "7"
+  ${OrIf} $g_strWinVersion == "8"
+    StrCpy $g_bCapDllCache "true"
+  ${EndIf}
 
   ; Check whether this OS is capable of handling WDDM drivers
   Call ${un}CheckForWDDMCapability
@@ -568,3 +643,406 @@ FunctionEnd
 !insertmacro SetAppMode64 ""
 !insertmacro SetAppMode64 "un."
 
+;
+; Retrieves the vendor ("CompanyName" of FILEINFO structure)
+; of a given file.
+; @return  Stack: Company name, or "" on error/if not found.
+; @param   Stack: File name to retrieve vendor for.
+;
+!macro GetFileVendor un
+Function ${un}GetFileVendor
+
+  ; Preserve values
+  Exch $0 ; Stack: $0 <filename> (Get file name into $0)
+  Push $1
+
+  IfFileExists "$0" found
+  Goto not_found
+
+found:
+
+  VBoxGuestInstallHelper::FileGetVendor "$0"
+  ; Stack: <vendor> $1 $0
+  Pop  $0 ; Get vendor
+  Pop  $1 ; Restore $1
+  Exch $0 ; Restore $0, push vendor on top of stack
+  Goto end
+
+not_found:
+
+  Pop $1
+  Pop $0
+  Push "File not found"
+  Goto end
+
+end:
+
+FunctionEnd
+!macroend
+!insertmacro GetFileVendor ""
+!insertmacro GetFileVendor "un."
+
+;
+; Retrieves the architecture of a given file.
+; @return  Stack: Architecture ("x86", "amd64") or error message.
+; @param   Stack: File name to retrieve architecture for.
+;
+!macro GetFileArchitecture un
+Function ${un}GetFileArchitecture
+
+  ; Preserve values
+  Exch $0 ; Stack: $0 <filename> (Get file name into $0)
+  Push $1
+
+  IfFileExists "$0" found
+  Goto not_found
+
+found:
+
+  VBoxGuestInstallHelper::FileGetArchitecture "$0"
+  ; Stack: <architecture> $1 $0
+  Pop  $0 ; Get architecture string
+  Pop  $1 ; Restore $1
+  Exch $0 ; Restore $0, push vendor on top of stack
+  Goto end
+
+not_found:
+
+  Pop $1
+  Pop $0
+  Push "File not found"
+  Goto end
+
+end:
+
+FunctionEnd
+!macroend
+!insertmacro GetFileArchitecture ""
+!insertmacro GetFileArchitecture "un."
+
+;
+; Verifies a given file by checking its file vendor and target
+; architecture.
+; @return  Stack: "0" if valid, "1" if not, "2" on error / not found.
+; @param   Stack: Architecture ("x86" or "amd64").
+; @param   Stack: Vendor.
+; @param   Stack: File name to verify.
+;
+!macro VerifyFile un
+Function ${un}VerifyFile
+
+  ; Preserve values
+  Exch $0 ; File;         S: old$0 vendor arch
+  Exch    ;               S: vendor old$0 arch
+  Exch $1 ; Vendor;       S: old$1 old$0 arch
+  Exch    ;               S: old$0 old$1 arch
+  Exch 2  ;               S: arch old$1 old$0
+  Exch $2 ; Architecture; S: old$2 old$1 old$0
+  Push $3 ;               S: old$3 old$2 old$1 old$0
+
+  IfFileExists "$0" check_vendor
+  Goto not_found
+
+check_vendor:
+
+  Push $0
+  Call ${un}GetFileVendor
+  Pop $3
+
+  ${If} $3 == $1
+    Goto check_arch
+  ${EndIf}
+  StrCpy $3 "1" ; Invalid
+  Goto end
+
+check_arch:
+
+  Push $0
+  Call ${un}GetFileArchitecture
+  Pop $3
+
+  ${If} $3 == $2
+    StrCpy $3 "0" ; Valid
+  ${Else}
+    StrCpy $3 "1" ; Invalid
+  ${EndIf}
+  Goto end
+
+not_found:
+
+  StrCpy $3 "2" ; Not found
+  Goto end
+
+end:
+
+  ; S: old$3 old$2 old$1 old$0
+  Exch $3 ; S: $3 old$2 old$1 old$0
+  Exch    ; S: old$2 $3 old$1
+  Pop $2  ; S: $3 old$1 old$0
+  Exch    ; S: old$1 $3 old$0
+  Pop $1  ; S: $3 old$0
+  Exch    ; S: old$0 $3
+  Pop $0  ; S: $3
+
+FunctionEnd
+!macroend
+!insertmacro VerifyFile ""
+!insertmacro VerifyFile "un."
+
+;
+; Macro for accessing VerifyFile in a more convenient way by using
+; a parameter list.
+; @return  Stack: "0" if valid, "1" if not, "2" on error / not found.
+; @param   Un/Installer prefix; either "" or "un".
+; @param   Name of file to verify.
+; @param   Vendor to check for.
+; @param   Architecture ("x86" or "amd64") to check for.
+;
+!macro VerifyFileEx un File Vendor Architecture
+  Push $0
+  Push "${Architecture}"
+  Push "${Vendor}"
+  Push "${File}"
+  DetailPrint "Verifying file $\"${File}$\" ..."
+  Call ${un}VerifyFile
+  Pop $0
+  ${If} $0 == "0"
+    DetailPrint "Verification of file $\"${File}$\" successful (Vendor: ${Vendor}, Architecture: ${Architecture})"
+  ${ElseIf} $0 == "1"
+    DetailPrint "Verification of file $\"${File}$\" failed (not Vendor: ${Vendor}, and/or not Architecture: ${Architecture})"
+  ${Else}
+    DetailPrint "Skipping to file $\"${File}$\"; not found"
+  ${EndIf}
+  ; Push result popped off the stack to stack again
+  Push $0
+!macroend
+!define VerifyFileEx "!insertmacro VerifyFileEx"
+
+;
+; Macro for copying a file only if the source file is verified 
+; to be from a certain vendor and architecture.
+; @return  Stack: "0" if copied, "1" if not, "2" on error / not found.
+; @param   Un/Installer prefix; either "" or "un".
+; @param   Name of file to verify and copy to destination.
+; @param   Destination name to copy verified file to.
+; @param   Vendor to check for.
+; @param   Architecture ("x86" or "amd64") to check for.
+;
+!macro CopyFileEx un FileSrc FileDest Vendor Architecture
+  Push $0
+  Push "${Architecture}"
+  Push "${Vendor}"
+  Push "${FileSrc}"  
+  Call ${un}VerifyFile
+  Pop $0
+  ${If} $0 == "0"
+    DetailPrint "Copying verified file $\"${FileSrc}$\" to $\"${FileDest}$\" ..."
+    CopyFiles /SILENT "${FileSrc}" "${FileDest}"
+  ${Else}
+    DetailPrint "Skipping to copy file $\"${FileSrc}$\" to $\"${FileDest}$\" (not Vendor: ${Vendor}, Architecture: ${Architecture})"
+  ${EndIf}
+  ; Push result popped off the stack to stack again
+  Push $0
+!macroend
+!define CopyFileEx "!insertmacro CopyFileEx"
+
+;
+; Macro for installing a library/DLL.
+; @return  Stack: "0" if copied, "1" if not, "2" on error / not found.
+; @param   Un/Installer prefix; either "" or "un".
+; @param   Name of lib/DLL to verify and copy to destination.
+; @param   Destination name to copy verified file to.
+; @param   Temporary folder used for exchanging the (locked) lib/DLL after a reboot.
+;
+!macro InstallFileEx un FileSrc FileDest DirTemp
+  DetailPrint "Installing library $\"${FileSrc}$\" to $\"${FileDest}$\" ..."
+  ; Try the gentle way and replace the file instantly
+  !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "${FileSrc}" "${FileDest}" "${DirTemp}"
+  ; If the above call didn't help, use a (later) reboot to replace the file
+  !insertmacro InstallLib DLL NOTSHARED REBOOT_NOTPROTECTED "${FileSrc}" "${FileDest}" "${DirTemp}"
+!macroend
+!define InstallFileEx "!insertmacro InstallFileEx"
+
+;
+; Macro for installing a library/DLL.
+; @return  Stack: "0" if copied, "1" if not, "2" on error / not found.
+; @param   Un/Installer prefix; either "" or "un".
+; @param   Name of lib/DLL to verify and copy to destination.
+; @param   Destination name to copy verified file to.
+; @param   Temporary folder used for exchanging the (locked) lib/DLL after a reboot.
+; @param   Vendor to check for.
+; @param   Architecture ("x86" or "amd64") to check for.
+;
+!macro InstallFileVerify un FileSrc FileDest DirTemp Vendor Architecture
+  Push $0
+  Push "${Architecture}"
+  Push "${Vendor}"
+  Push "${FileSrc}"
+  DetailPrint "Verifying library $\"${FileSrc}$\" ..."
+  Call ${un}VerifyFile
+  Pop $0
+  ${If} $0 == "0"
+    ${InstallFileEx} ${un} ${FileSrc} ${FileDest} ${DirTemp}
+  ${Else}
+    DetailPrint "File $\"${FileSrc}$\" did not pass verification (Vendor: ${Vendor}, Architecture: ${Architecture})"
+  ${EndIf}
+  ; Push result popped off the stack to stack again.
+  Push $0
+!macroend
+!define InstallFileVerify "!insertmacro InstallFileVerify"
+
+;
+; Validates backed up and replaced Direct3D files; either the d3d*.dll have
+; to be from Microsoft or the (already) backed up msd3d*.dll files. If both
+; don't match we have a corrupted / invalid installation.
+; @return  Stack: "0" if files are valid; otherwise "1".
+;
+!macro ValidateFilesDirect3D un
+Function ${un}ValidateD3DFiles
+
+  Push $0
+
+  ; We need to switch to 64-bit app mode to handle the "real" 64-bit files in
+  ; ""system32" on a 64-bit guest
+  Call ${un}SetAppMode64
+
+  ; Note: Not finding a file (like *d3d8.dll) on Windows Vista/7 is fine;
+  ;       it simply is not present there.
+  
+  ; Note 2: On 64-bit systems there are no 64-bit *d3d8 DLLs, only 32-bit ones 
+  ;         in SysWOW64 (or in system32 on 32-bit systems).
+
+!if $%BUILD_TARGET_ARCH% == "x86"
+  ${VerifyFileEx} "${un}" "$SYSDIR\d3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+!endif
+  
+  ${VerifyFileEx} "${un}" "$SYSDIR\d3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+
+  ${If} $g_bCapDllCache == "true"
+!if $%BUILD_TARGET_ARCH% == "x86"
+    ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\d3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+    Pop $0
+    ${If} $0 == "1"
+      Goto verify_msd3d
+    ${EndIf}
+!endif
+    ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\d3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+    Pop $0
+    ${If} $0 == "1"
+      Goto verify_msd3d
+    ${EndIf}
+  ${EndIf}
+
+!if $%BUILD_TARGET_ARCH% == "amd64"
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\d3d8.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\d3d9.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+
+  ${If} $g_bCapDllCache == "true"
+    ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\d3d8.dll" "Microsoft Corporation" "x86"
+    Pop $0
+    ${If} $0 == "1"
+      Goto verify_msd3d
+    ${EndIf}
+    ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\d3d9.dll" "Microsoft Corporation" "x86"
+    Pop $0
+    ${If} $0 == "1"
+      Goto verify_msd3d
+    ${EndIf}
+  ${EndIf}
+
+!endif
+
+  Goto valid
+
+verify_msd3d:
+
+!if $%BUILD_TARGET_ARCH% == "x86"
+  ${VerifyFileEx} "${un}" "$SYSDIR\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+!endif
+  ${VerifyFileEx} "${un}" "$SYSDIR\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+
+  ${If} $g_bCapDllCache == "true"
+!if $%BUILD_TARGET_ARCH% == "x86"
+    ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+    Pop $0
+    ${If} $0 == "1"
+      Goto invalid
+    ${EndIf}
+!endif
+    ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+    Pop $0
+    ${If} $0 == "1"
+      Goto invalid
+    ${EndIf}
+  ${EndIf}
+
+!if $%BUILD_TARGET_ARCH% == "amd64"
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\msd3d8.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\msd3d9.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+
+  ${If} $g_bCapDllCache == "true"
+    ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\msd3d8.dll" "Microsoft Corporation" "x86"
+    Pop $0
+    ${If} $0 == "1"
+      Goto invalid
+    ${EndIf}
+    ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\msd3d9.dll" "Microsoft Corporation" "x86"
+    Pop $0
+    ${If} $0 == "1"
+      Goto invalid
+    ${EndIf}
+  ${EndIf}
+!endif
+
+  Goto valid
+
+valid:
+
+  StrCpy $0 "0" ; Installation valid
+  Goto end
+
+invalid:
+
+  StrCpy $0 "1" ; Installation invalid / corrupted
+  Goto end
+
+end:
+
+  Exch $0
+
+FunctionEnd
+!macroend
+!insertmacro ValidateFilesDirect3D ""
+!insertmacro ValidateFilesDirect3D "un."

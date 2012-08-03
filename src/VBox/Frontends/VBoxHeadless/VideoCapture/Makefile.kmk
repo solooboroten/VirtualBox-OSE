@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
+# $Id: Makefile.kmk 42473 2012-07-31 11:07:32Z vboxsync $
 ## @file
 # Sub-Makefile for the ffmpeg frame buffer module.
 #
 
 #
-# Copyright (C) 2006-2007 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -18,11 +18,31 @@
 SUB_DEPTH = ../../../../..
 include $(KBUILD_PATH)/subheader.kmk
 
-DLLS += VBoxFFmpegFB
-VBoxFFmpegFB_TEMPLATE        = VBOXMAINCLIENTDLL
-VBoxFFmpegFB_SDKS            = VBOX_FFMPEG VBOX_LIBPNG VBOX_ZLIB
-VBoxFFmpegFB_SOURCES         = FFmpegFB.cpp
-VBoxFFmpegFB_CXXFLAGS.linux += -fPIC
+DLLS += VBoxVideoRecFB
+VBoxVideoRecFB_TEMPLATE     = VBOXMAINCLIENTDLL
 
-include $(KBUILD_PATH)/subfooter.kmk
+ifdef VBOX_WITH_VPX
+  VBoxVideoRecFB_DEFS      += \
+    VBOX_WITH_VPX  
+endif
+
+ifdef VBOX_WITH_VPX
+  VBoxVideoRecFB_SDKS       = VBOX_FFMPEG VBOX_LIBPNG VBOX_ZLIB VBOX_VPX
+else
+  VBoxVideoRecFB_SDKS       = VBOX_FFMPEG VBOX_LIBPNG VBOX_ZLIB 
+endif
+
+ifdef VBOX_WITH_VPX
+  VBoxVideoRecFB_SOURCES   +=  \
+    VideoRecFB.cpp \
+    EbmlWriter.cpp \
+    EncodeAndWrite.cpp
+else
+  VBoxVideoRecFB_SOURCES   +=  \
+    VideoRecFB.cpp 
+endif
+
+VBoxVideoRecFB_CXXFLAGS.linux += -fPIC
+
+include $(FILE_KBUILD_SUB_FOOTER)
 

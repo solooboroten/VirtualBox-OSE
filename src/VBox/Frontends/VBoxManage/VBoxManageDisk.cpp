@@ -1,10 +1,10 @@
-/* $Id: VBoxManageDisk.cpp 37525 2011-06-17 10:09:21Z vboxsync $ */
+/* $Id: VBoxManageDisk.cpp 42248 2012-07-20 08:39:45Z vboxsync $ */
 /** @file
  * VBoxManage - The disk related commands.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -121,7 +121,7 @@ int parseDiskType(const char *psz, MediumType_T *pDiskType)
 }
 
 /** @todo move this into getopt, as getting bool values is generic */
-static int parseBool(const char *psz, bool *pb)
+int parseBool(const char *psz, bool *pb)
 {
     int rc = VINF_SUCCESS;
     if (    !RTStrICmp(psz, "on")
@@ -170,17 +170,24 @@ HRESULT findMedium(HandlerArg *a, const char *pszFilenameOrUuid,
     }
 
     if (!fSilent)
-        CHECK_ERROR(a->virtualBox, FindMedium(Bstr(pszFilenameOrUuid).raw(),
-                                              enmDevType, pMedium.asOutParam()));
+        CHECK_ERROR(a->virtualBox, OpenMedium(Bstr(pszFilenameOrUuid).raw(), 
+                                   enmDevType, 
+                                   AccessMode_ReadWrite, 
+                                   /*fForceNewUidOnOpen */ false, 
+                                   pMedium.asOutParam()));
     else
-        rc = a->virtualBox->FindMedium(Bstr(pszFilenameOrUuid).raw(),
-                                       enmDevType, pMedium.asOutParam());
+        rc = a->virtualBox->OpenMedium(Bstr(pszFilenameOrUuid).raw(), 
+                                       enmDevType, 
+                                       AccessMode_ReadWrite,
+                                       /*fForceNewUidOnOpen */ false,
+                                       pMedium.asOutParam());
     return rc;
 }
 
 HRESULT findOrOpenMedium(HandlerArg *a, const char *pszFilenameOrUuid,
-                         DeviceType_T enmDevType, ComPtr<IMedium> &pMedium,
-                         bool fForceNewUuidOnOpen, bool *pfWasUnknown)
+                         DeviceType_T enmDevType, AccessMode_T enmAccessMode,
+                         ComPtr<IMedium> &pMedium, bool fForceNewUuidOnOpen,
+                         bool *pfWasUnknown)
 {
     HRESULT rc;
     bool fWasUnknown = false;
@@ -199,13 +206,16 @@ HRESULT findOrOpenMedium(HandlerArg *a, const char *pszFilenameOrUuid,
         pszFilenameOrUuid = szFilenameAbs;
     }
 
-    rc = a->virtualBox->FindMedium(Bstr(pszFilenameOrUuid).raw(), enmDevType,
+    rc = a->virtualBox->OpenMedium(Bstr(pszFilenameOrUuid).raw(), 
+                                   enmDevType,
+                                   enmAccessMode,
+                                   /*fForceNewUidOnOpen */ false,
                                    pMedium.asOutParam());
     /* If the medium is unknown try to open it. */
     if (!pMedium)
     {
         CHECK_ERROR(a->virtualBox, OpenMedium(Bstr(pszFilenameOrUuid).raw(),
-                                              enmDevType, AccessMode_ReadWrite,
+                                              enmDevType, enmAccessMode,
                                               fForceNewUuidOnOpen,
                                               pMedium.asOutParam()));
         if (SUCCEEDED(rc))
@@ -244,6 +254,7 @@ static const RTGETOPTDEF g_aCreateHardDiskOptions[] =
 {
     { "--filename",     'f', RTGETOPT_REQ_STRING },
     { "-filename",      'f', RTGETOPT_REQ_STRING },     // deprecated
+    { "--diffparent",   'd', RTGETOPT_REQ_STRING },
     { "--size",         's', RTGETOPT_REQ_UINT64 },
     { "-size",          's', RTGETOPT_REQ_UINT64 },     // deprecated
     { "--sizebyte",     'S', RTGETOPT_REQ_UINT64 },
@@ -260,8 +271,10 @@ int handleCreateHardDisk(HandlerArg *a)
     HRESULT rc;
     int vrc;
     const char *filename = NULL;
+    const char *diffparent = NULL;
     uint64_t size = 0;
-    const char *format = "VDI";
+    const char *format = NULL;
+    bool fBase = true;
     MediumVariant_T DiskVariant = MediumVariant_Standard;
 
     int c;
@@ -276,6 +289,11 @@ int handleCreateHardDisk(HandlerArg *a)
         {
             case 'f':   // --filename
                 filename = ValueUnion.psz;
+                break;
+
+            case 'd':   // --diffparent
+                diffparent = ValueUnion.psz;
+                fBase = false;
                 break;
 
             case 's':   // --size
@@ -325,11 +343,56 @@ int handleCreateHardDisk(HandlerArg *a)
     }
 
     /* check the outcome */
-    if (   !filename
-        || !*filename
-        || size == 0)
-        return errorSyntax(USAGE_CREATEHD, "Parameters --filename and --size are required");
-
+    bool fUnknownParent = false;
+    ComPtr<IMedium> parentHardDisk;
+    if (fBase)
+    {
+        if (   !filename
+            || !*filename
+            || size == 0)
+            return errorSyntax(USAGE_CREATEHD, "Parameters --filename and --size are required");
+        if (!format || !*format)
+            format = "VDI";
+    }
+    else
+    {
+        if (   !filename
+            || !*filename)
+            return errorSyntax(USAGE_CREATEHD, "Parameters --filename is required");
+        size = 0;
+        DiskVariant = MediumVariant_Diff;
+        if (!format || !*format)
+        {
+            const char *pszExt = RTPathExt(filename);
+            /* Skip over . if there is an extension. */
+            if (pszExt)
+                pszExt++;
+            if (!pszExt || !*pszExt)
+                format = "VDI";
+            else
+                format = pszExt;
+        }
+        rc = findOrOpenMedium(a, diffparent, DeviceType_HardDisk, AccessMode_ReadWrite,
+                              parentHardDisk, false /* fForceNewUuidOnOpen */,
+                              &fUnknownParent);
+        if (FAILED(rc))
+            return 1;
+        if (parentHardDisk.isNull())
+        {
+            RTMsgError("Invalid parent hard disk reference, avoiding crash");
+            return 1;
+        }
+        MediumState_T state;
+        CHECK_ERROR(parentHardDisk, COMGETTER(State)(&state));
+        if (FAILED(rc))
+            return 1;
+        if (state == MediumState_Inaccessible)
+        {
+            CHECK_ERROR(parentHardDisk, RefreshState(&state));
+            if (FAILED(rc))
+                return 1;
+        }
+    }
     /* check for filename extension */
     /** @todo use IMediumFormat to cover all extensions generically */
     Utf8Str strName(filename);
@@ -350,26 +413,25 @@ int handleCreateHardDisk(HandlerArg *a)
     if (SUCCEEDED(rc) && hardDisk)
     {
         ComPtr<IProgress> progress;
-        CHECK_ERROR(hardDisk, CreateBaseStorage(size, DiskVariant, progress.asOutParam()));
+        if (fBase)
+            CHECK_ERROR(hardDisk, CreateBaseStorage(size, DiskVariant, progress.asOutParam()));
+        else
+            CHECK_ERROR(parentHardDisk, CreateDiffStorage(hardDisk, DiskVariant, progress.asOutParam()));
         if (SUCCEEDED(rc) && progress)
         {
             rc = showProgress(progress);
-            if (FAILED(rc))
-            {
-                com::ProgressErrorInfo info(progress);
-                if (info.isBasicAvailable())
-                    RTMsgError("Failed to create hard disk. Error message: %lS", info.getText().raw());
-                else
-                    RTMsgError("Failed to create hard disk. No error message available!");
-            }
-            else
+            CHECK_PROGRESS_ERROR(progress, ("Failed to create hard disk"));
+            if (SUCCEEDED(rc))
             {
                 Bstr uuid;
                 CHECK_ERROR(hardDisk, COMGETTER(Id)(uuid.asOutParam()));
                 RTPrintf("Disk image created. UUID: %s\n", Utf8Str(uuid).c_str());
             }
         }
+
         CHECK_ERROR(hardDisk, Close());
+        if (!fBase && fUnknownParent)
+            CHECK_ERROR(parentHardDisk, Close());
     }
     return SUCCEEDED(rc) ? 0 : 1;
 }
@@ -444,7 +506,7 @@ int handleModifyHardDisk(HandlerArg *a)
                 if (!FilenameOrUuid)
                     FilenameOrUuid = ValueUnion.psz;
                 else
-                    return errorSyntax(USAGE_CREATEHD, "Invalid parameter '%s'", ValueUnion.psz);
+                    return errorSyntax(USAGE_MODIFYHD, "Invalid parameter '%s'", ValueUnion.psz);
                 break;
 
             default:
@@ -475,7 +537,7 @@ int handleModifyHardDisk(HandlerArg *a)
     if (fModifyDiskType || fModifyAutoReset)
         rc = findMedium(a, FilenameOrUuid, DeviceType_HardDisk, false /* fSilent */, hardDisk);
     else
-        rc = findOrOpenMedium(a, FilenameOrUuid, DeviceType_HardDisk,
+        rc = findOrOpenMedium(a, FilenameOrUuid, DeviceType_HardDisk, AccessMode_ReadWrite,
                               hardDisk, false /* fForceNewUuidOnOpen */, &unknown);
     if (FAILED(rc))
         return 1;
@@ -511,8 +573,10 @@ int handleModifyHardDisk(HandlerArg *a)
                 RTMsgError("Compact hard disk operation is not implemented!");
             else if (rc == VBOX_E_NOT_SUPPORTED)
                 RTMsgError("Compact hard disk operation for this format is not implemented yet!");
+            else if (!progress.isNull())
+                CHECK_PROGRESS_ERROR(progress, ("Failed to compact hard disk"));
             else
-                com::GluePrintRCMessage(rc);
+                RTMsgError("Failed to compact hard disk!");
         }
     }
 
@@ -529,7 +593,7 @@ int handleModifyHardDisk(HandlerArg *a)
             else if (rc == VBOX_E_NOT_SUPPORTED)
                 RTMsgError("Resize hard disk operation for this format is not implemented yet!");
             else
-                com::GluePrintRCMessage(rc);
+                CHECK_PROGRESS_ERROR(progress, ("Failed to resize hard disk"));
         }
     }
 
@@ -630,8 +694,8 @@ int handleCloneHardDisk(HandlerArg *a)
     bool fSrcUnknown = false;
     bool fDstUnknown = false;
 
-    rc = findOrOpenMedium(a, pszSrc, DeviceType_HardDisk, srcDisk,
-                          false /* fForceNewUuidOnOpen */, &fSrcUnknown);
+    rc = findOrOpenMedium(a, pszSrc, DeviceType_HardDisk, AccessMode_ReadOnly,
+                          srcDisk, false /* fForceNewUuidOnOpen */, &fSrcUnknown);
     if (FAILED(rc))
         return 1;
 
@@ -640,8 +704,8 @@ int handleCloneHardDisk(HandlerArg *a)
         /* open/create destination hard disk */
         if (fExisting)
         {
-            rc = findOrOpenMedium(a, pszDst, DeviceType_HardDisk, dstDisk,
-                                  false /* fForceNewUuidOnOpen */, &fDstUnknown);
+            rc = findOrOpenMedium(a, pszDst, DeviceType_HardDisk, AccessMode_ReadWrite,
+                                  dstDisk, false /* fForceNewUuidOnOpen */, &fDstUnknown);
             if (FAILED(rc))
                 break;
 
@@ -658,21 +722,14 @@ int handleCloneHardDisk(HandlerArg *a)
             rc = createHardDisk(a, Utf8Str(format).c_str(), pszDst, dstDisk);
             if (FAILED(rc))
                 break;
+            fDstUnknown = true;
         }
 
         ComPtr<IProgress> progress;
         CHECK_ERROR_BREAK(srcDisk, CloneTo(dstDisk, DiskVariant, NULL, progress.asOutParam()));
 
         rc = showProgress(progress);
-        if (FAILED(rc))
-        {
-            com::ProgressErrorInfo info(progress);
-            if (info.isBasicAvailable())
-                RTMsgError("Failed to clone hard disk. Error message: %lS", info.getText().raw());
-            else
-                RTMsgError("Failed to clone hard disk. No error message available!");
-            break;
-        }
+        CHECK_PROGRESS_ERROR_BREAK(progress, ("Failed to clone hard disk"));
 
         Bstr uuid;
         CHECK_ERROR_BREAK(dstDisk, COMGETTER(Id)(uuid.asOutParam()));
@@ -704,6 +761,7 @@ static const RTGETOPTDEF g_aConvertFromRawHardDiskOptions[] =
     { "-static",        'F', RTGETOPT_REQ_NOTHING },
     { "--variant",      'm', RTGETOPT_REQ_STRING },
     { "-variant",       'm', RTGETOPT_REQ_STRING },
+    { "--uuid",         'u', RTGETOPT_REQ_STRING },
 };
 
 RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
@@ -716,6 +774,8 @@ RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
     const char *filesize = NULL;
     unsigned uImageFlags = VD_IMAGE_FLAGS_NONE;
     void *pvBuf = NULL;
+    RTUUID uuid;
+    PCRTUUID pUuid = NULL;
 
     int c;
     RTGETOPTUNION ValueUnion;
@@ -727,6 +787,11 @@ RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
     {
         switch (c)
         {
+            case 'u':   // --uuid
+                if (RT_FAILURE(RTUuidFromStr(&uuid, ValueUnion.psz)))
+                    return errorSyntax(USAGE_CONVERTFROMRAW, "Invalid UUID '%s'", ValueUnion.psz);
+                pUuid = &uuid;
+                break;
             case 'o':   // --format
                 format = ValueUnion.psz;
                 break;
@@ -744,10 +809,7 @@ RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
                 if (!srcfilename)
                 {
                     srcfilename = ValueUnion.psz;
-// If you change the OS list here don't forget to update VBoxManageHelp.cpp.
-#ifndef RT_OS_WINDOWS
                     fReadFromStdIn = !strcmp(srcfilename, "stdin");
-#endif
                 }
                 else if (!dstfilename)
                     dstfilename = ValueUnion.psz;
@@ -770,21 +832,18 @@ RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
     PVBOXHDD pDisk = NULL;
 
     PVDINTERFACE     pVDIfs = NULL;
-    VDINTERFACE      vdInterfaceError;
-    VDINTERFACEERROR vdInterfaceErrorCallbacks;
-    vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
-    vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
-    vdInterfaceErrorCallbacks.pfnError     = handleVDError;
-    vdInterfaceErrorCallbacks.pfnMessage   = NULL;
+    VDINTERFACEERROR vdInterfaceError;
+    vdInterfaceError.pfnError     = handleVDError;
+    vdInterfaceError.pfnMessage   = NULL;
 
-    rc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
-                        &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
+    rc = VDInterfaceAdd(&vdInterfaceError.Core, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
+                        NULL, sizeof(VDINTERFACEERROR), &pVDIfs);
     AssertRC(rc);
 
     /* open raw image file. */
     RTFILE File;
     if (fReadFromStdIn)
-        File = 0;
+        rc = RTFileFromNative(&File, RTFILE_NATIVE_STDIN);
     else
         rc = RTFileOpen(&File, srcfilename, RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_WRITE);
     if (RT_FAILURE(rc))
@@ -826,7 +885,7 @@ RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
     LCHS.cHeads = 0;
     LCHS.cSectors = 0;
     rc = VDCreateBase(pDisk, format, dstfilename, cbFile,
-                      uImageFlags, pszComment, &PCHS, &LCHS, NULL,
+                      uImageFlags, pszComment, &PCHS, &LCHS, pUuid,
                       VD_OPEN_FLAGS_NORMAL, NULL, NULL);
     if (RT_FAILURE(rc))
     {
@@ -927,8 +986,8 @@ int handleShowHardDiskInfo(HandlerArg *a)
     ComPtr<IMedium> hardDisk;
     bool unknown = false;
 
-    rc = findOrOpenMedium(a, FilenameOrUuid, DeviceType_HardDisk, hardDisk,
-                          false /* fForceNewUuidOnOpen */, &unknown);
+    rc = findOrOpenMedium(a, FilenameOrUuid, DeviceType_HardDisk, AccessMode_ReadOnly,
+                          hardDisk, false /* fForceNewUuidOnOpen */, &unknown);
     if (FAILED(rc))
         return 1;
 
@@ -949,14 +1008,14 @@ int handleShowHardDiskInfo(HandlerArg *a)
         {
             Bstr err;
             CHECK_ERROR_BREAK(hardDisk, COMGETTER(LastAccessError)(err.asOutParam()));
-            RTPrintf("Access Error:         %lS\n", err.raw());
+            RTPrintf("Access Error:         %ls\n", err.raw());
         }
 
         Bstr description;
         hardDisk->COMGETTER(Description)(description.asOutParam());
         if (!description.isEmpty())
         {
-            RTPrintf("Description:          %lS\n", description.raw());
+            RTPrintf("Description:          %ls\n", description.raw());
         }
 
         LONG64 logicalSize;
@@ -1000,7 +1059,7 @@ int handleShowHardDiskInfo(HandlerArg *a)
 
         Bstr format;
         hardDisk->COMGETTER(Format)(format.asOutParam());
-        RTPrintf("Storage format:       %lS\n", format.raw());
+        RTPrintf("Storage format:       %ls\n", format.raw());
         ULONG variant;
         hardDisk->COMGETTER(Variant)(&variant);
         const char *variantStr = "unknown";
@@ -1040,7 +1099,7 @@ int handleShowHardDiskInfo(HandlerArg *a)
                 Bstr name;
                 machine->COMGETTER(Name)(name.asOutParam());
                 machine->COMGETTER(Id)(uuid.asOutParam());
-                RTPrintf("%s%lS (UUID: %lS)\n",
+                RTPrintf("%s%ls (UUID: %ls)\n",
                          j == 0 ? "In use by VMs:        " : "                      ",
                          name.raw(), machineIds[j]);
             }
@@ -1050,7 +1109,7 @@ int handleShowHardDiskInfo(HandlerArg *a)
 
         Bstr loc;
         hardDisk->COMGETTER(Location)(loc.asOutParam());
-        RTPrintf("Location:             %lS\n", loc.raw());
+        RTPrintf("Location:             %ls\n", loc.raw());
 
         /* print out information specific for differencing hard disks */
         if (!parent.isNull())
@@ -1171,14 +1230,7 @@ int handleCloseMedium(HandlerArg *a)
             if (SUCCEEDED(rc))
             {
                 rc = showProgress(progress);
-                if (FAILED(rc))
-                {
-                    com::ProgressErrorInfo info(progress);
-                    if (info.isBasicAvailable())
-                        RTMsgError("Failed to delete medium. Error message: %lS", info.getText().raw());
-                    else
-                        RTMsgError("Failed to delete medium. No error message available!");
-                }
+                CHECK_PROGRESS_ERROR(progress, ("Failed to delete medium"));
             }
             else
                 RTMsgError("Failed to delete medium. Error code %Rrc", rc);

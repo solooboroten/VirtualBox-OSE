@@ -1,4 +1,4 @@
-/* $Id: DBGFAddr.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: DBGFAddr.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, Mixed Address Methods.
  */
@@ -37,7 +37,7 @@
  * Checks if an address is in the HMA or not.
  * @returns true if it's inside the HMA.
  * @returns flase if it's not inside the HMA.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   FlatPtr     The address in question.
  */
 DECLINLINE(bool) dbgfR3IsHMA(PVM pVM, RTGCUINTPTR FlatPtr)
@@ -91,7 +91,7 @@ static int dbgfR3AddrFromSelInfoOffWorker(PDBGFADDRESS pAddress, PCDBGFSELINFO p
  * Creates a mixed address from a Sel:off pair.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   idCpu       The CPU ID.
  * @param   pAddress    Where to store the mixed address.
  * @param   Sel         The selector part.
@@ -131,7 +131,7 @@ VMMR3DECL(int) DBGFR3AddrFromSelOff(PVM pVM, VMCPUID idCpu, PDBGFADDRESS pAddres
  * described by it.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   idCpu       The CPU ID.
  * @param   pAddress    Where to store the mixed address.
  * @param   pSelInfo    The selector info.
@@ -155,7 +155,7 @@ VMMR3DECL(int) DBGFR3AddrFromSelInfoOff(PVM pVM, PDBGFADDRESS pAddress, PCDBGFSE
  * Creates a mixed address from a flat address.
  *
  * @returns pAddress.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pAddress    Where to store the mixed address.
  * @param   FlatPtr     The flat pointer.
  */
@@ -175,12 +175,13 @@ VMMR3DECL(PDBGFADDRESS) DBGFR3AddrFromFlat(PVM pVM, PDBGFADDRESS pAddress, RTGCU
  * Creates a mixed address from a guest physical address.
  *
  * @returns pAddress.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pAddress    Where to store the mixed address.
  * @param   PhysAddr    The guest physical address.
  */
 VMMR3DECL(PDBGFADDRESS) DBGFR3AddrFromPhys(PVM pVM, PDBGFADDRESS pAddress, RTGCPHYS PhysAddr)
 {
+    NOREF(pVM);
     pAddress->Sel     = DBGF_SEL_FLAT;
     pAddress->off     = PhysAddr;
     pAddress->FlatPtr = PhysAddr;
@@ -194,11 +195,12 @@ VMMR3DECL(PDBGFADDRESS) DBGFR3AddrFromPhys(PVM pVM, PDBGFADDRESS pAddress, RTGCP
  *
  * @returns true if valid.
  * @returns false if invalid.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pAddress    The address to validate.
  */
 VMMR3DECL(bool) DBGFR3AddrIsValid(PVM pVM, PCDBGFADDRESS pAddress)
 {
+    NOREF(pVM);
     if (!VALID_PTR(pAddress))
         return false;
     if (!DBGFADDRESS_IS_VALID(pAddress))
@@ -212,7 +214,7 @@ VMMR3DECL(bool) DBGFR3AddrIsValid(PVM pVM, PCDBGFADDRESS pAddress)
  * Called on the EMT for the VCpu.
  *
  * @returns VBox status code.
- * @param   pVCpu           The virtual CPU handle.
+ * @param   pVCpu           Pointer to the VMCPU.
  * @param   pAddress        The address.
  * @param   pGCPhys         Where to return the physical address.
  */
@@ -238,7 +240,7 @@ static DECLCALLBACK(int) dbgfR3AddrToPhysOnVCpu(PVMCPU pVCpu, PDBGFADDRESS pAddr
  * @retval  VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT
  * @retval  VERR_PAGE_MAP_LEVEL4_NOT_PRESENT
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   idCpu           The ID of the CPU context to convert virtual
  *                          addresses.
  * @param   pAddress        The address.
@@ -273,8 +275,8 @@ VMMR3DECL(int)  DBGFR3AddrToPhys(PVM pVM, VMCPUID idCpu, PDBGFADDRESS pAddress, 
         if (VMCPU_IS_EMT(pVCpu))
             rc = dbgfR3AddrToPhysOnVCpu(pVCpu, pAddress, pGCPhys);
         else
-            rc = VMR3ReqCallWait(pVCpu->pVMR3, pVCpu->idCpu,
-                                 (PFNRT)dbgfR3AddrToPhysOnVCpu, 3, pVCpu, pAddress, pGCPhys);
+            rc = VMR3ReqPriorityCallWait(pVCpu->pVMR3, pVCpu->idCpu,
+                                         (PFNRT)dbgfR3AddrToPhysOnVCpu, 3, pVCpu, pAddress, pGCPhys);
     }
     return rc;
 }
@@ -296,7 +298,7 @@ VMMR3DECL(int)  DBGFR3AddrToPhys(PVM pVM, VMCPUID idCpu, PDBGFADDRESS pAddress, 
  * @retval  VERR_PGM_PHYS_PAGE_RESERVED
  * @retval  VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   idCpu           The ID of the CPU context to convert virtual
  *                          addresses.
  * @param   pAddress        The address.
@@ -336,7 +338,7 @@ VMMR3DECL(int)  DBGFR3AddrToHostPhys(PVM pVM, VMCPUID idCpu, PDBGFADDRESS pAddre
  *
  * @returns VBox status code.
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   idCpu           The ID of the CPU context.
  * @param   pAddress        The address.
  * @param   fReadOnly       Whether returning a read-only page is fine or not.
@@ -407,7 +409,7 @@ static DECLCALLBACK(int) dbgfR3AddrToVolatileR3PtrOnVCpu(PVM pVM, VMCPUID idCpu,
  * @retval  VERR_PGM_PHYS_PAGE_RESERVED
  * @retval  VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   idCpu           The ID of the CPU context to convert virtual
  *                          addresses.
  * @param   pAddress        The address.
@@ -431,7 +433,7 @@ VMMR3DECL(int)  DBGFR3AddrToVolatileR3Ptr(PVM pVM, VMCPUID idCpu, PDBGFADDRESS p
     /*
      * Convert it.
      */
-    return VMR3ReqCallWait(pVM, idCpu, (PFNRT)dbgfR3AddrToVolatileR3PtrOnVCpu, 5, pVM, idCpu, pAddress, fReadOnly, ppvR3Ptr);
+    return VMR3ReqPriorityCallWait(pVM, idCpu, (PFNRT)dbgfR3AddrToVolatileR3PtrOnVCpu, 5, pVM, idCpu, pAddress, fReadOnly, ppvR3Ptr);
 }
 
 

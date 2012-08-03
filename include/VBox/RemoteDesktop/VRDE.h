@@ -327,15 +327,15 @@ typedef struct _VRDE_USB_REQ_REAP_URB_PARM
 #define VRDE_USB_XFER_STALL (1)
 #define VRDE_USB_XFER_DNR   (2)
 #define VRDE_USB_XFER_CRC   (3)
-/* VRDE_USB_VERSION_2: New error codes. */
-#define VRDE_USB_XFER_BS    (4)
-#define VRDE_USB_XFER_DTM   (5)
-#define VRDE_USB_XFER_PCF   (6)
-#define VRDE_USB_XFER_UPID  (7)
-#define VRDE_USB_XFER_DO    (8)
-#define VRDE_USB_XFER_DU    (9)
-#define VRDE_USB_XFER_BO    (10)
-#define VRDE_USB_XFER_BU    (11)
+/* VRDE_USB_VERSION_2: New error codes. OHCI Completion Codes. */
+#define VRDE_USB_XFER_BS    (4)  /* BitStuffing */
+#define VRDE_USB_XFER_DTM   (5)  /* DataToggleMismatch */
+#define VRDE_USB_XFER_PCF   (6)  /* PIDCheckFailure */
+#define VRDE_USB_XFER_UPID  (7)  /* UnexpectedPID */
+#define VRDE_USB_XFER_DO    (8)  /* DataOverrun */
+#define VRDE_USB_XFER_DU    (9)  /* DataUnderrun */
+#define VRDE_USB_XFER_BO    (10) /* BufferOverrun */
+#define VRDE_USB_XFER_BU    (11) /* BufferUnderrun */
 #define VRDE_USB_XFER_ERR   (12) /* VBox protocol error. */
 
 #define VRDE_USB_REAP_FLAG_CONTINUED (0x0)
@@ -438,6 +438,13 @@ typedef struct _VRDEUSBDEVICEDESC
 
 } VRDEUSBDEVICEDESC;
 
+#define VRDE_USBDEVICESPEED_UNKNOWN    0 /* Unknown. */
+#define VRDE_USBDEVICESPEED_LOW        1 /* Low speed (1.5 Mbit/s). */
+#define VRDE_USBDEVICESPEED_FULL       2 /* Full speed (12 Mbit/s). */
+#define VRDE_USBDEVICESPEED_HIGH       3 /* High speed (480 Mbit/s). */
+#define VRDE_USBDEVICESPEED_VARIABLE   4 /* Variable speed - USB 2.5 / wireless. */
+#define VRDE_USBDEVICESPEED_SUPERSPEED 5 /* Super Speed - USB 3.0 */
+
 typedef struct _VRDEUSBDEVICEDESCEXT
 {
     VRDEUSBDEVICEDESC desc;
@@ -445,9 +452,8 @@ typedef struct _VRDEUSBDEVICEDESCEXT
     /* Extended info.
      */
 
-    /** Version of the physical USB port the device is connected to. */
-    uint16_t        bcdPortVersion;
-
+    /** The USB device speed: VRDE_USBDEVICESPEED_*. */
+    uint16_t        u16DeviceSpeed;
 } VRDEUSBDEVICEDESCEXT;
 
 typedef struct _VRDE_USB_REQ_DEVICE_LIST_RET
@@ -1143,6 +1149,12 @@ typedef struct _VRDEENTRYPOINTS_3
                                                       * in VRDEEnableConnections to the actually used value.
                                                       * VRDEDestroy must set the port to 0xFFFFFFFF.
                                                       */
+#define VRDE_SP_CLIENT_STATUS     (VRDE_SP_BASE + 2) /* UTF8 string. The change of the generic client status:
+                                                      * "ATTACH"   - the client is attached;
+                                                      * "DETACH"   - the client is detached;
+                                                      * "NAME=..." - the client name changes.
+                                                      * Can be used for other notifications.
+                                                      */
 
 #pragma pack(1)
 /* VRDE_QP_FEATURE data. */
@@ -1151,6 +1163,14 @@ typedef struct _VRDEFEATURE
     uint32_t u32ClientId;
     char     achInfo[1]; /* UTF8 property input name and output value. */
 } VRDEFEATURE;
+
+/* VRDE_SP_CLIENT_STATUS data. */
+typedef struct VRDECLIENTSTATUS
+{
+    uint32_t u32ClientId;
+    uint32_t cbStatus;
+    char     achStatus[1]; /* UTF8 status string. */
+} VRDECLIENTSTATUS;
 
 /* A framebuffer description. */
 typedef struct _VRDEFRAMEBUFFERINFO

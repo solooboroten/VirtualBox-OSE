@@ -1,4 +1,4 @@
-/* $Id: VBoxUhgsmiDisp.cpp 36867 2011-04-28 07:27:03Z vboxsync $ */
+/* $Id: VBoxUhgsmiDisp.cpp 42499 2012-08-01 10:26:43Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -18,6 +18,12 @@
 
 #include "VBoxDispD3DCmn.h"
 
+#define VBOXUHGSMID3D_GET_PRIVATE(_p, _t) ((_t*)(((uint8_t*)_p) - RT_OFFSETOF(_t, BasePrivate.Base)))
+#define VBOXUHGSMID3D_GET(_p) VBOXUHGSMID3D_GET_PRIVATE(_p, VBOXUHGSMI_PRIVATE_D3D)
+
+#if 0
+#define VBOXUHGSMID3D_GET_BUFFER(_p) VBOXUHGSMID3D_GET_PRIVATE(_p, VBOXUHGSMI_BUFFER_PRIVATE_D3D)
+
 #include <iprt/mem.h>
 #include <iprt/err.h>
 
@@ -28,9 +34,7 @@ typedef struct VBOXUHGSMI_BUFFER_PRIVATE_D3D
     UINT aLockPageIndices[1];
 } VBOXUHGSMI_BUFFER_PRIVATE_D3D, *PVBOXUHGSMI_BUFFER_PRIVATE_D3D;
 
-#define VBOXUHGSMID3D_GET_PRIVATE(_p, _t) ((_t*)(((uint8_t*)_p) - RT_OFFSETOF(_t, BasePrivate.Base)))
-#define VBOXUHGSMID3D_GET(_p) VBOXUHGSMID3D_GET_PRIVATE(_p, VBOXUHGSMI_PRIVATE_D3D)
-#define VBOXUHGSMID3D_GET_BUFFER(_p) VBOXUHGSMID3D_GET_PRIVATE(_p, VBOXUHGSMI_BUFFER_PRIVATE_D3D)
+
 
 DECLCALLBACK(int) vboxUhgsmiD3DBufferDestroy(PVBOXUHGSMI_BUFFER pBuf)
 {
@@ -43,10 +47,8 @@ DECLCALLBACK(int) vboxUhgsmiD3DBufferDestroy(PVBOXUHGSMI_BUFFER pBuf)
     Assert(hr == S_OK);
     if (hr == S_OK)
     {
-        if (pBuffer->BasePrivate.Base.bSynchCreated)
-        {
-            CloseHandle(pBuffer->BasePrivate.Base.hSynch);
-        }
+        if (pBuffer->BasePrivate.hSynch)
+            CloseHandle(pBuffer->BasePrivate.hSynch);
         RTMemFree(pBuffer);
         return VINF_SUCCESS;
     }
@@ -94,15 +96,13 @@ DECLCALLBACK(int) vboxUhgsmiD3DBufferUnlock(PVBOXUHGSMI_BUFFER pBuf)
     return VERR_GENERAL_FAILURE;
 }
 
-DECLCALLBACK(int) vboxUhgsmiD3DBufferCreate(PVBOXUHGSMI pHgsmi, uint32_t cbBuf,
-        VBOXUHGSMI_SYNCHOBJECT_TYPE enmSynchType, HVBOXUHGSMI_SYNCHOBJECT hSynch,
-        PVBOXUHGSMI_BUFFER* ppBuf)
+DECLCALLBACK(int) vboxUhgsmiD3DBufferCreate(PVBOXUHGSMI pHgsmi, uint32_t cbBuf, VBOXUHGSMI_BUFFER_TYPE_FLAGS fUhgsmiType, PVBOXUHGSMI_BUFFER* ppBuf)
 {
-    bool bSynchCreated = false;
+    HANDLE hSynch = NULL;
     if (!cbBuf)
         return VERR_INVALID_PARAMETER;
 
-    int rc = vboxUhgsmiBaseEventChkCreate(enmSynchType, &hSynch, &bSynchCreated);
+    int rc = vboxUhgsmiBaseEventChkCreate(fUhgsmiType, &hSynch);
     AssertRC(rc);
     if (RT_FAILURE(rc))
         return rc;
@@ -133,7 +133,7 @@ DECLCALLBACK(int) vboxUhgsmiD3DBufferCreate(PVBOXUHGSMI pHgsmi, uint32_t cbBuf,
         Buf.AllocInfo.enmType = VBOXWDDM_ALLOC_TYPE_UMD_HGSMI_BUFFER;
         Buf.AllocInfo.cbBuffer = cbBuf;
         Buf.AllocInfo.hSynch = hSynch;
-        Buf.AllocInfo.enmSynchType = enmSynchType;
+        Buf.AllocInfo.fUhgsmiType = fUhgsmiType;
 
         HRESULT hr = pPrivate->pDevice->RtCallbacks.pfnAllocateCb(pPrivate->pDevice->hDevice, &Buf.DdiAlloc);
         Assert(hr == S_OK);
@@ -145,10 +145,8 @@ DECLCALLBACK(int) vboxUhgsmiD3DBufferCreate(PVBOXUHGSMI pHgsmi, uint32_t cbBuf,
 //            pBuf->Base.pfnAdjustValidDataRange = vboxUhgsmiD3DBufferAdjustValidDataRange;
             pBuf->BasePrivate.Base.pfnDestroy = vboxUhgsmiD3DBufferDestroy;
 
-            pBuf->BasePrivate.Base.hSynch = hSynch;
-            pBuf->BasePrivate.Base.enmSynchType = enmSynchType;
+            pBuf->BasePrivate.Base.fType = fUhgsmiType;
             pBuf->BasePrivate.Base.cbBuffer = cbBuf;
-            pBuf->BasePrivate.Base.bSynchCreated = bSynchCreated;
 
             pBuf->pDevice = pPrivate->pDevice;
             pBuf->BasePrivate.hAllocation = Buf.DdiAllocInfo.hAllocation;
@@ -163,13 +161,13 @@ DECLCALLBACK(int) vboxUhgsmiD3DBufferCreate(PVBOXUHGSMI pHgsmi, uint32_t cbBuf,
     else
         rc = VERR_NO_MEMORY;
 
-    if (bSynchCreated)
+    if (hSynch)
         CloseHandle(hSynch);
 
     return rc;
 }
 
-DECLCALLBACK(int) vboxUhgsmiD3DBufferSubmitAsynch(PVBOXUHGSMI pHgsmi, PVBOXUHGSMI_BUFFER_SUBMIT aBuffers, uint32_t cBuffers)
+DECLCALLBACK(int) vboxUhgsmiD3DBufferSubmit(PVBOXUHGSMI pHgsmi, PVBOXUHGSMI_BUFFER_SUBMIT aBuffers, uint32_t cBuffers)
 {
     PVBOXUHGSMI_PRIVATE_D3D pHg = VBOXUHGSMID3D_GET(pHgsmi);
     PVBOXWDDMDISP_DEVICE pDevice = pHg->pDevice;
@@ -214,9 +212,35 @@ DECLCALLBACK(int) vboxUhgsmiD3DBufferSubmitAsynch(PVBOXUHGSMI pHgsmi, PVBOXUHGSM
 HRESULT vboxUhgsmiD3DInit(PVBOXUHGSMI_PRIVATE_D3D pHgsmi, PVBOXWDDMDISP_DEVICE pDevice)
 {
     pHgsmi->BasePrivate.Base.pfnBufferCreate = vboxUhgsmiD3DBufferCreate;
-    pHgsmi->BasePrivate.Base.pfnBufferSubmitAsynch = vboxUhgsmiD3DBufferSubmitAsynch;
-    pHgsmi->BasePrivate.hClient = NULL;
+    pHgsmi->BasePrivate.Base.pfnBufferSubmit = vboxUhgsmiD3DBufferSubmit;
     pHgsmi->pDevice = pDevice;
     return S_OK;
 }
+#endif
 
+static DECLCALLBACK(int) vboxCrHhgsmiDispEscape(struct VBOXUHGSMI_PRIVATE_BASE *pHgsmi, void *pvData, uint32_t cbData, BOOL fHwAccess)
+{
+    PVBOXUHGSMI_PRIVATE_D3D pPrivate = VBOXUHGSMID3D_GET(pHgsmi);
+    PVBOXWDDMDISP_DEVICE pDevice = pPrivate->pDevice;
+    D3DDDICB_ESCAPE DdiEscape = {0};
+    DdiEscape.hContext = pDevice->DefaultContext.ContextInfo.hContext;
+    DdiEscape.hDevice = pDevice->hDevice;
+    DdiEscape.Flags.HardwareAccess = !!fHwAccess;
+    DdiEscape.pPrivateDriverData = pvData;
+    DdiEscape.PrivateDriverDataSize = cbData;
+    HRESULT hr = pDevice->RtCallbacks.pfnEscapeCb(pDevice->pAdapter->hAdapter, &DdiEscape);
+    if (SUCCEEDED(hr))
+    {
+        return VINF_SUCCESS;
+    }
+
+    WARN(("pfnEscapeCb failed, hr 0x%x", hr));
+    return VERR_GENERAL_FAILURE;
+}
+
+
+void vboxUhgsmiD3DEscInit(PVBOXUHGSMI_PRIVATE_D3D pHgsmi, struct VBOXWDDMDISP_DEVICE *pDevice)
+{
+    vboxUhgsmiBaseInit(&pHgsmi->BasePrivate, vboxCrHhgsmiDispEscape);
+    pHgsmi->pDevice = pDevice;
+}

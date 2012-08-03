@@ -1,4 +1,4 @@
-/* $Id: VBoxManageMetrics.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: VBoxManageMetrics.cpp 40358 2012-03-05 14:40:52Z vboxsync $ */
 /** @file
  * VBoxManage - The 'metrics' command.
  */
@@ -41,6 +41,20 @@ using namespace com;
 ///////////////////////////////////////////////////////////////////////////////
 
 
+static bool isLastSlash(const char *str)
+{
+    char c;
+    while ((c = *str++))
+    {
+        if (c == ',')
+            break;
+        if (c == '/')
+            return false;
+    }
+
+    return true;
+}
+
 static char *toBaseMetricNames(const char *metricList)
 {
     char *newList = (char*)RTMemAlloc(strlen(metricList) + 1);
@@ -53,7 +67,7 @@ static char *toBaseMetricNames(const char *metricList)
         while ((c = *src++))
             if (c == ':')
                 fSkip = true;
-            else if (c == '/' && ++cSlashes == 2)
+            else if (c == '/' && ++cSlashes >= 2 && isLastSlash(src))
                 fSkip = true;
             else if (c == ',')
             {
@@ -288,6 +302,9 @@ static int handleMetricsSetup(int argc, char *argv[],
         SetupMetrics(ComSafeArrayAsInParam(metrics),
                      ComSafeArrayAsInParam(objects), period, samples,
                      ComSafeArrayAsOutParam(affectedMetrics)));
+    if (FAILED(rc))
+        return 2;
+
     if (listMatches)
         listAffectedMetrics(aVirtualBox,
                             ComSafeArrayAsInParam(affectedMetrics));
@@ -460,6 +477,9 @@ static int handleMetricsCollect(int argc, char *argv[],
         SetupMetrics(ComSafeArrayAsInParam(baseMetrics),
                      ComSafeArrayAsInParam(objects), period, samples,
                      ComSafeArrayAsOutParam(affectedMetrics)));
+    if (FAILED(rc))
+        return 2;
+
     if (listMatches)
         listAffectedMetrics(aVirtualBox,
                             ComSafeArrayAsInParam(affectedMetrics));
@@ -566,6 +586,9 @@ static int handleMetricsEnable(int argc, char *argv[],
         EnableMetrics(ComSafeArrayAsInParam(metrics),
                       ComSafeArrayAsInParam(objects),
                       ComSafeArrayAsOutParam(affectedMetrics)));
+    if (FAILED(rc))
+        return 2;
+
     if (listMatches)
         listAffectedMetrics(aVirtualBox,
                             ComSafeArrayAsInParam(affectedMetrics));
@@ -608,6 +631,9 @@ static int handleMetricsDisable(int argc, char *argv[],
         DisableMetrics(ComSafeArrayAsInParam(metrics),
                        ComSafeArrayAsInParam(objects),
                        ComSafeArrayAsOutParam(affectedMetrics)));
+    if (FAILED(rc))
+        return 2;
+
     if (listMatches)
         listAffectedMetrics(aVirtualBox,
                             ComSafeArrayAsInParam(affectedMetrics));

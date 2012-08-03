@@ -1,4 +1,4 @@
-/* $Id: tstVMMR0CallHost-1.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstVMMR0CallHost-1.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * Testcase for the VMMR0JMPBUF operations.
  */
@@ -55,6 +55,8 @@ static intptr_t volatile    g_cbFooUsed;
 
 int foo(int i, int iZero, int iMinusOne)
 {
+    NOREF(iZero);
+
     /* allocate a buffer which we fill up to the end. */
     size_t cb = (i % 1555) + 32;
     g_cbFoo = cb;
@@ -144,7 +146,7 @@ int main()
      */
     RTTEST hTest;
     int rc;
-    if (    RT_FAILURE(rc = RTR3Init())
+    if (    RT_FAILURE(rc = RTR3InitExeNoArguments(0))
         ||  RT_FAILURE(rc = RTTestCreate("tstVMMR0CallHost-1", &hTest)))
     {
         RTStrmPrintf(g_pStdErr, "tstVMMR0CallHost-1: Fatal error during init: %Rrc\n", rc);

@@ -144,6 +144,9 @@ typedef enum SSMFIELDTRANS
     SSMFIELDTRANS_HCPTR_NI_ARRAY,
     /** Host context (HC) virtual address used to hold a unsigned 32-bit value. */
     SSMFIELDTRANS_HCPTR_HACK_U32,
+    /** Load a 32-bit unsigned filed from the state and zero extend it into a 64-bit
+     * structure member. */
+    SSMFIELDTRANS_U32_ZX_U64,
 
     /** Ignorable field. See SSMFIELD_ENTRY_IGNORE. */
     SSMFIELDTRANS_IGNORE,
@@ -270,8 +273,11 @@ typedef struct SSMFIELD
 /** Same as SSMFIELD_ENTRY_HCPTR_NI, except it's an array of the buggers. */
 #define SSMFIELD_ENTRY_HCPTR_NI_ARRAY(Type, Field)  SSMFIELD_ENTRY_TF_INT(Type, Field, SSMFIELDTRANS_HCPTR_NI_ARRAY)
 /** Emit a SSMFIELD array entry for a ring-0 or ring-3 pointer type that has
- * been hacked such that it will never exceed 32-bit.  No sign extenending. */
+ * been hacked such that it will never exceed 32-bit.  No sign extending. */
 #define SSMFIELD_ENTRY_HCPTR_HACK_U32(Type, Field)  SSMFIELD_ENTRY_TF_INT(Type, Field, SSMFIELDTRANS_HCPTR_HACK_U32)
+/** Emit a SSMFIELD array entry for loading a 32-bit field into a 64-bit
+ * structure member, zero extending the value. */
+#define SSMFIELD_ENTRY_U32_ZX_U64(Type, Field)      SSMFIELD_ENTRY_TF_INT(Type, Field, SSMFIELDTRANS_U32_ZX_U64)
 
 /** Emit a SSMFIELD array entry for a field that can be ignored.
  * It is stored as zeros if SSMSTRUCT_FLAGS_DONT_IGNORE is specified to
@@ -374,6 +380,10 @@ typedef struct SSMFIELD
 /** Band-aid for old SSMR3PutMem/SSMR3GetMem of structurs with host pointers. */
 #define SSMSTRUCT_FLAGS_MEM_BAND_AID        (  SSMSTRUCT_FLAGS_DONT_IGNORE | SSMSTRUCT_FLAGS_FULL_STRUCT \
                                              | SSMSTRUCT_FLAGS_NO_MARKERS  | SSMSTRUCT_FLAGS_SAVED_AS_MEM)
+/** Band-aid for old SSMR3PutMem/SSMR3GetMem of structurs with host
+ *  pointers, with relaxed checks. */
+#define SSMSTRUCT_FLAGS_MEM_BAND_AID_RELAXED (  SSMSTRUCT_FLAGS_DONT_IGNORE \
+                                              | SSMSTRUCT_FLAGS_NO_MARKERS  | SSMSTRUCT_FLAGS_SAVED_AS_MEM)
 /** Mask of the valid bits. */
 #define SSMSTRUCT_FLAGS_VALID_MASK          UINT32_C(0x0000000f)
 /** @} */

@@ -1,4 +1,4 @@
-/* $Id: VMEmt.cpp 36437 2011-03-25 15:36:59Z vboxsync $ */
+/* $Id: VMEmt.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * VM - Virtual Machine, The Emulation Thread.
  */
@@ -24,7 +24,9 @@
 #include <VBox/vmm/dbgf.h>
 #include <VBox/vmm/em.h>
 #include <VBox/vmm/pdmapi.h>
-#include <VBox/vmm/rem.h>
+#ifdef VBOX_WITH_REM
+# include <VBox/vmm/rem.h>
+#endif
 #include <VBox/vmm/tm.h>
 #include "VMInternal.h"
 #include <VBox/vmm/vm.h>
@@ -112,21 +114,21 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
              * and must therefore service all VMCPUID_ANY requests.
              * See also VMR3Create
              */
-            if (    pUVM->vm.s.pReqs
+            if (    (pUVM->vm.s.pNormalReqs || pUVM->vm.s.pPriorityReqs)
                 &&  pUVCpu->idCpu == 0)
             {
                 /*
                  * Service execute in any EMT request.
                  */
-                rc = VMR3ReqProcessU(pUVM, VMCPUID_ANY);
+                rc = VMR3ReqProcessU(pUVM, VMCPUID_ANY, false /*fPriorityOnly*/);
                 Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), pUVM->pVM ? VMR3GetStateName(pUVM->pVM->enmVMState) : "CREATING"));
             }
-            else if (pUVCpu->vm.s.pReqs)
+            else if (pUVCpu->vm.s.pNormalReqs || pUVCpu->vm.s.pPriorityReqs)
             {
                 /*
                  * Service execute in specific EMT request.
                  */
-                rc = VMR3ReqProcessU(pUVM, pUVCpu->idCpu);
+                rc = VMR3ReqProcessU(pUVM, pUVCpu->idCpu, false /*fPriorityOnly*/);
                 Log(("vmR3EmulationThread: Req (cpu=%u) rc=%Rrc, VM state %s -> %s\n", pUVCpu->idCpu, rc, VMR3GetStateName(enmBefore), pUVM->pVM ? VMR3GetStateName(pUVM->pVM->enmVMState) : "CREATING"));
             }
             else
@@ -163,20 +165,20 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                 rc = VMMR3EmtRendezvousFF(pVM, &pVM->aCpus[idCpu]);
                 Log(("vmR3EmulationThread: Rendezvous rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
-            else if (pUVM->vm.s.pReqs)
+            else if (pUVM->vm.s.pNormalReqs || pUVM->vm.s.pPriorityReqs)
             {
                 /*
                  * Service execute in any EMT request.
                  */
-                rc = VMR3ReqProcessU(pUVM, VMCPUID_ANY);
+                rc = VMR3ReqProcessU(pUVM, VMCPUID_ANY, false /*fPriorityOnly*/);
                 Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
-            else if (pUVCpu->vm.s.pReqs)
+            else if (pUVCpu->vm.s.pNormalReqs || pUVCpu->vm.s.pPriorityReqs)
             {
                 /*
                  * Service execute in specific EMT request.
                  */
-                rc = VMR3ReqProcessU(pUVM, pUVCpu->idCpu);
+                rc = VMR3ReqProcessU(pUVM, pUVCpu->idCpu, false /*fPriorityOnly*/);
                 Log(("vmR3EmulationThread: Req (cpu=%u) rc=%Rrc, VM state %s -> %s\n", pUVCpu->idCpu, rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
             else if (VM_FF_ISSET(pVM, VM_FF_DBGF))
@@ -306,7 +308,7 @@ static int vmR3FatalWaitError(PUVMCPU pUVCpu, const char *pszFmt, int rcFmt)
     ASMAtomicUoWriteBool(&pUVCpu->pUVM->vm.s.fTerminateEMT, true);
     if (pUVCpu->pVM)
         VM_FF_SET(pUVCpu->pVM, VM_FF_CHECK_VM_STATE);
-    return VERR_INTERNAL_ERROR;
+    return VERR_VM_FATAL_WAIT_ERROR;
 }
 
 
@@ -402,7 +404,7 @@ static DECLCALLBACK(int) vmR3HaltOldDoHalt(PUVMCPU pUVCpu, const uint32_t fMask,
  * Initialize the configuration of halt method 1 & 2.
  *
  * @return VBox status code. Failure on invalid CFGM data.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 static int vmR3HaltMethod12ReadConfigU(PUVM pUVM)
 {
@@ -664,6 +666,7 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Halt(PUVMCPU pUVCpu, const uint32_t fMas
     PVMCPU  pVCpu = pUVCpu->pVCpu;
     PVM     pVM   = pUVCpu->pVM;
     Assert(VMMGetCpu(pVM) == pVCpu);
+    NOREF(u64Now);
 
     /*
      * Halt loop.
@@ -819,11 +822,13 @@ static DECLCALLBACK(void) vmR3HaltGlobal1NotifyCpuFF(PUVMCPU pUVCpu, uint32_t fF
                 AssertRC(rc);
             }
         }
+#ifdef VBOX_WITH_REM
         else if (enmState == VMCPUSTATE_STARTED_EXEC_REM)
         {
             if (!(fFlags & VMNOTIFYFF_FLAGS_DONE_REM))
                 REMR3NotifyFF(pUVCpu->pVM);
         }
+#endif
     }
 }
 
@@ -846,9 +851,9 @@ static DECLCALLBACK(int) vmR3BootstrapWait(PUVMCPU pUVCpu)
         /*
          * Check Relevant FFs.
          */
-        if (pUVM->vm.s.pReqs)   /* global requests pending? */
+        if (pUVM->vm.s.pNormalReqs   || pUVM->vm.s.pPriorityReqs)   /* global requests pending? */
             break;
-        if (pUVCpu->vm.s.pReqs) /* local requests pending? */
+        if (pUVCpu->vm.s.pNormalReqs || pUVCpu->vm.s.pPriorityReqs) /* local requests pending? */
             break;
 
         if (    pUVCpu->pVM
@@ -950,10 +955,12 @@ static DECLCALLBACK(void) vmR3DefaultNotifyCpuFF(PUVMCPU pUVCpu, uint32_t fFlags
         int rc = RTSemEventSignal(pUVCpu->vm.s.EventSemWait);
         AssertRC(rc);
     }
+#ifdef VBOX_WITH_REM
     else if (   !(fFlags & VMNOTIFYFF_FLAGS_DONE_REM)
              && pUVCpu->pVCpu
              && pUVCpu->pVCpu->enmState == VMCPUSTATE_STARTED_EXEC_REM)
         REMR3NotifyFF(pUVCpu->pVM);
+#endif
 }
 
 
@@ -1032,8 +1039,8 @@ VMMR3DECL(void) VMR3NotifyCpuFFU(PUVMCPU pUVCpu, uint32_t fFlags)
  *
  * @returns VINF_SUCCESS unless a fatal error occurred. In the latter
  *          case an appropriate status code is returned.
- * @param   pVM         VM handle.
- * @param   pVCpu       VMCPU handle.
+ * @param   pVM         Pointer to the VM.
+ * @param   pVCpu       Pointer to the VMCPU.
  * @param   fIgnoreInterrupts   If set the VM_FF_INTERRUPT flags is ignored.
  * @thread  The emulation thread.
  */
@@ -1181,8 +1188,8 @@ VMMR3_INT_DECL(void) VMR3AsyncPdmNotificationWakeupU(PUVM pUVM)
  * Rendezvous callback that will be called once.
  *
  * @returns VBox strict status code.
- * @param   pVM                 VM handle.
- * @param   pVCpu               The VMCPU handle for the calling EMT.
+ * @param   pVM                 Pointer to the VM.
+ * @param   pVCpu               Pointer to the VMCPU of the calling EMT.
  * @param   pvUser              The new g_aHaltMethods index.
  */
 static DECLCALLBACK(VBOXSTRICTRC) vmR3SetHaltMethodCallback(PVM pVM, PVMCPU pVCpu, void *pvUser)

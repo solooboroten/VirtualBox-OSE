@@ -1,4 +1,4 @@
-/* $Rev: 37972 $ */
+/* $Rev: 41067 $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Linux specifics.
  */
@@ -84,6 +84,11 @@
 # error "CONFIG_X86_HIGH_ENTRY is not supported by VBoxDrv at this time."
 #endif
 
+/* to include the version number of VirtualBox into kernel backtraces */
+#define VBoxDrvLinuxVersion RT_CONCAT3(RT_CONCAT(VBOX_VERSION_MAJOR, _), \
+                                       RT_CONCAT(VBOX_VERSION_MINOR, _), \
+                                       VBOX_VERSION_BUILD)
+#define VBoxDrvLinuxIOCtl RT_CONCAT(VBoxDrvLinuxIOCtl_,VBoxDrvLinuxVersion)
 
 /*******************************************************************************
 *   Internal Functions                                                         *
@@ -303,13 +308,9 @@ static int __init VBoxDrvLinuxInit(void)
         rc = RTR0Init(0);
         if (RT_SUCCESS(rc))
         {
-#ifdef RT_ARCH_AMD64
-# ifdef CONFIG_DEBUG_SET_MODULE_RONX
-            rc = RTR0MemExecInit(1572864 /* 1.5MB */);
-# else
+#if defined(RT_ARCH_AMD64) && LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 23)
             rc = RTR0MemExecDonate(&g_abExecMemory[0], sizeof(g_abExecMemory));
             printk(KERN_DEBUG "VBoxDrv: dbg - g_abExecMemory=%p\n", (void *)&g_abExecMemory[0]);
-# endif
 #endif
             Log(("VBoxDrv::ModuleInit\n"));
 
@@ -729,6 +730,12 @@ int  VBOXCALL   supdrvOSLdrOpen(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage, c
 {
     NOREF(pDevExt); NOREF(pImage); NOREF(pszFilename);
     return VERR_NOT_SUPPORTED;
+}
+
+
+void VBOXCALL   supdrvOSLdrNotifyOpened(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage)
+{
+    NOREF(pDevExt); NOREF(pImage);
 }
 
 

@@ -1,4 +1,4 @@
-/* $Id: state_framebuffer.c 37394 2011-06-09 15:25:30Z vboxsync $ */
+/* $Id: state_framebuffer.c 41258 2012-05-11 16:39:12Z vboxsync $ */
 
 /** @file
  * VBox OpenGL: EXT_framebuffer_object state tracking
@@ -97,7 +97,14 @@ crStateBindRenderbufferEXT(GLenum target, GLuint renderbuffer)
             fbo->renderbuffer->hwid = renderbuffer;
             fbo->renderbuffer->internalformat = GL_RGBA;
             crHashtableAdd(g->shared->rbTable, renderbuffer, fbo->renderbuffer);
+#ifndef IN_GUEST
+        CR_STATE_SHAREDOBJ_USAGE_INIT(fbo->renderbuffer);
+#endif
         }
+#ifndef IN_GUEST
+        CR_STATE_SHAREDOBJ_USAGE_SET(fbo->renderbuffer, g);
+#endif
+
     }
     else fbo->renderbuffer = NULL;
 }
@@ -294,7 +301,14 @@ crStateBindFramebufferEXT(GLenum target, GLuint framebuffer)
             pFBO->hwid = framebuffer;
             crStateInitFrameBuffer(pFBO);
             crHashtableAdd(g->shared->fbTable, framebuffer, pFBO);
+#ifndef IN_GUEST
+            CR_STATE_SHAREDOBJ_USAGE_INIT(pFBO);
+#endif
         }
+
+#ifndef IN_GUEST
+        CR_STATE_SHAREDOBJ_USAGE_SET(pFBO, g);
+#endif
     }
 
     /* @todo: http://www.opengl.org/registry/specs/ARB/framebuffer_object.txt 
@@ -457,6 +471,10 @@ crStateFramebufferTexture1DEXT(GLenum target, GLenum attachment, GLenum textarge
 
     CRSTATE_FBO_CHECKERR(textarget!=GL_TEXTURE_1D, GL_INVALID_OPERATION, "textarget");
 
+#ifndef IN_GUEST
+    CR_STATE_SHAREDOBJ_USAGE_SET(tobj, g);
+#endif
+
     crStateInitFBOAttachmentPoint(ap);
     ap->type = GL_TEXTURE;
     ap->name = texture;
@@ -482,6 +500,10 @@ crStateFramebufferTexture2DEXT(GLenum target, GLenum attachment, GLenum textarge
     }
 
     CRSTATE_FBO_CHECKERR(GL_TEXTURE_1D==textarget || GL_TEXTURE_3D==textarget, GL_INVALID_OPERATION, "textarget");
+
+#ifndef IN_GUEST
+    CR_STATE_SHAREDOBJ_USAGE_SET(tobj, g);
+#endif
 
     crStateInitFBOAttachmentPoint(ap);
     ap->type = GL_TEXTURE;
@@ -513,6 +535,10 @@ crStateFramebufferTexture3DEXT(GLenum target, GLenum attachment, GLenum textarge
 
     CRSTATE_FBO_CHECKERR(zoffset>(g->limits.max3DTextureSize-1), GL_INVALID_VALUE, "zoffset too big");
     CRSTATE_FBO_CHECKERR(textarget!=GL_TEXTURE_3D, GL_INVALID_OPERATION, "textarget");
+
+#ifndef IN_GUEST
+    CR_STATE_SHAREDOBJ_USAGE_SET(tobj, g);
+#endif
 
     crStateInitFBOAttachmentPoint(ap);
     ap->type = GL_TEXTURE;
@@ -747,11 +773,82 @@ crStateFramebufferObjectSwitch(CRContext *from, CRContext *to)
     }
 }
 
+DECLEXPORT(void) STATE_APIENTRY
+crStateFramebufferObjectDisableHW(CRContext *ctx, GLuint idFBO)
+{
+    GLboolean fAdjustDrawReadBuffers = GL_FALSE;
+
+    if (ctx->framebufferobject.drawFB || idFBO)
+    {
+        diff_api.BindFramebufferEXT(GL_DRAW_FRAMEBUFFER, 0);
+        fAdjustDrawReadBuffers = GL_TRUE;
+    }
+
+    if (ctx->framebufferobject.readFB ||idFBO)
+    {
+        diff_api.BindFramebufferEXT(GL_READ_FRAMEBUFFER, 0);
+        fAdjustDrawReadBuffers = GL_TRUE;
+    }
+
+    if (fAdjustDrawReadBuffers)
+    {
+        diff_api.DrawBuffer(GL_BACK);
+        diff_api.ReadBuffer(GL_BACK);
+    }
+
+    if (ctx->framebufferobject.renderbuffer)
+        diff_api.BindRenderbufferEXT(GL_RENDERBUFFER_EXT, 0);
+}
+
+DECLEXPORT(void) STATE_APIENTRY
+crStateFramebufferObjectReenableHW(CRContext *fromCtx, CRContext *toCtx, GLuint idFBO)
+{
+    GLuint idReadBuffer = 0, idDrawBuffer = 0;
+
+    if ((fromCtx->framebufferobject.drawFB) /* <- the FBO state was reset in crStateFramebufferObjectDisableHW */
+            && fromCtx->framebufferobject.drawFB == toCtx->framebufferobject.drawFB)  /* .. and it was NOT restored properly in crStateFramebufferObjectSwitch */
+    {
+        diff_api.BindFramebufferEXT(GL_DRAW_FRAMEBUFFER, toCtx->framebufferobject.drawFB->hwid);
+        idDrawBuffer = toCtx->framebufferobject.drawFB->drawbuffer[0];
+    }
+    else if (idFBO && !toCtx->framebufferobject.drawFB)
+    {
+        diff_api.BindFramebufferEXT(GL_DRAW_FRAMEBUFFER, idFBO);
+        idDrawBuffer = GL_COLOR_ATTACHMENT0;
+    }
+
+    if ((fromCtx->framebufferobject.readFB) /* <- the FBO state was reset in crStateFramebufferObjectDisableHW */
+            && fromCtx->framebufferobject.readFB == toCtx->framebufferobject.readFB) /* .. and it was NOT restored properly in crStateFramebufferObjectSwitch */
+    {
+        diff_api.BindFramebufferEXT(GL_READ_FRAMEBUFFER, toCtx->framebufferobject.readFB->hwid);
+        idReadBuffer = toCtx->framebufferobject.readFB->readbuffer;
+    }
+    else if (idFBO && !toCtx->framebufferobject.readFB)
+    {
+        diff_api.BindFramebufferEXT(GL_READ_FRAMEBUFFER, idFBO);
+        idReadBuffer = GL_COLOR_ATTACHMENT0;
+    }
+
+    if (idDrawBuffer)
+        diff_api.DrawBuffer(idDrawBuffer);
+    if (idReadBuffer)
+        diff_api.ReadBuffer(idReadBuffer);
+
+    if (fromCtx->framebufferobject.renderbuffer /* <- the FBO state was reset in crStateFramebufferObjectDisableHW */
+            && fromCtx->framebufferobject.renderbuffer==toCtx->framebufferobject.renderbuffer) /* .. and it was NOT restored properly in crStateFramebufferObjectSwitch */
+    {
+        diff_api.BindRenderbufferEXT(GL_RENDERBUFFER_EXT, toCtx->framebufferobject.renderbuffer->hwid);
+    }
+}
+
+
 DECLEXPORT(GLuint) STATE_APIENTRY crStateGetFramebufferHWID(GLuint id)
 {
     CRContext *g = GetCurrentContext();
     CRFramebufferObject *pFBO = (CRFramebufferObject*) crHashtableSearch(g->shared->fbTable, id);
-
+#ifdef DEBUG_misha
+    crDebug("FB id(%d) hw(%d)", id, pFBO ? pFBO->hwid : 0);
+#endif
     return pFBO ? pFBO->hwid : 0;
 }
 

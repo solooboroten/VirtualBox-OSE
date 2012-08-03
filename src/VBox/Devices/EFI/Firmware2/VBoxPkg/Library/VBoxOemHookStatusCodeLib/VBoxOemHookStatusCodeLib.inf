@@ -1,4 +1,4 @@
-# $Id: VBoxOemHookStatusCodeLib.inf 28800 2010-04-27 08:22:32Z vboxsync $
+# $Id: VBoxOemHookStatusCodeLib.inf 39185 2011-11-03 10:27:28Z vboxsync $
 ## @file
 # VBoxOemHookStatusCodeLib - Logging.
 #

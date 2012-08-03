@@ -1,10 +1,10 @@
-/* $Id: VMMR0.cpp 37584 2011-06-22 09:54:26Z vboxsync $ */
+/* $Id: VMMR0.cpp 41976 2012-07-01 14:16:40Z vboxsync $ */
 /** @file
  * VMM - Host Context Ring 0.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -52,6 +52,9 @@
 #include <iprt/thread.h>
 #include <iprt/timer.h>
 
+#include "dtrace/VBoxVMM.h"
+
+
 #if defined(_MSC_VER) && defined(RT_ARCH_AMD64) /** @todo check this with with VC7! */
 #  pragma intrinsic(_AddressOfReturnAddress)
 #endif
@@ -61,13 +64,10 @@
 *   Internal Functions                                                         *
 *******************************************************************************/
 RT_C_DECLS_BEGIN
-VMMR0DECL(int) ModuleInit(void);
-VMMR0DECL(void) ModuleTerm(void);
-
 #if defined(RT_ARCH_X86) && (defined(RT_OS_SOLARIS) || defined(RT_OS_FREEBSD))
 extern uint64_t __udivdi3(uint64_t, uint64_t);
 extern uint64_t __umoddi3(uint64_t, uint64_t);
-#endif // RT_ARCH_X86 && (RT_OS_SOLARIS || RT_OS_FREEBSD)
+#endif
 RT_C_DECLS_END
 
 
@@ -83,7 +83,7 @@ PFNRT g_VMMGCDeps[] =
 #if defined(RT_ARCH_X86) && (defined(RT_OS_SOLARIS) || defined(RT_OS_FREEBSD))
     (PFNRT)__udivdi3,
     (PFNRT)__umoddi3,
-#endif // RT_ARCH_X86 && (RT_OS_SOLARIS || RT_OS_FREEBSD)
+#endif
     NULL
 };
 
@@ -94,79 +94,96 @@ extern "C" { char _depends_on[] = "vboxdrv"; }
 
 
 
-#if defined(RT_OS_WINDOWS) && defined(RT_ARCH_AMD64)
-/* Increase the size of the image to work around the refusal of Win64 to
- * load images in the 0x80000 range.
- */
-static uint64_t u64BloatImage[8192] = {0};
-#endif
-
 /**
  * Initialize the module.
  * This is called when we're first loaded.
  *
  * @returns 0 on success.
  * @returns VBox status on failure.
+ * @param   hMod        Image handle for use in APIs.
  */
-VMMR0DECL(int) ModuleInit(void)
+DECLEXPORT(int) ModuleInit(void *hMod)
 {
+#ifdef VBOX_WITH_DTRACE_R0
+    /*
+     * The first thing to do is register the static tracepoints.
+     * (Deregistration is automatic.)
+     */
+    int rc2 = SUPR0TracerRegisterModule(hMod, &g_VTGObjHeader);
+    if (RT_FAILURE(rc2))
+        return rc2;
+#endif
     LogFlow(("ModuleInit:\n"));
 
     /*
-     * Initialize the GVMM, GMM, HWACCM, PGM (Darwin) and INTNET.
+     * Initialize the VMM, GVMM, GMM, HWACCM, PGM (Darwin) and INTNET.
      */
-    int rc = GVMMR0Init();
+    int rc = vmmInitFormatTypes();
     if (RT_SUCCESS(rc))
     {
-        rc = GMMR0Init();
+        rc = GVMMR0Init();
         if (RT_SUCCESS(rc))
         {
-            rc = HWACCMR0Init();
+            rc = GMMR0Init();
             if (RT_SUCCESS(rc))
             {
-                rc = PGMRegisterStringFormatTypes();
+                rc = HWACCMR0Init();
                 if (RT_SUCCESS(rc))
                 {
-#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-                    rc = PGMR0DynMapInit();
-#endif
+                    rc = PGMRegisterStringFormatTypes();
                     if (RT_SUCCESS(rc))
                     {
-                        rc = IntNetR0Init();
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+                        rc = PGMR0DynMapInit();
+#endif
                         if (RT_SUCCESS(rc))
                         {
-#ifdef VBOX_WITH_PCI_PASSTHROUGH
-                            rc = PciRawR0Init();
-#endif
+                            rc = IntNetR0Init();
                             if (RT_SUCCESS(rc))
                             {
-                                rc = CPUMR0ModuleInit();
+#ifdef VBOX_WITH_PCI_PASSTHROUGH
+                                rc = PciRawR0Init();
+#endif
                                 if (RT_SUCCESS(rc))
                                 {
-                                    LogFlow(("ModuleInit: returns success.\n"));
-                                    return VINF_SUCCESS;
-                                }
+                                    rc = CPUMR0ModuleInit();
+                                    if (RT_SUCCESS(rc))
+                                    {
+#ifdef VBOX_WITH_TRIPLE_FAULT_HACK
+                                        rc = vmmR0TripleFaultHackInit();
+                                        if (RT_SUCCESS(rc))
+#endif
+                                        {
+                                            LogFlow(("ModuleInit: returns success.\n"));
+                                            return VINF_SUCCESS;
+                                        }
 
-                                /*
-                                 * Bail out.
-                                 */
+                                        /*
+                                         * Bail out.
+                                         */
+#ifdef VBOX_WITH_TRIPLE_FAULT_HACK
+                                        vmmR0TripleFaultHackTerm();
+#endif
+                                    }
 #ifdef VBOX_WITH_PCI_PASSTHROUGH
-                                PciRawR0Term();
+                                    PciRawR0Term();
 #endif
+                                }
+                                IntNetR0Term();
                             }
-                            IntNetR0Term();
-                        }
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-                        PGMR0DynMapTerm();
+                            PGMR0DynMapTerm();
 #endif
+                        }
+                        PGMDeregisterStringFormatTypes();
                     }
-                    PGMDeregisterStringFormatTypes();
+                    HWACCMR0Term();
                 }
-                HWACCMR0Term();
+                GMMR0Term();
             }
-            GMMR0Term();
+           GVMMR0Term();
         }
-       GVMMR0Term();
+        vmmTermFormatTypes();
     }
 
     LogFlow(("ModuleInit: failed %Rrc\n", rc));
@@ -177,8 +194,10 @@ VMMR0DECL(int) ModuleInit(void)
 /**
  * Terminate the module.
  * This is called when we're finally unloaded.
+ *
+ * @param   hMod        Image handle for use in APIs.
  */
-VMMR0DECL(void) ModuleTerm(void)
+DECLEXPORT(void) ModuleTerm(void *hMod)
 {
     LogFlow(("ModuleTerm:\n"));
 
@@ -203,12 +222,17 @@ VMMR0DECL(void) ModuleTerm(void)
 #endif
     PGMDeregisterStringFormatTypes();
     HWACCMR0Term();
+#ifdef VBOX_WITH_TRIPLE_FAULT_HACK
+    vmmR0TripleFaultHackTerm();
+#endif
 
     /*
      * Destroy the GMM and GVMM instances.
      */
     GMMR0Term();
     GVMMR0Term();
+
+    vmmTermFormatTypes();
 
     LogFlow(("ModuleTerm: returns\n"));
 }
@@ -219,7 +243,7 @@ VMMR0DECL(void) ModuleTerm(void)
  *
  * @returns VBox status code.
  *
- * @param   pVM         The VM instance in question.
+ * @param   pVM         Pointer to the VM.
  * @param   uSvnRev     The SVN revision of the ring-3 part.
  * @thread  EMT.
  */
@@ -346,7 +370,7 @@ static int vmmR0InitVM(PVM pVM, uint32_t uSvnRev)
  *
  * @returns VBox status code.
  *
- * @param   pVM         The VM instance in question.
+ * @param   pVM         Pointer to the VM.
  * @param   pGVM        Pointer to the global VM structure. Optional.
  * @thread  EMT or session clean up thread.
  */
@@ -378,8 +402,8 @@ VMMR0DECL(int) VMMR0TermVM(PVM pVM, PGVM pGVM)
 #ifdef VBOX_WITH_STATISTICS
 /**
  * Record return code statistics
- * @param   pVM         The VM handle.
- * @param   pVCpu       The VMCPU handle.
+ * @param   pVM         Pointer to the VM.
+ * @param   pVCpu       Pointer to the VMCPU.
  * @param   rc          The status code.
  */
 static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
@@ -413,19 +437,19 @@ static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
         case VINF_EM_RAW_IRET_TRAP:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetIRETTrap);
             break;
-        case VINF_IOM_HC_IOPORT_READ:
+        case VINF_IOM_R3_IOPORT_READ:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetIORead);
             break;
-        case VINF_IOM_HC_IOPORT_WRITE:
+        case VINF_IOM_R3_IOPORT_WRITE:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetIOWrite);
             break;
-        case VINF_IOM_HC_MMIO_READ:
+        case VINF_IOM_R3_MMIO_READ:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetMMIORead);
             break;
-        case VINF_IOM_HC_MMIO_WRITE:
+        case VINF_IOM_R3_MMIO_WRITE:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetMMIOWrite);
             break;
-        case VINF_IOM_HC_MMIO_READ_WRITE:
+        case VINF_IOM_R3_MMIO_READ_WRITE:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetMMIOReadWrite);
             break;
         case VINF_PATM_HC_MMIO_PATCH_READ:
@@ -574,7 +598,7 @@ static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
  * Will be removed one of the next times we do a major SUPDrv version bump.
  *
  * @returns VBox status code.
- * @param   pVM             The VM to operate on.
+ * @param   pVM             Pointer to the VM.
  * @param   enmOperation    Which operation to execute.
  * @param   pvArg           Argument to the operation.
  * @remarks Assume called with interrupts disabled.
@@ -586,6 +610,7 @@ VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg)
      * than -1 which the interrupt gate glue code might return.
      */
     Log(("operation %#x is not supported\n", enmOperation));
+    NOREF(enmOperation); NOREF(pvArg); NOREF(pVM);
     return VERR_NOT_SUPPORTED;
 }
 
@@ -593,7 +618,7 @@ VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg)
 /**
  * The Ring 0 entry point, called by the fast-ioctl path.
  *
- * @param   pVM             The VM to operate on.
+ * @param   pVM             Pointer to the VM.
  *                          The return code is stored in pVM->vmm.s.iLastGZRc.
  * @param   idCpu           The Virtual CPU ID of the calling EMT.
  * @param   enmOperation    Which operation to execute.
@@ -640,14 +665,22 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
                 if (RT_SUCCESS(rc))
                 {
                     RTCCUINTREG uFlags = ASMIntDisableFlags();
-                    VMCPU_SET_STATE(pVCpu, VMCPUSTATE_STARTED_EXEC);
 
-                    TMNotifyStartOfExecution(pVCpu);
-                    rc = pVM->vmm.s.pfnHostToGuestR0(pVM);
-                    pVCpu->vmm.s.iLastGZRc = rc;
-                    TMNotifyEndOfExecution(pVCpu);
+                    for (;;)
+                    {
+                        VMCPU_SET_STATE(pVCpu, VMCPUSTATE_STARTED_EXEC);
+                        TMNotifyStartOfExecution(pVCpu);
 
-                    VMCPU_SET_STATE(pVCpu, VMCPUSTATE_STARTED);
+                        rc = pVM->vmm.s.pfnR0ToRawMode(pVM);
+                        pVCpu->vmm.s.iLastGZRc = rc;
+
+                        TMNotifyEndOfExecution(pVCpu);
+                        VMCPU_SET_STATE(pVCpu, VMCPUSTATE_STARTED);
+
+                        if (rc != VINF_VMM_CALL_TRACER)
+                            break;
+                        SUPR0TracerUmodProbeFire(pVM->pSession, &pVCpu->vmm.s.TracerCtx);
+                    }
 
                     /* Re-enable VT-x if previously turned off. */
                     HWACCMR0LeaveSwitcher(pVM, fVTxDisabled);
@@ -769,7 +802,7 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
  * Validates a session or VM session argument.
  *
  * @returns true / false accordingly.
- * @param   pVM         The VM argument.
+ * @param   pVM         Pointer to the VM.
  * @param   pSession    The session argument.
  */
 DECLINLINE(bool) vmmR0IsValidSession(PVM pVM, PSUPDRVSESSION pClaimedSession, PSUPDRVSESSION pSession)
@@ -792,7 +825,7 @@ DECLINLINE(bool) vmmR0IsValidSession(PVM pVM, PSUPDRVSESSION pClaimedSession, PS
  * called thru a longjmp so we can exit safely on failure.
  *
  * @returns VBox status code.
- * @param   pVM             The VM to operate on.
+ * @param   pVM             Pointer to the VM.
  * @param   idCpu           Virtual CPU ID argument. Must be NIL_VMCPUID if pVM
  *                          is NIL_RTR0PTR, and may be NIL_VMCPUID if it isn't
  * @param   enmOperation    Which operation to execute.
@@ -948,7 +981,7 @@ static int vmmR0EntryExWorker(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperatio
             if (RT_FAILURE(rc))
                 return rc;
 
-            rc = pVM->vmm.s.pfnHostToGuestR0(pVM);
+            rc = pVM->vmm.s.pfnR0ToRawMode(pVM);
 
             /* Re-enable VT-x if previously turned off. */
             HWACCMR0LeaveSwitcher(pVM, fVTxDisabled);
@@ -1085,12 +1118,20 @@ static int vmmR0EntryExWorker(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperatio
 
 #if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
         case VMMR0_DO_GMM_FIND_DUPLICATE_PAGE:
-        {
             if (u64Arg)
                 return VERR_INVALID_PARAMETER;
             return GMMR0FindDuplicatePageReq(pVM, (PGMMFINDDUPLICATEPAGEREQ)pReqHdr);
-        }
 #endif
+
+        case VMMR0_DO_GMM_QUERY_STATISTICS:
+            if (u64Arg)
+                return VERR_INVALID_PARAMETER;
+            return GMMR0QueryStatisticsReq(pVM, (PGMMQUERYSTATISTICSSREQ)pReqHdr);
+
+        case VMMR0_DO_GMM_RESET_STATISTICS:
+            if (u64Arg)
+                return VERR_INVALID_PARAMETER;
+            return GMMR0ResetStatisticsReq(pVM, (PGMMRESETSTATISTICSSREQ)pReqHdr);
 
         /*
          * A quick GCFGM mock-up.
@@ -1250,7 +1291,7 @@ typedef VMMR0ENTRYEXARGS *PVMMR0ENTRYEXARGS;
  * @returns VBox status code.
  * @param   pvArgs      The argument package
  */
-static int vmmR0EntryExWrapper(void *pvArgs)
+static DECLCALLBACK(int) vmmR0EntryExWrapper(void *pvArgs)
 {
     return vmmR0EntryExWorker(((PVMMR0ENTRYEXARGS)pvArgs)->pVM,
                               ((PVMMR0ENTRYEXARGS)pvArgs)->idCpu,
@@ -1265,11 +1306,11 @@ static int vmmR0EntryExWrapper(void *pvArgs)
  * The Ring 0 entry point, called by the support library (SUP).
  *
  * @returns VBox status code.
- * @param   pVM             The VM to operate on.
+ * @param   pVM             Pointer to the VM.
  * @param   idCpu           Virtual CPU ID argument. Must be NIL_VMCPUID if pVM
  *                          is NIL_RTR0PTR, and may be NIL_VMCPUID if it isn't
  * @param   enmOperation    Which operation to execute.
- * @param   pReq            This points to a SUPVMMR0REQHDR packet. Optional.
+ * @param   pReq            Pointer to the SUPVMMR0REQHDR packet. Optional.
  * @param   u64Arg          Some simple constant argument.
  * @param   pSession        The session of the caller.
  * @remarks Assume called with interrupts _enabled_.
@@ -1420,11 +1461,10 @@ VMMR0DECL(size_t) vmmR0LoggerPrefix(PRTLOGGER pLogger, char *pchBuf, size_t cchB
 /**
  * Disables flushing of the ring-0 debug log.
  *
- * @param   pVCpu       The shared virtual cpu structure.
+ * @param   pVCpu       Pointer to the VMCPU.
  */
 VMMR0DECL(void) VMMR0LogFlushDisable(PVMCPU pVCpu)
 {
-    PVM pVM = pVCpu->pVMR0;
     if (pVCpu->vmm.s.pR0LoggerR0)
         pVCpu->vmm.s.pR0LoggerR0->fFlushingDisabled = true;
 }
@@ -1433,11 +1473,10 @@ VMMR0DECL(void) VMMR0LogFlushDisable(PVMCPU pVCpu)
 /**
  * Enables flushing of the ring-0 debug log.
  *
- * @param   pVCpu       The shared virtual cpu structure.
+ * @param   pVCpu       Pointer to the VMCPU.
  */
 VMMR0DECL(void) VMMR0LogFlushEnable(PVMCPU pVCpu)
 {
-    PVM pVM = pVCpu->pVMR0;
     if (pVCpu->vmm.s.pR0LoggerR0)
         pVCpu->vmm.s.pR0LoggerR0->fFlushingDisabled = false;
 }
@@ -1528,6 +1567,7 @@ static DECLCALLBACK(size_t) rtLogOutput(void *pv, const char *pachChars, size_t 
     for (size_t i = 0; i < cbChars; i++)
         LogAlways(("%c", pachChars[i]));
 
+    NOREF(pv);
     return cbChars;
 }
 

@@ -244,6 +244,54 @@ static HRESULT WINAPI IWineD3DCubeTextureImpl_GetParent(IWineD3DCubeTexture *ifa
     return resource_get_parent((IWineD3DResource *)iface, pParent);
 }
 
+#ifdef VBOX_WITH_WDDM
+static HRESULT WINAPI IWineD3DCubeTextureImpl_SetShRcState(IWineD3DCubeTexture *iface, VBOXWINEEX_SHRC_STATE enmState) {
+    IWineD3DCubeTextureImpl *This = (IWineD3DCubeTextureImpl*)iface;
+    struct wined3d_context *context = NULL;
+    HRESULT hr = IWineD3DResourceImpl_SetShRcState((IWineD3DResource*)iface, enmState);
+    unsigned int i, j;
+
+    if (FAILED(hr))
+    {
+        ERR("IWineD3DResource_SetShRcState failed");
+        return hr;
+    }
+
+    for (i = 0; i < This->baseTexture.levels; ++i) {
+        for (j = WINED3DCUBEMAP_FACE_POSITIVE_X; j <= WINED3DCUBEMAP_FACE_NEGATIVE_Z; ++j) {
+            if (This->surfaces[j][i]) {
+                HRESULT tmpHr = IWineD3DResource_SetShRcState((IWineD3DResource*)This->surfaces[j][i], enmState);
+                Assert(tmpHr == S_OK);
+            }
+        }
+    }
+
+    if (!This->resource.device->isInDraw)
+    {
+        context = context_acquire(This->resource.device, NULL, CTXUSAGE_RESOURCELOAD);
+        if (!context)
+        {
+            ERR("zero context!");
+            return E_FAIL;
+        }
+
+        if (!context->valid)
+        {
+            ERR("context invalid!");
+            context_release(context);
+            return E_FAIL;
+        }
+    }
+
+    device_cleanup_durtify_texture_target(This->resource.device, ((IWineD3DSurfaceImpl*)This->surfaces[j][i])->texture_target);
+
+    if (context)
+        context_release(context);
+
+    return WINED3D_OK;
+}
+#endif
+
 /* ******************************************************
    IWineD3DCubeTexture IWineD3DBaseTexture parts follow
    ****************************************************** */
@@ -417,6 +465,9 @@ static const IWineD3DCubeTextureVtbl IWineD3DCubeTexture_Vtbl =
     IWineD3DCubeTextureImpl_PreLoad,
     IWineD3DCubeTextureImpl_UnLoad,
     IWineD3DCubeTextureImpl_GetType,
+#ifdef VBOX_WITH_WDDM
+    IWineD3DCubeTextureImpl_SetShRcState,
+#endif
     /* IWineD3DBaseTexture */
     IWineD3DCubeTextureImpl_SetLOD,
     IWineD3DCubeTextureImpl_GetLOD,
@@ -605,7 +656,7 @@ HRESULT cubetexture_init(IWineD3DCubeTextureImpl *texture, UINT edge_length, UIN
         {
             for (j = 0; j < 6; ++j)
             {
-                Assert((*shared_handle) == ((IWineD3DSurfaceImpl*)texture->surfaces[j][i])->texture_name);
+                Assert((*shared_handle) == (HANDLE)((IWineD3DSurfaceImpl*)texture->surfaces[j][i])->texture_name);
             }
         }
 #endif

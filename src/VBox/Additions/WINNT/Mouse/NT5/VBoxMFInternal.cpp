@@ -1,4 +1,4 @@
-/* $Id: VBoxMFInternal.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxMFInternal.cpp 42154 2012-07-13 23:00:53Z vboxsync $ */
 
 /** @file
  * VBox Mouse filter internal functions
@@ -16,11 +16,12 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
+#define WIN9X_COMPAT_SPINLOCK /* Avoid duplicate _KeInitializeSpinLock@4 error on x86. */
+#include <iprt/asm.h>
 #include "VBoxMF.h"
 #include <VBox/VBoxGuestLib.h>
 #include <VBox/VBoxGuest.h>
 #include <iprt/assert.h>
-#include <iprt/asm.h>
 
 typedef struct VBOXGDC
 {
@@ -149,7 +150,7 @@ static NTSTATUS vboxNewProtRegisterMouseEventCb(BOOLEAN fRegister)
     VBoxGuestMouseSetNotifyCallback CbInfo = {};
     CbInfo.pfnNotify = fRegister ? vboxNewProtMouseEventCb : NULL;
 
-    NTSTATUS Status = vboxGdcSubmit(VBOXGUEST_IOCTL_INTERNAL_SET_MOUSE_NOTIFY_CALLBACK, &CbInfo, sizeof (CbInfo));
+    NTSTATUS Status = vboxGdcSubmit(VBOXGUEST_IOCTL_SET_MOUSE_NOTIFY_CALLBACK, &CbInfo, sizeof (CbInfo));
     if (!NT_SUCCESS(Status))
     {
         WARN(("vboxGdcSubmit failed Status(0x%x)", Status));

@@ -1,4 +1,4 @@
-/* $Id: VBoxDispMpTst.cpp 36867 2011-04-28 07:27:03Z vboxsync $ */
+/* $Id: VBoxDispMpTst.cpp 42101 2012-07-11 10:25:42Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -16,12 +16,11 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
+#include "VBoxDispD3DCmn.h"
 #include "VBoxDispMp.h"
 
 #include <iprt/thread.h>
 #include <iprt/err.h>
-
-#include "VBoxDispD3DCmn.h"
 
 #ifdef VBOXWDDM_TEST_UHGSMI
 #include "VBoxDispProfile.h"
@@ -55,7 +54,7 @@ static DECLCALLBACK(int) vboxDispMpTstThreadProc(RTTHREAD ThreadSelf, void *pvUs
         {
             vboxVDbgPrint(("\n>>>\n"));
             HWND hWnd = Regions.hWnd;
-            if (Regions.pRegions->fFlags.bSetVisibleRects)
+            if (Regions.pRegions->fFlags.bAddVisibleRects)
             {
                 uint32_t iVisibleRects = 0;
                 uint32_t cVisibleRects = Regions.pRegions->RectsInfo.cRects;

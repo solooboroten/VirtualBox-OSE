@@ -47,9 +47,6 @@
 #include "d3d9.h"
 #include "wine/wined3d.h"
 
-#ifdef VBOX_WITH_WDDM
-#include "../vbox/VBoxWineEx.h"
-#endif
 
 /* ===========================================================================
    Internal use
@@ -194,7 +191,13 @@ typedef struct IDirect3DDevice9Impl
 } IDirect3DDevice9Impl;
 
 HRESULT device_init(IDirect3DDevice9Impl *device, IWineD3D *wined3d, UINT adapter, D3DDEVTYPE device_type,
-        HWND focus_window, DWORD flags, D3DPRESENT_PARAMETERS *parameters) DECLSPEC_HIDDEN;
+        HWND focus_window, DWORD flags
+#ifdef VBOX_WITH_WDDM
+        , VBOXWINEEX_D3DPRESENT_PARAMETERS *parameters
+#else
+        , D3DPRESENT_PARAMETERS *parameters
+#endif
+        ) DECLSPEC_HIDDEN;
 
 /* IDirect3DDevice9: */
 extern HRESULT WINAPI IDirect3DDevice9Impl_GetSwapChain(IDirect3DDevice9Ex *iface,

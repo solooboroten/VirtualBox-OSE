@@ -1,4 +1,4 @@
-/* $Id: logcom.cpp 29271 2010-05-09 21:25:16Z vboxsync $ */
+/* $Id: logcom.cpp 39243 2011-11-08 15:36:46Z vboxsync $ */
 /** @file
  * IPRT - Logging to Serial Port.
  */
@@ -101,6 +101,7 @@ RT_EXPORT_SYMBOL(RTLogComPrintfV);
  */
 static DECLCALLBACK(size_t) rtLogComOutput(void *pv, const char *pachChars, size_t cbChars)
 {
+    NOREF(pv);
     if (cbChars)
         RTLogWriteCom(pachChars, cbChars);
     return cbChars;
@@ -127,7 +128,7 @@ RTDECL(void) RTLogWriteCom(const char *pach, size_t cb)
             RTLogWriteCom("\r", 1);
 
         /* Check if port is ready. */
-        cMaxWait = ~0;
+        cMaxWait = ~0U;
         do
         {
             u8 = ASMInU8(IPRT_UART_BASE + 5);

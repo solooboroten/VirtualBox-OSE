@@ -1,4 +1,4 @@
-/* $Id: ExtPackUtil.h 37843 2011-07-08 12:34:18Z vboxsync $ */
+/* $Id: ExtPackUtil.h 39878 2012-01-25 16:30:07Z vboxsync $ */
 /** @file
  * VirtualBox Main - Extension Pack Utilities and definitions, VBoxC, VBoxSVC, ++.
  */
@@ -89,6 +89,8 @@ typedef struct VBOXEXTPACKDESC
     RTCString               strDescription;
     /** The version string. */
     RTCString               strVersion;
+    /** The edition string. */
+    RTCString               strEdition;
     /** The internal revision number. */
     uint32_t                uRevision;
     /** The name of the main module. */
@@ -110,22 +112,25 @@ typedef VBOXEXTPACKDESC const *PCVBOXEXTPACKDESC;
 
 
 void                VBoxExtPackInitDesc(PVBOXEXTPACKDESC a_pExtPackDesc);
-RTCString   *VBoxExtPackLoadDesc(const char *a_pszDir, PVBOXEXTPACKDESC a_pExtPackDesc, PRTFSOBJINFO a_pObjInfo);
-RTCString   *VBoxExtPackLoadDescFromVfsFile(RTVFSFILE hVfsFile, PVBOXEXTPACKDESC a_pExtPackDesc, PRTFSOBJINFO a_pObjInfo);
-RTCString   *VBoxExtPackExtractNameFromTarballPath(const char *pszTarball);
+RTCString          *VBoxExtPackLoadDesc(const char *a_pszDir, PVBOXEXTPACKDESC a_pExtPackDesc, PRTFSOBJINFO a_pObjInfo);
+RTCString          *VBoxExtPackLoadDescFromVfsFile(RTVFSFILE hVfsFile, PVBOXEXTPACKDESC a_pExtPackDesc, PRTFSOBJINFO a_pObjInfo);
+RTCString          *VBoxExtPackExtractNameFromTarballPath(const char *pszTarball);
 void                VBoxExtPackFreeDesc(PVBOXEXTPACKDESC a_pExtPackDesc);
 bool                VBoxExtPackIsValidName(const char *pszName);
 bool                VBoxExtPackIsValidMangledName(const char *pszMangledName, size_t cchMax = RTSTR_MAX);
-RTCString   *VBoxExtPackMangleName(const char *pszName);
-RTCString   *VBoxExtPackUnmangleName(const char *pszMangledName, size_t cbMax);
+RTCString          *VBoxExtPackMangleName(const char *pszName);
+RTCString          *VBoxExtPackUnmangleName(const char *pszMangledName, size_t cbMax);
 int                 VBoxExtPackCalcDir(char *pszExtPackDir, size_t cbExtPackDir, const char *pszParentDir, const char *pszName);
-bool                VBoxExtPackIsValidVersionString(const char *pszName);
+bool                VBoxExtPackIsValidVersionString(const char *pszVersion);
+bool                VBoxExtPackIsValidEditionString(const char *pszEdition);
 bool                VBoxExtPackIsValidModuleString(const char *pszModule);
 
 int                 VBoxExtPackValidateMember(const char *pszName, RTVFSOBJTYPE enmType, RTVFSOBJ hVfsObj, char *pszError, size_t cbError);
-int                 VBoxExtPackOpenTarFss(RTFILE hTarballFile, char *pszError, size_t cbError, PRTVFSFSSTREAM phTarFss);
-int                 VBoxExtPackValidateTarball(RTFILE hTarballFile, const char *pszExtPackName, const char *pszTarball,
-                                               char *pszError, size_t cbError, PRTMANIFEST phValidManifest, PRTVFSFILE phXmlFile);
+int                 VBoxExtPackOpenTarFss(RTFILE hTarballFile, char *pszError, size_t cbError, PRTVFSFSSTREAM phTarFss, PRTMANIFEST phFileManifest);
+int                 VBoxExtPackValidateTarball(RTFILE hTarballFile, const char *pszExtPackName,
+                                               const char *pszTarball, const char *pszTarballDigest,
+                                               char *pszError, size_t cbError,
+                                               PRTMANIFEST phValidManifest, PRTVFSFILE phXmlFile, RTCString *pStrDigest);
 
 
 #endif

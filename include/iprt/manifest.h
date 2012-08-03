@@ -53,6 +53,26 @@ RT_C_DECLS_BEGIN
 #define RTMANIFEST_ATTR_SHA512      RT_BIT_32(4)
 /** The end of the valid values. */
 #define RTMANIFEST_ATTR_END         RT_BIT_32(5)
+/** Wildcard for use in queries. */
+#define RTMANIFEST_ATTR_ANY         UINT32_C(0xffffffff)
+/** @} */
+
+/** @name Digest types. */
+typedef enum RTDIGESTTYPE
+{
+    /** CRC32 checksum */
+    RTDIGESTTYPE_CRC32 = 1,
+    /** CRC64 checksum */
+    RTDIGESTTYPE_CRC64,
+    /** MD5 checksum (unsafe!) */
+    RTDIGESTTYPE_MD5,
+    /** SHA1 checksum (unsafe!) */
+    RTDIGESTTYPE_SHA1,
+    /** SHA256 checksum */
+    RTDIGESTTYPE_SHA256,
+    /** SHA512 checksum */
+    RTDIGESTTYPE_SHA512
+} RTDIGESTTYPE;
 /** @} */
 
 
@@ -161,6 +181,31 @@ RTDECL(int) RTManifestSetAttr(RTMANIFEST hManifest, const char *pszAttr, const c
 RTDECL(int) RTManifestUnsetAttr(RTMANIFEST hManifest, const char *pszAttr);
 
 /**
+ * Query a manifest entry attribute.
+ *
+ * @returns IPRT status code.
+ * @retval  VERR_BUFFER_OVERFLOW if the value buffer is too small. The @a
+ *          pszValue buffer will not be modified.
+ * @retval  VERR_MANIFEST_ATTR_NOT_FOUND
+ * @retval  VERR_MANIFEST_ATTR_TYPE_NOT_FOUND
+ * @retval  VERR_MANIFEST_ATTR_TYPE_MISMATCH
+ *
+ * @param   hManifest           The manifest handle.
+ * @param   pszEntry            The entry name.
+ * @param   pszAttr             The attribute name.  If NULL, it will be
+ *                              selected by @a fType alone.
+ * @param   fType               The attribute types the entry should match. Pass
+ *                              Pass RTMANIFEST_ATTR_ANY match any.  If more
+ *                              than one is given, the first matching one is
+ *                              returned.
+ * @param   pszValue            Where to return value.
+ * @param   cbValue             The size of the buffer @a pszValue points to.
+ * @param   pfType              Where to return the attribute type value.
+ */
+RTDECL(int) RTManifestQueryAttr(RTMANIFEST hManifest, const char *pszAttr, uint32_t fType,
+                                char *pszValue, size_t cbValue, uint32_t *pfType);
+
+/**
  * Sets an attribute of a manifest entry.
  *
  * @returns IPRT status code.
@@ -189,6 +234,32 @@ RTDECL(int) RTManifestEntrySetAttr(RTMANIFEST hManifest, const char *pszEntry, c
  * @param   pszAttr             The attribute name.
  */
 RTDECL(int) RTManifestEntryUnsetAttr(RTMANIFEST hManifest, const char *pszEntry, const char *pszAttr);
+
+/**
+ * Query a manifest entry attribute.
+ *
+ * @returns IPRT status code.
+ * @retval  VERR_BUFFER_OVERFLOW if the value buffer is too small. The @a
+ *          pszValue buffer will not be modified.
+ * @retval  VERR_NOT_FOUND if the entry was not found.
+ * @retval  VERR_MANIFEST_ATTR_NOT_FOUND
+ * @retval  VERR_MANIFEST_ATTR_TYPE_NOT_FOUND
+ * @retval  VERR_MANIFEST_ATTR_TYPE_MISMATCH
+ *
+ * @param   hManifest           The manifest handle.
+ * @param   pszEntry            The entry name.
+ * @param   pszAttr             The attribute name.  If NULL, it will be
+ *                              selected by @a fType alone.
+ * @param   fType               The attribute types the entry should match. Pass
+ *                              Pass RTMANIFEST_ATTR_ANY match any.  If more
+ *                              than one is given, the first matching one is
+ *                              returned.
+ * @param   pszValue            Where to return value.
+ * @param   cbValue             The size of the buffer @a pszValue points to.
+ * @param   pfType              Where to return the attribute type value.
+ */
+RTDECL(int) RTManifestEntryQueryAttr(RTMANIFEST hManifest, const char *pszEntry, const char *pszAttr, uint32_t fType,
+                                     char *pszValue, size_t cbValue, uint32_t *pfType);
 
 /**
  * Adds a new entry to a manifest.
@@ -345,13 +416,13 @@ RTDECL(int) RTManifestWriteStandardToFile(RTMANIFEST hManifest, const char *pszF
 
 /**
  * Input structure for RTManifestVerify() which contains the filename & the
- * SHA1 digest.
+ * SHA1/SHA256 digest.
  */
 typedef struct RTMANIFESTTEST
 {
     /** The filename. */
     const char *pszTestFile;
-    /** The SHA1 digest of the file. */
+    /** The SHA1/SHA256 digest of the file. */
     const char *pszTestDigest;
 } RTMANIFESTTEST;
 /** Pointer to the input structure. */
@@ -403,12 +474,14 @@ RTR3DECL(int) RTManifestVerifyFiles(const char *pszManifestFile, const char * co
  * @returns iprt status code.
  *
  * @param   pszManifestFile      Filename of the manifest file to create.
+ * @param   enmDigestType        The digest type (RTDIGESTTYPE_*)
  * @param   papszFiles           Array of files to create SHA1 sums for.
  * @param   cFiles               Number of entries in papszFiles.
  * @param   pfnProgressCallback  optional callback for the progress indication
  * @param   pvUser               user defined pointer for the callback
  */
-RTR3DECL(int) RTManifestWriteFiles(const char *pszManifestFile, const char * const *papszFiles, size_t cFiles,
+RTR3DECL(int) RTManifestWriteFiles(const char *pszManifestFile, RTDIGESTTYPE enmDigestType,
+                                   const char * const *papszFiles, size_t cFiles,
                                    PFNRTPROGRESS pfnProgressCallback, void *pvUser);
 
 /**
@@ -436,10 +509,11 @@ RTR3DECL(int) RTManifestVerifyFilesBuf(void *pvBuf, size_t cbSize, PRTMANIFESTTE
  *
  * @param   ppvBuf               Pointer to resulting memory buffer.
  * @param   pcbSize              Pointer for the size of the memory buffer.
+ * @param   enmDigestType        Which type of digest ("SHA1", "SHA256", ...)
  * @param   paFiles              Array of file names and digests.
  * @param   cFiles               Number of entries in paFiles.
  */
-RTR3DECL(int) RTManifestWriteFilesBuf(void **ppvBuf, size_t *pcbSize, PRTMANIFESTTEST paFiles, size_t cFiles);
+RTR3DECL(int) RTManifestWriteFilesBuf(void **ppvBuf, size_t *pcbSize, RTDIGESTTYPE enmDigestType, PRTMANIFESTTEST paFiles, size_t cFiles);
 
 /** @} */
 

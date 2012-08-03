@@ -1,4 +1,4 @@
-/* $Id: VMMDevState.h 35989 2011-02-15 19:55:27Z vboxsync $ */
+/* $Id: VMMDevState.h 39890 2012-01-26 19:42:19Z vboxsync $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device, internal header.
  */
@@ -78,6 +78,30 @@ typedef struct VMMDEVCREDS
         char szDomain[VMMDEV_CREDENTIALS_SZ_SIZE];
     } Judge;
 } VMMDEVCREDS;
+
+
+/**
+ * Facility status entry.
+ */
+typedef struct VMMDEVFACILITYSTATUSENTRY
+{
+    /** The facility, see VBoxGuestFacilityType. */
+    uint32_t    uFacility;
+    /** The status, see VBoxGuestFacilityStatus. */
+    uint16_t    uStatus;
+    /** Whether this entry is fixed and cannot be reused when inactive. */
+    bool        fFixed;
+    /** Explicit alignment padding / reserved for future use. MBZ. */
+    bool        fPadding;
+    /** The facility flags (yet to be defined). */
+    uint32_t    fFlags;
+    /** Explicit alignment padding / reserved for future use. MBZ. */
+    uint32_t    uPadding;
+    /** Last update timestamp. */
+    RTTIMESPEC  TimeSpecTS;
+} VMMDEVFACILITYSTATUSENTRY;
+/** Pointer to a facility status entry. */
+typedef VMMDEVFACILITYSTATUSENTRY *PVMMDEVFACILITYSTATUSENTRY;
 
 
 /** device structure containing all state information */
@@ -163,6 +187,19 @@ typedef struct VMMDevState
      * Until this information is reported the VMMDev refuses any other requests.
      */
     VBoxGuestInfo guestInfo;
+    /** Information report \#2, chewed a litte. */
+    struct
+    {
+        uint32_t uFullVersion; /**< non-zero if info is present. */
+        uint32_t uRevision;
+        uint32_t fFeatures;
+        char     szName[128];
+    } guestInfo2;
+
+    /** Array of guest facility statuses. */
+    VMMDEVFACILITYSTATUSENTRY   aFacilityStatuses[32];
+    /** The number of valid entries in the facility status array. */
+    uint32_t                    cFacilityStatuses;
 
     /** Information reported by guest via VMMDevReportGuestCapabilities. */
     uint32_t      guestCaps;
@@ -310,6 +347,7 @@ typedef struct VMMDevState
 AssertCompileMemberAlignment(VMMDevState, CritSect, 8);
 AssertCompileMemberAlignment(VMMDevState, cbGuestRAM, 8);
 AssertCompileMemberAlignment(VMMDevState, enmCpuHotPlugEvent, 4);
+AssertCompileMemberAlignment(VMMDevState, aFacilityStatuses, 8);
 #ifndef VBOX_WITHOUT_TESTING_FEATURES
 AssertCompileMemberAlignment(VMMDevState, TestingData.Value.u64Value, 8);
 #endif

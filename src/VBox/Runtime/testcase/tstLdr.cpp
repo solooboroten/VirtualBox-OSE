@@ -1,4 +1,4 @@
-/* $Id: tstLdr.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: tstLdr.cpp 40289 2012-02-29 10:28:39Z vboxsync $ */
 /** @file
  * IPRT - Testcase for parts of RTLdr*.
  */
@@ -100,12 +100,12 @@ static int testLdrOne(const char *pszFilename)
         const char *pszName;
     }   aLoads[6] =
     {
-        { NULL, NULL, (int32_t)0xefefef00, "foo" },
-        { NULL, NULL, (int32_t)0x40404040, "bar" },
-        { NULL, NULL, (int32_t)0xefefef00, "foobar" },
-        { NULL, NULL, (int32_t)0xefefef00, "kLdr-foo" },
-        { NULL, NULL, (int32_t)0x40404040, "kLdr-bar" },
-        { NULL, NULL, (int32_t)0xefefef00, "kLdr-foobar" }
+        { NULL, NULL, (RTUINTPTR)0xefefef00, "foo" },
+        { NULL, NULL, (RTUINTPTR)0x40404040, "bar" },
+        { NULL, NULL, (RTUINTPTR)0xefefef00, "foobar" },
+        { NULL, NULL, (RTUINTPTR)0xefefef00, "kLdr-foo" },
+        { NULL, NULL, (RTUINTPTR)0x40404040, "kLdr-bar" },
+        { NULL, NULL, (RTUINTPTR)0xefefef00, "kLdr-foobar" }
     };
     unsigned i;
 
@@ -169,15 +169,15 @@ static int testLdrOne(const char *pszFilename)
     {
         static RTUINTPTR aRels[] =
         {
-            (int32_t)0xefefef00,        /* same. */
-            (int32_t)0x40404040,        /* the other. */
-            (int32_t)0xefefef00,        /* back. */
-            (int32_t)0x40404040,        /* the other. */
-            (int32_t)0xefefef00,        /* back again. */
-            (int32_t)0x77773420,        /* somewhere entirely else. */
-            (int32_t)0xf0000000,        /* somewhere entirely else. */
-            (int32_t)0x40404040,        /* the other. */
-            (int32_t)0xefefef00         /* back again. */
+            (RTUINTPTR)0xefefef00,        /* same. */
+            (RTUINTPTR)0x40404040,        /* the other. */
+            (RTUINTPTR)0xefefef00,        /* back. */
+            (RTUINTPTR)0x40404040,        /* the other. */
+            (RTUINTPTR)0xefefef00,        /* back again. */
+            (RTUINTPTR)0x77773420,        /* somewhere entirely else. */
+            (RTUINTPTR)0xf0000000,        /* somewhere entirely else. */
+            (RTUINTPTR)0x40404040,        /* the other. */
+            (RTUINTPTR)0xefefef00         /* back again. */
         };
         struct Symbols
         {
@@ -187,23 +187,19 @@ static int testLdrOne(const char *pszFilename)
             const char *pszName;
         } aSyms[] =
         {
-            { ~0, "Entrypoint" },
-            { ~0, "SomeExportFunction1" },
-            { ~0, "SomeExportFunction2" },
-            { ~0, "SomeExportFunction3" },
-            { ~0, "SomeExportFunction4" },
-            { ~0, "SomeExportFunction5" },
-            { ~0, "SomeExportFunction5" },
-            { ~0, "DISCoreOne" }
+            { ~0U, "Entrypoint" },
+            { ~0U, "SomeExportFunction1" },
+            { ~0U, "SomeExportFunction2" },
+            { ~0U, "SomeExportFunction3" },
+            { ~0U, "SomeExportFunction4" },
+            { ~0U, "SomeExportFunction5" },
+            { ~0U, "SomeExportFunction5" },
+            { ~0U, "DISCoreOne" }
         };
 
         unsigned iRel = 0;
         for (;;)
         {
-            /* adjust load address and announce our intentions */
-            if (g_cBits == 32)
-                aRels[iRel] &= UINT32_C(0xffffffff);
-
             /* Compare all which are at the same address. */
             for (i = 0; i < RT_ELEMENTS(aLoads) - 1; i++)
             {
@@ -273,6 +269,10 @@ static int testLdrOne(const char *pszFilename)
             if (iRel >= RT_ELEMENTS(aRels))
                 break;
 
+            /* adjust load address and announce our intentions */
+            if (g_cBits == 32)
+                aRels[iRel] &= UINT32_C(0xffffffff);
+
             /* relocate it stuff. */
             RTPrintf("tstLdr: Relocating image 2 from %RTptr to %RTptr\n", aLoads[2].Addr, aRels[iRel]);
             int rc = RTLdrRelocate(aLoads[2].hLdrMod, aLoads[2].pvBits, aRels[iRel], aLoads[2].Addr, testGetImport, &aRels[iRel]);
@@ -315,7 +315,7 @@ static int testLdrOne(const char *pszFilename)
 
 int main(int argc, char **argv)
 {
-    RTR3Init();
+    RTR3InitExe(argc, &argv, 0);
 
     int rcRet = 0;
     if (argc <= 1)

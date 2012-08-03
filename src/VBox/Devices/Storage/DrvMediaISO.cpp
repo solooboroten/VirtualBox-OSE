@@ -1,4 +1,4 @@
-/* $Id: DrvMediaISO.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: DrvMediaISO.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
 /** @file
  * VBox storage devices: ISO image media driver
  */
@@ -33,13 +33,6 @@
 *******************************************************************************/
 /** Converts a pointer to MEDIAISO::IMedia to a PRDVMEDIAISO. */
 #define PDMIMEDIA_2_DRVMEDIAISO(pInterface) ( (PDRVMEDIAISO)((uintptr_t)pInterface - RT_OFFSETOF(DRVMEDIAISO, IMedia)) )
-
-/** Converts a pointer to PDMDRVINS::IBase to a PPDMDRVINS. */
-#define PDMIBASE_2_DRVINS(pInterface)   ( (PPDMDRVINS)((uintptr_t)pInterface - RT_OFFSETOF(PDMDRVINS, IBase)) )
-
-/** Converts a pointer to PDMDRVINS::IBase to a PVBOXHDD. */
-#define PDMIBASE_2_DRVMEDIAISO(pInterface)  ( PDMINS_2_DATA(PDMIBASE_2_DRVINS(pInterface), PDRVMEDIAISO) )
-
 
 
 /*******************************************************************************
@@ -180,7 +173,7 @@ static DECLCALLBACK(bool) drvMediaISOIsReadOnly(PPDMIMEDIA pInterface)
  */
 static DECLCALLBACK(void *) drvMediaISOQueryInterface(PPDMIBASE pInterface, const char *pszIID)
 {
-    PPDMDRVINS pDrvIns = PDMIBASE_2_DRVINS(pInterface);
+    PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
     PDRVMEDIAISO pThis = PDMINS_2_DATA(pDrvIns, PDRVMEDIAISO);
     PDMIBASE_RETURN_INTERFACE(pszIID, PDMIBASE, &pDrvIns->IBase);
     PDMIBASE_RETURN_INTERFACE(pszIID, PDMIMEDIA, &pThis->IMedia);
@@ -293,7 +286,7 @@ const PDMDRVREG g_DrvMediaISO =
     /* fClass. */
     PDM_DRVREG_CLASS_MEDIA,
     /* cMaxInstances */
-    ~0,
+    ~0U,
     /* cbInstance */
     sizeof(DRVMEDIAISO),
     /* pfnConstruct */

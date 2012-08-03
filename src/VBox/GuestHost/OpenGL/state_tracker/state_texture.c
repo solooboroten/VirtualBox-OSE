@@ -13,6 +13,10 @@
 #include "cr_version.h"
 #include "state_internals.h"
 
+#ifdef DEBUG_misha
+#include <iprt/assert.h>
+#endif
+
 #define UNUSED(x) ((void) (x))
 
 #define GET_TOBJ(tobj, state, id) \
@@ -245,6 +249,11 @@ crStateTextureInitTextureObj(CRContext *ctx, CRTextureObj *tobj,
     {
         RESET(tobj->paramsBit[i], ctx->bitid);
     }
+
+#ifndef IN_GUEST
+    CR_STATE_SHAREDOBJ_USAGE_INIT(tobj);
+    CR_STATE_SHAREDOBJ_USAGE_SET(tobj, ctx);
+#endif
 }
 
 
@@ -678,6 +687,51 @@ static void crStateTextureCheckFBOAPs(GLenum target, GLuint texture)
     }
 }
 
+static void crStateCleanupTextureRefs(CRContext *g, CRTextureObj *tObj)
+{
+    CRTextureState *t = &(g->texture);
+    GLuint u;
+
+    /*
+     ** reset back to the base texture.
+     */
+    for (u = 0; u < g->limits.maxTextureUnits; u++)
+    {
+        if (tObj == t->unit[u].currentTexture1D)
+        {
+            t->unit[u].currentTexture1D = &(t->base1D);
+        }
+        if (tObj == t->unit[u].currentTexture2D)
+        {
+            t->unit[u].currentTexture2D = &(t->base2D);
+        }
+#ifdef CR_OPENGL_VERSION_1_2
+        if (tObj == t->unit[u].currentTexture3D)
+        {
+            t->unit[u].currentTexture3D = &(t->base3D);
+        }
+#endif
+#ifdef CR_ARB_texture_cube_map
+        if (tObj == t->unit[u].currentTextureCubeMap)
+        {
+            t->unit[u].currentTextureCubeMap = &(t->baseCubeMap);
+        }
+#endif
+#ifdef CR_NV_texture_rectangle
+        if (tObj == t->unit[u].currentTextureRect)
+        {
+            t->unit[u].currentTextureRect = &(t->baseRect);
+        }
+#endif
+
+#ifdef CR_EXT_framebuffer_object
+        crStateTextureCheckFBOAPs(GL_DRAW_FRAMEBUFFER, tObj->id);
+        crStateTextureCheckFBOAPs(GL_READ_FRAMEBUFFER, tObj->id);
+#endif
+    }
+
+}
+
 void STATE_APIENTRY crStateDeleteTextures(GLsizei n, const GLuint *textures) 
 {
     CRContext *g = GetCurrentContext();
@@ -709,48 +763,11 @@ void STATE_APIENTRY crStateDeleteTextures(GLsizei n, const GLuint *textures)
         GET_TOBJ(tObj, g, name);
         if (name && tObj)
         {
-            GLuint u;
-            /* remove from hashtable */
-            crHashtableDelete(g->shared->textureTable, name, NULL);
+            crStateCleanupTextureRefs(g, tObj);
 
-            /* if the currentTexture is deleted, 
-             ** reset back to the base texture.
-             */
-            for (u = 0; u < g->limits.maxTextureUnits; u++)
-            {
-                if (tObj == t->unit[u].currentTexture1D) 
-                {
-                    t->unit[u].currentTexture1D = &(t->base1D);
-                }
-                if (tObj == t->unit[u].currentTexture2D) 
-                {
-                    t->unit[u].currentTexture2D = &(t->base2D);
-                }
-#ifdef CR_OPENGL_VERSION_1_2
-                if (tObj == t->unit[u].currentTexture3D) 
-                {
-                    t->unit[u].currentTexture3D = &(t->base3D);
-                }
-#endif
-#ifdef CR_ARB_texture_cube_map
-                if (tObj == t->unit[u].currentTextureCubeMap)
-                {
-                    t->unit[u].currentTextureCubeMap = &(t->baseCubeMap);
-                }
-#endif
-#ifdef CR_NV_texture_rectangle
-                if (tObj == t->unit[u].currentTextureRect)
-                {
-                    t->unit[u].currentTextureRect = &(t->baseRect);
-                }
-#endif
-            }
-
-#ifdef CR_EXT_framebuffer_object
-            crStateTextureCheckFBOAPs(GL_DRAW_FRAMEBUFFER, name);
-            crStateTextureCheckFBOAPs(GL_READ_FRAMEBUFFER, name);
-#endif
-            crStateDeleteTextureObject(tObj);
+            /* on the host side, ogl texture object is deleted by a separate cr_server.head_spu->dispatch_table.DeleteTextures(n, newTextures);
+             * in crServerDispatchDeleteTextures, we just delete a state object here, which crStateDeleteTextureObject does */
+            crHashtableDelete(g->shared->textureTable, name, (CRHashtableCallback)crStateDeleteTextureObject);
         }
     }
 
@@ -827,6 +844,48 @@ void STATE_APIENTRY crStateActiveTextureARB( GLenum texture )
     }
 }
 
+DECLEXPORT(void) crStateSetTextureUsed(GLuint texture, GLboolean used)
+{
+    CRContext *g = GetCurrentContext();
+    CRTextureObj *tobj;
+
+    if (!texture)
+    {
+        crWarning("crStateSetTextureUsed: null texture name specified!");
+        return;
+    }
+
+    GET_TOBJ(tobj, g, texture);
+    if (!tobj)
+    {
+        crWarning("crStateSetTextureUsed: failed to fined a HW name for texture(%d)!", texture);
+        return;
+    }
+
+    if (used)
+        CR_STATE_SHAREDOBJ_USAGE_SET(tobj, g);
+    else
+    {
+        CRStateBits *sb = GetCurrentBits();
+        CRTextureBits *tb = &(sb->texture);
+        CRTextureState *t = &(g->texture);
+
+        CR_STATE_SHAREDOBJ_USAGE_CLEAR(tobj, g);
+
+        crStateCleanupTextureRefs(g, tobj);
+
+        if (!CR_STATE_SHAREDOBJ_USAGE_IS_USED(tobj))
+        {
+            /* on the host side, we need to delete an ogl texture object here as well, which crStateDeleteTextureCallback will do
+             * in addition to calling crStateDeleteTextureObject to delete a state object */
+            crHashtableDelete(g->shared->textureTable, texture, crStateDeleteTextureCallback);
+        }
+
+        DIRTY(tb->dirty, g->neg_bitid);
+        DIRTY(tb->current[t->curTextureUnit], g->neg_bitid);
+    }
+}
+
 void STATE_APIENTRY crStateBindTexture(GLenum target, GLuint texture) 
 {
     CRContext *g = GetCurrentContext();
@@ -896,6 +955,10 @@ void STATE_APIENTRY crStateBindTexture(GLenum target, GLuint texture)
     {
         tobj = crStateTextureAllocate_t(g, texture);
     }
+
+#ifndef IN_GUEST
+    CR_STATE_SHAREDOBJ_USAGE_SET(tobj, g);
+#endif
 
     /* Check the targets */
     if (tobj->target == GL_NONE)
@@ -1023,6 +1086,11 @@ crStateTexParameterfv(GLenum target, GLenum pname, const GLfloat *param)
                 tobj->wrapS = e;
             }
 #endif
+#ifdef CR_ATI_texture_mirror_once
+            else if ((e == GL_MIRROR_CLAMP_ATI || e == GL_MIRROR_CLAMP_TO_EDGE_ATI) && g->extensions.ATI_texture_mirror_once) {
+                tobj->wrapS = e;
+            }
+#endif
             else {
                 crStateError(__LINE__, __FILE__, GL_INVALID_ENUM,
                     "TexParameterfv: GL_TEXTURE_WRAP_S invalid param: 0x%x", e);
@@ -1053,6 +1121,11 @@ crStateTexParameterfv(GLenum target, GLenum pname, const GLfloat *param)
                 tobj->wrapT = e;
             }
 #endif
+#ifdef CR_ATI_texture_mirror_once
+            else if ((e == GL_MIRROR_CLAMP_ATI || e == GL_MIRROR_CLAMP_TO_EDGE_ATI) && g->extensions.ATI_texture_mirror_once) {
+                tobj->wrapT = e;
+            }
+#endif
             else {
                 crStateError(__LINE__, __FILE__, GL_INVALID_ENUM,
                     "TexParameterfv: GL_TEXTURE_WRAP_T invalid param: 0x%x", e);
@@ -1079,6 +1152,11 @@ crStateTexParameterfv(GLenum target, GLenum pname, const GLfloat *param)
 #endif
 #ifdef CR_ARB_texture_mirrored_repeat
             else if (e == GL_MIRRORED_REPEAT_ARB && g->extensions.ARB_texture_mirrored_repeat) {
+                tobj->wrapR = e;
+            }
+#endif
+#ifdef CR_ATI_texture_mirror_once
+            else if ((e == GL_MIRROR_CLAMP_ATI || e == GL_MIRROR_CLAMP_TO_EDGE_ATI) && g->extensions.ATI_texture_mirror_once) {
                 tobj->wrapR = e;
             }
 #endif
@@ -3183,6 +3261,22 @@ DECLEXPORT(GLuint) STATE_APIENTRY crStateGetTextureHWID(GLuint id)
     CRContext *g = GetCurrentContext();
     CRTextureObj *tobj = GET_TOBJ(tobj, g, id);
 
+#ifdef DEBUG_misha
+    if (id)
+    {
+        Assert(tobj);
+    }
+    else
+    {
+        Assert(!tobj);
+    }
+    if (tobj)
+    {
+        crDebug("tex id(%d), hwid(%d)", tobj->id, tobj->hwid);
+    }
+#endif
+
+
     return tobj ? crStateGetTextureObjHWID(tobj) : 0;
 }
 
@@ -3195,6 +3289,9 @@ DECLEXPORT(GLuint) STATE_APIENTRY crStateGetTextureObjHWID(CRTextureObj *tobj)
     {
         CRASSERT(diff_api.GenTextures);
         diff_api.GenTextures(1, &tobj->hwid);
+#ifdef DEBUG_misha
+        crDebug("tex id(%d), hwid(%d)", tobj->id, tobj->hwid);
+#endif
         CRASSERT(tobj->hwid);
     }
 #endif

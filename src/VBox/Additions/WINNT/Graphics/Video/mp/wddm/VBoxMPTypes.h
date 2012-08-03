@@ -1,4 +1,4 @@
-/* $Id: VBoxMPTypes.h 37889 2011-07-12 11:18:46Z vboxsync $ */
+/* $Id: VBoxMPTypes.h 42081 2012-07-10 09:47:29Z vboxsync $ */
 
 /** @file
  * VBox WDDM Miniport driver
@@ -30,6 +30,11 @@ typedef struct VBOXWDDM_ALLOCATION *PVBOXWDDM_ALLOCATION;
 #include "VBoxMPVdma.h"
 #include "VBoxMPShgsmi.h"
 #include "VBoxMPVbva.h"
+#include "VBoxMPCr.h"
+
+#if 0
+#include <iprt/avl.h>
+#endif
 
 /* one page size */
 #define VBOXWDDM_C_DMA_BUFFER_SIZE         0x1000
@@ -81,15 +86,32 @@ typedef struct VBOXWDDM_VHWA
 } VBOXWDDM_VHWA;
 #endif
 
+typedef struct VBOXWDDM_ADDR
+{
+    /* if SegmentId == NULL - the sysmem data is presented with pvMem */
+    UINT SegmentId;
+    union {
+        VBOXVIDEOOFFSET offVram;
+        void * pvMem;
+    };
+} VBOXWDDM_ADDR, *PVBOXWDDM_ADDR;
+
+typedef struct VBOXWDDM_ALLOC_DATA
+{
+    VBOXWDDM_SURFACE_DESC SurfDesc;
+    VBOXWDDM_ADDR Addr;
+} VBOXWDDM_ALLOC_DATA, *PVBOXWDDM_ALLOC_DATA;
+
 typedef struct VBOXWDDM_SOURCE
 {
     struct VBOXWDDM_ALLOCATION * pPrimaryAllocation;
 #ifdef VBOXWDDM_RENDER_FROM_SHADOW
     struct VBOXWDDM_ALLOCATION * pShadowAllocation;
-    VBOXVIDEOOFFSET offVram;
-    VBOXWDDM_SURFACE_DESC SurfDesc;
-    VBOXVBVAINFO Vbva;
 #endif
+    VBOXWDDM_ALLOC_DATA AllocData;
+    BOOLEAN bVisible;
+    BOOLEAN bGhSynced;
+    VBOXVBVAINFO Vbva;
 #ifdef VBOX_WITH_VIDEOHWACCEL
     /* @todo: in our case this seems more like a target property,
      * but keep it here for now */
@@ -98,6 +120,7 @@ typedef struct VBOXWDDM_SOURCE
     LIST_ENTRY OverlayList;
     KSPIN_LOCK OverlayListLock;
 #endif
+    KSPIN_LOCK AllocationLock;
     POINT VScreenPos;
     VBOXWDDM_POINTER_INFO PointerInfo;
 } VBOXWDDM_SOURCE, *PVBOXWDDM_SOURCE;
@@ -117,32 +140,38 @@ typedef struct VBOXWDDM_ALLOCATION
     struct VBOXWDDM_SWAPCHAIN *pSwapchain;
     VBOXWDDM_ALLOC_TYPE enmType;
     volatile uint32_t cRefs;
-//    VBOXWDDM_ALLOCUSAGE_TYPE enmCurrentUsage;
     D3DDDI_RESOURCEFLAGS fRcFlags;
-    UINT SegmentId;
-    VBOXVIDEOOFFSET offVram;
 #ifdef VBOX_WITH_VIDEOHWACCEL
     VBOXVHWA_SURFHANDLE hHostHandle;
 #endif
     BOOLEAN fDeleted;
     BOOLEAN bVisible;
     BOOLEAN bAssigned;
-    VBOXWDDM_SURFACE_DESC SurfDesc;
+#ifdef DEBUG
+    /* current for shared rc handling assumes that once resource has no opens, it can not be openned agaion */
+    BOOLEAN fAssumedDeletion;
+#endif
+    VBOXWDDM_ALLOC_DATA AllocData;
     struct VBOXWDDM_RESOURCE *pResource;
     /* to return to the Runtime on DxgkDdiCreateAllocation */
     DXGK_ALLOCATIONUSAGEHINT UsageHint;
     uint32_t iIndex;
-    VBOXUHGSMI_SYNCHOBJECT_TYPE enmSynchType;
-    union
-    {
-        PKEVENT pSynchEvent;
-        PRKSEMAPHORE pSynchSemaphore;
-    };
+    uint32_t cOpens;
+    KSPIN_LOCK OpenLock;
+    LIST_ENTRY OpenList;
+    /* helps tracking when to release wine shared resource */
+    uint32_t cShRcRefs;
+    HANDLE hSharedHandle;
+#if 0
+    AVLPVNODECORE ShRcTreeEntry;
+#endif
+    VBOXUHGSMI_BUFFER_TYPE_FLAGS fUhgsmiType;
+    PKEVENT pSynchEvent;
 } VBOXWDDM_ALLOCATION, *PVBOXWDDM_ALLOCATION;
 
 typedef struct VBOXWDDM_RESOURCE
 {
-    uint32_t fFlags;
+    VBOXWDDMDISP_RESOURCE_FLAGS fFlags;
     volatile uint32_t cRefs;
     VBOXWDDM_RC_DESC RcDesc;
     BOOLEAN fDeleted;
@@ -179,17 +208,22 @@ typedef enum
     VBOXWDDM_OBJSTATE_TYPE_INITIALIZED,
     VBOXWDDM_OBJSTATE_TYPE_TERMINATED
 } VBOXWDDM_OBJSTATE_TYPE;
+
+#define VBOXWDDM_INVALID_COORD ((LONG)((~0UL) >> 1))
+
 typedef struct VBOXWDDM_SWAPCHAIN
 {
     LIST_ENTRY DevExtListEntry;
     LIST_ENTRY AllocList;
     struct VBOXWDDM_CONTEXT *pContext;
-    RECT ViewRect;
     VBOXWDDM_OBJSTATE_TYPE enmState;
     volatile uint32_t cRefs;
     VBOXDISP_UMHANDLE hSwapchainUm;
     VBOXDISP_KMHANDLE hSwapchainKm;
-    PVBOXVIDEOCM_CMD_RECTS_INTERNAL pLastReportedRects;
+    POINT Pos;
+    UINT width;
+    UINT height;
+    VBOXWDDMVR_LIST VisibleRegions;
 }VBOXWDDM_SWAPCHAIN, *PVBOXWDDM_SWAPCHAIN;
 
 typedef struct VBOXWDDM_CONTEXT
@@ -199,6 +233,8 @@ typedef struct VBOXWDDM_CONTEXT
     VBOXWDDM_CONTEXT_TYPE enmType;
     UINT  NodeOrdinal;
     UINT  EngineAffinity;
+    BOOLEAN fRenderFromShadowDisabled;
+    uint32_t u32CrConClientID;
     VBOXWDDM_HTABLE Swapchains;
     VBOXVIDEOCM_CTX CmContext;
     VBOXVIDEOCM_ALLOC_CONTEXT AllocContext;
@@ -250,9 +286,20 @@ typedef struct VBOXWDDM_DMA_PRIVATEDATA_CHROMIUM_CMD
     VBOXWDDM_UHGSMI_BUFFER_SUBMIT_INFO aBufInfos[1];
 } VBOXWDDM_DMA_PRIVATEDATA_CHROMIUM_CMD, *PVBOXWDDM_DMA_PRIVATEDATA_CHROMIUM_CMD;
 
+typedef struct VBOXWDDM_DMA_PRIVATEDATA_ALLOCINFO_ON_SUBMIT
+{
+    VBOXWDDM_DMA_PRIVATEDATA_BASEHDR Base;
+    VBOXWDDM_DMA_ALLOCINFO aInfos[1];
+} VBOXWDDM_DMA_PRIVATEDATA_ALLOCINFO_ON_SUBMIT, *PVBOXWDDM_DMA_PRIVATEDATA_ALLOCINFO_ON_SUBMIT;
+
 typedef struct VBOXWDDM_OPENALLOCATION
 {
+    LIST_ENTRY ListEntry;
     D3DKMT_HANDLE  hAllocation;
+    PVBOXWDDM_ALLOCATION pAllocation;
+    PVBOXWDDM_DEVICE pDevice;
+    uint32_t cShRcRefs;
+    uint32_t cOpens;
 } VBOXWDDM_OPENALLOCATION, *PVBOXWDDM_OPENALLOCATION;
 
 #define VBOXWDDM_MAX_VIDEOMODES 128

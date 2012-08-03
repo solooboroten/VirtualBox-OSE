@@ -24,7 +24,9 @@ extern "C" {
 #include <semaphore.h>
 #endif
 
+#include "cr_error.h"
 
+#include <iprt/asm.h>
 /*
  * Handle for Thread-Specific Data
  */
@@ -100,6 +102,10 @@ extern DECLEXPORT(void) crInitSemaphore(CRsemaphore *s, unsigned int count);
 extern DECLEXPORT(void) crWaitSemaphore(CRsemaphore *s);
 extern DECLEXPORT(void) crSignalSemaphore(CRsemaphore *s);
 
+#define VBoxTlsRefGetImpl(_tls) (crGetTSD((CRtsd*)(_tls)))
+#define VBoxTlsRefSetImpl(_tls, _val) (crSetTSD((CRtsd*)(_tls), (_val)))
+#define VBoxTlsRefAssertImpl CRASSERT
+#include <VBox/VBoxVideo3D.h>
 
 #ifdef __cplusplus
 }

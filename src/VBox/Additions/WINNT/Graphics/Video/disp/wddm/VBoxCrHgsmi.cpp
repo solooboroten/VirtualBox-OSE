@@ -1,4 +1,4 @@
-/* $Id: VBoxCrHgsmi.cpp 36867 2011-04-28 07:27:03Z vboxsync $ */
+/* $Id: VBoxCrHgsmi.cpp 42499 2012-08-01 10:26:43Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -24,141 +24,6 @@
 static VBOXDISPKMT_CALLBACKS g_VBoxCrHgsmiKmtCallbacks;
 static int g_bVBoxKmtCallbacksInited = 0;
 
-#ifdef VBOX_CRHGSMI_WITH_D3DDEV
-static VBOXCRHGSMI_CALLBACKS g_VBoxCrHgsmiCallbacks;
-static HMODULE g_hVBoxCrHgsmiProvider = NULL;
-static uint32_t g_cVBoxCrHgsmiProvider = 0;
-
-
-typedef VBOXWDDMDISP_DECL(int) FNVBOXDISPCRHGSMI_INIT(PVBOXCRHGSMI_CALLBACKS pCallbacks);
-typedef FNVBOXDISPCRHGSMI_INIT *PFNVBOXDISPCRHGSMI_INIT;
-
-typedef VBOXWDDMDISP_DECL(int) FNVBOXDISPCRHGSMI_TERM();
-typedef FNVBOXDISPCRHGSMI_TERM *PFNVBOXDISPCRHGSMI_TERM;
-
-typedef VBOXWDDMDISP_DECL(HVBOXCRHGSMI_CLIENT) FNVBOXDISPCRHGSMI_QUERY_CLIENT();
-typedef FNVBOXDISPCRHGSMI_QUERY_CLIENT *PFNVBOXDISPCRHGSMI_QUERY_CLIENT;
-
-static PFNVBOXDISPCRHGSMI_INIT g_pfnVBoxDispCrHgsmiInit = NULL;
-static PFNVBOXDISPCRHGSMI_TERM g_pfnVBoxDispCrHgsmiTerm = NULL;
-static PFNVBOXDISPCRHGSMI_QUERY_CLIENT g_pfnVBoxDispCrHgsmiQueryClient = NULL;
-
-VBOXCRHGSMI_DECL(int) VBoxCrHgsmiInit(PVBOXCRHGSMI_CALLBACKS pCallbacks)
-{
-    if (!g_bVBoxKmtCallbacksInited)
-    {
-        HRESULT hr = vboxDispKmtCallbacksInit(&g_VBoxCrHgsmiKmtCallbacks);
-        Assert(hr == S_OK);
-        if (hr == S_OK)
-            g_bVBoxKmtCallbacksInited = 1;
-        else
-            g_bVBoxKmtCallbacksInited = -1;
-    }
-
-    Assert(g_bVBoxKmtCallbacksInited);
-    if (g_bVBoxKmtCallbacksInited < 0)
-    {
-        Assert(0);
-        return VERR_NOT_SUPPORTED;
-    }
-
-    g_VBoxCrHgsmiCallbacks = *pCallbacks;
-    if (!g_hVBoxCrHgsmiProvider)
-    {
-        g_hVBoxCrHgsmiProvider = GetModuleHandle(L"VBoxDispD3D");
-        if (g_hVBoxCrHgsmiProvider)
-        {
-            g_hVBoxCrHgsmiProvider = LoadLibrary(L"VBoxDispD3D");
-        }
-
-        if (g_hVBoxCrHgsmiProvider)
-        {
-            g_pfnVBoxDispCrHgsmiInit = (PFNVBOXDISPCRHGSMI_INIT)GetProcAddress(g_hVBoxCrHgsmiProvider, "VBoxDispCrHgsmiInit");
-            Assert(g_pfnVBoxDispCrHgsmiInit);
-            if (g_pfnVBoxDispCrHgsmiInit)
-            {
-                g_pfnVBoxDispCrHgsmiInit(pCallbacks);
-            }
-
-            g_pfnVBoxDispCrHgsmiTerm = (PFNVBOXDISPCRHGSMI_TERM)GetProcAddress(g_hVBoxCrHgsmiProvider, "VBoxDispCrHgsmiTerm");
-            Assert(g_pfnVBoxDispCrHgsmiTerm);
-
-            g_pfnVBoxDispCrHgsmiQueryClient = (PFNVBOXDISPCRHGSMI_QUERY_CLIENT)GetProcAddress(g_hVBoxCrHgsmiProvider, "VBoxDispCrHgsmiQueryClient");
-            Assert(g_pfnVBoxDispCrHgsmiQueryClient);
-        }
-#ifdef DEBUG_misha
-        else
-        {
-            DWORD winEr = GetLastError();
-            Assert(0);
-        }
-#endif
-    }
-
-    if (g_hVBoxCrHgsmiProvider)
-    {
-        if (g_pfnVBoxDispCrHgsmiInit)
-        {
-            g_pfnVBoxDispCrHgsmiInit(pCallbacks);
-        }
-        ++g_cVBoxCrHgsmiProvider;
-        return VINF_SUCCESS;
-    }
-
-    /* we're called from ogl ICD driver*/
-    Assert(0);
-
-    return VINF_SUCCESS;
-}
-
-static __declspec(thread) PVBOXUHGSMI_PRIVATE_KMT gt_pHgsmiGL = NULL;
-
-VBOXCRHGSMI_DECL(HVBOXCRHGSMI_CLIENT) VBoxCrHgsmiQueryClient()
-{
-
-    HVBOXCRHGSMI_CLIENT hClient;
-    if (g_pfnVBoxDispCrHgsmiQueryClient)
-    {
-        hClient = g_pfnVBoxDispCrHgsmiQueryClient();
-//#ifdef DEBUG_misha
-//        Assert(hClient);
-//#endif
-        if (hClient)
-            return hClient;
-    }
-    PVBOXUHGSMI_PRIVATE_KMT pHgsmiGL = gt_pHgsmiGL;
-    if (pHgsmiGL)
-    {
-        Assert(pHgsmiGL->BasePrivate.hClient);
-        return pHgsmiGL->BasePrivate.hClient;
-    }
-    pHgsmiGL = (PVBOXUHGSMI_PRIVATE_KMT)RTMemAllocZ(sizeof (*pHgsmiGL));
-    if (pHgsmiGL)
-    {
-#if 0
-        HRESULT hr = vboxUhgsmiKmtCreate(pHgsmiGL, TRUE /* bD3D tmp for injection thread*/);
-#else
-        HRESULT hr = vboxUhgsmiKmtEscCreate(pHgsmiGL, TRUE /* bD3D tmp for injection thread*/);
-#endif
-        Assert(hr == S_OK);
-        if (hr == S_OK)
-        {
-            hClient = g_VBoxCrHgsmiCallbacks.pfnClientCreate(&pHgsmiGL->BasePrivate.Base);
-            Assert(hClient);
-            if (hClient)
-            {
-                pHgsmiGL->BasePrivate.hClient = hClient;
-                gt_pHgsmiGL = pHgsmiGL;
-                return hClient;
-            }
-            vboxUhgsmiKmtDestroy(pHgsmiGL);
-        }
-        RTMemFree(pHgsmiGL);
-    }
-
-    return NULL;
-}
-#else
 static int vboxCrHgsmiInitPerform(VBOXDISPKMT_CALLBACKS *pCallbacks)
 {
     HRESULT hr = vboxDispKmtCallbacksInit(pCallbacks);
@@ -201,7 +66,7 @@ VBOXCRHGSMI_DECL(PVBOXUHGSMI) VBoxCrHgsmiCreate()
 #else
         HRESULT hr = vboxUhgsmiKmtEscCreate(pHgsmiGL, TRUE /* bD3D tmp for injection thread*/);
 #endif
-        Log(("CrHgsmi: faled to create KmtEsc UHGSMI instance, hr (0x%x)\n", hr));
+        Log(("CrHgsmi: faled to create KmtEsc VBOXUHGSMI instance, hr (0x%x)\n", hr));
         if (hr == S_OK)
         {
             return &pHgsmiGL->BasePrivate.Base;
@@ -222,7 +87,6 @@ VBOXCRHGSMI_DECL(void) VBoxCrHgsmiDestroy(PVBOXUHGSMI pHgsmi)
         RTMemFree(pHgsmiGL);
     }
 }
-#endif
 
 VBOXCRHGSMI_DECL(int) VBoxCrHgsmiTerm()
 {
@@ -245,7 +109,24 @@ VBOXCRHGSMI_DECL(int) VBoxCrHgsmiTerm()
     return VINF_SUCCESS;
 }
 
-VBOXCRHGSMI_DECL(void) VBoxCrHgsmiLog(char * szString)
+VBOXCRHGSMI_DECL(int) VBoxCrHgsmiCtlConGetClientID(PVBOXUHGSMI pHgsmi, uint32_t *pu32ClientID)
 {
-    vboxVDbgPrint(("%s", szString));
+    PVBOXUHGSMI_PRIVATE_BASE pHgsmiPrivate = (PVBOXUHGSMI_PRIVATE_BASE)pHgsmi;
+    int rc = vboxCrHgsmiPrivateCtlConGetClientID(pHgsmiPrivate, pu32ClientID);
+    if (!RT_SUCCESS(rc))
+    {
+        WARN(("VBoxCrHgsmiPrivateCtlConCall failed with rc (%d)", rc));
+    }
+    return rc;
+}
+
+VBOXCRHGSMI_DECL(int) VBoxCrHgsmiCtlConCall(PVBOXUHGSMI pHgsmi, struct VBoxGuestHGCMCallInfo *pCallInfo, int cbCallInfo)
+{
+    PVBOXUHGSMI_PRIVATE_BASE pHgsmiPrivate = (PVBOXUHGSMI_PRIVATE_BASE)pHgsmi;
+    int rc = vboxCrHgsmiPrivateCtlConCall(pHgsmiPrivate, pCallInfo, cbCallInfo);
+    if (!RT_SUCCESS(rc))
+    {
+        WARN(("VBoxCrHgsmiPrivateCtlConCall failed with rc (%d)", rc));
+    }
+    return rc;
 }

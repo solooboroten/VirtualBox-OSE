@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,6 +30,7 @@
 #include <VBox/VMMDev2.h>
 #include <VBox/VMMDev.h>     /* grumble */
 #ifdef IN_RING0
+# include <VBox/VBoxGuest.h>
 # include <VBox/VBoxGuest2.h>
 #endif
 
@@ -312,6 +313,18 @@ DECLVBGL(int) VbglHGCMDisconnect (VBGLHGCMHANDLE handle, VBoxGuestHGCMDisconnect
 DECLVBGL(int) VbglHGCMCall (VBGLHGCMHANDLE handle, VBoxGuestHGCMCallInfo *pData, uint32_t cbData);
 
 /**
+ * Call to a service with user-mode data received by the calling driver from the User-Mode process.
+ * The call must be done in the context of a calling process.
+ *
+ * @param handle      Handle of the connection.
+ * @param pData       Call request information structure, including function parameters.
+ * @param cbData      Length in bytes of data.
+ *
+ * @return VBox status code.
+ */
+DECLVBGL(int) VbglHGCMCallUserData (VBGLHGCMHANDLE handle, VBoxGuestHGCMCallInfo *pData, uint32_t cbData);
+
+/**
  * Call to a service with timeout.
  *
  * @param handle      Handle of the connection.
@@ -379,6 +392,15 @@ DECLVBGL(void) VbglPhysHeapFree (void *p);
 
 DECLVBGL(int) VbglQueryVMMDevMemory (VMMDevMemory **ppVMMDevMemory);
 DECLR0VBGL(bool) VbglR0CanUsePhysPageList(void);
+
+# ifndef VBOX_GUEST
+/** @name Mouse
+ * @{ */
+DECLVBGL(int)     VbglSetMouseNotifyCallback(PFNVBOXGUESTMOUSENOTIFY pfnNotify, void *pvUser);
+DECLVBGL(int)     VbglGetMouseStatus(uint32_t *pfFeatures, uint32_t *px, uint32_t *py);
+DECLVBGL(int)     VbglSetMouseStatus(uint32_t fFeatures);
+/** @}  */
+# endif /* VBOX_GUEST */
 
 #endif /* IN_RING0 && !IN_RING0_AGNOSTIC */
 /** @} */
@@ -548,15 +570,15 @@ VBGLR3DECL(int)     VbglR3GuestCtrlConnect(uint32_t *pu32ClientId);
 VBGLR3DECL(int)     VbglR3GuestCtrlDisconnect(uint32_t u32ClientId);
 VBGLR3DECL(int)     VbglR3GuestCtrlWaitForHostMsg(uint32_t u32ClientId, uint32_t *puMsg, uint32_t *puNumParms);
 VBGLR3DECL(int)     VbglR3GuestCtrlCancelPendingWaits(uint32_t u32ClientId);
-VBGLR3DECL(int)     VbglR3GuestCtrlExecGetHostCmd(uint32_t  u32ClientId,    uint32_t  uNumParms,
-                                                  uint32_t *puContext,
-                                                  char     *pszCmd,         uint32_t  cbCmd,
-                                                  uint32_t *puFlags,
-                                                  char     *pszArgs,        uint32_t  cbArgs,   uint32_t *puNumArgs,
-                                                  char     *pszEnv,         uint32_t *pcbEnv,   uint32_t *puNumEnvVars,
-                                                  char     *pszUser,        uint32_t  cbUser,
-                                                  char     *pszPassword,    uint32_t  cbPassword,
-                                                  uint32_t *puTimeLimit);
+VBGLR3DECL(int)     VbglR3GuestCtrlExecGetHostCmdExec(uint32_t  u32ClientId,    uint32_t  cParms,
+                                                      uint32_t *puContext,
+                                                      char     *pszCmd,         uint32_t  cbCmd,
+                                                      uint32_t *puFlags,
+                                                      char     *pszArgs,        uint32_t  cbArgs,   uint32_t *puNumArgs,
+                                                      char     *pszEnv,         uint32_t *pcbEnv,   uint32_t *puNumEnvVars,
+                                                      char     *pszUser,        uint32_t  cbUser,
+                                                      char     *pszPassword,    uint32_t  cbPassword,
+                                                      uint32_t *puTimeLimit);
 VBGLR3DECL(int)     VbglR3GuestCtrlExecGetHostCmdInput(uint32_t  u32ClientId,    uint32_t   uNumParms,
                                                        uint32_t *puContext,      uint32_t  *puPID,
                                                        uint32_t *puFlags,        void      *pvData,
@@ -587,11 +609,20 @@ VBGLR3DECL(int)     VbglR3GuestCtrlExecReportStatusIn(uint32_t     u32ClientId,
 /** @}  */
 # endif /* VBOX_WITH_GUEST_CONTROL defined */
 
+/** @name Auto-logon handling
+ * @{ */
+VBGLR3DECL(int)     VbglR3AutoLogonReportStatus(VBoxGuestFacilityStatus enmStatus);
+VBGLR3DECL(bool)    VbglR3AutoLogonIsRemoteSession(void);
+/** @}  */
+
 /** @name User credentials handling
  * @{ */
 VBGLR3DECL(int)     VbglR3CredentialsQueryAvailability(void);
 VBGLR3DECL(int)     VbglR3CredentialsRetrieve(char **ppszUser, char **ppszPassword, char **ppszDomain);
+VBGLR3DECL(int)     VbglR3CredentialsRetrieveUtf16(PRTUTF16 *ppwszUser, PRTUTF16 *ppwszPassword, PRTUTF16 *ppwszDomain);
 VBGLR3DECL(void)    VbglR3CredentialsDestroy(char *pszUser, char *pszPassword, char *pszDomain, uint32_t cPasses);
+VBGLR3DECL(void)    VbglR3CredentialsDestroyUtf16(PRTUTF16 pwszUser, PRTUTF16 pwszPassword, PRTUTF16 pwszDomain,
+                                                  uint32_t cPasses);
 /** @}  */
 
 /** @name CPU hotplug monitor
@@ -609,6 +640,51 @@ VBGLR3DECL(int)     VbglR3CheckSharedModules(void);
 VBGLR3DECL(bool)    VbglR3PageSharingIsEnabled(void);
 VBGLR3DECL(int)     VbglR3PageIsShared(RTGCPTR pPage, bool *pfShared, uint64_t *puPageFlags);
 /** @} */
+
+# ifdef VBOX_WITH_DRAG_AND_DROP
+/** @name Drag and Drop
+ * @{ */
+typedef struct VBGLR3DNDHGCMEVENT
+{
+    uint32_t uType;               /** The event type this struct contains */
+    uint32_t uScreenId;           /** Screen id this request belongs to */
+    char    *pszFormats;          /** Format list (\r\n separated) */
+    uint32_t cbFormats;           /** Size of pszFormats (\0 included) */
+    union
+    {
+        struct
+        {
+            uint32_t uXpos;       /** X position of guest screen */
+            uint32_t uYpos;       /** Y position of guest screen */
+            uint32_t uDefAction;  /** Proposed DnD action */
+            uint32_t uAllActions; /** Allowed DnD actions */
+        }a; /** Values used in init, move and drop event type */
+        struct
+        {
+            void    *pvData;      /** Data request */
+            size_t   cbData;      /** Size of pvData */
+        }b; /** Values used in drop data event type */
+    }u;
+} VBGLR3DNDHGCMEVENT;
+typedef VBGLR3DNDHGCMEVENT *PVBGLR3DNDHGCMEVENT;
+typedef const PVBGLR3DNDHGCMEVENT CPVBGLR3DNDHGCMEVENT;
+VBGLR3DECL(int)     VbglR3DnDInit(void);
+VBGLR3DECL(int)     VbglR3DnDTerm(void);
+
+VBGLR3DECL(int)     VbglR3DnDConnect(uint32_t *pu32ClientId);
+VBGLR3DECL(int)     VbglR3DnDDisconnect(uint32_t u32ClientId);
+
+VBGLR3DECL(int)     VbglR3DnDProcessNextMessage(CPVBGLR3DNDHGCMEVENT pEvent);
+
+VBGLR3DECL(int)     VbglR3DnDHGAcknowledgeOperation(uint32_t uAction);
+VBGLR3DECL(int)     VbglR3DnDHGRequestData(const char* pcszFormat);
+#  ifdef VBOX_WITH_DRAG_AND_DROP_GH
+VBGLR3DECL(int)     VbglR3DnDGHAcknowledgePending(uint32_t uDefAction, uint32_t uAllActions, const char* pcszFormat);
+VBGLR3DECL(int)     VbglR3DnDGHSendData(void *pvData, uint32_t cbData);
+VBGLR3DECL(int)     VbglR3DnDGHErrorEvent(int rcOp);
+#  endif /* VBOX_WITH_DRAG_AND_DROP_GH */
+/** @} */
+# endif /* VBOX_WITH_DRAG_AND_DROP */
 
 #endif /* IN_RING3 */
 /** @} */

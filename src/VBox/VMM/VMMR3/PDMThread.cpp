@@ -1,4 +1,4 @@
-/* $Id: PDMThread.cpp 36437 2011-03-25 15:36:59Z vboxsync $ */
+/* $Id: PDMThread.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * PDM Thread - VM Thread Management.
  */
@@ -85,7 +85,7 @@ static DECLCALLBACK(int) pdmR3ThreadWakeUp(PPDMTHREAD pThread)
 
         default:
             AssertMsgFailed(("%d\n", pThread->Internal.s.enmType));
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_PDM_THREAD_IPE_1;
             break;
     }
     AssertRC(rc);
@@ -97,7 +97,7 @@ static DECLCALLBACK(int) pdmR3ThreadWakeUp(PPDMTHREAD pThread)
  * Allocates new thread instance.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   ppThread    Where to store the pointer to the instance.
  */
 static int pdmR3ThreadNew(PVM pVM, PPPDMTHREAD ppThread)
@@ -122,7 +122,7 @@ static int pdmR3ThreadNew(PVM pVM, PPPDMTHREAD ppThread)
  * Initialize a new thread, this actually creates the thread.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   ppThread    Where the thread instance data handle is.
  * @param   cbStack     The stack size, see RTThreadCreate().
  * @param   enmType     The thread type, see RTThreadCreate().
@@ -155,7 +155,7 @@ static int pdmR3ThreadInit(PVM pVM, PPPDMTHREAD ppThread, size_t cbStack, RTTHRE
                 rc = RTThreadUserWait(Thread, 60*1000);
                 if (    RT_SUCCESS(rc)
                     &&  pThread->enmState != PDMTHREADSTATE_SUSPENDED)
-                    rc = VERR_INTERNAL_ERROR;
+                    rc = VERR_PDM_THREAD_IPE_2;
                 if (RT_SUCCESS(rc))
                 {
                     /*
@@ -195,7 +195,7 @@ static int pdmR3ThreadInit(PVM pVM, PPPDMTHREAD ppThread, size_t cbStack, RTTHRE
  * Device Helper for creating a thread associated with a device.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDevIns     The device instance.
  * @param   ppThread    Where to store the thread 'handle'.
  * @param   pvUser      The user argument to the thread function.
@@ -228,7 +228,7 @@ int pdmR3ThreadCreateDevice(PVM pVM, PPDMDEVINS pDevIns, PPPDMTHREAD ppThread, v
  * USB Device Helper for creating a thread associated with an USB device.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pUsbIns     The USB device instance.
  * @param   ppThread    Where to store the thread 'handle'.
  * @param   pvUser      The user argument to the thread function.
@@ -261,7 +261,7 @@ int pdmR3ThreadCreateUsb(PVM pVM, PPDMUSBINS pUsbIns, PPPDMTHREAD ppThread, void
  * Driver Helper for creating a thread associated with a driver.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDrvIns     The driver instance.
  * @param   ppThread    Where to store the thread 'handle'.
  * @param   pvUser      The user argument to the thread function.
@@ -294,7 +294,7 @@ int pdmR3ThreadCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, PPPDMTHREAD ppThread, v
  * Creates a PDM thread for internal use in the VM.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   ppThread    Where to store the thread 'handle'.
  * @param   pvUser      The user argument to the thread function.
  * @param   pfnThread   The thread function.
@@ -325,7 +325,7 @@ VMMR3DECL(int) PDMR3ThreadCreate(PVM pVM, PPPDMTHREAD ppThread, void *pvUser, PF
  * Creates a PDM thread for VM use by some external party.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   ppThread    Where to store the thread 'handle'.
  * @param   pvUser      The user argument to the thread function.
  * @param   pfnThread   The thread function.
@@ -408,7 +408,7 @@ VMMR3DECL(int) PDMR3ThreadDestroy(PPDMTHREAD pThread, int *pRcThread)
 
                 default:
                     AssertMsgFailed(("enmState=%d\n", enmState));
-                    rc = VERR_INTERNAL_ERROR;
+                    rc = VERR_PDM_THREAD_IPE_2;
                     break;
             }
             break;
@@ -473,7 +473,7 @@ VMMR3DECL(int) PDMR3ThreadDestroy(PPDMTHREAD pThread, int *pRcThread)
  * destroyed (not currently implemented).
  *
  * @returns VBox status code of the first failure.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDevIns     the device instance.
  */
 int pdmR3ThreadDestroyDevice(PVM pVM, PPDMDEVINS pDevIns)
@@ -508,7 +508,7 @@ int pdmR3ThreadDestroyDevice(PVM pVM, PPDMDEVINS pDevIns)
  * This function is called by PDMUsb when a device is destroyed.
  *
  * @returns VBox status code of the first failure.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pUsbIns     The USB device instance.
  */
 int pdmR3ThreadDestroyUsb(PVM pVM, PPDMUSBINS pUsbIns)
@@ -543,7 +543,7 @@ int pdmR3ThreadDestroyUsb(PVM pVM, PPDMUSBINS pUsbIns)
  * This function is called by PDMDriver when a driver is destroyed.
  *
  * @returns VBox status code of the first failure.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDrvIns     The driver instance.
  */
 int pdmR3ThreadDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns)
@@ -575,7 +575,7 @@ int pdmR3ThreadDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns)
 /**
  * Called For VM power off.
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  */
 void pdmR3ThreadDestroyAll(PVM pVM)
 {
@@ -667,7 +667,7 @@ VMMR3DECL(int) PDMR3ThreadIAmSuspending(PPDMTHREAD pThread)
                 return rc;
 
             if (RT_SUCCESS(rc))
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_PDM_THREAD_IPE_2;
         }
     }
 
@@ -731,8 +731,8 @@ VMMR3DECL(int) PDMR3ThreadSleep(PPDMTHREAD pThread, RTMSINTERVAL cMillies)
     /*
      * Assert sanity.
      */
-    AssertReturn(pThread->enmState > PDMTHREADSTATE_INVALID && pThread->enmState < PDMTHREADSTATE_TERMINATED, VERR_INTERNAL_ERROR);
-    AssertReturn(pThread->Thread == RTThreadSelf(), VERR_INTERNAL_ERROR);
+    AssertReturn(pThread->enmState > PDMTHREADSTATE_INVALID && pThread->enmState < PDMTHREADSTATE_TERMINATED, VERR_PDM_THREAD_IPE_2);
+    AssertReturn(pThread->Thread == RTThreadSelf(), VERR_PDM_THREAD_INVALID_CALLER);
 
     /*
      * Reset the event semaphore, check the state and sleep.
@@ -797,7 +797,7 @@ static DECLCALLBACK(int) pdmR3ThreadMain(RTTHREAD Thread, void *pvUser)
 
             default:
                 AssertMsgFailed(("%d\n", pThread->Internal.s.enmType));
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_PDM_THREAD_IPE_1;
                 break;
         }
         if (RT_FAILURE(rc))
@@ -946,7 +946,7 @@ VMMR3DECL(int) PDMR3ThreadSuspend(PPDMTHREAD pThread)
                         rc = RTThreadUserWait(pThread->Thread, 60*1000);
                     if (    RT_SUCCESS(rc)
                         &&  pThread->enmState != PDMTHREADSTATE_SUSPENDED)
-                        rc = VERR_INTERNAL_ERROR;
+                        rc = VERR_PDM_THREAD_IPE_2;
                     if (RT_SUCCESS(rc))
                         return rc;
                 }
@@ -970,7 +970,7 @@ VMMR3DECL(int) PDMR3ThreadSuspend(PPDMTHREAD pThread)
  * and drivers have been notified about the suspend / power off.
  *
  * @return VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  */
 int pdmR3ThreadSuspendAll(PVM pVM)
 {
@@ -1039,7 +1039,7 @@ VMMR3DECL(int) PDMR3ThreadResume(PPDMTHREAD pThread)
                 rc = RTThreadUserWait(pThread->Thread, 60*1000);
                 if (    RT_SUCCESS(rc)
                     &&  pThread->enmState != PDMTHREADSTATE_RUNNING)
-                    rc = VERR_INTERNAL_ERROR;
+                    rc = VERR_PDM_THREAD_IPE_2;
                 if (RT_SUCCESS(rc))
                     return rc;
             }
@@ -1062,7 +1062,7 @@ VMMR3DECL(int) PDMR3ThreadResume(PPDMTHREAD pThread)
  * and drivers have been notified about the resume / power on .
  *
  * @return VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  */
 int pdmR3ThreadResumeAll(PVM pVM)
 {

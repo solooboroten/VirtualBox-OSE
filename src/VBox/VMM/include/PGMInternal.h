@@ -1,4 +1,4 @@
-/* $Id: PGMInternal.h 37370 2011-06-08 08:29:42Z vboxsync $ */
+/* $Id: PGMInternal.h 42163 2012-07-16 12:42:04Z vboxsync $ */
 /** @file
  * PGM - Internal header file.
  */
@@ -92,13 +92,6 @@
 #endif
 
 /**
- * Chunk unmapping code activated on 32-bit hosts for > 1.5/2 GB guest memory support
- */
-#if (HC_ARCH_BITS == 32) && !defined(RT_OS_DARWIN)
-# define PGM_WITH_LARGE_ADDRESS_SPACE_ON_32_BIT_HOST
-#endif
-
-/**
  * Sync N pages instead of a whole page table
  */
 #define PGM_SYNC_N_PAGES
@@ -113,7 +106,7 @@
  * world switch overhead, so let's sync more.
  */
 # ifdef IN_RING0
-/* Chose 32 based on the compile test in #4219; 64 shows worse stats.
+/* Chose 32 based on the compile test in @bugref{4219}; 64 shows worse stats.
  * 32 again shows better results than 16; slightly more overhead in the \#PF handler,
  * but ~5% fewer faults.
  */
@@ -227,7 +220,7 @@
  * Maps a HC physical page pool address to a virtual address.
  *
  * @returns VBox status code.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pVCpu       The current CPU.
  * @param   HCPhys      The HC physical address to map to a virtual one.
  * @param   ppv         Where to store the virtual address. No need to cast
@@ -249,7 +242,7 @@
  * Maps a GC physical page address to a virtual address.
  *
  * @returns VBox status code.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   pVCpu   The current CPU.
  * @param   GCPhys  The GC physical address to map to a virtual one.
  * @param   ppv     Where to store the virtual address. No need to cast this.
@@ -263,14 +256,14 @@
      pgmRZDynMapGCPageV2Inlined(pVM, pVCpu, GCPhys, (void **)(ppv) RTLOG_COMMA_SRC_POS)
 #else
 # define PGM_GCPHYS_2_PTR_V2(pVM, pVCpu, GCPhys, ppv) \
-     PGMPhysGCPhys2R3Ptr(pVM, GCPhys, 1 /* one page only */, (PRTR3PTR)(ppv)) /** @todo this isn't asserting, use PGMRamGCPhys2HCPtr! */
+     pgmPhysGCPhys2R3Ptr(pVM, GCPhys, (PRTR3PTR)(ppv)) /** @todo this isn't asserting! */
 #endif
 
 /** @def PGM_GCPHYS_2_PTR
  * Maps a GC physical page address to a virtual address.
  *
  * @returns VBox status code.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   GCPhys  The GC physical address to map to a virtual one.
  * @param   ppv     Where to store the virtual address. No need to cast this.
  *
@@ -298,7 +291,7 @@
  * Maps a unaligned GC physical page address to a virtual address.
  *
  * @returns VBox status code.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   GCPhys  The GC physical address to map to a virtual one.
  * @param   ppv     Where to store the virtual address. No need to cast this.
  *
@@ -311,7 +304,7 @@
      pgmRZDynMapGCPageOffInlined(VMMGetCpu(pVM), GCPhys, (void **)(ppv) RTLOG_COMMA_SRC_POS)
 #else
 # define PGM_GCPHYS_2_PTR_EX(pVM, GCPhys, ppv) \
-     PGMPhysGCPhys2R3Ptr(pVM, GCPhys, 1 /* one page only */, (PRTR3PTR)(ppv)) /** @todo this isn't asserting, use PGMRamGCPhys2HCPtr! */
+     pgmPhysGCPhys2R3Ptr(pVM, GCPhys, (PRTR3PTR)(ppv)) /** @todo this isn't asserting! */
 #endif
 
 /** @def PGM_DYNMAP_UNUSED_HINT
@@ -339,7 +332,7 @@
  *
  * For best effect only apply this to the page that was mapped most recently.
  *
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   pvPage  The pool page.
  */
 #define PGM_DYNMAP_UNUSED_HINT_VM(pVM, pvPage)  PGM_DYNMAP_UNUSED_HINT(VMMGetCpu(pVM), pvPage)
@@ -348,7 +341,7 @@
 /** @def PGM_INVL_PG
  * Invalidates a page.
  *
- * @param   pVCpu       The VMCPU handle.
+ * @param   pVCpu       Pointer to the VMCPU.
  * @param   GCVirt      The virtual address of the page to invalidate.
  */
 #ifdef IN_RC
@@ -362,7 +355,7 @@
 /** @def PGM_INVL_PG_ALL_VCPU
  * Invalidates a page on all VCPUs
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   GCVirt      The virtual address of the page to invalidate.
  */
 #ifdef IN_RC
@@ -376,7 +369,7 @@
 /** @def PGM_INVL_BIG_PG
  * Invalidates a 4MB page directory entry.
  *
- * @param   pVCpu       The VMCPU handle.
+ * @param   pVCpu       Pointer to the VMCPU.
  * @param   GCVirt      The virtual address within the page directory to invalidate.
  */
 #ifdef IN_RC
@@ -390,7 +383,7 @@
 /** @def PGM_INVL_VCPU_TLBS()
  * Invalidates the TLBs of the specified VCPU
  *
- * @param   pVCpu       The VMCPU handle.
+ * @param   pVCpu       Pointer to the VMCPU.
  */
 #ifdef IN_RC
 # define PGM_INVL_VCPU_TLBS(pVCpu)             ASMReloadCR3()
@@ -403,7 +396,7 @@
 /** @def PGM_INVL_ALL_VCPU_TLBS()
  * Invalidates the TLBs of all VCPUs
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  */
 #ifdef IN_RC
 # define PGM_INVL_ALL_VCPU_TLBS(pVM)            ASMReloadCR3()
@@ -1626,8 +1619,9 @@ typedef struct PGMCHUNKR3MAP
 {
     /** The key is the chunk id. */
     AVLU32NODECORE                      Core;
-    /** The current age thingy. */
-    uint32_t                            iAge;
+    /** The time (ChunkR3Map.iNow) this chunk was last used.  Used for unmap
+     *  selection. */
+    uint32_t                            iLastUsed;
     /** The current reference count. */
     uint32_t volatile                   cRefs;
     /** The current permanent reference count. */
@@ -2071,7 +2065,7 @@ typedef enum PGMPOOLKIND
     /** Shw: 64-bit page directory table;           Gst: 64-bit page directory table. */
     PGMPOOLKIND_64BIT_PD_FOR_64BIT_PD,
     /** Shw: 64-bit page directory table;           Gst: no paging  */
-    PGMPOOLKIND_64BIT_PD_FOR_PHYS, /* 22 */
+    PGMPOOLKIND_64BIT_PD_FOR_PHYS, /* 24 */
 
     /** Shw: 64-bit PML4;                           Gst: 64-bit PML4. */
     PGMPOOLKIND_64BIT_PML4,
@@ -2119,21 +2113,36 @@ typedef struct PGMPOOLPAGE
 #else
     R3R0PTRTYPE(void *) pvPageR3;
 #endif
-    /** The guest physical address. */
 #if HC_ARCH_BITS == 32 && GC_ARCH_BITS == 64
     uint32_t            Alignment0;
 #endif
+    /** The guest physical address. */
     RTGCPHYS            GCPhys;
-
-    /** Access handler statistics to determine whether the guest is (re)initializing a page table. */
-    RTGCPTR             pvLastAccessHandlerRip;
-    RTGCPTR             pvLastAccessHandlerFault;
-    uint64_t            cLastAccessHandlerCount;
-
     /** The kind of page we're shadowing. (This is really a PGMPOOLKIND enum.) */
     uint8_t             enmKind;
     /** The subkind of page we're shadowing. (This is really a PGMPOOLACCESS enum.) */
     uint8_t             enmAccess;
+    /** This supplements enmKind and enmAccess */
+    bool                fA20Enabled : 1;
+
+    /** Used to indicate that the page is zeroed. */
+    bool                fZeroed : 1;
+    /** Used to indicate that a PT has non-global entries. */
+    bool                fSeenNonGlobal : 1;
+    /** Used to indicate that we're monitoring writes to the guest page. */
+    bool                fMonitored : 1;
+    /** Used to indicate that the page is in the cache (e.g. in the GCPhys hash).
+     * (All pages are in the age list.) */
+    bool                fCached : 1;
+    /** This is used by the R3 access handlers when invoked by an async thread.
+     * It's a hack required because of REMR3NotifyHandlerPhysicalDeregister. */
+    bool volatile       fReusedFlushPending : 1;
+    /** Used to mark the page as dirty (write monitoring is temporarily
+     *  off). */
+    bool                fDirty : 1;
+    bool                fPadding1 : 1;
+    bool                fPadding2;
+
     /** The index of this page. */
     uint16_t            idx;
     /** The next entry in the list this page currently resides in.
@@ -2159,29 +2168,31 @@ typedef struct PGMPOOLPAGE
     uint16_t            iAgeNext;
     /** The previous page in the age list. */
     uint16_t            iAgePrev;
-    /** Used to indicate that the page is zeroed. */
-    bool                fZeroed;
-    /** Used to indicate that a PT has non-global entries. */
-    bool                fSeenNonGlobal;
-    /** Used to indicate that we're monitoring writes to the guest page. */
-    bool                fMonitored;
-    /** Used to indicate that the page is in the cache (e.g. in the GCPhys hash).
-     * (All pages are in the age list.) */
-    bool                fCached;
-    /** This is used by the R3 access handlers when invoked by an async thread.
-     * It's a hack required because of REMR3NotifyHandlerPhysicalDeregister. */
-    bool volatile       fReusedFlushPending;
-    /** Used to mark the page as dirty (write monitoring is temporarily
-     *  off). */
-    bool                fDirty;
+    /** Index into PGMPOOL::aDirtyPages if fDirty is set. */
+    uint8_t             idxDirtyEntry;
 
-    /** Used to indicate that this page can't be flushed. Important for cr3 root pages or shadow pae pd pages). */
-    uint32_t            cLocked;
-    uint32_t            idxDirty;
-    RTGCPTR             pvDirtyFault;
-} PGMPOOLPAGE, *PPGMPOOLPAGE, **PPPGMPOOLPAGE;
+    /** @name Access handler statistics to determine whether the guest is
+     *        (re)initializing a page table.
+     * @{ */
+    RTGCPTR             GCPtrLastAccessHandlerRip;
+    RTGCPTR             GCPtrLastAccessHandlerFault;
+    uint64_t            cLastAccessHandler;
+    /** @}  */
+    /** Used to indicate that this page can't be flushed. Important for cr3 root pages or shadow pae pd pages. */
+    uint32_t volatile   cLocked;
+#if GC_ARCH_BITS == 64
+    uint32_t            u32Alignment3;
+#endif
+# ifdef VBOX_STRICT
+    RTGCPTR             GCPtrDirtyFault;
+# endif
+} PGMPOOLPAGE;
+/** Pointer to a pool page. */
+typedef PGMPOOLPAGE *PPGMPOOLPAGE;
 /** Pointer to a const pool page. */
 typedef PGMPOOLPAGE const *PCPGMPOOLPAGE;
+/** Pointer to a pool page pointer. */
+typedef PGMPOOLPAGE **PPPGMPOOLPAGE;
 
 
 /** The hash table size. */
@@ -2261,11 +2272,11 @@ typedef struct PGMPOOL
     /** Alignment padding. */
     uint32_t                    u32Padding2;
 # endif
-    /* Next available slot. */
+    /** Next available slot (in aDirtyPages). */
     uint32_t                    idxFreeDirtyPage;
-    /* Number of active dirty pages. */
+    /** Number of active dirty pages. */
     uint32_t                    cDirtyPages;
-    /* Array of current dirty pgm pool page indices. */
+    /** Array of current dirty pgm pool page indices. */
     struct
     {
         uint16_t                    uIdx;
@@ -2424,7 +2435,7 @@ AssertCompileMemberAlignment(PGMPOOL, aPages, 8);
  * Maps a pool page pool into the current context.
  *
  * @returns VBox status code.
- * @param   a_pVM       The VM handle.
+ * @param   a_pVM       Pointer to the VM.
  * @param   a_pPage     The pool page.
  *
  * @remark  In RC this uses PGMGCDynMapHCPage(), so it will consume of the
@@ -2449,7 +2460,7 @@ DECLINLINE(void *) pgmPoolMapPageStrict(PPGMPOOLPAGE a_pPage)
  * Maps a pool page pool into the current context, taking both VM and VMCPU.
  *
  * @returns VBox status code.
- * @param   a_pVM       The VM handle.
+ * @param   a_pVM       Pointer to the VM.
  * @param   a_pVCpu     The current CPU.
  * @param   a_pPage     The pool page.
  *
@@ -2522,6 +2533,25 @@ DECLINLINE(void *) pgmPoolMapPageStrict(PPGMPOOLPAGE a_pPage)
  * @returns The @a idx field
  * @param   u16         The tracking data word. */
 #define PGMPOOL_TD_GET_IDX(u16)         ( ((u16) >> PGMPOOL_TD_IDX_SHIFT)   & PGMPOOL_TD_IDX_MASK   )
+/** @} */
+
+
+
+/** @name A20 gate macros
+ * @{ */
+#define PGM_WITH_A20
+#ifdef PGM_WITH_A20
+# define PGM_A20_IS_ENABLED(a_pVCpu)                        ((a_pVCpu)->pgm.s.fA20Enabled)
+# define PGM_A20_APPLY(a_pVCpu, a_GCPhys)                   ((a_GCPhys) & (a_pVCpu)->pgm.s.GCPhysA20Mask)
+# define PGM_A20_APPLY_TO_VAR(a_pVCpu, a_GCPhysVar)         \
+    do { a_GCPhysVar &= (a_pVCpu)->pgm.s.GCPhysA20Mask; } while (0)
+# define PGM_A20_ASSERT_MASKED(pVCpu, a_GCPhys)             Assert(PGM_A20_APPLY(pVCpu, a_GCPhys) == (a_GCPhys))
+#else
+# define PGM_A20_IS_ENABLED(a_pVCpu)                        (true)
+# define PGM_A20_APPLY(a_pVCpu, a_GCPhys)                   (a_GCPhys)
+# define PGM_A20_APPLY_TO_VAR(a_pVCpu, a_GCPhysVar)         do { } while (0)
+# define PGM_A20_ASSERT_MASKED(pVCpu, a_GCPhys)             do { } while (0)
+#endif
 /** @} */
 
 
@@ -3152,16 +3182,21 @@ typedef struct PGM
     RCPTRTYPE(PPGMRCDYNMAP)         pRCDynMap;
     /** The address of the ring-0 mapping cache if we're making use of it.  */
     RTR0PTR                         pvR0DynMapUsed;
-#if HC_ARCH_BITS == 32
-    /** Alignment padding that makes the next member start on a 8 byte boundary. */
+
+    /** Hack: Number of deprecated page mapping locks taken by the current lock
+     *  owner via pgmPhysGCPhys2CCPtrInternalDepr. */
+    uint32_t                        cDeprecatedPageLocks;
+#if HC_ARCH_BITS == 64
+    /** Alignment padding.  */
     uint32_t                        u32Alignment2;
 #endif
+
 
     /** PGM critical section.
      * This protects the physical & virtual access handlers, ram ranges,
      * and the page flag updating (some of it anyway).
      */
-    PDMCRITSECT                     CritSect;
+    PDMCRITSECT                     CritSectX;
 
     /**
      * Data associated with managing the ring-3 mappings of the allocation chunks.
@@ -3175,7 +3210,7 @@ typedef struct PGM
         R3R0PTRTYPE(PAVLU32NODECORE) pTree;
 #endif
 #if HC_ARCH_BITS == 32
-        uint32_t                    u32Alignment;
+        uint32_t                    u32Alignment0;
 #endif
         /** The chunk mapping TLB. */
         PGMCHUNKR3MAPTLB            Tlb;
@@ -3184,10 +3219,10 @@ typedef struct PGM
         /** The maximum number of mapped chunks.
          * @cfgm    PGM/MaxRing3Chunks */
         uint32_t                    cMax;
-        /** The current time. */
+        /** The current time.  This is incremented whenever a chunk is inserted. */
         uint32_t                    iNow;
-        /** Number of pgmR3PhysChunkFindUnmapCandidate calls left to the next ageing. */
-        uint32_t                    AgeingCountdown;
+        /** Alignment padding. */
+        uint32_t                    u32Alignment1;
     } ChunkR3Map;
 
     /**
@@ -3308,29 +3343,31 @@ typedef struct PGM
 
     /** @name Release Statistics
      * @{ */
-    uint32_t                        cAllPages;          /**< The total number of pages. (Should be Private + Shared + Zero + Pure MMIO.) */
-    uint32_t                        cPrivatePages;      /**< The number of private pages. */
-    uint32_t                        cSharedPages;       /**< The number of shared pages. */
-    uint32_t                        cReusedSharedPages; /**< The number of reused shared pages. */
-    uint32_t                        cZeroPages;         /**< The number of zero backed pages. */
-    uint32_t                        cPureMmioPages;     /**< The number of pure MMIO pages. */
-    uint32_t                        cMonitoredPages;    /**< The number of write monitored pages. */
-    uint32_t                        cWrittenToPages;    /**< The number of previously write monitored pages. */
-    uint32_t                        cWriteLockedPages;  /**< The number of write locked pages. */
-    uint32_t                        cReadLockedPages;   /**< The number of read locked pages. */
-    uint32_t                        cBalloonedPages;    /**< The number of ballooned pages. */
-    uint32_t                        cMappedChunks;      /**< Number of times we mapped a chunk. */
-    uint32_t                        cUnmappedChunks;    /**< Number of times we unmapped a chunk. */
-    uint32_t                        cLargePages;        /**< The number of large pages. */
-    uint32_t                        cLargePagesDisabled;/**< The number of disabled large pages. */
+    uint32_t                        cAllPages;              /**< The total number of pages. (Should be Private + Shared + Zero + Pure MMIO.) */
+    uint32_t                        cPrivatePages;          /**< The number of private pages. */
+    uint32_t                        cSharedPages;           /**< The number of shared pages. */
+    uint32_t                        cReusedSharedPages;     /**< The number of reused shared pages. */
+    uint32_t                        cZeroPages;             /**< The number of zero backed pages. */
+    uint32_t                        cPureMmioPages;         /**< The number of pure MMIO pages. */
+    uint32_t                        cMonitoredPages;        /**< The number of write monitored pages. */
+    uint32_t                        cWrittenToPages;        /**< The number of previously write monitored pages. */
+    uint32_t                        cWriteLockedPages;      /**< The number of write locked pages. */
+    uint32_t                        cReadLockedPages;       /**< The number of read locked pages. */
+    uint32_t                        cBalloonedPages;        /**< The number of ballooned pages. */
+    uint32_t                        cMappedChunks;          /**< Number of times we mapped a chunk. */
+    uint32_t                        cUnmappedChunks;        /**< Number of times we unmapped a chunk. */
+    uint32_t                        cLargePages;            /**< The number of large pages. */
+    uint32_t                        cLargePagesDisabled;    /**< The number of disabled large pages. */
 /*    uint32_t                        aAlignment4[1]; */
 
     /** The number of times we were forced to change the hypervisor region location. */
     STAMCOUNTER                     cRelocations;
 
-    STAMCOUNTER                     StatLargePageReused;                /**< The number of large pages we've reused.*/
-    STAMCOUNTER                     StatLargePageRefused;               /**< The number of times we couldn't use a large page.*/
-    STAMCOUNTER                     StatLargePageRecheck;               /**< The number of times we rechecked a disabled large page.*/
+    STAMCOUNTER                     StatLargePageReused;    /**< The number of large pages we've reused.*/
+    STAMCOUNTER                     StatLargePageRefused;   /**< The number of times we couldn't use a large page.*/
+    STAMCOUNTER                     StatLargePageRecheck;   /**< The number of times we rechecked a disabled large page.*/
+
+    STAMPROFILE                     StatShModCheck;         /**< Profiles shared module checks. */
     /** @} */
 
 #ifdef VBOX_WITH_STATISTICS
@@ -3347,7 +3384,7 @@ typedef struct PGM
 AssertCompileMemberAlignment(PGM, paDynPageMap32BitPTEsGC, 8);
 AssertCompileMemberAlignment(PGM, GCPtrMappingFixed, sizeof(RTGCPTR));
 AssertCompileMemberAlignment(PGM, HCPhysInterPD, 8);
-AssertCompileMemberAlignment(PGM, CritSect, 8);
+AssertCompileMemberAlignment(PGM, CritSectX, 8);
 AssertCompileMemberAlignment(PGM, ChunkR3Map, 8);
 AssertCompileMemberAlignment(PGM, PhysTlbHC, 8);
 AssertCompileMemberAlignment(PGM, HCPhysZeroPg, 8);
@@ -3648,8 +3685,11 @@ typedef struct PGMCPU
      * Unlike the R3/R0 array the first entry can be accessed as a 2048 entry PD.
      * These don't have to be up-to-date - use pgmGstGetPaePD() to access them. */
     RCPTRTYPE(PX86PDPAE)            apGstPaePDsRC[4];
-    /** The physical addresses of the guest page directories (PAE) pointed to by apGstPagePDsHC/GC. */
+    /** The physical addresses of the guest page directories (PAE) pointed to by apGstPagePDsHC/GC.
+     * @todo Remove this and use aGstPaePdpeRegs instead? */
     RTGCPHYS                        aGCPhysGstPaePDs[4];
+    /** The values of the 4 PDPE CPU registers (PAE). */
+    X86PDPE                         aGstPaePdpeRegs[4];
     /** The physical addresses of the monitored guest page directories (PAE). */
     RTGCPHYS                        aGCPhysGstPaePDsMonitored[4];
     /** Mask containing the MBZ PTE bits. */
@@ -3789,15 +3829,8 @@ typedef struct PGMCPU
     /** @} */
 
     /** For saving stack space, the disassembler state is allocated here instead of
-     * on the stack.
-     * @note The DISCPUSTATE structure is not R3/R0/RZ clean!  */
-    union
-    {
-        /** The disassembler scratch space. */
-        DISCPUSTATE                 DisState;
-        /** Padding. */
-        uint8_t                     abDisStatePadding[DISCPUSTATE_PADDING_SIZE];
-    };
+     * on the stack. */
+    DISCPUSTATE                     DisState;
 
     /** Count the number of pgm pool access handler calls. */
     uint64_t                        cPoolAccessHandler;
@@ -3806,6 +3839,8 @@ typedef struct PGMCPU
      * @{ */
     /** The number of times the guest has switched mode since last reset or statistics reset. */
     STAMCOUNTER                     cGuestModeChanges;
+    /** The number of times the guest has switched mode since last reset or statistics reset. */
+    STAMCOUNTER                     cA20Changes;
     /** @} */
 
 #ifdef VBOX_WITH_STATISTICS /** @todo move this chunk to the heap.  */
@@ -3855,9 +3890,16 @@ void            pgmUnlock(PVM pVM);
 /**
  * Asserts that the caller owns the PDM lock.
  * This is the internal variant of PGMIsLockOwner.
- * @param   a_pVM           The VM handle.
+ * @param   a_pVM           Pointer to the VM.
  */
-#define PGM_LOCK_ASSERT_OWNER(a_pVM)    Assert(PDMCritSectIsOwner(&(a_pVM)->pgm.s.CritSect))
+#define PGM_LOCK_ASSERT_OWNER(a_pVM)    Assert(PDMCritSectIsOwner(&(a_pVM)->pgm.s.CritSectX))
+/**
+ * Asserts that the caller owns the PDM lock.
+ * This is the internal variant of PGMIsLockOwner.
+ * @param   a_pVM           Pointer to the VM.
+ * @param   a_pVCpu         The current CPU handle.
+ */
+#define PGM_LOCK_ASSERT_OWNER_EX(a_pVM, a_pVCpu)  Assert(PDMCritSectIsOwnerEx(&(a_pVM)->pgm.s.CritSectX, pVCpu))
 
 int             pgmR3MappingsFixInternal(PVM pVM, RTGCPTR GCPtrBase, uint32_t cb);
 int             pgmR3SyncPTResolveConflict(PVM pVM, PPGMMAPPING pMapping, PX86PD pPDSrc, RTGCPTR GCPtrOldMapping);
@@ -3890,8 +3932,12 @@ int             pgmPhysPageMakeWritableAndMap(PVM pVM, PPGMPAGE pPage, RTGCPHYS 
 int             pgmPhysPageMap(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void **ppv);
 int             pgmPhysPageMapReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void const **ppv);
 int             pgmPhysPageMapByPageID(PVM pVM, uint32_t idPage, RTHCPHYS HCPhys, void **ppv);
-int             pgmPhysGCPhys2CCPtrInternal(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void **ppv);
-int             pgmPhysGCPhys2CCPtrInternalReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, const void **ppv);
+int             pgmPhysGCPhys2R3Ptr(PVM pVM, RTGCPHYS GCPhys, PRTR3PTR pR3Ptr);
+int             pgmPhysCr3ToHCPtr(PVM pVM, RTGCPHYS GCPhys, PRTR3PTR pR3Ptr);
+int             pgmPhysGCPhys2CCPtrInternalDepr(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void **ppv);
+int             pgmPhysGCPhys2CCPtrInternal(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void **ppv, PPGMPAGEMAPLOCK pLock);
+int             pgmPhysGCPhys2CCPtrInternalReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, const void **ppv, PPGMPAGEMAPLOCK pLock);
+void            pgmPhysReleaseInternalPageMappingLock(PVM pVM, PPGMPAGEMAPLOCK pLock);
 VMMDECL(int)    pgmPhysHandlerRedirectToHC(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
 VMMDECL(int)    pgmPhysRomWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
 int             pgmPhysFreePage(PVM pVM, PGMMFREEPAGESREQ pReq, uint32_t *pcPendingPages, PPGMPAGE pPage, RTGCPHYS GCPhys);
@@ -3931,15 +3977,8 @@ void            pgmRZDynMapUnusedHint(PVMCPU pVCpu, void *pvHint, RT_SRC_POS_DEC
 void            pgmRZDynMapUnusedHint(PVMCPU pVCpu, void *pvHint);
 # endif
 #endif
-int             pgmPoolAllocEx(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, PGMPOOLACCESS enmAccess, uint16_t iUser,
-                               uint32_t iUserTable, bool fLockPage, PPPGMPOOLPAGE ppPage);
-
-DECLINLINE(int) pgmPoolAlloc(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, uint16_t iUser, uint32_t iUserTable,
-                             PPPGMPOOLPAGE ppPage)
-{
-    return pgmPoolAllocEx(pVM, GCPhys, enmKind, PGMPOOLACCESS_DONTCARE, iUser, iUserTable, false, ppPage);
-}
-
+int             pgmPoolAlloc(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, PGMPOOLACCESS enmAccess, bool fA20Enabled,
+                             uint16_t iUser, uint32_t iUserTable, bool fLockPage, PPPGMPOOLPAGE ppPage);
 void            pgmPoolFree(PVM pVM, RTHCPHYS HCPhys, uint16_t iUser, uint32_t iUserTable);
 void            pgmPoolFreeByPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage, uint16_t iUser, uint32_t iUserTable);
 int             pgmPoolFlushPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage, bool fFlush = true /* DO NOT USE false UNLESS YOU KNOWN WHAT YOU'RE DOING!! */);
@@ -3961,8 +4000,9 @@ void            pgmPoolAddDirtyPage(PVM pVM, PPGMPOOL pPool, PPGMPOOLPAGE pPage)
 void            pgmPoolResetDirtyPages(PVM pVM);
 void            pgmPoolResetDirtyPage(PVM pVM, RTGCPTR GCPtrPage);
 
-int             pgmR3ExitShadowModeBeforePoolFlush(PVM pVM, PVMCPU pVCpu);
+int             pgmR3ExitShadowModeBeforePoolFlush(PVMCPU pVCpu);
 int             pgmR3ReEnterShadowModeAfterPoolFlush(PVM pVM, PVMCPU pVCpu);
+void            pgmR3RefreshShadowModeAfterA20Change(PVMCPU pVCpu);
 
 void            pgmMapSetShadowPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE);
 void            pgmMapClearShadowPDEs(PVM pVM, PPGMPOOLPAGE pShwPageCR3, PPGMMAPPING pMap, unsigned iOldPDE, bool fDeactivateCR3);
@@ -3977,7 +4017,7 @@ int             pgmGstLazyMapPaePDPT(PVMCPU pVCpu, PX86PDPT *ppPdpt);
 int             pgmGstLazyMapPaePD(PVMCPU pVCpu, uint32_t iPdpt, PX86PDPAE *ppPd);
 int             pgmGstLazyMapPml4(PVMCPU pVCpu, PX86PML4 *ppPml4);
 
-# if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
+# if defined(VBOX_STRICT) && HC_ARCH_BITS == 64 && defined(IN_RING3)
 DECLCALLBACK(int)  pgmR3CmdCheckDuplicatePages(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs);
 DECLCALLBACK(int)  pgmR3CmdShowSharedModules(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs);
 # endif

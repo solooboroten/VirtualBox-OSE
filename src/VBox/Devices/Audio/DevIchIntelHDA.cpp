@@ -1,4 +1,4 @@
-/* $Id: DevIchIntelHDA.cpp 37654 2011-06-28 06:02:23Z vboxsync $ */
+/* $Id: DevIchIntelHDA.cpp 42431 2012-07-27 08:22:29Z vboxsync $ */
 /** @file
  * DevIchIntelHD - VBox ICH Intel HD Audio Controller.
  */
@@ -20,6 +20,8 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_DEV_AUDIO
 #include <VBox/vmm/pdmdev.h>
+#include <VBox/version.h>
+
 #include <iprt/assert.h>
 #include <iprt/uuid.h>
 #include <iprt/string.h>
@@ -404,7 +406,6 @@ static DECLCALLBACK(void)  hdaReset (PPDMDEVINS pDevIns);
 
 #define SDBDPU(pState, num) HDA_REG((pState), SD(BDPU, num))
 
-/* Predicates */
 
 typedef struct HDABDLEDESC
 {
@@ -418,6 +419,8 @@ typedef struct HDABDLEDESC
     uint8_t     au8HdaBuffer[HDA_SDONFIFO_256B + 1];
 } HDABDLEDESC, *PHDABDLEDESC;
 
+
+/** HDABDLEDESC field descriptors the v3+ saved state. */
 static SSMFIELD const g_aHdaBDLEDescFields[] =
 {
     SSMFIELD_ENTRY(     HDABDLEDESC, u64BdleCviAddr),
@@ -426,6 +429,21 @@ static SSMFIELD const g_aHdaBDLEDescFields[] =
     SSMFIELD_ENTRY(     HDABDLEDESC, u32BdleCviLen),
     SSMFIELD_ENTRY(     HDABDLEDESC, u32BdleCviPos),
     SSMFIELD_ENTRY(     HDABDLEDESC, fBdleCviIoc),
+    SSMFIELD_ENTRY(     HDABDLEDESC, cbUnderFifoW),
+    SSMFIELD_ENTRY(     HDABDLEDESC, au8HdaBuffer),
+    SSMFIELD_ENTRY_TERM()
+};
+
+/** HDABDLEDESC field descriptors the v1 and v2 saved state. */
+static SSMFIELD const g_aHdaBDLEDescFieldsOld[] =
+{
+    SSMFIELD_ENTRY(     HDABDLEDESC, u64BdleCviAddr),
+    SSMFIELD_ENTRY(     HDABDLEDESC, u32BdleMaxCvi),
+    SSMFIELD_ENTRY(     HDABDLEDESC, u32BdleCvi),
+    SSMFIELD_ENTRY(     HDABDLEDESC, u32BdleCviLen),
+    SSMFIELD_ENTRY(     HDABDLEDESC, u32BdleCviPos),
+    SSMFIELD_ENTRY(     HDABDLEDESC, fBdleCviIoc),
+    SSMFIELD_ENTRY_PAD_HC_AUTO(3, 3),
     SSMFIELD_ENTRY(     HDABDLEDESC, cbUnderFifoW),
     SSMFIELD_ENTRY(     HDABDLEDESC, au8HdaBuffer),
     SSMFIELD_ENTRY_TERM()
@@ -495,45 +513,47 @@ typedef struct PCIINTELHDLinkState
 } PCIINTELHDLinkState;
 
 
-DECLCALLBACK(int)hdaRegReadUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegReadGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegReadSTATESTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteSTATESTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegReadGCAP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegReadINTSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegReadWALCLK(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteINTSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegWriteCORBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegWriteCORBRP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteCORBCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteCORBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteRIRBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegWriteRIRBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegReadIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegReadSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+/** @todo r=bird: Why aren't these static? And why use DECLCALLBACK for
+ *        internal functions? */
+DECLCALLBACK(int) hdaRegReadUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegReadGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegReadSTATESTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteSTATESTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegReadGCAP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegReadINTSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegReadWALCLK(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteINTSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegWriteCORBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegWriteCORBRP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteCORBCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteCORBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteRIRBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegWriteRIRBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegReadIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegReadSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
 
-DECLCALLBACK(int)hdaRegWriteSDSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteSDLVI(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteSDFIFOW(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteSDFIFOS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteSDFMT(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteSDBDPL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteSDBDPU(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegWriteBase(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
-DECLCALLBACK(int)hdaRegReadU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegReadU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegReadU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
-DECLCALLBACK(int)hdaRegReadU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
-DECLCALLBACK(int)hdaRegWriteU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegWriteSDSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteSDLVI(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteSDFIFOW(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteSDFIFOS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteSDFMT(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteSDBDPL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteSDBDPU(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegWriteBase(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value);
+DECLCALLBACK(int) hdaRegReadU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegReadU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegReadU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
+DECLCALLBACK(int) hdaRegReadU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value);
+DECLCALLBACK(int) hdaRegWriteU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t pu32Value);
 
-static inline void hdaInitTransferDescriptor(PINTELHDLinkState pState, PHDABDLEDESC pBdle, uint8_t u8Strm, PHDASTREAMTRANSFERDESC pStreamDesc);
+DECLINLINE(void) hdaInitTransferDescriptor(PINTELHDLinkState pState, PHDABDLEDESC pBdle, uint8_t u8Strm, PHDASTREAMTRANSFERDESC pStreamDesc);
 static int hdaMMIORegLookup(INTELHDLinkState* pState, uint32_t u32Offset);
 static void hdaFetchBdle(INTELHDLinkState *pState, PHDABDLEDESC pBdle, PHDASTREAMTRANSFERDESC pStreamDesc);
 #ifdef LOG_ENABLED
@@ -864,6 +884,7 @@ static int hdaCORBCmdProcess(INTELHDLinkState *pState)
     {
         uint32_t cmd;
         uint64_t resp;
+        pfn = (PFNCODECVERBPROCESSOR)NULL;
         corbRp++;
         cmd = pState->pu32CorbBuf[corbRp];
         rc = (pState)->Codec.pfnLookup(&pState->Codec, cmd, &pfn);
@@ -871,7 +892,12 @@ static int hdaCORBCmdProcess(INTELHDLinkState *pState)
             AssertRCReturn(rc, rc);
         Assert(pfn);
         (rirbWp)++;
-        rc = pfn(&pState->Codec, cmd, &resp);
+
+        if (RT_LIKELY(pfn))
+            rc = pfn(&pState->Codec, cmd, &resp);
+        else
+            rc = VERR_INVALID_FUNCTION;
+
         if (RT_FAILURE(rc))
             AssertRCReturn(rc, rc);
         Log(("hda: verb:%08x->%016lx\n", cmd, resp));
@@ -928,72 +954,72 @@ static void hdaStreamReset(INTELHDLinkState *pState, PHDABDLEDESC pBdle, PHDASTR
 }
 
 
-DECLCALLBACK(int)hdaRegReadUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     *pu32Value = 0;
     return VINF_SUCCESS;
 }
-DECLCALLBACK(int)hdaRegWriteUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteUnimplemented(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     return VINF_SUCCESS;
 }
 /* U8 */
-DECLCALLBACK(int)hdaRegReadU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     Assert(((pState->au32Regs[index] & s_ichIntelHDRegMap[index].readable) & 0xffffff00) == 0);
     return hdaRegReadU32(pState, offset, index, pu32Value);
 }
 
-DECLCALLBACK(int)hdaRegWriteU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteU8(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     Assert(((u32Value & 0xffffff00) == 0));
     return hdaRegWriteU32(pState, offset, index, u32Value);
 }
 /* U16 */
-DECLCALLBACK(int)hdaRegReadU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     Assert(((pState->au32Regs[index] & s_ichIntelHDRegMap[index].readable) & 0xffff0000) == 0);
     return hdaRegReadU32(pState, offset, index, pu32Value);
 }
 
-DECLCALLBACK(int)hdaRegWriteU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteU16(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     Assert(((u32Value & 0xffff0000) == 0));
     return hdaRegWriteU32(pState, offset, index, u32Value);
 }
 
 /* U24 */
-DECLCALLBACK(int)hdaRegReadU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     Assert(((pState->au32Regs[index] & s_ichIntelHDRegMap[index].readable) & 0xff000000) == 0);
     return hdaRegReadU32(pState, offset, index, pu32Value);
 }
 
-DECLCALLBACK(int)hdaRegWriteU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteU24(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     Assert(((u32Value & 0xff000000) == 0));
     return hdaRegWriteU32(pState, offset, index, u32Value);
 }
 /* U32 */
-DECLCALLBACK(int)hdaRegReadU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     *pu32Value = pState->au32Regs[index] & s_ichIntelHDRegMap[index].readable;
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegWriteU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteU32(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     pState->au32Regs[index]  = (u32Value & s_ichIntelHDRegMap[index].writable)
                                   | (pState->au32Regs[index] & ~s_ichIntelHDRegMap[index].writable);
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegReadGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     return hdaRegReadU32(pState, offset, index, pu32Value);
 }
 
-DECLCALLBACK(int)hdaRegWriteGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteGCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     if (u32Value & HDA_REG_FIELD_FLAG_MASK(GCTL, RST))
     {
@@ -1024,7 +1050,7 @@ DECLCALLBACK(int)hdaRegWriteGCTL(INTELHDLinkState* pState, uint32_t offset, uint
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegWriteSTATESTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSTATESTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     uint32_t v = pState->au32Regs[index];
     uint32_t nv = u32Value & ICH6_HDA_STATES_SCSF;
@@ -1032,7 +1058,7 @@ DECLCALLBACK(int)hdaRegWriteSTATESTS(INTELHDLinkState* pState, uint32_t offset, 
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegReadINTSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadINTSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     uint32_t v = 0;
     if (   RIRBSTS_RIRBOIS(pState)
@@ -1058,19 +1084,19 @@ DECLCALLBACK(int)hdaRegReadINTSTS(INTELHDLinkState* pState, uint32_t offset, uin
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegReadWALCLK(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadWALCLK(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     /* HDA spec (1a): 3.3.16 WALCLK counter ticks with 24Mhz bitclock rate. */
     *pu32Value = (uint32_t)ASMMultU64ByU32DivByU32(PDMDevHlpTMTimeVirtGetNano(ICH6_HDASTATE_2_DEVINS(pState)) - pState->u64BaseTS, 24, 1000);
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegReadGCAP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadGCAP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     return hdaRegReadU16(pState, offset, index, pu32Value);
 }
 
-DECLCALLBACK(int)hdaRegWriteCORBRP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteCORBRP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     if (u32Value & HDA_REG_FIELD_FLAG_MASK(CORBRP, RST))
         CORBRP(pState) = 0;
@@ -1079,7 +1105,7 @@ DECLCALLBACK(int)hdaRegWriteCORBRP(INTELHDLinkState* pState, uint32_t offset, ui
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegWriteCORBCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteCORBCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc = hdaRegWriteU8(pState, offset, index, u32Value);
     AssertRC(rc);
@@ -1089,14 +1115,14 @@ DECLCALLBACK(int)hdaRegWriteCORBCTL(INTELHDLinkState* pState, uint32_t offset, u
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteCORBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteCORBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     uint32_t v = CORBSTS(pState);
     CORBSTS(pState) &= ~(v & u32Value);
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegWriteCORBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteCORBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc;
     rc = hdaRegWriteU16(pState, offset, index, u32Value);
@@ -1110,12 +1136,12 @@ DECLCALLBACK(int)hdaRegWriteCORBWP(INTELHDLinkState* pState, uint32_t offset, ui
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegReadSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     return hdaRegReadU24(pState, offset, index, pu32Value);
 }
 
-DECLCALLBACK(int)hdaRegWriteSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDCTL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     bool fRun = RT_BOOL((u32Value & HDA_REG_FIELD_FLAG_MASK(SDCTL, RUN)));
     bool fInRun = RT_BOOL((HDA_REG_IND(pState, index) & HDA_REG_FIELD_FLAG_MASK(SDCTL, RUN)));
@@ -1186,7 +1212,7 @@ DECLCALLBACK(int)hdaRegWriteSDCTL(INTELHDLinkState* pState, uint32_t offset, uin
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteSDSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     uint32_t v = HDA_REG_IND(pState, index);
     v &= ~(u32Value & v);
@@ -1195,7 +1221,7 @@ DECLCALLBACK(int)hdaRegWriteSDSTS(INTELHDLinkState* pState, uint32_t offset, uin
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegWriteSDLVI(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDLVI(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc = hdaRegWriteU32(pState, offset, index, u32Value);
     if (RT_FAILURE(rc))
@@ -1203,7 +1229,7 @@ DECLCALLBACK(int)hdaRegWriteSDLVI(INTELHDLinkState* pState, uint32_t offset, uin
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteSDFIFOW(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDFIFOW(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     switch (u32Value)
     {
@@ -1221,7 +1247,7 @@ DECLCALLBACK(int)hdaRegWriteSDFIFOW(INTELHDLinkState* pState, uint32_t offset, u
  * Note this method could be called for changing value on Output Streams only (ICH6 datacheet 18.2.39)
  *
  */
-DECLCALLBACK(int)hdaRegWriteSDFIFOS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDFIFOS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     switch (index)
     {
@@ -1315,7 +1341,7 @@ static void inline hdaSdFmtToAudSettings(uint32_t u32SdFmt, audsettings_t *pAudS
 #undef EXTRACT_VALUE
 }
 
-DECLCALLBACK(int)hdaRegWriteSDFMT(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDFMT(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
 #ifdef VBOX_WITH_HDA_CODEC_EMU
     /* @todo here some more investigations are required. */
@@ -1343,7 +1369,7 @@ DECLCALLBACK(int)hdaRegWriteSDFMT(INTELHDLinkState* pState, uint32_t offset, uin
 #endif
 }
 
-DECLCALLBACK(int)hdaRegWriteSDBDPL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDBDPL(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc = hdaRegWriteU32(pState, offset, index, u32Value);
     if (RT_FAILURE(rc))
@@ -1351,7 +1377,7 @@ DECLCALLBACK(int)hdaRegWriteSDBDPL(INTELHDLinkState* pState, uint32_t offset, ui
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteSDBDPU(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteSDBDPU(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc = hdaRegWriteU32(pState, offset, index, u32Value);
     if (RT_FAILURE(rc))
@@ -1359,7 +1385,7 @@ DECLCALLBACK(int)hdaRegWriteSDBDPU(INTELHDLinkState* pState, uint32_t offset, ui
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegReadIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
+DECLCALLBACK(int) hdaRegReadIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t *pu32Value)
 {
     int rc = VINF_SUCCESS;
     /* regarding 3.4.3 we should mark IRS as busy in case CORB is active */
@@ -1371,7 +1397,7 @@ DECLCALLBACK(int)hdaRegReadIRS(INTELHDLinkState* pState, uint32_t offset, uint32
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteIRS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc = VINF_SUCCESS;
     uint64_t resp;
@@ -1415,7 +1441,7 @@ DECLCALLBACK(int)hdaRegWriteIRS(INTELHDLinkState* pState, uint32_t offset, uint3
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteRIRBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteRIRBWP(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     if (u32Value & HDA_REG_FIELD_FLAG_MASK(RIRBWP, RST))
     {
@@ -1425,7 +1451,7 @@ DECLCALLBACK(int)hdaRegWriteRIRBWP(INTELHDLinkState* pState, uint32_t offset, ui
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int)hdaRegWriteBase(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteBase(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     int rc = hdaRegWriteU32(pState, offset, index, u32Value);
     if (RT_FAILURE(rc))
@@ -1464,7 +1490,7 @@ DECLCALLBACK(int)hdaRegWriteBase(INTELHDLinkState* pState, uint32_t offset, uint
     return rc;
 }
 
-DECLCALLBACK(int)hdaRegWriteRIRBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
+DECLCALLBACK(int) hdaRegWriteRIRBSTS(INTELHDLinkState* pState, uint32_t offset, uint32_t index, uint32_t u32Value)
 {
     uint8_t v = RIRBSTS(pState);
     RIRBSTS(pState) &= ~(v & u32Value);
@@ -1543,7 +1569,7 @@ static inline uint32_t hdaCalculateTransferBufferLength(PHDABDLEDESC pBdle, PHDA
     return cb2Copy;
 }
 
-static inline void hdaBackendWriteTransferReported(PHDABDLEDESC pBdle, uint32_t cbArranged2Copy, uint32_t cbCopied, uint32_t *pu32DMACursor, uint32_t *pu32BackendBufferCapacity)
+DECLINLINE(void) hdaBackendWriteTransferReported(PHDABDLEDESC pBdle, uint32_t cbArranged2Copy, uint32_t cbCopied, uint32_t *pu32DMACursor, uint32_t *pu32BackendBufferCapacity)
 {
     Log(("hda:hdaBackendWriteTransferReported: cbArranged2Copy: %d, cbCopied: %d, pu32DMACursor: %d, pu32BackendBufferCapacity:%d\n",
         cbArranged2Copy, cbCopied, pu32DMACursor ? *pu32DMACursor : 0, pu32BackendBufferCapacity ? *pu32BackendBufferCapacity : 0));
@@ -1573,7 +1599,7 @@ static inline void hdaBackendWriteTransferReported(PHDABDLEDESC pBdle, uint32_t 
         pBdle->u32BdleCviPos, pBdle->u32BdleCviLen, *pu32DMACursor, *pu32BackendBufferCapacity));
 }
 
-static inline void hdaBackendReadTransferReported(PHDABDLEDESC pBdle, uint32_t cbArranged2Copy, uint32_t cbCopied, uint32_t *pu32DMACursor, uint32_t *pu32BackendBufferCapacity)
+DECLINLINE(void) hdaBackendReadTransferReported(PHDABDLEDESC pBdle, uint32_t cbArranged2Copy, uint32_t cbCopied, uint32_t *pu32DMACursor, uint32_t *pu32BackendBufferCapacity)
 {
     Assert((cbCopied, cbArranged2Copy));
     *pu32BackendBufferCapacity -= cbCopied;
@@ -1585,7 +1611,7 @@ static inline void hdaBackendReadTransferReported(PHDABDLEDESC pBdle, uint32_t c
         pBdle->u32BdleCviPos, pBdle->u32BdleCviLen, pu32DMACursor ? *pu32DMACursor : 0, pu32BackendBufferCapacity ? *pu32BackendBufferCapacity : 0));
 }
 
-static inline void hdaBackendTransferUnreported(INTELHDLinkState *pState, PHDABDLEDESC pBdle, PHDASTREAMTRANSFERDESC pStreamDesc, uint32_t cbCopied, uint32_t *pu32BackendBufferCapacity)
+DECLINLINE(void) hdaBackendTransferUnreported(INTELHDLinkState *pState, PHDABDLEDESC pBdle, PHDASTREAMTRANSFERDESC pStreamDesc, uint32_t cbCopied, uint32_t *pu32BackendBufferCapacity)
 {
     Log(("hda:hdaBackendTransferUnreported: CVI (cbUnderFifoW:%d, pos:%d, len:%d)\n", pBdle->cbUnderFifoW, pBdle->u32BdleCviPos, pBdle->u32BdleCviLen));
     pBdle->u32BdleCviPos += cbCopied;
@@ -1619,7 +1645,7 @@ static inline bool hdaIsTransferCountersOverlapped(PINTELHDLinkState pState, PHD
     return fOnBufferEdge;
 }
 
-static inline void hdaStreamCounterUpdate(PINTELHDLinkState pState, PHDABDLEDESC pBdle, PHDASTREAMTRANSFERDESC pStreamDesc, uint32_t cbInc)
+DECLINLINE(void) hdaStreamCounterUpdate(PINTELHDLinkState pState, PHDABDLEDESC pBdle, PHDASTREAMTRANSFERDESC pStreamDesc, uint32_t cbInc)
 {
     /*
      * if we're under FIFO Watermark it's expected that HDA doesn't fetch anything.
@@ -1764,7 +1790,7 @@ DECLCALLBACK(int) hdaCodecReset(CODECState *pCodecState)
     return VINF_SUCCESS;
 }
 
-static inline void hdaInitTransferDescriptor(PINTELHDLinkState pState, PHDABDLEDESC pBdle, uint8_t u8Strm, PHDASTREAMTRANSFERDESC pStreamDesc)
+DECLINLINE(void) hdaInitTransferDescriptor(PINTELHDLinkState pState, PHDABDLEDESC pBdle, uint8_t u8Strm, PHDASTREAMTRANSFERDESC pStreamDesc)
 {
     Assert((   pState
             && pBdle
@@ -2030,9 +2056,9 @@ PDMBOTHCBDECL(int) hdaMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhy
  *                          to pci_mem_base like earlier!
  * @param   enmType         One of the PCI_ADDRESS_SPACE_* values.
  */
-static DECLCALLBACK(int) hdaMap (PPCIDEVICE pPciDev, int iRegion,
-                                           RTGCPHYS GCPhysAddress, uint32_t cb,
-                                           PCIADDRESSSPACE enmType)
+static DECLCALLBACK(int) hdaMap(PPCIDEVICE pPciDev, int iRegion,
+                                RTGCPHYS GCPhysAddress, uint32_t cb,
+                                PCIADDRESSSPACE enmType)
 {
     int         rc;
     PPDMDEVINS  pDevIns = pPciDev->pDevIns;
@@ -2040,8 +2066,9 @@ static DECLCALLBACK(int) hdaMap (PPCIDEVICE pPciDev, int iRegion,
     PCIINTELHDLinkState *pThis = PCIDEV_2_ICH6_HDASTATE(pPciDev);
 
     Assert(enmType == PCI_ADDRESS_SPACE_MEM);
-    rc = PDMDevHlpMMIORegister(pPciDev->pDevIns, GCPhysAddress, cb, 0,
-                               hdaMMIOWrite, hdaMMIORead, NULL, "ICH6_HDA");
+    rc = PDMDevHlpMMIORegister(pPciDev->pDevIns, GCPhysAddress, cb, NULL /*pvUser*/,
+                               IOMMMIO_FLAGS_READ_PASSTHRU | IOMMMIO_FLAGS_WRITE_PASSTHRU,
+                               hdaMMIOWrite, hdaMMIORead, "ICH6_HDA");
 
     if (RT_FAILURE(rc))
         return rc;
@@ -2055,19 +2082,23 @@ static DECLCALLBACK(int) hdaMap (PPCIDEVICE pPciDev, int iRegion,
  *
  * @returns VBox status code.
  * @param   pDevIns     The device instance.
- * @param   pSSMHandle  The handle to save the state to.
+ * @param   pSSM  The handle to save the state to.
  */
-static DECLCALLBACK(int) hdaSaveExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
+static DECLCALLBACK(int) hdaSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 {
     PCIINTELHDLinkState *pThis = PDMINS_2_DATA(pDevIns, PCIINTELHDLinkState *);
     /* Save Codec nodes states */
-    codecSaveState(&pThis->hda.Codec, pSSMHandle);
+    codecSaveState(&pThis->hda.Codec, pSSM);
+
     /* Save MMIO registers */
-    SSMR3PutMem (pSSMHandle, pThis->hda.au32Regs, sizeof (pThis->hda.au32Regs));
+    AssertCompile(RT_ELEMENTS(pThis->hda.au32Regs) == 112);
+    SSMR3PutU32(pSSM, RT_ELEMENTS(pThis->hda.au32Regs));
+    SSMR3PutMem(pSSM, pThis->hda.au32Regs, sizeof(pThis->hda.au32Regs));
+
     /* Save HDA dma counters */
-    SSMR3PutStruct (pSSMHandle, &pThis->hda.stOutBdle, g_aHdaBDLEDescFields);
-    SSMR3PutStruct (pSSMHandle, &pThis->hda.stMicBdle, g_aHdaBDLEDescFields);
-    SSMR3PutStruct (pSSMHandle, &pThis->hda.stInBdle, g_aHdaBDLEDescFields);
+    SSMR3PutStructEx(pSSM, &pThis->hda.stOutBdle, sizeof(pThis->hda.stOutBdle), 0 /*fFlags*/, g_aHdaBDLEDescFields, NULL);
+    SSMR3PutStructEx(pSSM, &pThis->hda.stMicBdle, sizeof(pThis->hda.stMicBdle), 0 /*fFlags*/, g_aHdaBDLEDescFields, NULL);
+    SSMR3PutStructEx(pSSM, &pThis->hda.stInBdle,  sizeof(pThis->hda.stInBdle),  0 /*fFlags*/, g_aHdaBDLEDescFields, NULL);
     return VINF_SUCCESS;
 }
 
@@ -2076,45 +2107,91 @@ static DECLCALLBACK(int) hdaSaveExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  *
  * @returns VBox status code.
  * @param   pDevIns     The device instance.
- * @param   pSSMHandle  The handle to the saved state.
+ * @param   pSSM  The handle to the saved state.
  * @param   uVersion    The data unit version number.
  * @param   uPass       The data pass.
  */
-static DECLCALLBACK(int) hdaLoadExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle,
-                                          uint32_t uVersion, uint32_t uPass)
+static DECLCALLBACK(int) hdaLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
     PCIINTELHDLinkState *pThis = PDMINS_2_DATA(pDevIns, PCIINTELHDLinkState *);
-    /* Load Codec nodes states */
-    Assert (uPass == SSM_PASS_FINAL); NOREF(uPass);
 
-    codecLoadState(&pThis->hda.Codec, pSSMHandle, uVersion);
-    /* Load MMIO registers */
-    SSMR3GetMem (pSSMHandle, pThis->hda.au32Regs, sizeof (pThis->hda.au32Regs));
-    /* Load HDA dma counters */
-    if (   uVersion == HDA_SSM_VERSION_1
-        || uVersion == HDA_SSM_VERSION_2)
+    Assert(uPass == SSM_PASS_FINAL); NOREF(uPass);
+
+    /*
+     * Load Codec nodes states.
+     */
+    int rc = codecLoadState(&pThis->hda.Codec, pSSM, uVersion);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    /*
+     * Load MMIO registers.
+     */
+    uint32_t cRegs;
+    switch (uVersion)
     {
-        SSMR3GetMem (pSSMHandle, &pThis->hda.stOutBdle, sizeof (HDABDLEDESC));
-        SSMR3GetMem (pSSMHandle, &pThis->hda.stMicBdle, sizeof (HDABDLEDESC));
-        SSMR3GetMem (pSSMHandle, &pThis->hda.stInBdle, sizeof (HDABDLEDESC));
+        case HDA_SSM_VERSION_1:
+            /* Starting with r71199, we would save 112 instead of 113
+               registers due to some code cleanups.  This only affects trunk
+               builds in the 4.1 development period. */
+            cRegs = 113;
+            if (SSMR3HandleRevision(pSSM) >= 71199)
+            {
+                uint32_t uVer = SSMR3HandleVersion(pSSM);
+                if (   VBOX_FULL_VERSION_GET_MAJOR(uVer) == 4
+                    && VBOX_FULL_VERSION_GET_MINOR(uVer) == 0
+                    && VBOX_FULL_VERSION_GET_BUILD(uVer) >= 51)
+                    cRegs = 112;
+            }
+            break;
+
+        case HDA_SSM_VERSION_2:
+        case HDA_SSM_VERSION_3:
+            cRegs = 112;
+            AssertCompile(RT_ELEMENTS(pThis->hda.au32Regs) == 112);
+            break;
+
+        case HDA_SSM_VERSION:
+            rc = SSMR3GetU32(pSSM, &cRegs); AssertRCReturn(rc, rc);
+            AssertLogRelMsgReturn(cRegs == RT_ELEMENTS(pThis->hda.au32Regs),
+                                  ("cRegs is %d, expected %d\n", cRegs, RT_ELEMENTS(pThis->hda.au32Regs)),
+                                  VERR_SSM_DATA_UNIT_FORMAT_CHANGED);
+            break;
+
+        default:
+            return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
+    }
+
+    if (cRegs >= RT_ELEMENTS(pThis->hda.au32Regs))
+    {
+        SSMR3GetMem(pSSM, pThis->hda.au32Regs, sizeof(pThis->hda.au32Regs));
+        SSMR3Skip(pSSM, sizeof(uint32_t) * (cRegs - RT_ELEMENTS(pThis->hda.au32Regs)));
     }
     else
     {
-        SSMR3GetStruct (pSSMHandle, &pThis->hda.stOutBdle, g_aHdaBDLEDescFields);
-        SSMR3GetStruct (pSSMHandle, &pThis->hda.stMicBdle, g_aHdaBDLEDescFields);
-        SSMR3GetStruct (pSSMHandle, &pThis->hda.stInBdle, g_aHdaBDLEDescFields);
+        RT_ZERO(pThis->hda.au32Regs);
+        SSMR3GetMem(pSSM, pThis->hda.au32Regs, sizeof(uint32_t) * cRegs);
     }
 
+    /*
+     * Load HDA dma counters.
+     */
+    uint32_t   fFlags   = uVersion <= HDA_SSM_VERSION_2 ? SSMSTRUCT_FLAGS_MEM_BAND_AID_RELAXED : 0;
+    PCSSMFIELD paFields = uVersion <= HDA_SSM_VERSION_2 ? g_aHdaBDLEDescFieldsOld              : g_aHdaBDLEDescFields;
+    SSMR3GetStructEx(pSSM, &pThis->hda.stOutBdle, sizeof(pThis->hda.stOutBdle), fFlags, paFields, NULL);
+    SSMR3GetStructEx(pSSM, &pThis->hda.stMicBdle, sizeof(pThis->hda.stMicBdle), fFlags, paFields, NULL);
+    rc = SSMR3GetStructEx(pSSM, &pThis->hda.stInBdle, sizeof(pThis->hda.stInBdle), fFlags, paFields, NULL);
+    AssertRCReturn(rc, rc);
 
+    /*
+     * Update stuff after the state changes.
+     */
     AUD_set_active_in(pThis->hda.Codec.SwVoiceIn, SDCTL(&pThis->hda, 0) & HDA_REG_FIELD_FLAG_MASK(SDCTL, RUN));
     AUD_set_active_out(pThis->hda.Codec.SwVoiceOut, SDCTL(&pThis->hda, 4) & HDA_REG_FIELD_FLAG_MASK(SDCTL, RUN));
 
-    pThis->hda.u64CORBBase = CORBLBASE(&pThis->hda);
-    pThis->hda.u64CORBBase |= ((uint64_t)CORBUBASE(&pThis->hda)) << 32;
-    pThis->hda.u64RIRBBase = RIRLBASE(&pThis->hda);
-    pThis->hda.u64RIRBBase |= ((uint64_t)RIRUBASE(&pThis->hda)) << 32;
-    pThis->hda.u64DPBase = DPLBASE(&pThis->hda);
-    pThis->hda.u64DPBase |= ((uint64_t)DPUBASE(&pThis->hda)) << 32;
+    pThis->hda.u64CORBBase = RT_MAKE_U64(CORBLBASE(&pThis->hda), CORBUBASE(&pThis->hda));
+    pThis->hda.u64RIRBBase = RT_MAKE_U64(RIRLBASE(&pThis->hda), RIRUBASE(&pThis->hda));
+    pThis->hda.u64DPBase   = RT_MAKE_U64(DPLBASE(&pThis->hda), DPUBASE(&pThis->hda));
     return VINF_SUCCESS;
 }
 
@@ -2196,7 +2273,7 @@ static DECLCALLBACK(void *) hdaQueryInterface (struct PDMIBASE *pInterface,
     return NULL;
 }
 
-static inline int hdaLookUpRegisterByName(INTELHDLinkState *pState, const char *pszArgs)
+DECLINLINE(int) hdaLookUpRegisterByName(INTELHDLinkState *pState, const char *pszArgs)
 {
     int iReg = 0;
     for (; iReg < HDA_NREGS; ++iReg)
@@ -2204,7 +2281,7 @@ static inline int hdaLookUpRegisterByName(INTELHDLinkState *pState, const char *
             return iReg;
     return -1;
 }
-static inline void hdaDbgPrintRegister(INTELHDLinkState *pState, PCDBGFINFOHLP pHlp, int iHdaIndex)
+DECLINLINE(void) hdaDbgPrintRegister(INTELHDLinkState *pState, PCDBGFINFOHLP pHlp, int iHdaIndex)
 {
     Assert(   pState
            && iHdaIndex >= 0
@@ -2223,7 +2300,7 @@ static DECLCALLBACK(void) hdaDbgInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, con
             hdaDbgPrintRegister(hda, pHlp, iHdaRegisterIndex);
 }
 
-static inline void hdaDbgPrintStream(INTELHDLinkState *pState, PCDBGFINFOHLP pHlp, int iHdaStrmIndex)
+DECLINLINE(void) hdaDbgPrintStream(INTELHDLinkState *pState, PCDBGFINFOHLP pHlp, int iHdaStrmIndex)
 {
     Assert(   pState
            && iHdaStrmIndex >= 0
@@ -2235,7 +2312,7 @@ static inline void hdaDbgPrintStream(INTELHDLinkState *pState, PCDBGFINFOHLP pHl
     pHlp->pfnPrintf(pHlp, "SD%dFIFOW: %R[sdfifow]\n", iHdaStrmIndex, HDA_STREAM_REG2(pState, FIFOW, iHdaStrmIndex));
 }
 
-static inline int hdaLookUpStreamIndex(INTELHDLinkState *pState, const char *pszArgs)
+DECLINLINE(int) hdaLookUpStreamIndex(INTELHDLinkState *pState, const char *pszArgs)
 {
     /* todo: add args parsing */
     return -1;
@@ -2383,7 +2460,7 @@ printHdaStrmSts(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput,
 /**
  * This routine registers debugger info extensions and custom printf formatters
  */
-static inline int hdaInitMisc(PPDMDEVINS pDevIns)
+DECLINLINE(int) hdaInitMisc(PPDMDEVINS pDevIns)
 {
     int rc;
     PDMDevHlpDBGFInfoRegister(pDevIns, "hda", "HDA info. (hda [register case-insensitive])", hdaDbgInfo);

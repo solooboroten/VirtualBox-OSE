@@ -1,10 +1,10 @@
-/* $Id: VBoxManageHostonly.cpp 35330 2010-12-24 18:05:33Z vboxsync $ */
+/* $Id: VBoxManageHostonly.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of hostonlyif command.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -56,36 +56,28 @@ static int handleCreate(HandlerArg *a, int iStart, int *pcProcessed)
 //    index++;
 
     ComPtr<IHost> host;
-    CHECK_ERROR(a->virtualBox, COMGETTER(Host)(host.asOutParam()));
+    CHECK_ERROR_RET(a->virtualBox, COMGETTER(Host)(host.asOutParam()), 1);
 
     ComPtr<IHostNetworkInterface> hif;
     ComPtr<IProgress> progress;
 
-    CHECK_ERROR(host, CreateHostOnlyNetworkInterface (hif.asOutParam(), progress.asOutParam()));
+    CHECK_ERROR_RET(host, CreateHostOnlyNetworkInterface (hif.asOutParam(), progress.asOutParam()), 1);
 
     rc = showProgress(progress);
     *pcProcessed = index - iStart;
-    if (FAILED(rc))
-    {
-        com::ProgressErrorInfo info(progress);
-        if (info.isBasicAvailable())
-            RTMsgError("Failed to create the host-only adapter. Error message: %lS", info.getText().raw());
-        else
-            RTMsgError("Failed to create the host-only adapter. No error message available, code: %Rhrc", rc);
-
-        return 1;
-    }
+    CHECK_PROGRESS_ERROR_RET(progress, ("Failed to create the host-only adapter"), 1);
 
     Bstr name;
     CHECK_ERROR(hif, COMGETTER(Name) (name.asOutParam()));
 
-    RTPrintf("Interface '%lS' was successfully created\n", name.raw());
+    RTPrintf("Interface '%ls' was successfully created\n", name.raw());
 
     return 0;
 }
 
 static int handleRemove(HandlerArg *a, int iStart, int *pcProcessed)
 {
+    *pcProcessed = 0;
     if (a->argc - iStart < 1)
         return errorSyntax(USAGE_HOSTONLYIFS, "Not enough parameters");
 
@@ -109,16 +101,7 @@ static int handleRemove(HandlerArg *a, int iStart, int *pcProcessed)
 
     rc = showProgress(progress);
     *pcProcessed = index - iStart;
-    if (FAILED(rc))
-    {
-        com::ProgressErrorInfo info(progress);
-        if (info.isBasicAvailable())
-            RTMsgError("Failed to remove the host-only adapter. Error message: %lS", info.getText().raw());
-        else
-            RTMsgError("Failed to remove the host-only adapter. No error message available, code: %Rhrc", rc);
-
-        return 1;
-    }
+    CHECK_PROGRESS_ERROR_RET(progress, ("Failed to remove the host-only adapter"), 1);
 
     return 0;
 }
@@ -241,14 +224,14 @@ static int handleIpconfig(HandlerArg *a, int iStart, int *pcProcessed)
 
     if (bDhcp)
     {
-        CHECK_ERROR(hif, EnableDynamicIpConfig ());
+        CHECK_ERROR(hif, EnableDynamicIPConfig ());
     }
     else if (pIp)
     {
         if (!pNetmask)
             pNetmask = "255.255.255.0"; /* ?? */
 
-        CHECK_ERROR(hif, EnableStaticIpConfig(Bstr(pIp).raw(),
+        CHECK_ERROR(hif, EnableStaticIPConfig(Bstr(pIp).raw(),
                                               Bstr(pNetmask).raw()));
     }
     else if (pIpv6)
@@ -266,7 +249,7 @@ static int handleIpconfig(HandlerArg *a, int iStart, int *pcProcessed)
 
 
         Bstr ipv6str(pIpv6);
-        CHECK_ERROR(hif, EnableStaticIpConfigV6(ipv6str.raw(),
+        CHECK_ERROR(hif, EnableStaticIPConfigV6(ipv6str.raw(),
                                                 (ULONG)uNetmasklengthv6));
     }
     else

@@ -1,4 +1,4 @@
-/* $Id: PDMAllCritSect.cpp 38081 2011-07-20 14:21:36Z vboxsync $ */
+/* $Id: PDMAllCritSect.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * PDM - Critical Sections, All Contexts.
  */
@@ -98,6 +98,8 @@ DECL_FORCE_INLINE(int) pdmCritSectEnterFirst(PPDMCRITSECT pCritSect, RTNATIVETHR
 
 # ifdef PDMCRITSECT_STRICT
     RTLockValidatorRecExclSetOwner(pCritSect->s.Core.pValidatorRec, NIL_RTTHREAD, pSrcPos, true);
+# else
+    NOREF(pSrcPos);
 # endif
 
     STAM_PROFILE_ADV_START(&pCritSect->s.StatLocked, l);
@@ -234,6 +236,7 @@ DECL_FORCE_INLINE(int) pdmCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy, PCRT
     /*
      * Take the slow path.
      */
+    NOREF(rcBusy);
     return pdmR3R0CritSectEnterContended(pCritSect, hNativeSelf, pSrcPos);
 
 #else
@@ -354,6 +357,7 @@ VMMDECL(int) PDMCritSectEnterDebug(PPDMCRITSECT pCritSect, int rcBusy, RTHCUINTP
     RTLOCKVALSRCPOS SrcPos = RTLOCKVALSRCPOS_INIT_DEBUG_API();
     return pdmCritSectEnter(pCritSect, rcBusy, &SrcPos);
 #else
+    NOREF(uId); RT_SRC_POS_NOREF();
     return pdmCritSectEnter(pCritSect, rcBusy, NULL);
 #endif
 }
@@ -458,6 +462,7 @@ VMMDECL(int) PDMCritSectTryEnterDebug(PPDMCRITSECT pCritSect, RTHCUINTPTR uId, R
     RTLOCKVALSRCPOS SrcPos = RTLOCKVALSRCPOS_INIT_DEBUG_API();
     return pdmCritSectTryEnter(pCritSect, &SrcPos);
 #else
+    NOREF(uId); RT_SRC_POS_NOREF();
     return pdmCritSectTryEnter(pCritSect, NULL);
 #endif
 }
@@ -476,7 +481,7 @@ VMMDECL(int) PDMCritSectTryEnterDebug(PPDMCRITSECT pCritSect, RTHCUINTPTR uId, R
  */
 VMMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallRing3)
 {
-    int rc = PDMCritSectEnter(pCritSect, VERR_INTERNAL_ERROR);
+    int rc = PDMCritSectEnter(pCritSect, VERR_IGNORED);
     if (    rc == VINF_SUCCESS
         &&  fCallRing3
         &&  pCritSect->s.Core.pValidatorRec
@@ -490,25 +495,31 @@ VMMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallRing3)
 /**
  * Leaves a critical section entered with PDMCritSectEnter().
  *
+ * @returns Indication whether we really exited the critical section.
+ * @retval  VINF_SUCCESS if we really exited.
+ * @retval  VINF_SEM_NESTED if we only reduced the nesting count.
+ * @retval  VERR_NOT_OWNER if you somehow ignore release assertions.
+ *
  * @param   pCritSect           The PDM critical section to leave.
  */
-VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
+VMMDECL(int) PDMCritSectLeave(PPDMCRITSECT pCritSect)
 {
     AssertMsg(pCritSect->s.Core.u32Magic == RTCRITSECT_MAGIC, ("%p %RX32\n", pCritSect, pCritSect->s.Core.u32Magic));
     Assert(pCritSect->s.Core.u32Magic == RTCRITSECT_MAGIC);
 
     /* Check for NOP sections before asserting ownership. */
     if (pCritSect->s.Core.fFlags & RTCRITSECT_FLAGS_NOP)
-        return;
+        return VINF_SUCCESS;
 
     /*
      * Always check that the caller is the owner (screw performance).
      */
     RTNATIVETHREAD const hNativeSelf = pdmCritSectGetNativeSelf(pCritSect);
-    AssertReleaseMsgReturnVoid(pCritSect->s.Core.NativeThreadOwner == hNativeSelf,
-                               ("%p %s: %p != %p; cLockers=%d cNestings=%d\n", pCritSect, R3STRING(pCritSect->s.pszName),
-                                pCritSect->s.Core.NativeThreadOwner, hNativeSelf,
-                                pCritSect->s.Core.cLockers, pCritSect->s.Core.cNestings));
+    AssertReleaseMsgReturn(pCritSect->s.Core.NativeThreadOwner == hNativeSelf,
+                           ("%p %s: %p != %p; cLockers=%d cNestings=%d\n", pCritSect, R3STRING(pCritSect->s.pszName),
+                            pCritSect->s.Core.NativeThreadOwner, hNativeSelf,
+                            pCritSect->s.Core.cLockers, pCritSect->s.Core.cNestings),
+                           VERR_NOT_OWNER);
     Assert(pCritSect->s.Core.cNestings >= 1);
 
     /*
@@ -520,7 +531,7 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
         Assert(pCritSect->s.Core.cNestings >= 1);
         ASMAtomicDecS32(&pCritSect->s.Core.cLockers);
         Assert(pCritSect->s.Core.cLockers >= 0);
-        return;
+        return VINF_SEM_NESTED;
     }
 
 #ifdef IN_RING0
@@ -594,7 +605,7 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
 
             ASMAtomicWriteHandle(&pCritSect->s.Core.NativeThreadOwner, NIL_RTNATIVETHREAD);
             if (ASMAtomicCmpXchgS32(&pCritSect->s.Core.cLockers, -1, 0))
-                return;
+                return VINF_SUCCESS;
 
             /* darn, someone raced in on us. */
             ASMAtomicWriteHandle(&pCritSect->s.Core.NativeThreadOwner, hNativeThread);
@@ -619,6 +630,8 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
         STAM_REL_COUNTER_INC(&pCritSect->s.StatContentionRZUnlock);
     }
 #endif /* IN_RING0 || IN_RC */
+
+    return VINF_SUCCESS;
 }
 
 
@@ -626,7 +639,7 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
 /**
  * Process the critical sections queued for ring-3 'leave'.
  *
- * @param   pVCpu         The VMCPU handle.
+ * @param   pVCpu         Pointer to the VMCPU.
  */
 VMMDECL(void) PDMCritSectFF(PVMCPU pVCpu)
 {
@@ -679,7 +692,7 @@ VMMDECL(bool) PDMCritSectIsOwner(PCPDMCRITSECT pCritSect)
  * @returns true if owner.
  * @returns false if not owner.
  * @param   pCritSect   The critical section.
- * @param   pVCpu       The virtual CPU handle.
+ * @param   pVCpu       Pointer to the VMCPU.
  */
 VMMDECL(bool) PDMCritSectIsOwnerEx(PCPDMCRITSECT pCritSect, PVMCPU pVCpu)
 {

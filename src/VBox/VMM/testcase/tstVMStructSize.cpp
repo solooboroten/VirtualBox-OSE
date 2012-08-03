@@ -1,4 +1,4 @@
-/* $Id: tstVMStructSize.cpp 37955 2011-07-14 12:23:02Z vboxsync $ */
+/* $Id: tstVMStructSize.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * tstVMStructSize - testcase for check structure sizes/alignment
  *                   and to verify that HC and GC uses the same
@@ -56,6 +56,7 @@
 #include <VBox/vmm/uvm.h>
 #include <VBox/vmm/gvm.h>
 #include <VBox/param.h>
+#include <VBox/dis.h>
 #include <iprt/x86.h>
 
 #include "tstHelp.h"
@@ -99,9 +100,11 @@ int main()
 
 #define CHECK_CPUMCTXCORE(member) \
     do { \
-        if (RT_OFFSETOF(CPUMCTX, member) - RT_OFFSETOF(CPUMCTX, edi) != RT_OFFSETOF(CPUMCTXCORE, member)) \
+        unsigned off1 = RT_OFFSETOF(CPUMCTX, member) - RT_OFFSETOF(CPUMCTX, rax); \
+        unsigned off2 = RT_OFFSETOF(CPUMCTXCORE, member); \
+        if (off1 != off2) \
         { \
-            printf("error! CPUMCTX/CORE:: %s!\n", #member); \
+            printf("error! CPUMCTX/CORE:: %s! (%#x vs %#x (ctx))\n", #member, off1, off2); \
             rc++; \
         } \
     } while (0)
@@ -161,9 +164,8 @@ int main()
 #define PRINT_OFFSET(strct, member) \
     do \
     { \
-        printf("info: %s::%s offset %#x (%d) sizeof %d\n",  #strct, #member, (int)RT_OFFSETOF(strct, member), (int)RT_OFFSETOF(strct, member), (int)RT_SIZEOFMEMB(strct, member)); \
+        printf("info: %10s::%-24s offset %#6x (%6d) sizeof %4d\n",  #strct, #member, (int)RT_OFFSETOF(strct, member), (int)RT_OFFSETOF(strct, member), (int)RT_SIZEOFMEMB(strct, member)); \
     } while (0)
-
 
 
     CHECK_SIZE(uint128_t, 128/8);
@@ -201,7 +203,10 @@ int main()
     PRINT_OFFSET(VM, cpum);
     CHECK_PADDING_VM(64, cpum);
     CHECK_PADDING_VM(64, vmm);
+    PRINT_OFFSET(VM, pgm);
+    PRINT_OFFSET(VM, pgm.s.CritSectX);
     CHECK_PADDING_VM(64, pgm);
+    PRINT_OFFSET(VM, hwaccm);
     CHECK_PADDING_VM(64, hwaccm);
     CHECK_PADDING_VM(64, trpm);
     CHECK_PADDING_VM(64, selm);
@@ -265,7 +270,6 @@ int main()
 #ifdef VBOX_WITH_VMMR0_DISABLE_LAPIC_NMI
     CHECK_MEMBER_ALIGNMENT(VM, cpum.s.pvApicBase, 8);
 #endif
-    CHECK_MEMBER_ALIGNMENT(VM, cpum.s.GuestEntry, 64);
 
     CHECK_MEMBER_ALIGNMENT(VMCPU, vmm.s.u64CallRing3Arg, 8);
 #if defined(RT_OS_WINDOWS) && defined(RT_ARCH_AMD64)
@@ -285,25 +289,18 @@ int main()
 
     /* cpumctx */
     CHECK_MEMBER_ALIGNMENT(CPUMCTX, fpu, 32);
-    CHECK_MEMBER_ALIGNMENT(CPUMCTX, edi, 32);
-    CHECK_MEMBER_ALIGNMENT(CPUMCTX, idtr, 4);
+    CHECK_MEMBER_ALIGNMENT(CPUMCTX, rax, 32);
+    CHECK_MEMBER_ALIGNMENT(CPUMCTX, idtr.pIdt, 8);
+    CHECK_MEMBER_ALIGNMENT(CPUMCTX, gdtr.pGdt, 8);
     CHECK_MEMBER_ALIGNMENT(CPUMCTX, SysEnter, 8);
-    CHECK_CPUMCTXCORE(eax);
-    CHECK_CPUMCTXCORE(ebx);
-    CHECK_CPUMCTXCORE(ecx);
-    CHECK_CPUMCTXCORE(edx);
-    CHECK_CPUMCTXCORE(ebp);
-    CHECK_CPUMCTXCORE(esp);
-    CHECK_CPUMCTXCORE(edi);
-    CHECK_CPUMCTXCORE(esi);
-    CHECK_CPUMCTXCORE(eip);
-    CHECK_CPUMCTXCORE(eflags);
-    CHECK_CPUMCTXCORE(cs);
-    CHECK_CPUMCTXCORE(ds);
-    CHECK_CPUMCTXCORE(es);
-    CHECK_CPUMCTXCORE(fs);
-    CHECK_CPUMCTXCORE(gs);
-    CHECK_CPUMCTXCORE(ss);
+    CHECK_CPUMCTXCORE(rax);
+    CHECK_CPUMCTXCORE(rcx);
+    CHECK_CPUMCTXCORE(rdx);
+    CHECK_CPUMCTXCORE(rbx);
+    CHECK_CPUMCTXCORE(rsp);
+    CHECK_CPUMCTXCORE(rbp);
+    CHECK_CPUMCTXCORE(rsi);
+    CHECK_CPUMCTXCORE(rdi);
     CHECK_CPUMCTXCORE(r8);
     CHECK_CPUMCTXCORE(r9);
     CHECK_CPUMCTXCORE(r10);
@@ -312,12 +309,14 @@ int main()
     CHECK_CPUMCTXCORE(r13);
     CHECK_CPUMCTXCORE(r14);
     CHECK_CPUMCTXCORE(r15);
-    CHECK_CPUMCTXCORE(esHid);
-    CHECK_CPUMCTXCORE(csHid);
-    CHECK_CPUMCTXCORE(ssHid);
-    CHECK_CPUMCTXCORE(dsHid);
-    CHECK_CPUMCTXCORE(fsHid);
-    CHECK_CPUMCTXCORE(gsHid);
+    CHECK_CPUMCTXCORE(es);
+    CHECK_CPUMCTXCORE(ss);
+    CHECK_CPUMCTXCORE(cs);
+    CHECK_CPUMCTXCORE(ds);
+    CHECK_CPUMCTXCORE(fs);
+    CHECK_CPUMCTXCORE(gs);
+    CHECK_CPUMCTXCORE(rip);
+    CHECK_CPUMCTXCORE(rflags);
 
 #if HC_ARCH_BITS == 32
     /* CPUMHOSTCTX - lss pair */
@@ -329,15 +328,24 @@ int main()
 #endif
     CHECK_SIZE_ALIGNMENT(CPUMCTX, 64);
     CHECK_SIZE_ALIGNMENT(CPUMHOSTCTX, 64);
-    CHECK_SIZE_ALIGNMENT(CPUMCTXMSR, 64);
+    CHECK_SIZE_ALIGNMENT(CPUMCTXMSRS, 64);
 
     /* pdm */
+    PRINT_OFFSET(PDMDEVINS, Internal);
+    PRINT_OFFSET(PDMDEVINS, achInstanceData);
     CHECK_MEMBER_ALIGNMENT(PDMDEVINS, achInstanceData, 64);
     CHECK_PADDING(PDMDEVINS, Internal, 1);
-    CHECK_MEMBER_ALIGNMENT(PDMUSBINS, achInstanceData, 16);
+
+    PRINT_OFFSET(PDMUSBINS, Internal);
+    PRINT_OFFSET(PDMUSBINS, achInstanceData);
+    CHECK_MEMBER_ALIGNMENT(PDMUSBINS, achInstanceData, 32);
     CHECK_PADDING(PDMUSBINS, Internal, 1);
-    CHECK_MEMBER_ALIGNMENT(PDMDRVINS, achInstanceData, 16);
+
+    PRINT_OFFSET(PDMDRVINS, Internal);
+    PRINT_OFFSET(PDMDRVINS, achInstanceData);
+    CHECK_MEMBER_ALIGNMENT(PDMDRVINS, achInstanceData, 32);
     CHECK_PADDING(PDMDRVINS, Internal, 1);
+
     CHECK_PADDING2(PDMCRITSECT);
 
     /* pgm */
@@ -378,8 +386,10 @@ int main()
 #endif
 
     CHECK_MEMBER_ALIGNMENT(IOM, CritSect, sizeof(uintptr_t));
+#ifdef VBOX_WITH_REM
     CHECK_MEMBER_ALIGNMENT(EM, CritSectREM, sizeof(uintptr_t));
-    CHECK_MEMBER_ALIGNMENT(PGM, CritSect, sizeof(uintptr_t));
+#endif
+    CHECK_MEMBER_ALIGNMENT(PGM, CritSectX, sizeof(uintptr_t));
     CHECK_MEMBER_ALIGNMENT(PDM, CritSect, sizeof(uintptr_t));
     CHECK_MEMBER_ALIGNMENT(MMHYPERHEAP, Lock, sizeof(uintptr_t));
 
@@ -392,12 +402,6 @@ int main()
     CHECK_MEMBER_ALIGNMENT(HWACCMCPU, vmx.HCPhysVMCS, sizeof(RTHCPHYS));
     CHECK_MEMBER_ALIGNMENT(HWACCMCPU, vmx.proc_ctls, 8);
     CHECK_MEMBER_ALIGNMENT(HWACCMCPU, Event.intInfo, 8);
-
-    /* The various disassembler state members.  */
-    CHECK_PADDING3(EMCPU, DisState, abDisStatePadding);
-    CHECK_PADDING3(HWACCMCPU, DisState, abDisStatePadding);
-    CHECK_PADDING3(IOMCPU, DisState, abDisStatePadding);
-    CHECK_PADDING3(PGMCPU, DisState, abDisStatePadding);
 
     /* Make sure the set is large enough and has the correct size. */
     CHECK_SIZE(VMCPUSET, 32);

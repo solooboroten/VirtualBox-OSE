@@ -41,6 +41,7 @@ struct BackupableMediumAttachmentData
           fPassthrough(false),
           fTempEject(false),
           fNonRotational(false),
+          fDiscard(false),
           fImplicit(false)
     { }
 
@@ -59,13 +60,14 @@ struct BackupableMediumAttachmentData
     bool                fPassthrough;
     bool                fTempEject;
     bool                fNonRotational;
+    bool                fDiscard;
     bool                fImplicit;
 };
 
 struct MediumAttachment::Data
 {
-    Data()
-        : pMachine(NULL),
+    Data(Machine * const aMachine = NULL)
+        : pMachine(aMachine),
           fIsEjected(false)
     { }
 
@@ -119,6 +121,7 @@ HRESULT MediumAttachment::init(Machine *aParent,
                                bool aPassthrough,
                                bool aTempEject,
                                bool aNonRotational,
+                               bool aDiscard,
                                const Utf8Str &strBandwidthGroup)
 {
     LogFlowThisFuncEnter();
@@ -146,6 +149,7 @@ HRESULT MediumAttachment::init(Machine *aParent,
     m->bd->fPassthrough = aPassthrough;
     m->bd->fTempEject = aTempEject;
     m->bd->fNonRotational = aNonRotational;
+    m->bd->fDiscard = aDiscard;
     m->bd->fImplicit = aImplicit;
 
     /* Confirm a successful initialization when it's the case */
@@ -161,6 +165,36 @@ HRESULT MediumAttachment::init(Machine *aParent,
                           m->bd->fImplicit ? ":I" : "");
 
     LogFlowThisFunc(("LEAVE - %s\n", getLogName()));
+    return S_OK;
+}
+
+/**
+ *  Initializes the medium attachment object given another guest object
+ *  (a kind of copy constructor). This object makes a private copy of data
+ *  of the original object passed as an argument.
+ */
+HRESULT MediumAttachment::initCopy(Machine *aParent, MediumAttachment *aThat)
+{
+    LogFlowThisFunc(("aParent=%p, aThat=%p\n", aParent, aThat));
+
+    ComAssertRet(aParent && aThat, E_INVALIDARG);
+
+    /* Enclose the state transition NotReady->InInit->Ready */
+    AutoInitSpan autoInitSpan(this);
+    AssertReturn(autoInitSpan.isOk(), E_FAIL);
+
+    m = new Data(aParent);
+    /* m->pPeer is left null */
+
+    AutoCaller thatCaller(aThat);
+    AssertComRCReturnRC(thatCaller.rc());
+
+    AutoReadLock thatlock(aThat COMMA_LOCKVAL_SRC_POS);
+    m->bd.attachCopy(aThat->m->bd);
+
+    /* Confirm a successful initialization */
+    autoInitSpan.setSucceeded();
+
     return S_OK;
 }
 
@@ -339,6 +373,23 @@ STDMETHODIMP MediumAttachment::COMGETTER(NonRotational)(BOOL *aNonRotational)
     return S_OK;
 }
 
+STDMETHODIMP MediumAttachment::COMGETTER(Discard)(BOOL *aDiscard)
+{
+    LogFlowThisFuncEnter();
+
+    CheckComArgOutPointerValid(aDiscard);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock lock(this COMMA_LOCKVAL_SRC_POS);
+
+    *aDiscard = m->bd->fDiscard;
+
+    LogFlowThisFuncLeave();
+    return S_OK;
+}
+
 STDMETHODIMP MediumAttachment::COMGETTER(BandwidthGroup) (IBandwidthGroup **aBwGroup)
 {
     LogFlowThisFuncEnter();
@@ -455,6 +506,12 @@ bool MediumAttachment::getNonRotational() const
     return m->bd->fNonRotational;
 }
 
+bool MediumAttachment::getDiscard() const
+{
+    AutoReadLock lock(this COMMA_LOCKVAL_SRC_POS);
+    return m->bd->fDiscard;
+}
+
 const Utf8Str& MediumAttachment::getBandwidthGroup() const
 {
     return m->bd->strBandwidthGroup;
@@ -514,6 +571,15 @@ void MediumAttachment::updateNonRotational(bool aNonRotational)
 
     m->bd.backup();
     m->bd->fNonRotational = aNonRotational;
+}
+
+/** Must be called from under this object's write lock. */
+void MediumAttachment::updateDiscard(bool aDiscard)
+{
+    Assert(isWriteLockOnCurrentThread());
+
+    m->bd.backup();
+    m->bd->fDiscard = aDiscard;
 }
 
 void MediumAttachment::updateBandwidthGroup(const Utf8Str &aBandwidthGroup)

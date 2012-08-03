@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 36899 2011-04-29 15:52:47Z vboxsync $
+# $Id: Makefile.kmk 42288 2012-07-20 18:30:53Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxTray.
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -16,13 +16,15 @@
 #
 
 SUB_DEPTH = ../../../../..
-include	$(KBUILD_PATH)/subheader.kmk
+include $(KBUILD_PATH)/subheader.kmk
 
 PROGRAMS += VBoxTray
-VBoxTray_TEMPLATE = VBOXGUESTR3EXE
+VBoxTray_TEMPLATE = NewVBoxGuestR3Exe
 ifdef VBOX_SIGN_ADDITIONS # (See the parent makefile.)
- VBoxTray_NOINST  = true
+ VBoxTray_INSTTYPE = none
+ VBoxTray_DEBUG_INSTTYPE = both
 endif
+VBoxTray_SDKS     = ReorderCompilerIncs $(VBOX_WINDDK_GST)
 VBoxTray_DEFS     = VBOX_WITH_HGCM LOG_TO_BACKDOOR
 VBoxTray_INCS     = ../include
 VBoxTray_SOURCES  = \
@@ -39,7 +41,8 @@ VBoxTray_SOURCES  = \
 ifdef VBOX_WITH_GUEST_PROPS
  VBoxTray_DEFS     +=  _WIN32_IE=0x500 VBOX_WITH_GUEST_PROPS
  VBoxTray_SOURCES  += \
-	VBoxHostVersion.cpp
+	VBoxHostVersion.cpp \
+	VBoxLA.cpp
 endif
 ifdef VBOX_WITH_SHARED_FOLDERS
  VBoxTray_DEFS     +=  VBOX_WITH_SHARED_FOLDERS
@@ -48,13 +51,11 @@ ifdef VBOX_WITH_SHARED_FOLDERS
  VBoxTray_LIBS.win += \
 	mpr.lib
 endif
-
-VBoxTray_LIBS     = \
-	$(VBOX_LIB_IPRT_GUEST_R3) \
-	$(VBOX_LIB_VBGL_R3)
-
-include $(KBUILD_PATH)/sdks/WINDDK.kmk
-VBoxTray_INCS   += $(PATH_SDK_WINDDK_INC_API) $(PATH_SDK_WINDDK_INC_DDK)
+ifdef VBOX_WITH_MMR
+ VBoxTray_DEFS     += VBOX_WITH_MMR
+ VBoxTray_SOURCES  += \
+        VBoxMMR.cpp
+endif
 
 ifdef VBOX_WITH_WDDM
  VBoxTray_DEFS   += VBOX_WITH_WDDM
@@ -75,5 +76,5 @@ $$(VBoxTray_0_OUTDIR)/VBoxTray-icon.rc: $(VBOX_WINDOWS_ADDITIONS_ICON_FILE) $$(V
 	$(RM) -f $@
 	$(APPEND) $@ 'IDI_VIRTUALBOX ICON DISCARDABLE "$(subst /,\\,$(VBOX_WINDOWS_ADDITIONS_ICON_FILE))"'
 
-include	$(KBUILD_PATH)/subfooter.kmk
+include $(FILE_KBUILD_SUB_FOOTER)
 

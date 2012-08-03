@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdp-linux.c 35809 2011-02-01 12:31:15Z vboxsync $ */
+/* $Id: VBoxNetAdp-linux.c 41272 2012-05-14 09:02:00Z vboxsync $ */
 /** @file
  * VBoxNetAdp - Virtual Network Adapter Driver (Host), Linux Specific Code.
  */
@@ -233,6 +233,7 @@ static int VBoxNetAdpLinuxOpen(struct inode *pInode, struct file *pFilp)
 {
     Log(("VBoxNetAdpLinuxOpen: pid=%d/%d %s\n", RTProcSelf(), current->pid, current->comm));
 
+#ifdef VBOX_WITH_HARDENING
     /*
      * Only root is allowed to access the device, enforce it!
      */
@@ -241,6 +242,7 @@ static int VBoxNetAdpLinuxOpen(struct inode *pInode, struct file *pFilp)
         Log(("VBoxNetAdpLinuxOpen: admin privileges required!\n"));
         return -EPERM;
     }
+#endif
 
     return 0;
 }
@@ -312,7 +314,7 @@ static long VBoxNetAdpLinuxIOCtlUnlocked(struct file *pFilp,
             if (RT_FAILURE(rc))
             {
                 Log(("VBoxNetAdpLinuxIOCtl: vboxNetAdpCreate -> %Rrc\n", rc));
-                return -EINVAL;
+                return -(rc == VERR_OUT_OF_RESOURCES ? ENOMEM : EINVAL);
             }
 
             Assert(strlen(pAdp->szName) < sizeof(Req.szName));

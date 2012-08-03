@@ -1,4 +1,4 @@
-/* $Id: ExtPackManagerImpl.cpp 37843 2011-07-08 12:34:18Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.cpp 40468 2012-03-14 17:07:58Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
@@ -88,6 +88,8 @@ struct ExtPackFile::Data : public ExtPackBaseData
 public:
     /** The path to the tarball. */
     Utf8Str             strExtPackFile;
+    /** The SHA-256 hash of the file (as string). */
+    Utf8Str             strDigest;
     /** The file handle of the extension pack file. */
     RTFILE              hExtPackFile;
     /** Our manifest for the tarball. */
@@ -219,10 +221,11 @@ HRESULT ExtPackFile::FinalConstruct()
  *
  * @returns COM status code.
  * @param   a_pszFile       The path to the extension pack file.
+ * @param   a_pszDigest     The SHA-256 digest of the file. Or an empty string.
  * @param   a_pExtPackMgr   Pointer to the extension pack manager.
  * @param   a_pVirtualBox   Pointer to the VirtualBox object.
  */
-HRESULT ExtPackFile::initWithFile(const char *a_pszFile, ExtPackManager *a_pExtPackMgr, VirtualBox *a_pVirtualBox)
+HRESULT ExtPackFile::initWithFile(const char *a_pszFile, const char *a_pszDigest, ExtPackManager *a_pExtPackMgr, VirtualBox *a_pVirtualBox)
 {
     AutoInitSpan autoInitSpan(this);
     AssertReturn(autoInitSpan.isOk(), E_FAIL);
@@ -236,6 +239,7 @@ HRESULT ExtPackFile::initWithFile(const char *a_pszFile, ExtPackManager *a_pExtP
     m->fUsable                      = false;
     m->strWhyUnusable               = tr("ExtPack::init failed");
     m->strExtPackFile               = a_pszFile;
+    m->strDigest                    = a_pszDigest;
     m->hExtPackFile                 = NIL_RTFILE;
     m->hOurManifest                 = NIL_RTMANIFEST;
     m->ptrExtPackMgr                = a_pExtPackMgr;
@@ -275,8 +279,8 @@ HRESULT ExtPackFile::initWithFile(const char *a_pszFile, ExtPackManager *a_pExtP
      */
     char        szError[8192];
     RTVFSFILE   hXmlFile;
-    vrc = VBoxExtPackValidateTarball(m->hExtPackFile, NULL /*pszExtPackName*/, a_pszFile,
-                                     szError, sizeof(szError), &m->hOurManifest, &hXmlFile);
+    vrc = VBoxExtPackValidateTarball(m->hExtPackFile, NULL /*pszExtPackName*/, a_pszFile, a_pszDigest,
+                                     szError, sizeof(szError), &m->hOurManifest, &hXmlFile, &m->strDigest);
     if (RT_FAILURE(vrc))
         return initFailed(tr("%s"), szError);
 
@@ -391,6 +395,20 @@ STDMETHODIMP ExtPackFile::COMGETTER(Version)(BSTR *a_pbstrVersion)
     {
         Bstr str(m->Desc.strVersion);
         str.cloneTo(a_pbstrVersion);
+    }
+    return hrc;
+}
+
+STDMETHODIMP ExtPackFile::COMGETTER(Edition)(BSTR *a_pbstrEdition)
+{
+    CheckComArgOutPointerValid(a_pbstrEdition);
+
+    AutoCaller autoCaller(this);
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        Bstr str(m->Desc.strEdition);
+        str.cloneTo(a_pbstrEdition);
     }
     return hrc;
 }
@@ -534,7 +552,7 @@ STDMETHODIMP ExtPackFile::QueryLicense(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_
             {
                 RTVFSFSSTREAM   hTarFss;
                 char            szError[8192];
-                int vrc = VBoxExtPackOpenTarFss(m->hExtPackFile, szError, sizeof(szError), &hTarFss);
+                int vrc = VBoxExtPackOpenTarFss(m->hExtPackFile, szError, sizeof(szError), &hTarFss, NULL);
                 if (RT_SUCCESS(vrc))
                 {
                     for (;;)
@@ -1626,6 +1644,20 @@ STDMETHODIMP ExtPack::COMGETTER(Revision)(ULONG *a_puRevision)
     return hrc;
 }
 
+STDMETHODIMP ExtPack::COMGETTER(Edition)(BSTR *a_pbstrEdition)
+{
+    CheckComArgOutPointerValid(a_pbstrEdition);
+
+    AutoCaller autoCaller(this);
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        Bstr str(m->Desc.strEdition);
+        str.cloneTo(a_pbstrEdition);
+    }
+    return hrc;
+}
+
 STDMETHODIMP ExtPack::COMGETTER(VRDEModule)(BSTR *a_pbstrVrdeModule)
 {
     CheckComArgOutPointerValid(a_pbstrVrdeModule);
@@ -1996,17 +2028,31 @@ STDMETHODIMP ExtPackManager::Find(IN_BSTR a_bstrName, IExtPack **a_pExtPack)
     return hrc;
 }
 
-STDMETHODIMP ExtPackManager::OpenExtPackFile(IN_BSTR a_bstrTarball, IExtPackFile **a_ppExtPackFile)
+STDMETHODIMP ExtPackManager::OpenExtPackFile(IN_BSTR a_bstrTarballAndDigest, IExtPackFile **a_ppExtPackFile)
 {
-    CheckComArgNotNull(a_bstrTarball);
+    CheckComArgNotNull(a_bstrTarballAndDigest);
     CheckComArgOutPointerValid(a_ppExtPackFile);
-    Utf8Str strTarball(a_bstrTarball);
     AssertReturn(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON, E_UNEXPECTED);
+
+    /* The API can optionally take a ::SHA-256=<hex-digest> attribute at the
+       end of the file name.  This is just a temporary measure for
+       backporting, in 4.2 we'll add another parameter to the method. */
+    Utf8Str strTarball;
+    Utf8Str strDigest;
+    Utf8Str strTarballAndDigest(a_bstrTarballAndDigest);
+    size_t offSha256 = strTarballAndDigest.find("::SHA-256=");
+    if (offSha256 == Utf8Str::npos)
+        strTarball = strTarballAndDigest;
+    else
+    {
+        strTarball = strTarballAndDigest.substr(0, offSha256);
+        strDigest  = strTarballAndDigest.substr(offSha256 + sizeof("::SHA-256=") - 1);
+    }
 
     ComObjPtr<ExtPackFile> NewExtPackFile;
     HRESULT hrc = NewExtPackFile.createObject();
     if (SUCCEEDED(hrc))
-        hrc = NewExtPackFile->initWithFile(strTarball.c_str(), this, m->pVirtualBox);
+        hrc = NewExtPackFile->initWithFile(strTarball.c_str(), strDigest.c_str(), this, m->pVirtualBox);
     if (SUCCEEDED(hrc))
         NewExtPackFile.queryInterfaceTo(a_ppExtPackFile);
 
@@ -2570,8 +2616,9 @@ HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnusableIs
 HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, Utf8Str const *a_pstrDisplayInfo)
 {
     AssertReturn(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON, E_UNEXPECTED);
-    RTCString const * const pStrName     = &a_pExtPackFile->m->Desc.strName;
-    RTCString const * const pStrTarball  = &a_pExtPackFile->m->strExtPackFile;
+    RTCString const * const pStrName          = &a_pExtPackFile->m->Desc.strName;
+    RTCString const * const pStrTarball       = &a_pExtPackFile->m->strExtPackFile;
+    RTCString const * const pStrTarballDigest = &a_pExtPackFile->m->strDigest;
 
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
@@ -2602,13 +2649,13 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, 
              * installation.  Then create an object for the packet (we do this
              * even on failure, to be on the safe side).
              */
-            /** @todo add a hash (SHA-256) of the tarball or maybe just the manifest. */
             hrc = runSetUidToRootHelper(a_pstrDisplayInfo,
                                         "install",
                                         "--base-dir",   m->strBaseDir.c_str(),
                                         "--cert-dir",   m->strCertificatDirPath.c_str(),
                                         "--name",       pStrName->c_str(),
                                         "--tarball",    pStrTarball->c_str(),
+                                        "--sha-256",    pStrTarballDigest->c_str(),
                                         pExtPack ? "--replace" : (const char *)NULL,
                                         (const char *)NULL);
             if (SUCCEEDED(hrc))
@@ -3051,16 +3098,20 @@ void ExtPackManager::dumpAllToReleaseLog(void)
         if (pExtPackData)
         {
             if (pExtPackData->fUsable)
-                LogRel(("  %s (Version: %s r%u; VRDE Module: %s)\n",
+                LogRel(("  %s (Version: %s r%u%s%s; VRDE Module: %s)\n",
                         pExtPackData->Desc.strName.c_str(),
                         pExtPackData->Desc.strVersion.c_str(),
                         pExtPackData->Desc.uRevision,
+                        pExtPackData->Desc.strEdition.isEmpty() ? "" : " ",
+                        pExtPackData->Desc.strEdition.c_str(),
                         pExtPackData->Desc.strVrdeModule.c_str() ));
             else
-                LogRel(("  %s (Version: %s r%u; VRDE Module: %s unusable because of '%s')\n",
+                LogRel(("  %s (Version: %s r%u%s%s; VRDE Module: %s unusable because of '%s')\n",
                         pExtPackData->Desc.strName.c_str(),
                         pExtPackData->Desc.strVersion.c_str(),
                         pExtPackData->Desc.uRevision,
+                        pExtPackData->Desc.strEdition.isEmpty() ? "" : " ",
+                        pExtPackData->Desc.strEdition.c_str(),
                         pExtPackData->Desc.strVrdeModule.c_str(),
                         pExtPackData->strWhyUnusable.c_str() ));
         }

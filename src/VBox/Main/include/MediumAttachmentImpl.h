@@ -50,7 +50,9 @@ public:
                  bool fPassthrough,
                  bool fTempEject,
                  bool fNonRotational,
+                 bool fDiscard,
                  const Utf8Str &strBandwidthGroup);
+    HRESULT initCopy(Machine *aParent, MediumAttachment *aThat);
     void uninit();
 
     HRESULT FinalConstruct();
@@ -66,6 +68,7 @@ public:
     STDMETHOD(COMGETTER(TemporaryEject))(BOOL *aTemporaryEject);
     STDMETHOD(COMGETTER(IsEjected))(BOOL *aIsEjected);
     STDMETHOD(COMGETTER(NonRotational))(BOOL *aNonRotational);
+    STDMETHOD(COMGETTER(Discard))(BOOL *aDiscard);
     STDMETHOD(COMGETTER(BandwidthGroup))(IBandwidthGroup **aBwGroup);
 
     // public internal methods
@@ -85,6 +88,7 @@ public:
     bool getPassthrough() const;
     bool getTempEject() const;
     bool getNonRotational() const;
+    bool getDiscard() const;
     const Utf8Str& getBandwidthGroup() const;
 
     bool matches(CBSTR aControllerName, LONG aPort, LONG aDevice);
@@ -100,6 +104,9 @@ public:
 
     /** Must be called from under this object's write lock. */
     void updateNonRotational(bool aNonRotational);
+
+    /** Must be called from under this object's write lock. */
+    void updateDiscard(bool aDiscard);
 
     /** Must be called from under this object's write lock. */
     void updateEjected();

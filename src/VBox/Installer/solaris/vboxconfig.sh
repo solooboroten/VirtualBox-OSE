@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: vboxconfig.sh 38016 2011-07-18 13:06:11Z vboxsync $
+# $Id: vboxconfig.sh 42491 2012-08-01 07:09:11Z vboxsync $
 
 #
 # VirtualBox Configuration Script, Solaris host.
@@ -18,13 +18,12 @@
 # Never use exit 2 or exit 20 etc., the return codes are used in
 # SRv4 postinstall procedures which carry special meaning. Just use exit 1 for failure.
 
+# LC_ALL should take precedence over LC_* and LANG but whatever...
+LC_ALL=C
+export LC_ALL
+
 LANG=C
 export LANG
-
-# S10 or OpenSoalris
-HOST_OS_MAJORVERSION=`uname -r`
-# Which OpenSolaris version (snv_xxx or oi_xxx)?
-HOST_OS_MINORVERSION=`uname -v | egrep 'snv|oi' | sed -e "s/snv_//" -e "s/oi_//" -e "s/[^0-9]//"`
 
 DIR_VBOXBASE="$PKG_INSTALL_ROOT/opt/VirtualBox"
 DIR_CONF="$PKG_INSTALL_ROOT/platform/i86pc/kernel/drv"
@@ -41,6 +40,7 @@ BIN_DEVFSADM=/usr/sbin/devfsadm
 BIN_BOOTADM=/sbin/bootadm
 BIN_SVCADM=/usr/sbin/svcadm
 BIN_SVCCFG=/usr/sbin/svccfg
+BIN_SVCS=/usr/bin/svcs 
 BIN_IFCONFIG=/sbin/ifconfig
 BIN_SVCS=/usr/bin/svcs
 BIN_ID=/usr/bin/id
@@ -59,10 +59,6 @@ DESC_VBOXFLT="NetFilter (STREAMS)"
 
 MOD_VBOXBOW=vboxbow
 DESC_VBOXBOW="NetFilter (Crossbow)"
-
-# No Separate VBI since (3.1)
-#MOD_VBI=vbi
-#DESC_VBI="Kernel Interface"
 
 MOD_VBOXUSBMON=vboxusbmon
 DESC_VBOXUSBMON="USBMonitor"
@@ -225,25 +221,65 @@ check_root()
 # cannot fail
 get_sysinfo()
 {
-    if test "$REMOTEINST" -eq 1 || test -z "$HOST_OS_MINORVERSION" || test -z "$HOST_OS_MAJORVERSION"; then
-        if test -f "$PKG_INSTALL_ROOT/etc/release"; then
-            HOST_OS_MAJORVERSION=`cat "$PKG_INSTALL_ROOT/etc/release" | grep "Solaris 10"`
-            if test -n "$HOST_OS_MAJORVERSION"; then
-                HOST_OS_MAJORVERSION="5.10"
-            else
-                HOST_OS_MAJORVERSION=`cat "$PKG_INSTALL_ROOT/etc/release" | egrep "snv_|oi_"`
-                if test -n "$HOST_OS_MAJORVERSION"; then
-                    HOST_OS_MAJORVERSION="5.11"
-                fi
+    BIN_PKG=`which pkg 2> /dev/null`
+    if test -x "$BIN_PKG"; then
+        PKGFMRI=`$BIN_PKG $BASEDIR_PKGOPT contents -H -t set -a name=pkg.fmri -o pkg.fmri pkg:/system/kernel 2> /dev/null`
+        if test -z "$PKGFMRI"; then
+            # Perhaps this is old pkg without '-a' option and/or system/kernel is missing and it's part of 'entire'
+            # Try fallback.
+            PKGFMRI=`$BIN_PKG $BASEDIR_PKGOPT contents -H -t set -o pkg.fmri entire | head -1 2> /dev/null`
+            if test -z "$PKGFMRI"; then
+                # Perhaps entire is conflicting. Try using opensolaris/entire.
+                # Last fallback try.
+                PKGFMRI=`$BIN_PKG $BASEDIR_PKGOPT contents -H -t set -o pkg.fmri opensolaris.org/entire | head -1 2> /dev/null`
             fi
-            if test "$HOST_OS_MAJORVERSION" != "5.10"; then
-                HOST_OS_MINORVERSION=`cat "$PKG_INSTALL_ROOT/etc/release" | tr ' ' '\n' | egrep 'snv_|oi_' | sed -e "s/snv_//" -e "s/oi_//" -e "s/[^0-9]//"`
+        fi
+        if test ! -z "$PKGFMRI"; then
+            # The format is "pkg://solaris/system/kernel@0.5.11,5.11-0.161:20110315T070332Z"
+            #            or "pkg://solaris/system/kernel@0.5.11,5.11-0.175.0.0.0.1.0:20111012T032837Z"
+            STR_KERN=`echo "$PKGFMRI" | sed 's/^.*\@//;s/\:.*//;s/.*,//'`
+            if test ! -z "$STR_KERN"; then
+                # The format is "5.11-0.161" or "5.11-0.175.0.0.0.1.0"
+                HOST_OS_MAJORVERSION=`echo "$STR_KERN" | cut -f1 -d'-'`
+                HOST_OS_MINORVERSION=`echo "$STR_KERN" | cut -f2 -d'-' | cut -f2 -d '.'`
             else
-                HOST_OS_MINORVERSION=""
-            fi
+                errorprint "Failed to parse the Solaris kernel version."
+                exit 1
+            fi        
         else
-            HOST_OS_MAJORVERSION=""
-            HOST_OS_MINORVERSION=""
+            errorprint "Failed to detect the Solaris kernel version."
+            exit 1
+        fi
+    else
+        HOST_OS_MAJORVERSION=`uname -r`
+        if test -z "$HOST_OS_MAJORVERSION" || test "$HOST_OS_MAJORVERSION" != "5.10";  then
+            # S11 without 'pkg' ?? Something's wrong... bail.
+            errorprint "Solaris $HOST_OS_MAJOR_VERSION detected without executable $BIN_PKG !? Confused."
+            exit 1
+        fi
+        if test "$REMOTEINST" -eq 0; then
+            # Use uname to verify it's S10.
+            # Major version is S10, Minor version is no longer relevant (or used), use uname -v so it gets something
+            # like "Generic_blah" for purely cosmetic purposes
+            HOST_OS_MINORVERSION=`uname -v`
+        else
+            # Remote installs from S10 local.
+            BIN_PKGCHK=`which pkgchk 2> /dev/null`
+            if test ! -x "$BIN_PKGCHK"; then
+                errorprint "Failed to find an executable pkgchk binary $BIN_PKGCHK."
+                errorprint "Cannot determine Solaris version on remote target $PKG_INSTALL_ROOT"
+                exit 1
+            fi
+
+            REMOTE_S10=`$BIN_PKGCHK -l -p /kernel/amd64/genunix $BASEDIR_PKGOPT 2> /dev/null | grep SUNWckr | tr -d ' \t'`
+            if test ! -z "$REMOTE_S10" && test "$REMOTE_S10" = "SUNWckr"; then
+                HOST_OS_MAJORVERSION="5.10"
+                HOST_OS_MINORVERSION=""
+            else
+                errorprint "Remote target $PKG_INSTALL_ROOT is not Solaris 10."
+                errorprint "Will not attempt to install to an unidentified remote target."
+                exit 1
+            fi
         fi
     fi
 }
@@ -644,9 +680,6 @@ remove_drivers()
     unload_module "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$fatal"
     rem_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$fatal"
 
-# No separate VBI since 3.1
-#    unload_module "$MOD_VBI" "$DESC_VBI" "$fatal"
-
     # remove devlinks
     if test -h "$PKG_INSTALL_ROOT/dev/vboxdrv" || test -f "$PKG_INSTALL_ROOT/dev/vboxdrv"; then
         rm -f "$PKG_INSTALL_ROOT/dev/vboxdrv"
@@ -738,6 +771,49 @@ stop_process()
     fi
 }
 
+# start_service(servicename, shortFMRI pretty printing, full FMRI, log-file path)
+# failure: non-fatal
+start_service()
+{
+    if test -z "$1" || test -z "$2" || test -z "$3" || test -z "$4"; then
+        errorprint "missing argument to enable_service()"
+        exit 1
+    fi
+
+    # Since S11 the way to import a manifest is via restarting manifest-import which is asynchronous and can
+    # take a while to complete, using disable/enable -s doesn't work either. So we restart it, and poll in
+    # 1 second intervals to see if our service has been successfully imported and timeout after 'cmax' seconds.
+    cmax=32
+    cslept=0
+    success=0
+
+    $BIN_SVCS "$3" >/dev/null 2>&1
+    while test $? -ne 0;
+    do
+        sleep 1
+        cslept=`expr $cslept + 1`
+        if test "$cslept" -eq "$cmax"; then
+            success=1
+            break
+        fi
+        $BIN_SVCS "$3" >/dev/null 2>&1
+    done
+    if test "$success" -eq 0; then
+        $BIN_SVCADM enable -s "$3"
+        if test "$?" -eq 0; then
+            subprint "Loaded: $1"
+            return 0
+        else
+            warnprint "Loading $1  ...FAILED."
+            warnprint "Refer $4 for details."
+        fi
+    else
+        warnprint "Importing $1  ...FAILED."
+        warnprint "Refer /var/svc/log/system-manifest-import:default.log for details."
+    fi
+    return 1
+}
+
 
 # stop_service(servicename, shortFMRI-suitable for grep, full FMRI)
 # failure: non fatal
@@ -749,9 +825,9 @@ stop_service()
     fi
     servicefound=`$BIN_SVCS -a | grep "$2" 2>/dev/null`
     if test ! -z "$servicefound"; then
-        $BIN_SVCADM disable -s $3
+        $BIN_SVCADM disable -s "$3"
         # Don't delete the manifest, this is handled by the manifest class action
-        # $BIN_SVCCFG delete $3
+        # $BIN_SVCCFG delete "$3"
         if test "$?" -eq 0; then
             subprint "Unloaded: $1"
         else
@@ -775,6 +851,7 @@ cleanup_install()
     # stop the services
     stop_service "Web service" "virtualbox/webservice" "svc:/application/virtualbox/webservice:default"
     stop_service "Balloon control service" "virtualbox/balloonctrl" "svc:/application/virtualbox/balloonctrl:default"
+    stop_service "Autostart service" "virtualbox/autostart" "svc:/application/virtualbox/autostart:default"
     stop_service "Zone access service" "virtualbox/zoneaccess" "svc:/application/virtualbox/zoneaccess:default"
 
     # unplumb all vboxnet instances for non-remote installs
@@ -841,6 +918,17 @@ postinstall()
 
             # plumb and configure vboxnet0 for non-remote installs
             if test "$REMOTEINST" -eq 0; then
+                # S11 175a renames vboxnet0 as 'netX', undo this and rename it back
+                if test "$HOST_OS_MAJORVERSION" = "5.11" && test "$HOST_OS_MINORVERSION" -gt 174; then
+                    vanityname=`dladm show-phys -po link,device | grep vboxnet0 | cut -f1 -d':'`
+                    if test $? -eq 0 && test ! -z "$vanityname" && test "$vanityname" != "vboxnet0"; then
+                        dladm rename-link "$vanityname" vboxnet0
+                        if test $? -ne 0; then
+                            errorprint "Failed to rename vanity interface ($vanityname) to vboxnet0"
+                        fi
+                    fi
+                fi
+
                 $BIN_IFCONFIG vboxnet0 plumb
                 $BIN_IFCONFIG vboxnet0 up
                 if test "$?" -eq 0; then
@@ -890,7 +978,9 @@ postinstall()
                             warnprint "VirtualBox installers incorrectly overwrote. Now the contents"
                             warnprint "of /etc/netmasks and /etc/inet/netmasks differ, therefore "
                             warnprint "VirtualBox will not attempt to overwrite /etc/netmasks as a"
-                            warnprint "symlink to /etc/inet/netmasks. Please resolve this manually."
+                            warnprint "symlink to /etc/inet/netmasks. Please resolve this manually"
+                            warnprint "by updating /etc/inet/netmasks and creating /etc/netmasks as a"
+                            warnprint "symlink to /etc/inet/netmasks"
                         fi
                     fi
                 else
@@ -900,21 +990,18 @@ postinstall()
             fi
         fi
 
-        if test -f "$PKG_INSTALL_ROOT/var/svc/manifest/application/virtualbox/virtualbox-webservice.xml" || test -f "$PKG_INSTALL_ROOT/var/svc/manifest/application/virtualbox/virtualbox-zoneaccess.xml"; then
+        if     test -f "$PKG_INSTALL_ROOT/var/svc/manifest/application/virtualbox/virtualbox-webservice.xml" \
+            || test -f "$PKG_INSTALL_ROOT/var/svc/manifest/application/virtualbox/virtualbox-zoneaccess.xml" \
+            || test -f "$PKG_INSTALL_ROOT/var/svc/manifest/application/virtualbox/virtualbox-balloonctrl.xml"\
+            || test -f "$PKG_INSTALL_ROOT/var/svc/manifest/application/virtualbox/virtualbox-autostart.xml"; then
             infoprint "Configuring services..."
             if test "$REMOTEINST" -eq 1; then
                 subprint "Skipped for targetted installs."
             else
-                # Enable Zone access service for non-remote installs, other services (Webservice) are delivered disabled by the manifest class action
-                servicefound=`$BIN_SVCS -a | grep "virtualbox/zoneaccess" | grep "disabled" 2>/dev/null`
-                if test ! -z "$servicefound"; then
-                    /usr/sbin/svcadm enable -s svc:/application/virtualbox/zoneaccess
-                    if test "$?" -eq 0; then
-                        subprint "Loaded: Zone access service"
-                    else
-                        subprint "Loading Zone access service  ...FAILED."
-                    fi
-                fi
+                # Start ZoneAccess service, other services are disabled by default.
+                $BIN_SVCADM restart svc:system/manifest-import:default
+                start_service "Zone access service" "virtualbox/zoneaccess" "svc:/application/virtualbox/zoneaccess:default" \
+                                "/var/svc/log/application-virtualbox-zoneaccess:default.log"
             fi
         fi
 
@@ -996,18 +1083,18 @@ preremove()
 }
 
 
-
 # And it begins...
+if test "x${PKG_INSTALL_ROOT:=/}" != "x/"; then
+    BASEDIR_OPT="-b $PKG_INSTALL_ROOT"
+    BASEDIR_PKGOPT="-R $PKG_INSTALL_ROOT"
+    REMOTEINST=1
+fi
 find_bins
 check_root
 check_isa
 check_zone
 get_sysinfo
 
-if test "x${PKG_INSTALL_ROOT:=/}" != "x/"; then
-    BASEDIR_OPT="-b $PKG_INSTALL_ROOT"
-    REMOTEINST=1
-fi
 
 # Get command line options
 while test $# -gt 0;

@@ -1,4 +1,4 @@
-/* $Id: server_getshaders.c 33045 2010-10-11 16:57:21Z vboxsync $ */
+/* $Id: server_getshaders.c 40479 2012-03-15 14:16:50Z vboxsync $ */
 
 /** @file
  * VBox OpenGL GLSL related get functions
@@ -23,6 +23,8 @@
 #include "cr_net.h"
 #include "server_dispatch.h"
 #include "server.h"
+
+#include <iprt/assert.h>
 
 #ifdef CR_OPENGL_VERSION_2_0
 
@@ -105,13 +107,15 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchGetAttachedObjectsARB(GLhandleARB 
         GLsizei i;
         GLuint *ids=(GLuint*)&pLocal[1];
 
-        for (i=0; i<*pLocal; ++i);
+        for (i=0; i<*pLocal; ++i)
           ids[i] = crStateGLSLShaderHWIDtoID(ids[i]);
     }
 
     crServerReturnValue(pLocal, (*pLocal)*sizeof(GLhandleARB)+sizeof(GLsizei));
     crFree(pLocal);
 }
+
+AssertCompile(sizeof(GLsizei) == 4);
 
 void SERVER_DISPATCH_APIENTRY crServerDispatchGetInfoLogARB(GLhandleARB obj, GLsizei maxLength, GLsizei * length, GLcharARB * infoLog)
 {
@@ -128,7 +132,8 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchGetInfoLogARB(GLhandleARB obj, GLs
     hwid = crStateGetProgramHWID(obj);
     if (!hwid) hwid = crStateGetShaderHWID(obj);
     cr_server.head_spu->dispatch_table.GetInfoLogARB(hwid, maxLength, pLocal, (char*)&pLocal[1]);
-    crServerReturnValue(pLocal, (*pLocal)+1+sizeof(GLsizei));
+    CRASSERT((*pLocal) <= maxLength);
+    crServerReturnValue(pLocal, (*pLocal)+sizeof(GLsizei));
     crFree(pLocal);
 }
 
@@ -158,6 +163,7 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchGetProgramInfoLog(GLuint program, 
         crServerReturnValue(&zero, sizeof(zero));
     }
     cr_server.head_spu->dispatch_table.GetProgramInfoLog(crStateGetProgramHWID(program), bufSize, pLocal, (char*)&pLocal[1]);
+    CRASSERT(pLocal[0] <= bufSize);
     crServerReturnValue(pLocal, pLocal[0]+sizeof(GLsizei));
     crFree(pLocal);
 }
@@ -173,6 +179,7 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchGetShaderSource(GLuint shader, GLs
         crServerReturnValue(&zero, sizeof(zero));
     }
     cr_server.head_spu->dispatch_table.GetShaderSource(crStateGetShaderHWID(shader), bufSize, pLocal, (char*)&pLocal[1]);
+    CRASSERT(pLocal[0] <= bufSize);
     crServerReturnValue(pLocal, pLocal[0]+sizeof(GLsizei));
     crFree(pLocal);
 }

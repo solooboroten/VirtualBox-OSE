@@ -110,20 +110,28 @@ uint8_t ldub_code_raw(target_ulong pc)
         b = ldub_code(pc);
     return b;
 }
-#define ldub_code(a) ldub_code_raw(a)
+# define ldub_code(a) ldub_code_raw(a)
 
 uint16_t lduw_code_raw(target_ulong pc)
 {
-    return (ldub_code(pc+1) << 8) | ldub_code(pc);
+    uint16_t u16;
+    u16  = (uint16_t)ldub_code_raw(pc);
+    u16 |= (uint16_t)ldub_code_raw(pc + 1) << 8;
+    return u16;
 }
-#define lduw_code(a) lduw_code_raw(a)
+# define lduw_code(a) lduw_code_raw(a)
 
 
 uint32_t ldl_code_raw(target_ulong pc)
 {
-    return (ldub_code(pc+3) << 24) | (ldub_code(pc+2) << 16) | (ldub_code(pc+1) << 8) | ldub_code(pc);
+    uint32_t u32;
+    u32  = (uint32_t)ldub_code_raw(pc);
+    u32 |= (uint32_t)ldub_code_raw(pc + 1) << 8;
+    u32 |= (uint32_t)ldub_code_raw(pc + 2) << 16;
+    u32 |= (uint32_t)ldub_code_raw(pc + 3) << 24;
+    return u32;
 }
-#define ldl_code(a) ldl_code_raw(a)
+# define ldl_code(a) ldl_code_raw(a)
 
 #endif /* VBOX */
 
@@ -2554,17 +2562,6 @@ static inline void gen_op_movl_seg_T0_vm(int seg_reg)
     tcg_gen_shli_tl(cpu_T[0], cpu_T[0], 4);
     tcg_gen_st_tl(cpu_T[0], cpu_env,
                   offsetof(CPUX86State,segs[seg_reg].base));
-#ifdef VBOX
-    int flags = DESC_P_MASK | DESC_S_MASK | DESC_W_MASK;
-    if (seg_reg == R_CS)
-        flags |= DESC_CS_MASK;
-    gen_op_movl_T0_im(flags);
-    tcg_gen_st32_tl(cpu_T[0], cpu_env, offsetof(CPUX86State,segs[seg_reg].flags));
-
-    /* Set the limit to 0xffff. */
-    gen_op_movl_T0_im(0xffff);
-    tcg_gen_st32_tl(cpu_T[0], cpu_env, offsetof(CPUX86State,segs[seg_reg].limit));
-#endif
 }
 
 /* move T0 to seg_reg and compute if the CPU state may change. Never

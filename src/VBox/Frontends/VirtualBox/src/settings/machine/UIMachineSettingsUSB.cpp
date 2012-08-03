@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsUSB.cpp 38311 2011-08-04 13:08:39Z vboxsync $ */
+/* $Id: UIMachineSettingsUSB.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -17,7 +17,12 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* Local includes */
+/* Qt includes: */
+#include <QHeaderView>
+#include <QHelpEvent>
+#include <QToolTip>
+
+/* GUI includes: */
 #include "QIWidgetValidator.h"
 #include "UIIconPool.h"
 #include "VBoxGlobal.h"
@@ -25,9 +30,111 @@
 #include "UIToolBar.h"
 #include "UIMachineSettingsUSB.h"
 #include "UIMachineSettingsUSBFilterDetails.h"
+#include "UIConverter.h"
 
-/* Global includes */
-#include <QHeaderView>
+/* COM includes: */
+#include "CConsole.h"
+#include "CUSBController.h"
+#include "CUSBDevice.h"
+#include "CUSBDeviceFilter.h"
+#include "CHostUSBDevice.h"
+#include "CHostUSBDeviceFilter.h"
+#include "CExtPackManager.h"
+#include "CExtPack.h"
+
+/**
+ *  USB popup menu class.
+ *  This class provides the list of USB devices attached to the host.
+ */
+class VBoxUSBMenu : public QMenu
+{
+    Q_OBJECT;
+
+public:
+
+    /* Constructor: */
+    VBoxUSBMenu(QWidget *)
+    {
+        connect(this, SIGNAL(aboutToShow()), this, SLOT(processAboutToShow()));
+    }
+
+    /* Returns USB device related to passed action: */
+    const CUSBDevice& getUSB(QAction *pAction)
+    {
+        return m_usbDeviceMap[pAction];
+    }
+
+    /* Console setter: */
+    void setConsole(const CConsole &console)
+    {
+        m_console = console;
+    }
+
+private slots:
+
+    /* Prepare menu appearance: */
+    void processAboutToShow()
+    {
+        clear();
+        m_usbDeviceMap.clear();
+
+        CHost host = vboxGlobal().host();
+
+        bool fIsUSBEmpty = host.GetUSBDevices().size() == 0;
+        if (fIsUSBEmpty)
+        {
+            QAction *pAction = addAction(tr("<no devices available>", "USB devices"));
+            pAction->setEnabled(false);
+            pAction->setToolTip(tr("No supported devices connected to the host PC", "USB device tooltip"));
+        }
+        else
+        {
+            CHostUSBDeviceVector devvec = host.GetUSBDevices();
+            for (int i = 0; i < devvec.size(); ++i)
+            {
+                CHostUSBDevice dev = devvec[i];
+                CUSBDevice usb(dev);
+                QAction *pAction = addAction(vboxGlobal().details(usb));
+                pAction->setCheckable(true);
+                m_usbDeviceMap[pAction] = usb;
+                /* Check if created item was already attached to this session: */
+                if (!m_console.isNull())
+                {
+                    CUSBDevice attachedUSB = m_console.FindUSBDeviceById(usb.GetId());
+                    pAction->setChecked(!attachedUSB.isNull());
+                    pAction->setEnabled(dev.GetState() != KUSBDeviceState_Unavailable);
+                }
+            }
+        }
+    }
+
+private:
+
+    /* Event handler: */
+    bool event(QEvent *pEvent)
+    {
+        /* We provide dynamic tooltips for the usb devices: */
+        if (pEvent->type() == QEvent::ToolTip)
+        {
+            QHelpEvent *pHelpEvent = static_cast<QHelpEvent*>(pEvent);
+            QAction *pAction = actionAt(pHelpEvent->pos());
+            if (pAction)
+            {
+                CUSBDevice usb = m_usbDeviceMap[pAction];
+                if (!usb.isNull())
+                {
+                    QToolTip::showText(pHelpEvent->globalPos(), vboxGlobal().toolTip(usb));
+                    return true;
+                }
+            }
+        }
+        /* Call to base-class: */
+        return QMenu::event(pEvent);
+    }
+
+    QMap<QAction*, CUSBDevice> m_usbDeviceMap;
+    CConsole m_console;
+};
 
 UIMachineSettingsUSB::UIMachineSettingsUSB(UISettingsPageType type)
     : UISettingsPage(type)
@@ -150,7 +257,7 @@ void UIMachineSettingsUSB::loadToCacheFrom(QVariant &data)
         case UISettingsPageType_Global:
         {
             /* For each USB filter: */
-            const CHostUSBDeviceFilterVector &filters = vboxGlobal().virtualBox().GetHost().GetUSBDeviceFilters();
+            const CHostUSBDeviceFilterVector &filters = vboxGlobal().host().GetUSBDeviceFilters();
             for (int iFilterIndex = 0; iFilterIndex < filters.size(); ++iFilterIndex)
             {
                 /* Prepare USB filter data: */
@@ -201,7 +308,7 @@ void UIMachineSettingsUSB::loadToCacheFrom(QVariant &data)
             {
                 /* Gather USB values: */
                 usbData.m_fUSBEnabled = controller.GetEnabled();
-                usbData.m_fEHCIEnabled = controller.GetEnabledEhci();
+                usbData.m_fEHCIEnabled = controller.GetEnabledEHCI();
 
                 /* For each USB filter: */
                 const CUSBDeviceFilterVector &filters = controller.GetDeviceFilters();
@@ -308,8 +415,7 @@ void UIMachineSettingsUSB::putToCache()
             /* USB 1.0 (OHCI): */
             usbData.m_fUSBEnabled = mGbUSB->isChecked();
             /* USB 2.0 (EHCI): */
-            QString strExtPackName = "Oracle VM VirtualBox Extension Pack";
-            CExtPack extPack = vboxGlobal().virtualBox().GetExtensionPackManager().Find(strExtPackName);
+            CExtPack extPack = vboxGlobal().virtualBox().GetExtensionPackManager().Find(GUI_ExtPackName);
             usbData.m_fEHCIEnabled = extPack.isNull() || !extPack.GetUsable() ? false : mCbUSB2->isChecked();
 
             /* Update USB cache: */
@@ -346,7 +452,7 @@ void UIMachineSettingsUSB::saveFromCacheTo(QVariant &data)
                 if (isMachineInValidMode())
                 {
                     /* Get host: */
-                    CHost host = vboxGlobal().virtualBox().GetHost();
+                    CHost host = vboxGlobal().host();
                     /* For each USB filter data set: */
                     for (int iFilterIndex = 0; iFilterIndex < m_cache.childCount(); ++iFilterIndex)
                     {
@@ -399,7 +505,7 @@ void UIMachineSettingsUSB::saveFromCacheTo(QVariant &data)
                     if (isMachineOffline())
                     {
                         controller.SetEnabled(usbData.m_fUSBEnabled);
-                        controller.SetEnabledEhci(usbData.m_fEHCIEnabled);
+                        controller.SetEnabledEHCI(usbData.m_fEHCIEnabled);
                     }
                     /* Store USB filters data: */
                     if (isMachineInValidMode())
@@ -466,8 +572,9 @@ void UIMachineSettingsUSB::setValidator (QIWidgetValidator *aVal)
 bool UIMachineSettingsUSB::revalidate(QString &strWarningText, QString& /* strTitle */)
 {
     /* USB 2.0 Extension Pack presence test: */
-    QString strExtPackName = "Oracle VM VirtualBox Extension Pack";
-    CExtPack extPack = vboxGlobal().virtualBox().GetExtensionPackManager().Find(strExtPackName);
+    NOREF(strWarningText);
+#ifdef VBOX_WITH_EXTPACK
+    CExtPack extPack = vboxGlobal().virtualBox().GetExtensionPackManager().Find(GUI_ExtPackName);
     if (mGbUSB->isChecked() && mCbUSB2->isChecked() && (extPack.isNull() || !extPack.GetUsable()))
     {
         strWarningText = tr("USB 2.0 is currently enabled for this virtual machine. "
@@ -475,10 +582,11 @@ bool UIMachineSettingsUSB::revalidate(QString &strWarningText, QString& /* strTi
                             "Please install the Extension Pack from the VirtualBox download site. "
                             "After this you will be able to re-enable USB 2.0. "
                             "It will be disabled in the meantime unless you cancel the current settings changes.")
-                            .arg(strExtPackName);
-        msgCenter().remindAboutUnsupportedUSB2(strExtPackName, this);
+                            .arg(GUI_ExtPackName);
+        msgCenter().remindAboutUnsupportedUSB2(GUI_ExtPackName, this);
         return true;
     }
+#endif
     return true;
 }
 
@@ -712,7 +820,7 @@ void UIMachineSettingsUSB::edtClicked()
         {
             case UISettingsPageType_Global:
             {
-                usbFilterData.m_action = vboxGlobal().toUSBDevFilterAction(dlgFilterDetails.mCbAction->currentText());
+                usbFilterData.m_action = gpConverter->fromString<KUSBDeviceFilterAction>(dlgFilterDetails.mCbAction->currentText());
                 break;
             }
             case UISettingsPageType_Machine:
@@ -911,7 +1019,7 @@ QString UIMachineSettingsUSB::toolTipFor(const UIDataSettingsMachineUSBFilter &u
     if (usbFilterData.m_fHostUSBDevice)
     {
         strToolTip += strToolTip.isEmpty() ? "":"<br/>" + tr("<nobr>State: %1</nobr>", "USB filter tooltip")
-                                                          .arg(vboxGlobal().toString(usbFilterData.m_hostUSBDeviceState));
+                                                          .arg(gpConverter->toString(usbFilterData.m_hostUSBDeviceState));
     }
 
     return strToolTip;
@@ -923,4 +1031,6 @@ void UIMachineSettingsUSB::polishPage()
     mUSBChild->setEnabled(isMachineInValidMode() && mGbUSB->isChecked());
     mCbUSB2->setEnabled(isMachineOffline() && mGbUSB->isChecked());
 }
+
+#include "UIMachineSettingsUSB.moc"
 

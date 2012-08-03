@@ -1,4 +1,4 @@
-/* $Rev: 33595 $ */
+/* $Rev: 41722 $ */
 /** @file
  * VBoxGuest - Inter Driver Communication, unix implementation.
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -15,8 +15,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- * Some lines of code to disable the local APIC on x86_64 machines taken
- * from a Mandriva patch by Gwenole Beauchesne <gbeauchesne@mandriva.com>.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 
@@ -39,12 +46,45 @@ DECLVBGL(void *) VBoxGuestIDCOpen(uint32_t *pu32Version)
     LogFlow(("VBoxGuestIDCOpen: Version=%#x\n", pu32Version ? *pu32Version : 0));
 
     AssertPtrReturn(pu32Version, NULL);
+
+#ifdef RT_OS_SOLARIS
+    mutex_enter(&g_LdiMtx);
+    if (!g_LdiHandle)
+    {
+        ldi_ident_t DevIdent = ldi_ident_from_anon();
+        rc = ldi_open_by_name(VBOXGUEST_DEVICE_NAME, FREAD, kcred, &g_LdiHandle, DevIdent);
+        ldi_ident_release(DevIdent);
+        if (rc)
+        {
+            LogRel(("VBoxGuestIDCOpen: ldi_open_by_name failed. rc=%d\n", rc));
+            mutex_exit(&g_LdiMtx);
+            return NULL;
+        }
+    }
+    ++g_cLdiOpens;
+    mutex_exit(&g_LdiMtx);
+#endif
+
     rc = VBoxGuestCreateKernelSession(&g_DevExt, &pSession);
     if (RT_SUCCESS(rc))
     {
         *pu32Version = VMMDEV_VERSION;
         return pSession;
     }
+
+#ifdef RT_OS_SOLARIS
+    mutex_enter(&g_LdiMtx);
+    if (g_cLdiOpens > 0)
+        --g_cLdiOpens;
+    if (   g_cLdiOpens == 0
+        && g_LdiHandle)
+    {
+        ldi_close(g_LdiHandle, FREAD, kcred);
+        g_LdiHandle = NULL;
+    }
+    mutex_exit(&g_LdiMtx);
+#endif
+
     LogRel(("VBoxGuestIDCOpen: VBoxGuestCreateKernelSession failed. rc=%d\n", rc));
     return NULL;
 }
@@ -63,6 +103,20 @@ DECLVBGL(int) VBoxGuestIDCClose(void *pvSession)
 
     AssertPtrReturn(pSession, VERR_INVALID_POINTER);
     VBoxGuestCloseSession(&g_DevExt, pSession);
+
+#ifdef RT_OS_SOLARIS
+    mutex_enter(&g_LdiMtx);
+    if (g_cLdiOpens > 0)
+        --g_cLdiOpens;
+    if (   g_cLdiOpens == 0
+        && g_LdiHandle)
+    {
+        ldi_close(g_LdiHandle, FREAD, kcred);
+        g_LdiHandle = NULL;
+    }
+    mutex_exit(&g_LdiMtx);
+#endif
+
     return VINF_SUCCESS;
 }
 

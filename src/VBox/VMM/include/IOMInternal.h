@@ -1,4 +1,4 @@
-/* $Id: IOMInternal.h 37467 2011-06-15 13:08:45Z vboxsync $ */
+/* $Id: IOMInternal.h 41730 2012-06-14 23:28:16Z vboxsync $ */
 /** @file
  * IOM - Internal header file.
  */
@@ -50,17 +50,6 @@ typedef struct IOMMMIORANGE
     /** The reference counter. */
     uint32_t volatile           cRefs;
 
-    /** Pointer to user argument - R3. */
-    RTR3PTR                     pvUserR3;
-    /** Pointer to device instance - R3. */
-    PPDMDEVINSR3                pDevInsR3;
-    /** Pointer to write callback function - R3. */
-    R3PTRTYPE(PFNIOMMMIOWRITE)  pfnWriteCallbackR3;
-    /** Pointer to read callback function - R3. */
-    R3PTRTYPE(PFNIOMMMIOREAD)   pfnReadCallbackR3;
-    /** Pointer to fill (memset) callback function - R3. */
-    R3PTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackR3;
-
     /** Pointer to user argument - R0. */
     RTR0PTR                     pvUserR0;
     /** Pointer to device instance - R0. */
@@ -72,6 +61,9 @@ typedef struct IOMMMIORANGE
     /** Pointer to fill (memset) callback function - R0. */
     R0PTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackR0;
 
+    /** Flags, see IOMMMIO_FLAGS_XXX. */ /* (Placed here for alignment reasons.) */
+    uint32_t                    fFlags;
+
     /** Pointer to user argument - RC. */
     RTRCPTR                     pvUserRC;
     /** Pointer to device instance - RC. */
@@ -82,8 +74,17 @@ typedef struct IOMMMIORANGE
     RCPTRTYPE(PFNIOMMMIOREAD)   pfnReadCallbackRC;
     /** Pointer to fill (memset) callback function - RC. */
     RCPTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackRC;
-    /** Alignment padding. */
-    RTRCPTR                     RCPtrAlignment;
+
+    /** Pointer to user argument - R3. */
+    RTR3PTR                     pvUserR3;
+    /** Pointer to device instance - R3. */
+    PPDMDEVINSR3                pDevInsR3;
+    /** Pointer to write callback function - R3. */
+    R3PTRTYPE(PFNIOMMMIOWRITE)  pfnWriteCallbackR3;
+    /** Pointer to read callback function - R3. */
+    R3PTRTYPE(PFNIOMMMIOREAD)   pfnReadCallbackR3;
+    /** Pointer to fill (memset) callback function - R3. */
+    R3PTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackR3;
 
     /** Description / Name. For easing debugging. */
     R3PTRTYPE(const char *)     pszDesc;
@@ -401,16 +402,8 @@ typedef IOM *PIOM;
 typedef struct IOMCPU
 {
     /** For saving stack space, the disassembler state is allocated here instead of
-     * on the stack.
-     * @note The DISCPUSTATE structure is not R3/R0/RZ clean!  */
-    union
-    {
-        /** The disassembler scratch space. */
-        DISCPUSTATE                 DisState;
-        /** Padding. */
-        uint8_t                     abDisStatePadding[DISCPUSTATE_PADDING_SIZE];
-    };
-    uint8_t                         Dummy[16];
+     * on the stack. */
+    DISCPUSTATE                     DisState;
 } IOMCPU;
 /** Pointer to IOM per virtual CPU instance data. */
 typedef IOMCPU *PIOMCPU;
@@ -437,8 +430,8 @@ DECLCALLBACK(int)   IOMR3MMIOHandler(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, voi
 
 
 /* Disassembly helpers used in IOMAll.cpp & IOMAllMMIO.cpp */
-bool    iomGetRegImmData(PDISCPUSTATE pCpu, PCOP_PARAMETER pParam, PCPUMCTXCORE pRegFrame, uint64_t *pu64Data, unsigned *pcbSize);
-bool    iomSaveDataToReg(PDISCPUSTATE pCpu, PCOP_PARAMETER pParam, PCPUMCTXCORE pRegFrame, uint64_t u32Data);
+bool    iomGetRegImmData(PDISCPUSTATE pCpu, PCDISOPPARAM pParam, PCPUMCTXCORE pRegFrame, uint64_t *pu64Data, unsigned *pcbSize);
+bool    iomSaveDataToReg(PDISCPUSTATE pCpu, PCDISOPPARAM pParam, PCPUMCTXCORE pRegFrame, uint64_t u32Data);
 
 RT_C_DECLS_END
 

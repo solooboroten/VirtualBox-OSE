@@ -1,4 +1,4 @@
-/* $Id: DevBusLogic.cpp 37636 2011-06-24 14:59:59Z vboxsync $ */
+/* $Id: DevBusLogic.cpp 40963 2012-04-17 14:03:43Z vboxsync $ */
 /** @file
  * VBox storage devices: BusLogic SCSI host adapter BT-958.
  */
@@ -54,10 +54,13 @@
 /* Size of the reply buffer. */
 #define BUSLOGIC_REPLY_SIZE_MAX 64
 
-/* I/O port registered in the ISA compatible range to let the BIOS access
- * the controller.
+/*
+ * Custom fixed I/O ports for BIOS controller access. Note that these should
+ * not be in the ISA range (below 400h) to avoid conflicts with ISA device
+ * probing. Addresses in the 300h-340h range should be especially avoided.
  */
-#define BUSLOGIC_ISA_IO_PORT 0x330
+
+#define BUSLOGIC_BIOS_IO_PORT   0x330
 
 /** State saved version. */
 #define BUSLOGIC_SAVED_STATE_MINOR_VERSION 2
@@ -400,7 +403,7 @@ typedef struct BUSLOGIC
     /** Indicates that PDMDevHlpAsyncNotificationCompleted should be called when
      * a port is entering the idle state. */
     bool volatile                   fSignalIdle;
-    /** Flag whether we have tasks which need to be processed again- */
+    /** Flag whether we have tasks which need to be processed again. */
     bool volatile                   fRedo;
     /** List of tasks which can be redone. */
     R3PTRTYPE(volatile PBUSLOGICTASKSTATE) pTasksRedoHead;
@@ -938,7 +941,7 @@ static void buslogicIntiateHardReset(PBUSLOGIC pBusLogic)
  * Send a mailbox with set status codes to the guest.
  *
  * @returns nothing.
- * @param   pBusLogicR                Pointer to the BubsLogic device instance.
+ * @param   pBusLogic                 Pointer to the BusLogic device instance.
  * @param   pTaskState                Pointer to the task state with the mailbox to send.
  * @param   uHostAdapterStatus        The host adapter status code to set.
  * @param   uDeviceStatus             The target device status to set.
@@ -962,6 +965,7 @@ static void buslogicSendIncomingMailbox(PBUSLOGIC pBusLogic, PBUSLOGICTASKSTATE 
     /* Update CCB. */
     pTaskState->CommandControlBlockGuest.uHostAdapterStatus = uHostAdapterStatus;
     pTaskState->CommandControlBlockGuest.uDeviceStatus = uDeviceStatus;
+    /* @todo: this is wrong - writing too much! */
     PDMDevHlpPhysWrite(pBusLogic->CTX_SUFF(pDevIns), GCPhysAddrCCB, &pTaskState->CommandControlBlockGuest, sizeof(CommandControlBlock));
 
 #ifdef RT_STRICT
@@ -993,7 +997,7 @@ static void buslogicSendIncomingMailbox(PBUSLOGIC pBusLogic, PBUSLOGICTASKSTATE 
  * Dumps the content of a mailbox for debugging purposes.
  *
  * @return nothing
- * @param  pMailbox   The mialbox to dump.
+ * @param  pMailbox   The mailbox to dump.
  * @param  fOutgoing  true if dumping the outgoing state.
  *                    false if dumping the incoming state.
  */
@@ -1438,7 +1442,7 @@ static int buslogicProcessCommand(PBUSLOGIC pBusLogic)
             pBusLogic->GCPhysAddrMailboxIncomingBase = (RTGCPHYS)pRequest->uMailboxBaseAddress + (pBusLogic->cMailbox * sizeof(Mailbox));
 
             Log(("GCPhysAddrMailboxOutgoingBase=%RGp\n", pBusLogic->GCPhysAddrMailboxOutgoingBase));
-            Log(("GCPhysAddrMailboxOutgoingBase=%RGp\n", pBusLogic->GCPhysAddrMailboxIncomingBase));
+            Log(("GCPhysAddrMailboxIncomingBase=%RGp\n", pBusLogic->GCPhysAddrMailboxIncomingBase));
             Log(("cMailboxes=%u\n", pBusLogic->cMailbox));
 
             pBusLogic->regStatus &= ~BUSLOGIC_REGISTER_STATUS_INITIALIZATION_REQUIRED;
@@ -1633,7 +1637,7 @@ static int buslogicRegisterWrite(PBUSLOGIC pBusLogic, unsigned iRegister, uint8_
     {
         case BUSLOGIC_REGISTER_CONTROL:
         {
-            rc = PDMCritSectEnter(&pBusLogic->CritSectIntr, VINF_IOM_HC_IOPORT_WRITE);
+            rc = PDMCritSectEnter(&pBusLogic->CritSectIntr, VINF_IOM_R3_IOPORT_WRITE);
             if (rc != VINF_SUCCESS)
                 return rc;
 
@@ -1652,7 +1656,7 @@ static int buslogicRegisterWrite(PBUSLOGIC pBusLogic, unsigned iRegister, uint8_
 #ifdef IN_RING3
                 buslogicIntiateHardReset(pBusLogic);
 #else
-                rc = VINF_IOM_HC_IOPORT_WRITE;
+                rc = VINF_IOM_R3_IOPORT_WRITE;
 #endif
             }
 
@@ -1748,6 +1752,18 @@ static int buslogicRegisterWrite(PBUSLOGIC pBusLogic, unsigned iRegister, uint8_
             }
             break;
         }
+
+        /* On BusLogic adapters, the interrupt and geometry registers are R/W.
+         * That is different from Adaptec 154x where those are read only.
+         */
+        case BUSLOGIC_REGISTER_INTERRUPT:
+            pBusLogic->regInterrupt = uVal;
+            break;
+
+        case BUSLOGIC_REGISTER_GEOMETRY:
+            pBusLogic->regGeometry = uVal;
+            break;
+
         default:
             AssertMsgFailed(("Register not available\n"));
             rc = VERR_IOM_IOPORT_UNUSED;
@@ -1868,10 +1884,10 @@ static int  buslogicIsaIOPortRead (PPDMDEVINS pDevIns, void *pvUser,
     if (!pBusLogic->fISAEnabled)
         return VINF_SUCCESS;
 
-    rc = vboxscsiReadRegister(&pBusLogic->VBoxSCSI, (Port - BUSLOGIC_ISA_IO_PORT), pu32);
+    rc = vboxscsiReadRegister(&pBusLogic->VBoxSCSI, (Port - BUSLOGIC_BIOS_IO_PORT), pu32);
 
     //Log2(("%s: pu32=%p:{%.*Rhxs} iRegister=%d rc=%Rrc\n",
-    //      __FUNCTION__, pu32, 1, pu32, (Port - BUSLOGIC_ISA_IO_PORT), rc));
+    //      __FUNCTION__, pu32, 1, pu32, (Port - BUSLOGIC_BIOS_IO_PORT), rc));
 
     return rc;
 }
@@ -2005,7 +2021,7 @@ static int buslogicIsaIOPortWrite (PPDMDEVINS pDevIns, void *pvUser,
     if (!pBusLogic->fISAEnabled)
         return VINF_SUCCESS;
 
-    rc = vboxscsiWriteRegister(&pBusLogic->VBoxSCSI, (Port - BUSLOGIC_ISA_IO_PORT), (uint8_t)u32);
+    rc = vboxscsiWriteRegister(&pBusLogic->VBoxSCSI, (Port - BUSLOGIC_BIOS_IO_PORT), (uint8_t)u32);
     if (rc == VERR_MORE_DATA)
     {
         rc = buslogicPrepareBIOSSCSIRequest(pBusLogic);
@@ -2029,7 +2045,7 @@ static DECLCALLBACK(int) buslogicIsaIOPortWriteStr(PPDMDEVINS pDevIns, void *pvU
     Log2(("#%d %s: pvUser=%#p cb=%d Port=%#x\n",
           pDevIns->iInstance, __FUNCTION__, pvUser, cb, Port));
 
-    rc = vboxscsiWriteString(pDevIns, &pBusLogic->VBoxSCSI, (Port - BUSLOGIC_ISA_IO_PORT),
+    rc = vboxscsiWriteString(pDevIns, &pBusLogic->VBoxSCSI, (Port - BUSLOGIC_BIOS_IO_PORT),
                              pGCPtrSrc, pcTransfer, cb);
     if (rc == VERR_MORE_DATA)
     {
@@ -2053,7 +2069,7 @@ static DECLCALLBACK(int) buslogicIsaIOPortReadStr(PPDMDEVINS pDevIns, void *pvUs
     LogFlowFunc(("#%d %s: pvUser=%#p cb=%d Port=%#x\n",
                  pDevIns->iInstance, __FUNCTION__, pvUser, cb, Port));
 
-    return vboxscsiReadString(pDevIns, &pBusLogic->VBoxSCSI, (Port - BUSLOGIC_ISA_IO_PORT),
+    return vboxscsiReadString(pDevIns, &pBusLogic->VBoxSCSI, (Port - BUSLOGIC_BIOS_IO_PORT),
                               pGCPtrDst, pcTransfer, cb);
 }
 
@@ -2072,23 +2088,24 @@ static DECLCALLBACK(int) buslogicMMIOMap(PPCIDEVICE pPciDev, /*unsigned*/ int iR
     if (enmType == PCI_ADDRESS_SPACE_MEM)
     {
         /* We use the assigned size here, because we currently only support page aligned MMIO ranges. */
-        rc = PDMDevHlpMMIORegister(pDevIns, GCPhysAddress, cb, NULL,
-                                   buslogicMMIOWrite, buslogicMMIORead, NULL, "BusLogic");
+        rc = PDMDevHlpMMIORegister(pDevIns, GCPhysAddress, cb, NULL /*pvUser*/,
+                                   IOMMMIO_FLAGS_READ_PASSTHRU | IOMMMIO_FLAGS_WRITE_PASSTHRU,
+                                   buslogicMMIOWrite, buslogicMMIORead, "BusLogic");
         if (RT_FAILURE(rc))
             return rc;
 
         if (pThis->fR0Enabled)
         {
-            rc = PDMDevHlpMMIORegisterR0(pDevIns, GCPhysAddress, cb, 0,
-                                         "buslogicMMIOWrite", "buslogicMMIORead", NULL);
+            rc = PDMDevHlpMMIORegisterR0(pDevIns, GCPhysAddress, cb, NIL_RTR0PTR /*pvUser*/,
+                                         "buslogicMMIOWrite", "buslogicMMIORead");
             if (RT_FAILURE(rc))
                 return rc;
         }
 
         if (pThis->fGCEnabled)
         {
-            rc = PDMDevHlpMMIORegisterRC(pDevIns, GCPhysAddress, cb, 0,
-                                         "buslogicMMIOWrite", "buslogicMMIORead", NULL);
+            rc = PDMDevHlpMMIORegisterRC(pDevIns, GCPhysAddress, cb, NIL_RTRCPTR /*pvUser*/,
+                                         "buslogicMMIOWrite", "buslogicMMIORead");
             if (RT_FAILURE(rc))
                 return rc;
         }
@@ -2172,10 +2189,18 @@ static DECLCALLBACK(int) buslogicDeviceSCSIRequestCompleted(PPDMISCSIPORT pInter
             if (pTaskState->pbSenseBuffer)
                 buslogicSenseBufferFree(pTaskState, (rcCompletion != SCSI_STATUS_OK));
 
-            buslogicSendIncomingMailbox(pBusLogic, pTaskState,
-                                        BUSLOGIC_MAILBOX_INCOMING_ADAPTER_STATUS_CMD_COMPLETED,
-                                        BUSLOGIC_MAILBOX_INCOMING_DEVICE_STATUS_OPERATION_GOOD,
-                                        BUSLOGIC_MAILBOX_INCOMING_COMPLETION_WITHOUT_ERROR);
+            if (rcCompletion == SCSI_STATUS_OK)
+                buslogicSendIncomingMailbox(pBusLogic, pTaskState,
+                                            BUSLOGIC_MAILBOX_INCOMING_ADAPTER_STATUS_CMD_COMPLETED,
+                                            BUSLOGIC_MAILBOX_INCOMING_DEVICE_STATUS_OPERATION_GOOD,
+                                            BUSLOGIC_MAILBOX_INCOMING_COMPLETION_WITHOUT_ERROR);
+            else if (rcCompletion == SCSI_STATUS_CHECK_CONDITION)
+                buslogicSendIncomingMailbox(pBusLogic, pTaskState,
+                                            BUSLOGIC_MAILBOX_INCOMING_ADAPTER_STATUS_CMD_COMPLETED,
+                                            BUSLOGIC_MAILBOX_INCOMING_DEVICE_STATUS_CHECK_CONDITION,
+                                            BUSLOGIC_MAILBOX_INCOMING_COMPLETION_WITH_ERROR);
+            else
+                AssertMsgFailed(("invalid completion status %d\n", rcCompletion));
         }
 
         /* Add task to the cache. */
@@ -2406,7 +2431,7 @@ static DECLCALLBACK(bool) buslogicNotifyQueueConsumer(PPDMDEVINS pDevIns, PPDMQU
  * or loaded from a saved state.
  *
  * @returns nothing.
- * @param   pThis    The LsiLogic device instance.
+ * @param   pThis    The BusLogic device instance.
  */
 static void buslogicKick(PBUSLOGIC pThis)
 {
@@ -2732,7 +2757,7 @@ static DECLCALLBACK(void *) buslogicStatusQueryInterface(PPDMIBASE pInterface, c
  /**
  * Checks if all asynchronous I/O is finished.
  *
- * Used by lsilogicReset, lsilogicSuspend and lsilogicPowerOff.
+ * Used by buslogicReset, buslogicSuspend and buslogicPowerOff.
  *
  * @returns true if quiesced, false if busy.
  * @param   pDevIns         The device instance.
@@ -2755,7 +2780,7 @@ static bool buslogicR3AllAsyncIOIsFinished(PPDMDEVINS pDevIns)
 }
 
 /**
- * Callback employed by lsilogicR3Suspend and lsilogicR3PowerOff..
+ * Callback employed by buslogicR3Suspend and buslogicR3PowerOff..
  *
  * @returns true if we've quiesced, false if we're still working.
  * @param   pDevIns     The device instance.
@@ -3101,7 +3126,7 @@ static DECLCALLBACK(int) buslogicConstruct(PPDMDEVINS pDevIns, int iInstance, PC
     if (fBootable)
     {
         /* Register I/O port space in ISA region for BIOS access. */
-        rc = PDMDevHlpIOPortRegister(pDevIns, BUSLOGIC_ISA_IO_PORT, 3, NULL,
+        rc = PDMDevHlpIOPortRegister(pDevIns, BUSLOGIC_BIOS_IO_PORT, 3, NULL,
                                      buslogicIsaIOPortWrite, buslogicIsaIOPortRead,
                                      buslogicIsaIOPortWriteStr, buslogicIsaIOPortReadStr,
                                      "BusLogic BIOS");
@@ -3118,7 +3143,7 @@ static DECLCALLBACK(int) buslogicConstruct(PPDMDEVINS pDevIns, int iInstance, PC
 
     /* Initialize task queue. */
     rc = PDMDevHlpQueueCreate(pDevIns, sizeof(PDMQUEUEITEMCORE), 5, 0,
-                              buslogicNotifyQueueConsumer, true, "BugLogicTask", &pThis->pNotifierQueueR3);
+                              buslogicNotifyQueueConsumer, true, "BusLogicTask", &pThis->pNotifierQueueR3);
     if (RT_FAILURE(rc))
         return rc;
     pThis->pNotifierQueueR0 = PDMQueueR0Ptr(pThis->pNotifierQueueR3);
@@ -3219,7 +3244,7 @@ const PDMDEVREG g_DeviceBusLogic =
     /* fClass */
     PDM_DEVREG_CLASS_STORAGE,
     /* cMaxInstances */
-    ~0,
+    ~0U,
     /* cbInstance */
     sizeof(BUSLOGIC),
     /* pfnConstruct */

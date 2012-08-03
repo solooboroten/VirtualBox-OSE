@@ -1,10 +1,10 @@
-/* $Id: memobj-r0drv-darwin.cpp 36555 2011-04-05 12:34:09Z vboxsync $ */
+/* $Id: memobj-r0drv-darwin.cpp 42037 2012-07-06 05:58:07Z vboxsync $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Darwin.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -34,6 +34,7 @@
 
 #include <iprt/asm.h>
 #if defined(RT_ARCH_AMD64) || defined(RT_ARCH_X86)
+# include <iprt/x86.h>
 # include <iprt/asm-amd64-x86.h>
 #endif
 #include <iprt/assert.h>
@@ -66,13 +67,14 @@ typedef struct RTR0MEMOBJDARWIN
 
 
 /**
- * HACK ALERT!
+ * Touch the pages to force the kernel to create or write-enable the page table
+ * entries.
  *
- * Touch the pages to force the kernel to create  the page
- * table entries. This is necessary since the kernel gets
- * upset if we take a page fault when preemption is disabled
- * and/or we own a simple lock. It has no problems with us
- * disabling interrupts when taking the traps, weird stuff.
+ * This is necessary since the kernel gets upset if we take a page fault when
+ * preemption is disabled and/or we own a simple lock (same thing).  It has no
+ * problems with us disabling interrupts when taking the traps, weird stuff.
+ *
+ * (This is basically a way of invoking vm_fault on a range of pages.)
  *
  * @param  pv           Pointer to the first page.
  * @param  cb           The number of bytes.
@@ -83,6 +85,32 @@ static void rtR0MemObjDarwinTouchPages(void *pv, size_t cb)
     for (;;)
     {
         ASMAtomicCmpXchgU32(pu32, 0xdeadbeef, 0xdeadbeef);
+        if (cb <= PAGE_SIZE)
+            break;
+        cb -= PAGE_SIZE;
+        pu32 += PAGE_SIZE / sizeof(uint32_t);
+    }
+}
+
+
+/**
+ * Read (sniff) every page in the range to make sure there are some page tables
+ * entries backing it.
+ *
+ * This is just to be sure vm_protect didn't remove stuff without re-adding it
+ * if someone should try write-protect something.
+ *
+ * @param  pv           Pointer to the first page.
+ * @param  cb           The number of bytes.
+ */
+static void rtR0MemObjDarwinSniffPages(void const *pv, size_t cb)
+{
+    uint32_t volatile  *pu32 = (uint32_t volatile *)pv;
+    uint32_t volatile   u32Counter = 0;
+    for (;;)
+    {
+        u32Counter += *pu32;
+
         if (cb <= PAGE_SIZE)
             break;
         cb -= PAGE_SIZE;
@@ -193,7 +221,7 @@ static void rtR0MemObjDarwinReadPhys(RTHCPHYS HCPhys, size_t cb, void *pvDst)
 {
     memset(pvDst, '\0', cb);
 
-    IOAddressRange      aRanges[1]  = { { (mach_vm_address_t)HCPhys, RT_ALIGN(cb, PAGE_SIZE) } };
+    IOAddressRange      aRanges[1]  = { { (mach_vm_address_t)HCPhys, RT_ALIGN_Z(cb, PAGE_SIZE) } };
     IOMemoryDescriptor *pMemDesc    = IOMemoryDescriptor::withAddressRanges(&aRanges[0], RT_ELEMENTS(aRanges),
                                                                             kIODirectionIn, NULL /*task*/);
     if (pMemDesc)
@@ -232,14 +260,14 @@ static uint64_t rtR0MemObjDarwinGetPTE(void *pvPage)
     RTCCUINTREG cr4 = ASMGetCR4();
     bool        fPAE = false;
     bool        fLMA = false;
-    if (cr4 & RT_BIT(5) /*X86_CR4_PAE*/)
+    if (cr4 & X86_CR4_PAE)
     {
         fPAE = true;
-        uint32_t fAmdFeatures = ASMCpuId_EDX(0x80000001);
-        if (fAmdFeatures & RT_BIT(29) /*X86_CPUID_AMD_FEATURE_EDX_LONG_MODE*/)
+        uint32_t fExtFeatures = ASMCpuId_EDX(0x80000001);
+        if (fExtFeatures & X86_CPUID_EXT_FEATURE_EDX_LONG_MODE)
         {
-            uint64_t efer = ASMRdMsr(0xc0000080 /*MSR_K6_EFER*/);
-            if (efer & RT_BIT(10) /*MSR_K6_EFER_LMA*/)
+            uint64_t efer = ASMRdMsr(MSR_K6_EFER);
+            if (efer & MSR_K6_EFER_LMA)
                 fLMA = true;
         }
     }
@@ -247,36 +275,36 @@ static uint64_t rtR0MemObjDarwinGetPTE(void *pvPage)
     if (fLMA)
     {
         /* PML4 */
-        rtR0MemObjDarwinReadPhys((cr3 & ~(RTCCUINTREG)PAGE_OFFSET_MASK) | (((uint64_t)(uintptr_t)pvPage >> 39) & 0x1ff) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        rtR0MemObjDarwinReadPhys((cr3 & ~(RTCCUINTREG)PAGE_OFFSET_MASK) | (((uint64_t)(uintptr_t)pvPage >> X86_PML4_SHIFT) & X86_PML4_MASK) * 8, 8, &u64);
+        if (!(u64.u & X86_PML4E_P))
         {
             printf("rtR0MemObjDarwinGetPTE: %p -> PML4E !p\n", pvPage);
             return 0;
         }
 
         /* PDPTR */
-        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 30) & 0x1ff) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PDPT_SHIFT) & X86_PDPT_MASK_AMD64) * 8, 8, &u64);
+        if (!(u64.u & X86_PDPE_P))
         {
             printf("rtR0MemObjDarwinGetPTE: %p -> PDPTE !p\n", pvPage);
             return 0;
         }
-        if (u64.u & RT_BIT(7) /* big */)
+        if (u64.u & X86_PDPE_LM_PS)
             return (u64.u & ~(uint64_t)(_1G -1)) | ((uintptr_t)pvPage & (_1G -1));
 
         /* PD */
-        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 21) & 0x1ff) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PD_PAE_SHIFT) & X86_PD_PAE_MASK) * 8, 8, &u64);
+        if (!(u64.u & X86_PDE_P))
         {
             printf("rtR0MemObjDarwinGetPTE: %p -> PDE !p\n", pvPage);
             return 0;
         }
-        if (u64.u & RT_BIT(7) /* big */)
+        if (u64.u & X86_PDE_PS)
             return (u64.u & ~(uint64_t)(_2M -1)) | ((uintptr_t)pvPage & (_2M -1));
 
-        /* PD */
-        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 12) & 0x1ff) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        /* PT */
+        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PT_PAE_SHIFT) & X86_PT_PAE_MASK) * 8, 8, &u64);
+        if (!(u64.u &  X86_PTE_P))
         {
             printf("rtR0MemObjDarwinGetPTE: %p -> PTE !p\n", pvPage);
             return 0;
@@ -287,34 +315,34 @@ static uint64_t rtR0MemObjDarwinGetPTE(void *pvPage)
     if (fPAE)
     {
         /* PDPTR */
-        rtR0MemObjDarwinReadPhys((u64.u & 0xffffffe0 /*X86_CR3_PAE_PAGE_MASK*/) | (((uintptr_t)pvPage >> 30) & 0x3) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        rtR0MemObjDarwinReadPhys((u64.u & X86_CR3_PAE_PAGE_MASK) | (((uintptr_t)pvPage >> X86_PDPT_SHIFT) & X86_PDPT_MASK_PAE) * 8, 8, &u64);
+        if (!(u64.u & X86_PDE_P))
             return 0;
 
         /* PD */
-        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 21) & 0x1ff) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PD_PAE_SHIFT) & X86_PD_PAE_MASK) * 8, 8, &u64);
+        if (!(u64.u & X86_PDE_P))
             return 0;
-        if (u64.u & RT_BIT(7) /* big */)
+        if (u64.u & X86_PDE_PS)
             return (u64.u & ~(uint64_t)(_2M -1)) | ((uintptr_t)pvPage & (_2M -1));
 
-        /* PD */
-        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 12) & 0x1ff) * 8, 8, &u64);
-        if (!(u64.u & RT_BIT(0) /* present */))
+        /* PT */
+        rtR0MemObjDarwinReadPhys((u64.u & ~(uint64_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PT_PAE_SHIFT) & X86_PT_PAE_MASK) * 8, 8, &u64);
+        if (!(u64.u & X86_PTE_P))
             return 0;
         return u64.u;
     }
 
     /* PD */
-    rtR0MemObjDarwinReadPhys((u64.au32[0] & ~(uint32_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 22) & 0x3ff) * 4, 4, &u64);
-    if (!(u64.au32[0] & RT_BIT(0) /* present */))
+    rtR0MemObjDarwinReadPhys((u64.au32[0] & ~(uint32_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PD_SHIFT) & X86_PD_MASK) * 4, 4, &u64);
+    if (!(u64.au32[0] & X86_PDE_P))
         return 0;
-    if (u64.au32[0] & RT_BIT(7) /* big */)
+    if (u64.au32[0] & X86_PDE_PS)
         return (u64.u & ~(uint64_t)(_2M -1)) | ((uintptr_t)pvPage & (_2M -1));
 
-    /* PD */
-    rtR0MemObjDarwinReadPhys((u64.au32[0] & ~(uint32_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> 12) & 0x3ff) * 4, 4, &u64);
-    if (!(u64.au32[0] & RT_BIT(0) /* present */))
+    /* PT */
+    rtR0MemObjDarwinReadPhys((u64.au32[0] & ~(uint32_t)PAGE_OFFSET_MASK) | (((uintptr_t)pvPage >> X86_PT_SHIFT) & X86_PT_MASK) * 4, 4, &u64);
+    if (!(u64.au32[0] & X86_PTE_P))
         return 0;
     return u64.au32[0];
 
@@ -425,20 +453,25 @@ static int rtR0MemObjNativeAllocWorker(PPRTR0MEMOBJINTERNAL ppMem, size_t cb,
      *
      * The kIOMemoryKernelUserShared flag just forces the result to be page aligned.
      */
+#if 1 /** @todo Figure out why this is broken. Is it only on snow leopard? Seen allocating memory for the VM structure, last page corrupted or inaccessible. */
+    size_t const cbFudged = cb + PAGE_SIZE;
+#else
+    size_t const cbFudged = cb;
+#endif
     int rc;
     IOBufferMemoryDescriptor *pMemDesc =
         IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
                                                            kIOMemoryKernelUserShared
                                                          | kIODirectionInOut
                                                          | (fContiguous ? kIOMemoryPhysicallyContiguous : 0),
-                                                         cb,
+                                                         cbFudged,
                                                          PhysMask);
     if (pMemDesc)
     {
         IOReturn IORet = pMemDesc->prepare(kIODirectionInOut);
         if (IORet == kIOReturnSuccess)
         {
-            void *pv = pMemDesc->getBytesNoCopy(0, cb);
+            void *pv = pMemDesc->getBytesNoCopy(0, cbFudged);
             if (pv)
             {
                 /*
@@ -502,12 +535,39 @@ static int rtR0MemObjNativeAllocWorker(PPRTR0MEMOBJINTERNAL ppMem, size_t cb,
                             AssertMsgFailed(("enmType=%d\n", enmType));
                     }
 
-                    pMemDarwin->pMemDesc = pMemDesc;
-                    *ppMem = &pMemDarwin->Core;
-                    return VINF_SUCCESS;
+#if 1 /* Experimental code. */
+                    if (fExecutable)
+                    {
+                        rc = rtR0MemObjNativeProtect(&pMemDarwin->Core, 0, cb, RTMEM_PROT_READ | RTMEM_PROT_WRITE | RTMEM_PROT_EXEC);
+# ifdef RT_STRICT
+                        /* check that the memory is actually mapped. */
+                        RTTHREADPREEMPTSTATE State = RTTHREADPREEMPTSTATE_INITIALIZER;
+                        RTThreadPreemptDisable(&State);
+                        rtR0MemObjDarwinTouchPages(pv, cb);
+                        RTThreadPreemptRestore(&State);
+# endif
+                    }
+                    else
+#endif
+                        rc = VINF_SUCCESS;
+                    if (RT_SUCCESS(rc))
+                    {
+                        pMemDarwin->pMemDesc = pMemDesc;
+                        *ppMem = &pMemDarwin->Core;
+                        return VINF_SUCCESS;
+                    }
+
+                    rtR0MemObjDelete(&pMemDarwin->Core);
                 }
 
-                rc = VERR_NO_MEMORY;
+                if (enmType == RTR0MEMOBJTYPE_PHYS_NC)
+                    rc = VERR_NO_PHYS_MEMORY;
+                else if (enmType == RTR0MEMOBJTYPE_LOW)
+                    rc = VERR_NO_LOW_MEMORY;
+                else if (enmType == RTR0MEMOBJTYPE_CONT)
+                    rc = VERR_NO_CONT_MEMORY;
+                else
+                    rc = VERR_NO_MEMORY;
             }
             else
                 rc = VERR_MEMOBJ_INIT_FAILED;
@@ -823,7 +883,7 @@ DECLHIDDEN(int) rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ
                         /* HACK ALERT! */
                         rtR0MemObjDarwinTouchPages(pv, cbSub);
                         /** @todo First, the memory should've been mapped by now, and second, it
-                         *        should have the wired attribute in the PTE (bit 9). Neither is
+                         *        should have the wired attribute in the PTE (bit 9). Neither
                          *        seems to be the case. The disabled locking code doesn't make any
                          *        difference, which is extremely odd, and breaks
                          *        rtR0MemObjNativeGetPagePhysAddr (getPhysicalSegment64 -> 64 for the
@@ -932,7 +992,9 @@ DECLHIDDEN(int) rtR0MemObjNativeProtect(PRTR0MEMOBJINTERNAL pMem, size_t offSub,
     if (!pVmMap)
         return VERR_NOT_SUPPORTED;
 
-    /* Convert the protection. */
+    /*
+     * Convert the protection.
+     */
     vm_prot_t fMachProt;
     switch (fProt)
     {
@@ -948,17 +1010,22 @@ DECLHIDDEN(int) rtR0MemObjNativeProtect(PRTR0MEMOBJINTERNAL pMem, size_t offSub,
         case RTMEM_PROT_READ | RTMEM_PROT_WRITE | RTMEM_PROT_EXEC:
             fMachProt = VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE;
             break;
+        case RTMEM_PROT_WRITE:
+            fMachProt = VM_PROT_WRITE | VM_PROT_READ;                   /* never write-only */
+            break;
         case RTMEM_PROT_WRITE | RTMEM_PROT_EXEC:
-            fMachProt = VM_PROT_WRITE | VM_PROT_EXECUTE;
+            fMachProt = VM_PROT_WRITE | VM_PROT_EXECUTE | VM_PROT_READ; /* never write-only or execute-only */
             break;
         case RTMEM_PROT_EXEC:
-            fMachProt = VM_PROT_EXECUTE;
+            fMachProt = VM_PROT_EXECUTE | VM_PROT_READ;                 /* never execute-only */
             break;
         default:
             AssertFailedReturn(VERR_INVALID_PARAMETER);
     }
 
-    /* do the job. */
+    /*
+     * Do the job.
+     */
     vm_offset_t Start = (uintptr_t)pMem->pv + offSub;
     kern_return_t krc = vm_protect(pVmMap,
                                    Start,
@@ -967,6 +1034,27 @@ DECLHIDDEN(int) rtR0MemObjNativeProtect(PRTR0MEMOBJINTERNAL pMem, size_t offSub,
                                    fMachProt);
     if (krc != KERN_SUCCESS)
         return RTErrConvertFromDarwinKern(krc);
+
+    /*
+     * Touch the pages if they should be writable afterwards and accessible
+     * from code which should never fault. vm_protect() may leave pages
+     * temporarily write protected, possibly due to pmap no-upgrade rules?
+     *
+     * This is the same trick (or HACK ALERT if you like) as applied in
+     * rtR0MemObjNativeMapKernel.
+     */
+    if (   pMem->enmType != RTR0MEMOBJTYPE_MAPPING
+        || pMem->u.Mapping.R0Process == NIL_RTR0PROCESS)
+    {
+        if (fProt & RTMEM_PROT_WRITE)
+            rtR0MemObjDarwinTouchPages((void *)Start, cbSub);
+        /*
+         * Sniff (read) read-only pages too, just to be sure.
+         */
+        else if (fProt & (RTMEM_PROT_READ | RTMEM_PROT_EXEC))
+            rtR0MemObjDarwinSniffPages((void const *)Start, cbSub);
+    }
+
     return VINF_SUCCESS;
 }
 

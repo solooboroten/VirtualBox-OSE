@@ -1,4 +1,4 @@
-/* $Id: EventQueue.cpp 33720 2010-11-03 10:54:42Z vboxsync $ */
+/* $Id: EventQueue.cpp 41015 2012-04-20 21:13:11Z vboxsync $ */
 /** @file
  * MS COM / XPCOM Abstraction Layer:
  * Event and EventQueue class declaration
@@ -29,6 +29,7 @@
 #include <iprt/err.h>
 #include <iprt/time.h>
 #include <iprt/thread.h>
+#include <iprt/log.h>
 #ifdef USE_XPCOM_QUEUE
 # include <errno.h>
 #endif
@@ -236,16 +237,18 @@ int EventQueue::init()
 /* static */
 int EventQueue::uninit()
 {
-    Assert(sMainQueue);
-    /* Must process all events to make sure that no NULL event is left
-     * after this point. It would need to modify the state of sMainQueue. */
+    if (sMainQueue)
+    {
+        /* Must process all events to make sure that no NULL event is left
+         * after this point. It would need to modify the state of sMainQueue. */
 #ifdef RT_OS_DARWIN /* Do not process the native runloop, the toolkit may not be ready for it. */
-    sMainQueue->mEventQ->ProcessPendingEvents();
+        sMainQueue->mEventQ->ProcessPendingEvents();
 #else
-    sMainQueue->processEventQueue(0);
+        sMainQueue->processEventQueue(0);
 #endif
-    delete sMainQueue;
-    sMainQueue = NULL;
+        delete sMainQueue;
+        sMainQueue = NULL;
+    }
     return VINF_SUCCESS;
 }
 
@@ -340,6 +343,13 @@ static int waitForEventsOnXPCOM(nsIEventQueue *pQueue, RTMSINTERVAL cMsTimeout)
         rc = VINF_INTERRUPTED;
     else
     {
+        static uint32_t s_ErrorCount = 0;
+        if (s_ErrorCount < 500)
+        {
+            LogRel(("waitForEventsOnXPCOM rc=%d errno=%d\n", rc, errno));
+            ++s_ErrorCount;
+        }
+
         AssertMsgFailed(("rc=%d errno=%d\n", rc, errno));
         rc = VERR_INTERNAL_ERROR_4;
     }
@@ -510,7 +520,8 @@ int EventQueue::processEventQueue(RTMSINTERVAL cMsTimeout)
     }
 
     if (  (   RT_SUCCESS(rc)
-           || rc == VERR_INTERRUPTED)
+           || rc == VERR_INTERRUPTED
+           || rc == VERR_TIMEOUT)
         && mInterrupted)
     {
         mInterrupted = false;

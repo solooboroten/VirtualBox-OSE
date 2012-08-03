@@ -1,4 +1,4 @@
-/* $Id: tar.cpp 35351 2010-12-27 17:04:17Z vboxsync $ */
+/* $Id: tar.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
 /** @file
  * IPRT - Tar archive I/O.
  */
@@ -598,7 +598,6 @@ static int rtTarAppendFileFromFile(RTTAR hTar, const char *pszSrcName, const uin
          * size aligned. */
         uint64_t cbAllWritten = 0; /* Already copied */
         uint64_t cbRead       = 0; /* Actually read in the last step */
-        uint64_t cbWrite      = 0; /* Actually write in the last step */
         for (;;)
         {
             if (pfnProgressCallback)
@@ -690,6 +689,7 @@ static int rtTarFindFile(RTFILE hFile, const char *pszFile, uint64_t *poff, uint
     return rc;
 }
 
+#ifdef SOME_UNUSED_FUNCTION
 static int rtTarGetFilesOverallSize(RTFILE hFile, const char * const *papszFiles, size_t cFiles, uint64_t *pcbOverallSize)
 {
     int rc = VINF_SUCCESS;
@@ -733,6 +733,7 @@ static int rtTarGetFilesOverallSize(RTFILE hFile, const char * const *papszFiles
         rc = RTFileSeek(hFile, 0, RTFILE_SEEK_BEGIN, 0);
     return rc;
 }
+#endif /* SOME_UNUSED_FUNCTION */
 
 /******************************************************************************
  *   Public Functions                                                         *
@@ -993,8 +994,11 @@ RTR3DECL(int) RTTarFileSeek(RTTARFILE hFile, uint64_t offSeek, unsigned uMethod,
             pFileInt->offCurrent = pFileInt->cbSize - offSeek;
             break;
         }
-        default: AssertFailedReturn(VERR_INVALID_PARAMETER); break;
+        default: AssertFailedReturn(VERR_INVALID_PARAMETER);
     }
+
+    if (poffActual)
+        *poffActual = pFileInt->offCurrent;
 
     return VINF_SUCCESS;
 }

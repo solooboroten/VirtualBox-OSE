@@ -1,4 +1,4 @@
-/* $Id: VBoxMPDevExt.h 37626 2011-06-24 12:01:33Z vboxsync $ */
+/* $Id: VBoxMPDevExt.h 41638 2012-06-09 16:58:09Z vboxsync $ */
 
 /** @file
  * VBox Miniport device extension header
@@ -38,6 +38,10 @@ typedef struct VBOXMP_COMMON
     int cDisplays;                      /* Number of displays. */
 
     uint32_t cbVRAM;                    /* The VRAM size. */
+
+    PHYSICAL_ADDRESS phVRAM;            /* Physical VRAM base. */
+
+    ULONG ulApertureSize;               /* Size of the LFB aperture (>= VRAM size). */
 
     uint32_t cbMiniportHeap;            /* The size of reserved VRAM for miniport driver heap.
                                          * It is at offset:
@@ -94,16 +98,35 @@ typedef struct _VBOXMP_DEVEXT
    FAST_MUTEX ContextMutex;
    KSPIN_LOCK SynchLock;
    volatile uint32_t cContexts3D;
+   volatile uint32_t cContexts2D;
+   volatile uint32_t cRenderFromShadowDisabledContexts;
    volatile uint32_t cUnlockedVBVADisabled;
+   /* this is examined and swicthed by DxgkDdiSubmitCommand only! */
+   volatile BOOLEAN fRenderToShadowDisabled;
+
+   VBOXMP_CRCTLCON CrCtlCon;
 
    VBOXWDDM_GLOBAL_POINTER_INFO PointerInfo;
 
-   VBOXSHGSMILIST CtlList;
-   VBOXSHGSMILIST DmaCmdList;
+   VBOXVTLIST CtlList;
+   VBOXVTLIST DmaCmdList;
 #ifdef VBOX_WITH_VIDEOHWACCEL
-   VBOXSHGSMILIST VhwaCmdList;
+   VBOXVTLIST VhwaCmdList;
 #endif
    BOOL bNotifyDxDpc;
+
+#ifdef VBOX_VDMA_WITH_WATCHDOG
+   PKTHREAD pWdThread;
+   KEVENT WdEvent;
+#endif
+
+   KTIMER VSyncTimer;
+   KDPC VSyncDpc;
+
+#if 0
+   FAST_MUTEX ShRcTreeMutex;
+   AVLPVTREE ShRcTree;
+#endif
 
    VBOXWDDM_SOURCE aSources[VBOX_VIDEO_MAX_SCREENS];
    VBOXWDDM_TARGET aTargets[VBOX_VIDEO_MAX_SCREENS];
@@ -172,11 +195,11 @@ DECLINLINE(ULONG) vboxWddmVramCpuVisibleSize(PVBOXMP_DEVEXT pDevExt)
     return (ULONG)(pDevExt->aSources[0].Vbva.offVBVA & ~0xfffULL);
 #else
     /* all memory layout info should be initialized */
-    Assert(pDevExt->u.primary.Vdma.CmdHeap.area.offBase);
+    Assert(pDevExt->u.primary.Vdma.CmdHeap.Heap.area.offBase);
     /* page aligned */
-    Assert(!(pDevExt->u.primary.Vdma.CmdHeap.area.offBase & 0xfff));
+    Assert(!(pDevExt->u.primary.Vdma.CmdHeap.Heap.area.offBase & 0xfff));
 
-    return pDevExt->u.primary.Vdma.CmdHeap.area.offBase & ~0xfffUL;
+    return pDevExt->u.primary.Vdma.CmdHeap.Heap.area.offBase & ~0xfffUL;
 #endif
 }
 
@@ -206,67 +229,7 @@ DECLINLINE(bool) vboxWddmCmpSurfDescsBase(VBOXWDDM_SURFACE_DESC *pDesc1, VBOXWDD
     return true;
 }
 
-DECLINLINE(void) vboxWddmAssignShadow(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE pSource, PVBOXWDDM_ALLOCATION pAllocation, D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId)
-{
-    if (pSource->pShadowAllocation == pAllocation)
-    {
-        Assert(pAllocation->bAssigned);
-        return;
-    }
-
-    if (pSource->pShadowAllocation)
-    {
-        PVBOXWDDM_ALLOCATION pOldAlloc = pSource->pShadowAllocation;
-        /* clear the visibility info fo the current primary */
-        pOldAlloc->bVisible = FALSE;
-        pOldAlloc->bAssigned = FALSE;
-        Assert(pOldAlloc->SurfDesc.VidPnSourceId == srcId);
-        /* release the shadow surface */
-        pOldAlloc->SurfDesc.VidPnSourceId = D3DDDI_ID_UNINITIALIZED;
-    }
-
-    if (pAllocation)
-    {
-        Assert(!pAllocation->bAssigned);
-        Assert(!pAllocation->bVisible);
-        pAllocation->bVisible = FALSE;
-        /* this check ensures the shadow is not used for other source simultaneously */
-        Assert(pAllocation->SurfDesc.VidPnSourceId == D3DDDI_ID_UNINITIALIZED);
-        pAllocation->SurfDesc.VidPnSourceId = srcId;
-        pAllocation->bAssigned = TRUE;
-        if (!vboxWddmCmpSurfDescsBase(&pSource->SurfDesc, &pAllocation->SurfDesc))
-            pSource->offVram = VBOXVIDEOOFFSET_VOID; /* force guest->host notification */
-        pSource->SurfDesc = pAllocation->SurfDesc;
-    }
-
-    pSource->pShadowAllocation = pAllocation;
-}
 #endif
-
-DECLINLINE(VOID) vboxWddmAssignPrimary(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE pSource, PVBOXWDDM_ALLOCATION pAllocation, D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId)
-{
-    if (pSource->pPrimaryAllocation == pAllocation)
-        return;
-
-    if (pSource->pPrimaryAllocation)
-    {
-        PVBOXWDDM_ALLOCATION pOldAlloc = pSource->pPrimaryAllocation;
-        /* clear the visibility info fo the current primary */
-        pOldAlloc->bVisible = FALSE;
-        pOldAlloc->bAssigned = FALSE;
-        Assert(pOldAlloc->SurfDesc.VidPnSourceId == srcId);
-    }
-
-    if (pAllocation)
-    {
-        pAllocation->bVisible = FALSE;
-        Assert(pAllocation->SurfDesc.VidPnSourceId == srcId);
-        pAllocation->SurfDesc.VidPnSourceId = srcId;
-        pAllocation->bAssigned = TRUE;
-    }
-
-    pSource->pPrimaryAllocation = pAllocation;
-}
 #endif /*VBOX_WDDM_MINIPORT*/
 
 #endif /*VBOXMPDEVEXT_H*/

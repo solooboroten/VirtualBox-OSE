@@ -45,10 +45,25 @@ typedef struct CRContext CRContext;
 
 #include "spu_dispatch_table.h"
 
+#ifdef CHROMIUM_THREADSAFE
+# include <cr_threads.h>
+#endif
+
 #include <iprt/cdefs.h>
 
 #ifndef IN_GUEST
 # include <VBox/vmm/ssm.h>
+# include <iprt/asm.h>
+
+# define CR_STATE_SHAREDOBJ_USAGE_INIT(_pObj) (crMemset((_pObj)->ctxUsage, 0, sizeof ((_pObj)->ctxUsage)))
+# define CR_STATE_SHAREDOBJ_USAGE_SET(_pObj, _pCtx) (ASMBitSet((_pObj)->ctxUsage, (_pCtx)->id))
+# define CR_STATE_SHAREDOBJ_USAGE_CLEAR(_pObj, _pCtx) (ASMBitClear((_pObj)->ctxUsage, (_pCtx)->id))
+# define CR_STATE_SHAREDOBJ_USAGE_IS_USED(_pObj) (ASMBitFirstSet((_pObj)->ctxUsage, sizeof ((_pObj)->ctxUsage)<<3) >= 0)
+#else
+# define CR_STATE_SHAREDOBJ_USAGE_INIT(_pObj) do {} while (0)
+# define CR_STATE_SHAREDOBJ_USAGE_SET(_pObj, _pCtx) do {} while (0)
+# define CR_STATE_SHAREDOBJ_USAGE_CLEAR(_pObj, _pCtx) do {} while (0)
+# define CR_STATE_SHAREDOBJ_USAGE_IS_USED(_pObj) (GL_FALSE)
 #endif
 
 #define CR_MAX_EXTENTS 256
@@ -111,12 +126,25 @@ typedef struct _CRSharedState {
     GLboolean   bFBOResyncNeeded;
 } CRSharedState;
 
-
 /**
  * Chromium version of the state variables in OpenGL
  */
 struct CRContext {
     int id;
+
+#ifdef CHROMIUM_THREADSAFE
+    /* we keep reference counting of context's makeCurrent for different threads
+     * this is primarily needed to avoid having an invalid memory reference in the TLS
+     * when the context is assigned to more than one threads and then destroyed from
+     * one of those, i.e.
+     * 1. Thread1 -> MakeCurrent(ctx1);
+     * 2. Thread2 -> MakeCurrent(ctx1);
+     * 3. Thread1 -> Destroy(ctx1);
+     * => Thread2 still refers to destroyed ctx1
+     * */
+    VBOXTLSREFDATA
+#endif
+
     CRbitvalue bitid[CR_MAX_BITARRAY];
     CRbitvalue neg_bitid[CR_MAX_BITARRAY];
 
@@ -180,12 +208,18 @@ struct CRContext {
 
 DECLEXPORT(void) crStateInit(void);
 DECLEXPORT(void) crStateDestroy(void);
+DECLEXPORT(void) crStateVBoxDetachThread();
+DECLEXPORT(void) crStateVBoxAttachThread();
 DECLEXPORT(CRContext *) crStateCreateContext(const CRLimitsState *limits, GLint visBits, CRContext *share);
 DECLEXPORT(CRContext *) crStateCreateContextEx(const CRLimitsState *limits, GLint visBits, CRContext *share, GLint presetID);
 DECLEXPORT(void) crStateMakeCurrent(CRContext *ctx);
 DECLEXPORT(void) crStateSetCurrent(CRContext *ctx);
 DECLEXPORT(CRContext *) crStateGetCurrent(void);
 DECLEXPORT(void) crStateDestroyContext(CRContext *ctx);
+DECLEXPORT(GLboolean) crStateEnableDiffOnMakeCurrent(GLboolean fEnable);
+
+CRContext * crStateSwichPrepare(CRContext *toCtx, GLboolean fMultipleContexts, GLuint idFBO);
+void crStateSwichPostprocess(CRContext *fromCtx, GLboolean fMultipleContexts, GLuint idFBO);
 
 DECLEXPORT(void) crStateFlushFunc( CRStateFlushFunc ff );
 DECLEXPORT(void) crStateFlushArg( void *arg );
@@ -203,10 +237,15 @@ DECLEXPORT(void) crStateApplyFBImage(CRContext *to);
 
 #ifndef IN_GUEST
 DECLEXPORT(int32_t) crStateSaveContext(CRContext *pContext, PSSMHANDLE pSSM);
-DECLEXPORT(int32_t) crStateLoadContext(CRContext *pContext, CRHashTable * pCtxTable, PSSMHANDLE pSSM);
-DECLEXPORT(void)    crStateFreeShared(CRSharedState *s);
+typedef DECLCALLBACK(CRContext*) FNCRSTATE_CONTEXT_GET(void*);
+typedef FNCRSTATE_CONTEXT_GET *PFNCRSTATE_CONTEXT_GET;
+DECLEXPORT(int32_t) crStateLoadContext(CRContext *pContext, CRHashTable * pCtxTable, PFNCRSTATE_CONTEXT_GET pfnCtxGet, PSSMHANDLE pSSM, uint32_t u32Version);
+DECLEXPORT(void)    crStateFreeShared(CRContext *pContext, CRSharedState *s);
+DECLEXPORT(void) crStateFreeShared(CRContext *pContext, CRSharedState *s);
 #endif
 
+DECLEXPORT(void) crStateSetTextureUsed(GLuint texture, GLboolean used);
+DECLEXPORT(void) crStateDeleteTextureCallback(void *texObj);
 
    /* XXX move these! */
 

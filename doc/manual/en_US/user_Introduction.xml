@@ -154,7 +154,7 @@
           run your guest operating system "in" a VM. Normally, a VM will be
           shown as a window on your computer's desktop, but depending on which
           of the various frontends of VirtualBox you use, it can be displayed
-          in full-screen mode or remotely on another computer.</para>
+          in full screen mode or remotely on another computer.</para>
 
           <para>In a more abstract way, internally, VirtualBox thinks of a VM
           as a set of parameters that determine its behavior. They include
@@ -284,7 +284,7 @@
             VirtualBox can even report to ACPI-aware guest operating systems
             the power status of the host. For mobile systems running on
             battery, the guest can thus enable energy saving and notify the
-            user of the remaining power (e.g. in fullscreen modes).</para>
+            user of the remaining power (e.g. in full screen modes).</para>
           </listitem>
 
           <listitem>
@@ -430,6 +430,7 @@
           <listitem>
             <para>10.7 (Lion, 32-bit and 64-bit)</para>
           </listitem>
+
         </itemizedlist>
 
         <para>Intel hardware is required; please see <xref
@@ -447,7 +448,8 @@
               ("Feisty Fawn"), 7.10 ("Gutsy Gibbon"), 8.04 ("Hardy Heron"),
               8.10 ("Intrepid Ibex"), 9.04 ("Jaunty Jackalope"), 9.10 ("Karmic
               Koala"), 10.04 ("Lucid Lynx"), 10.10 ("Maverick Meerkat),
-              11.04 ("Natty Narwhal").</para>
+              11.04 ("Natty Narwhal"), 11.10 ("Oneiric Oncelot"),
+              12.04 ("Precise Pangolin")</para>
             </listitem>
 
             <listitem>
@@ -464,7 +466,7 @@
             </listitem>
 
             <listitem>
-              <para>Fedora Core 4 to 15</para>
+              <para>Fedora Core 4 to 17</para>
             </listitem>
 
             <listitem>
@@ -496,8 +498,7 @@
         64-bit) are supported with the restrictions listed in <xref
         linkend="KnownIssues" />:<itemizedlist>
             <listitem>
-              <para>Solaris 11 Express (Nevada build 86 and higher,
-              OpenSolaris 2008.05 and higher)</para>
+              <para>Solaris 11 including Solaris 11 Express</para>
             </listitem>
 
             <listitem>
@@ -506,6 +507,11 @@
           </itemizedlist></para>
       </listitem>
     </itemizedlist>
+    <para>Note that the above list is informal. Oracle support for customers
+    who have a support contract is limited to a subset of the listed host
+    operating systems. Also, any feature which is marked as  <emphasis
+    role="bold">experimental</emphasis> is not supported. Feedback and
+    suggestions about such features are welcome.</para>
   </sect1>
 
   <sect1 id="intro-installing">
@@ -904,7 +910,7 @@
       and keyboard devices, since the operating system in the virtual machine
       does not "know" that it is not running on a real computer, it expects to
       have exclusive control over your keyboard and mouse. This is, however,
-      not the case since, unless you are running the VM in full-screen mode,
+      not the case since, unless you are running the VM in full screen mode,
       your VM needs to share keyboard and mouse with other applications and
       possibly other VMs on your host.</para>
 

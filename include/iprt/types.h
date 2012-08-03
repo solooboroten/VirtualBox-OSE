@@ -40,6 +40,7 @@
      */
 RT_C_DECLS_BEGIN
 #  include "xf86_ansic.h"
+#  undef NULL
 RT_C_DECLS_END
 
 # elif defined(RT_OS_DARWIN) && defined(KERNEL)
@@ -82,6 +83,8 @@ RT_C_DECLS_END
 #  include <stddef.h>
 #  define _UINT64_T_DECLARED
 #  define _INT64_T_DECLARED
+#  define _UINTPTR_T_DECLARED
+#  define _INTPTR_T_DECLARED
 #  include <sys/types.h>
 
 # elif defined(RT_OS_LINUX) && defined(__KERNEL__)
@@ -109,8 +112,27 @@ RT_C_DECLS_END
 #    include <linux/autoconf.h>
 #   endif
 #  endif
+#  include <linux/compiler.h>
+#  if defined(__cplusplus)
+    /*
+     * Starting with 3.3, <linux/compiler-gcc.h> appends 'notrace' (which
+     * expands to __attribute__((no_instrument_function))) to inline,
+     * __inline and __inline__. Revert that.
+     */
+#   undef inline
+#   define inline inline
+#   undef __inline__
+#   define __inline__ __inline__
+#   undef __inline
+#   define __inline __inline
+#  endif
 #  include <linux/types.h>
 #  include <linux/stddef.h>
+    /*
+     * Starting with 3.4, <linux/stddef.h> defines NULL as '((void*)0)' which
+     * does not work for C++ code.
+     */
+#  undef NULL
 #  undef uintptr_t
 #  ifdef __GNUC__
 #   if (__GNUC__ * 100 + __GNUC_MINOR__) <= 400
@@ -127,11 +149,11 @@ RT_C_DECLS_END
 #  undef false
 #  undef true
 #  undef bool
-
 # else
 #  include <stddef.h>
 #  include <sys/types.h>
 # endif
+
 
 /* Define any types missing from sys/types.h on windows. */
 # ifdef _MSC_VER
@@ -142,6 +164,17 @@ RT_C_DECLS_END
 #else  /* no crt */
 # include <iprt/nocrt/compiler/compiler.h>
 #endif /* no crt */
+
+/** @def NULL
+ * NULL pointer.
+ */
+#ifndef NULL
+# ifdef __cplusplus
+#  define NULL 0
+# else
+#  define NULL ((void*)0)
+# endif
+#endif
 
 
 
@@ -167,6 +200,10 @@ RT_C_DECLS_END
 # if defined(__GNUC__)
 #  if defined(RT_OS_LINUX) && __GNUC__ < 3
 typedef uint8_t bool;
+#  elif defined(RT_OS_FREEBSD)
+#   ifndef __bool_true_false_are_defined
+typedef _Bool bool;
+#   endif
 #  else
 #   if defined(RT_OS_DARWIN) && defined(_STDBOOL_H)
 #    undef bool
@@ -684,6 +721,87 @@ typedef uint32_t            RTMSINTERVAL;
 typedef RTMSINTERVAL       *PRTMSINTERVAL;
 /** Pointer to a const millisecond interval. */
 typedef const RTMSINTERVAL *PCRTMSINTERVAL;
+
+/** Pointer to a time spec structure. */
+typedef struct RTTIMESPEC  *PRTTIMESPEC;
+/** Pointer to a const time spec structure. */
+typedef const struct RTTIMESPEC *PCRTTIMESPEC;
+
+/**
+ * Generic pointer union.
+ */
+typedef union RTPTRUNION
+{
+    /** Pointer into the void... */
+    void               *pv;
+    /** Pointer to a 8-bit unsigned value. */
+    uint8_t            *pu8;
+    /** Pointer to a 16-bit unsigned value. */
+    uint16_t           *pu16;
+    /** Pointer to a 32-bit unsigned value. */
+    uint32_t           *pu32;
+    /** Pointer to a 64-bit unsigned value. */
+    uint64_t           *pu64;
+} RTPTRUNION;
+/** Pointer to a pointer union. */
+typedef RTPTRUNION *PRTPTRUNION;
+
+/**
+ * Generic const pointer union.
+ */
+typedef union RTCPTRUNION
+{
+    /** Pointer into the void... */
+    void const         *pv;
+    /** Pointer to a 8-bit unsigned value. */
+    uint8_t const      *pu8;
+    /** Pointer to a 16-bit unsigned value. */
+    uint16_t const     *pu16;
+    /** Pointer to a 32-bit unsigned value. */
+    uint32_t const     *pu32;
+    /** Pointer to a 64-bit unsigned value. */
+    uint64_t const     *pu64;
+} RTCPTRUNION;
+/** Pointer to a const pointer union. */
+typedef RTCPTRUNION *PRTCPTRUNION;
+
+/**
+ * Generic volatile pointer union.
+ */
+typedef union RTVPTRUNION
+{
+    /** Pointer into the void... */
+    void volatile      *pv;
+    /** Pointer to a 8-bit unsigned value. */
+    uint8_t volatile   *pu8;
+    /** Pointer to a 16-bit unsigned value. */
+    uint16_t volatile  *pu16;
+    /** Pointer to a 32-bit unsigned value. */
+    uint32_t volatile  *pu32;
+    /** Pointer to a 64-bit unsigned value. */
+    uint64_t volatile  *pu64;
+} RTVPTRUNION;
+/** Pointer to a const pointer union. */
+typedef RTVPTRUNION *PRTVPTRUNION;
+
+/**
+ * Generic const volatile pointer union.
+ */
+typedef union RTCVPTRUNION
+{
+    /** Pointer into the void... */
+    void const volatile        *pv;
+    /** Pointer to a 8-bit unsigned value. */
+    uint8_t const volatile     *pu8;
+    /** Pointer to a 16-bit unsigned value. */
+    uint16_t const volatile    *pu16;
+    /** Pointer to a 32-bit unsigned value. */
+    uint32_t const volatile    *pu32;
+    /** Pointer to a 64-bit unsigned value. */
+    uint64_t const volatile    *pu64;
+} RTCVPTRUNION;
+/** Pointer to a const pointer union. */
+typedef RTCVPTRUNION *PRTCVPTRUNION;
 
 
 /** @defgroup grp_rt_types_both  Common Guest and Host Context Basic Types
@@ -2201,6 +2319,20 @@ typedef enum RTEXITCODE
     RTEXITCODE_32BIT_HACK = 0x7fffffff
 } RTEXITCODE;
 
+/**
+ * Range descriptor.
+ */
+typedef struct RTRANGE
+{
+    /** Start offset. */
+    uint64_t    offStart;
+    /** Range size. */
+    size_t      cbRange;
+} RTRANGE;
+/** Pointer to a range descriptor. */
+typedef RTRANGE *PRTRANGE;
+/** Pointer to a readonly range descriptor. */
+typedef const RTRANGE *PCRTRANGE;
 
 #ifdef __cplusplus
 /**

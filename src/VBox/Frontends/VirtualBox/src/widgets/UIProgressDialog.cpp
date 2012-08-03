@@ -1,4 +1,4 @@
-/* $Id: UIProgressDialog.cpp 37572 2011-06-21 11:37:31Z vboxsync $ */
+/* $Id: UIProgressDialog.cpp 42261 2012-07-20 13:27:47Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -17,25 +17,26 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* VBox includes */
-#include "UIProgressDialog.h"
-#include "COMDefs.h"
-#include "QIDialogButtonBox.h"
-#include "QILabel.h"
-#include "UISpecialControls.h"
-#include "VBoxGlobal.h"
-
-#ifdef Q_WS_MAC
-# include "VBoxUtils-darwin.h"
-#endif /* Q_WS_MAC */
-
-/* Qt includes */
+/* Qt includes: */
 #include <QCloseEvent>
 #include <QEventLoop>
 #include <QProgressBar>
 #include <QTime>
 #include <QTimer>
 #include <QVBoxLayout>
+
+/* GUI includes: */
+#include "UIProgressDialog.h"
+#include "QIDialogButtonBox.h"
+#include "QILabel.h"
+#include "UISpecialControls.h"
+#include "VBoxGlobal.h"
+#ifdef Q_WS_MAC
+# include "VBoxUtils-darwin.h"
+#endif /* Q_WS_MAC */
+
+/* COM includes: */
+#include "CProgress.h"
 
 const char *UIProgressDialog::m_spcszOpDescTpl = "%1 ... (%2/%3)";
 
@@ -275,7 +276,8 @@ void UIProgressDialog::timerEvent(QTimerEvent * /* pEvent */)
                                        .arg(m_iCurrentOperation).arg(m_cOperations));
         }
         m_progressBar->setValue(m_progress.GetPercent());
-    }else
+    }
+    else
         m_pEtaLbl->setText(m_strCancel);
 }
 

@@ -1,12 +1,10 @@
-/* $Id: UIGlobalSettingsExtension.cpp 38311 2011-08-04 13:08:39Z vboxsync $ */
+/* $Id: UIGlobalSettingsExtension.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
 /** @file
- *
- * VBox frontends: Qt4 GUI ("VirtualBox"):
- * UIGlobalSettingsExtension class implementation
+ * VBox Qt GUI - UIGlobalSettingsExtension class implementation.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -17,16 +15,21 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* Global includes */
+/* Qt includes: */
 #include <QHeaderView>
 
-/* Local includes */
+/* GUI includes: */
 #include "UIGlobalSettingsExtension.h"
 #include "UIIconPool.h"
 #include "QIFileDialog.h"
 #include "VBoxGlobal.h"
 #include "UIMessageCenter.h"
 #include "VBoxLicenseViewer.h"
+
+/* COM includes: */
+#include "CExtPackManager.h"
+#include "CExtPack.h"
+#include "CExtPackFile.h"
 
 /* Extension package item: */
 class UIExtensionPackageItem : public QTreeWidgetItem
@@ -49,8 +52,13 @@ public:
         /* Name: */
         setText(1, m_data.m_strName);
 
-        /* Version: */
-        setText(2, QString("%1r%2").arg(m_data.m_strVersion).arg(m_data.m_strRevision));
+        /* Version, Revision, Edition: */
+        QString strVersion(m_data.m_strVersion.section(QRegExp("[-_]"), 0, 0));
+        QString strAppend;
+        /* workaround for http://qt.gitorious.org/qt/qt/commit/7fc63dd0ff368a637dcd17e692b9d6b26278b538 */
+        if (m_data.m_strVersion.contains(QRegExp("[-_]")))
+            strAppend = m_data.m_strVersion.section(QRegExp("[-_]"), 1, -1, QString::SectionIncludeLeadingSep);
+        setText(2, QString("%1r%2%3").arg(strVersion).arg(m_data.m_strRevision).arg(strAppend));
 
         /* Tool-tip: */
         QString strTip = m_data.m_strDescription;
@@ -107,20 +115,29 @@ UIGlobalSettingsExtension::UIGlobalSettingsExtension()
 /**
  * Attempt the actual installation.
  *
- * This code is shared by UIGlobalSettingsExtension::sltInstallPackage and
- * VBoxSelectorWnd::sltOpenUrls.
+ * This code is shared by UIGlobalSettingsExtension::sltInstallPackage and UISelectorWindow::sltOpenUrls.
  *
  * @param   strFilePath     The path to the tarball.
+ * @param   strDigest       The digest of the file (SHA-256). Empty string if no
+ *                          digest was performed.
  * @param   pParent         The parent widget.
  * @param   pstrExtPackName Where to return the extension pack name. Optional.
  */
-/*static*/ void UIGlobalSettingsExtension::doInstallation(QString const &strFilePath, QWidget *pParent, QString *pstrExtPackName)
+/*static*/ void UIGlobalSettingsExtension::doInstallation(QString const &strFilePath, QString const &strDigest,
+                                                          QWidget *pParent, QString *pstrExtPackName)
 {
     /*
      * Open the extpack tarball via IExtPackManager.
      */
     CExtPackManager manager = vboxGlobal().virtualBox().GetExtensionPackManager();
-    CExtPackFile extPackFile = manager.OpenExtPackFile(strFilePath);
+    CExtPackFile extPackFile;
+    if (strDigest.isEmpty())
+        extPackFile = manager.OpenExtPackFile(strFilePath);
+    else
+    {
+        QString strFileAndHash = QString("%1::SHA-256=%2").arg(strFilePath).arg(strDigest);
+        extPackFile = manager.OpenExtPackFile(strFileAndHash);
+    }
     if (!manager.isOk())
     {
         msgCenter().cannotOpenExtPack(strFilePath, manager, pParent);
@@ -135,7 +152,7 @@ UIGlobalSettingsExtension::UIGlobalSettingsExtension()
 
     QString strPackName = extPackFile.GetName();
     QString strPackDescription = extPackFile.GetDescription();
-    QString strPackVersion = QString("%1r%2").arg(extPackFile.GetVersion()).arg(extPackFile.GetRevision());
+    QString strPackVersion = QString("%1r%2%3").arg(extPackFile.GetVersion()).arg(extPackFile.GetRevision()).arg(extPackFile.GetEdition());
 
     /*
      * Check if there is a version of the extension pack already
@@ -146,7 +163,7 @@ UIGlobalSettingsExtension::UIGlobalSettingsExtension()
     bool fReplaceIt = extPackCur.isOk();
     if (fReplaceIt)
     {
-        QString strPackVersionCur = QString("%1r%2").arg(extPackCur.GetVersion()).arg(extPackCur.GetRevision());
+        QString strPackVersionCur = QString("%1r%2%3").arg(extPackCur.GetVersion()).arg(extPackCur.GetRevision()).arg(extPackCur.GetEdition());
         if (!msgCenter().confirmReplacePackage(strPackName, strPackVersion, strPackVersionCur, strPackDescription, pParent))
             return;
     }
@@ -316,8 +333,8 @@ void UIGlobalSettingsExtension::sltInstallPackage()
     }
     QString strTitle = tr("Select an extension package file");
     QStringList extensions;
-    for (int i = 0; i < VBoxDefs::VBoxExtPackFileExts.size(); ++i)
-        extensions << QString("*.%1").arg(VBoxDefs::VBoxExtPackFileExts[i]);
+    for (int i = 0; i < VBoxExtPackFileExts.size(); ++i)
+        extensions << QString("*.%1").arg(VBoxExtPackFileExts[i]);
     QString strFilter = tr("Extension package files (%1)").arg(extensions.join(" "));
 
     QStringList fileNames = QIFileDialog::getOpenFileNames(strBaseFolder, strFilter, this, strTitle, 0, true, true);
@@ -332,7 +349,7 @@ void UIGlobalSettingsExtension::sltInstallPackage()
     if (!strFilePath.isEmpty())
     {
         QString strExtPackName;
-        doInstallation(strFilePath, this, &strExtPackName);
+        doInstallation(strFilePath, QString(), this, &strExtPackName);
 
         /*
          * Since we might be reinstalling an existing package, we have to

@@ -1,10 +1,10 @@
-/* $Id: HostImpl.cpp 38406 2011-08-10 15:40:47Z vboxsync $ */
+/* $Id: HostImpl.cpp 42024 2012-07-05 12:10:53Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2004-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -122,7 +122,7 @@ typedef SOLARISDVD *PSOLARISDVD;
 #endif
 
 #ifdef VBOX_WITH_CROGL
-extern bool is3DAccelerationSupported();
+#include <VBox/VBoxOGLTest.h>
 #endif /* VBOX_WITH_CROGL */
 
 #include <iprt/asm-amd64-x86.h>
@@ -172,10 +172,6 @@ struct Host::Data
 {
     Data()
         :
-#ifdef VBOX_WITH_USB
-          usbListsLock(LOCKCLASS_USBLIST),
-#endif
-          drivesLock(LOCKCLASS_LISTOFMEDIA),
           fDVDDrivesListBuilt(false),
           fFloppyDrivesListBuilt(false)
     {};
@@ -183,8 +179,6 @@ struct Host::Data
     VirtualBox              *pParent;
 
 #ifdef VBOX_WITH_USB
-    WriteLockHandle         usbListsLock;               // protects the below two lists
-
     USBDeviceFilterList     llChildren;                 // all USB device filters
     USBDeviceFilterList     llUSBDeviceFilters;         // USB device filters in use by the USB proxy service
 
@@ -192,8 +186,8 @@ struct Host::Data
     USBProxyService         *pUSBProxyService;
 #endif /* VBOX_WITH_USB */
 
-    // list of host drives; lazily created by getDVDDrives() and getFloppyDrives()
-    WriteLockHandle         drivesLock;                 // protects the below two lists and the bools
+    // list of host drives; lazily created by getDVDDrives() and getFloppyDrives(),
+    // and protected by the medium tree lock handle (including the bools).
     MediaList               llDVDDrives,
                             llFloppyDrives;
     bool                    fDVDDrivesListBuilt,
@@ -297,14 +291,14 @@ HRESULT Host::init(VirtualBox *aParent)
         uint32_t u32FeaturesECX;
         uint32_t u32Dummy;
         uint32_t u32FeaturesEDX;
-        uint32_t u32VendorEBX, u32VendorECX, u32VendorEDX, u32AMDFeatureEDX, u32AMDFeatureECX;
+        uint32_t u32VendorEBX, u32VendorECX, u32VendorEDX, u32ExtFeatureEDX, u32ExtFeatureECX;
 
         ASMCpuId(0, &u32Dummy, &u32VendorEBX, &u32VendorECX, &u32VendorEDX);
         ASMCpuId(1, &u32Dummy, &u32Dummy, &u32FeaturesECX, &u32FeaturesEDX);
-        /* Query AMD features. */
-        ASMCpuId(0x80000001, &u32Dummy, &u32Dummy, &u32AMDFeatureECX, &u32AMDFeatureEDX);
+        /* Query Extended features. */
+        ASMCpuId(0x80000001, &u32Dummy, &u32Dummy, &u32ExtFeatureECX, &u32ExtFeatureEDX);
 
-        m->fLongModeSupported = !!(u32AMDFeatureEDX & X86_CPUID_AMD_FEATURE_EDX_LONG_MODE);
+        m->fLongModeSupported = !!(u32ExtFeatureEDX & X86_CPUID_EXT_FEATURE_EDX_LONG_MODE);
         m->fPAESupported      = !!(u32FeaturesEDX & X86_CPUID_FEATURE_EDX_PAE);
 
         if (    u32VendorEBX == X86_CPUID_VENDOR_INTEL_EBX
@@ -312,6 +306,7 @@ HRESULT Host::init(VirtualBox *aParent)
             &&  u32VendorEDX == X86_CPUID_VENDOR_INTEL_EDX
            )
         {
+            /* Intel. */
             if (    (u32FeaturesECX & X86_CPUID_FEATURE_ECX_VMX)
                  && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
                  && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
@@ -328,7 +323,8 @@ HRESULT Host::init(VirtualBox *aParent)
             &&  u32VendorEDX == X86_CPUID_VENDOR_AMD_EDX
            )
         {
-            if (   (u32AMDFeatureECX & X86_CPUID_AMD_FEATURE_ECX_SVM)
+            /* AMD. */
+            if (   (u32ExtFeatureECX & X86_CPUID_AMD_FEATURE_ECX_SVM)
                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
                )
@@ -364,7 +360,7 @@ HRESULT Host::init(VirtualBox *aParent)
     m->f3DAccelerationSupported = false;
 
 #ifdef VBOX_WITH_CROGL
-    m->f3DAccelerationSupported = is3DAccelerationSupported();
+    m->f3DAccelerationSupported = VBoxOglIs3DAccelerationSupported();
 #endif /* VBOX_WITH_CROGL */
 
 #if defined (RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD)
@@ -398,7 +394,7 @@ HRESULT Host::init(VirtualBox *aParent)
                                                     progress.asOutParam(),
                                                     it->c_str());
         if (RT_FAILURE(r))
-            return E_FAIL;
+            LogRel(("failed to create %s, error (0x%x)\n", it->c_str(), r));
     }
 
 #endif /* defined (RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD) */
@@ -472,7 +468,7 @@ STDMETHODIMP Host::COMGETTER(DVDDrives)(ComSafeArrayOut(IMedium *, aDrives))
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoWriteLock alock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(m->pParent->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
 
     MediaList *pList;
     HRESULT rc = getDrives(DeviceType_DVD, true /* fRefresh */, pList);
@@ -498,7 +494,7 @@ STDMETHODIMP Host::COMGETTER(FloppyDrives)(ComSafeArrayOut(IMedium *, aDrives))
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoWriteLock alock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(m->pParent->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
 
     MediaList *pList;
     HRESULT rc = getDrives(DeviceType_Floppy, true /* fRefresh */, pList);
@@ -537,7 +533,7 @@ static int vboxNetWinAddComponent(std::list< ComObjPtr<HostNetworkInterface> > *
             ComObjPtr<HostNetworkInterface> iface;
             iface.createObject();
             /* remove the curly bracket at the end */
-            if (SUCCEEDED(iface->init (name, Guid (IfGuid), HostNetworkInterfaceType_Bridged)))
+            if (SUCCEEDED(iface->init (name, name, Guid (IfGuid), HostNetworkInterfaceType_Bridged)))
             {
 //                iface->setVirtualBox(m->pParent);
                 pPist->push_back(iface);
@@ -686,7 +682,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
         }
         else
         {
-            LogRel(("failed to get the sun_VBoxNetFlt component, error (0x%x)", hr));
+            LogRel(("failed to get the sun_VBoxNetFlt component, error (0x%x)\n", hr));
         }
 
         VBoxNetCfgWinReleaseINetCfg(pNc, FALSE);
@@ -779,7 +775,7 @@ STDMETHODIMP Host::COMGETTER(USBDeviceFilters)(ComSafeArrayOut(IHostUSBDeviceFil
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     HRESULT rc = checkUSBProxyService();
     if (FAILED(rc)) return rc;
@@ -1083,6 +1079,10 @@ STDMETHODIMP Host::COMGETTER(Acceleration3DAvailable)(BOOL *aSupported)
 
     *aSupported = m->f3DAccelerationSupported;
 
+#ifdef DEBUG_misha
+    AssertMsgFailed(("should not be here any more!\n"));
+#endif
+
     return S_OK;
 }
 
@@ -1102,6 +1102,10 @@ STDMETHODIMP Host::CreateHostOnlyNetworkInterface(IHostNetworkInterface **aHostN
     int r = NetIfCreateHostOnlyNetworkInterface(m->pParent, aHostNetworkInterface, aProgress);
     if (RT_SUCCESS(r))
     {
+        if (!*aHostNetworkInterface)
+            return setError(E_FAIL,
+                            tr("Unable to create a host network interface"));
+
 #if !defined(RT_OS_WINDOWS)
         Bstr tmpAddr, tmpMask, tmpName;
         HRESULT hrc;
@@ -1128,10 +1132,9 @@ STDMETHODIMP Host::CreateHostOnlyNetworkInterface(IHostNetworkInterface **aHostN
                                        tmpMask.raw());
         ComAssertComRCRet(hrc, hrc);
 #endif
-        return S_OK;
     }
 
-    return r == VERR_NOT_IMPLEMENTED ? E_NOTIMPL : E_FAIL;
+    return S_OK;
 #else
     return E_NOTIMPL;
 #endif
@@ -1222,7 +1225,7 @@ STDMETHODIMP Host::InsertUSBDeviceFilter(ULONG aPosition,
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     clearError();
     MultiResult rc = checkUSBProxyService();
@@ -1284,7 +1287,7 @@ STDMETHODIMP Host::RemoveUSBDeviceFilter(ULONG aPosition)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     clearError();
     MultiResult rc = checkUSBProxyService();
@@ -1561,7 +1564,7 @@ HRESULT Host::loadSettings(const settings::Host &data)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     for (settings::USBDeviceFiltersList::const_iterator it = data.llUSBDeviceFilters.begin();
          it != data.llUSBDeviceFilters.end();
@@ -1595,8 +1598,7 @@ HRESULT Host::saveSettings(settings::Host &data)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoReadLock alock1(this COMMA_LOCKVAL_SRC_POS);
-    AutoReadLock alock2(&m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     data.llUSBDeviceFilters.clear();
 
@@ -1624,7 +1626,7 @@ HRESULT Host::saveSettings(settings::Host &data)
  * This builds the list on the first call; it adds or removes host drives
  * that may have changed if fRefresh == true.
  *
- * The caller must hold the m->drivesLock write lock before calling this.
+ * The caller must hold the medium tree write lock before calling this.
  * To protect the list to which the caller's pointer points, the caller
  * must also hold that lock.
  *
@@ -1638,7 +1640,7 @@ HRESULT Host::getDrives(DeviceType_T mediumType,
                         MediaList *&pll)
 {
     HRESULT rc = S_OK;
-    Assert(m->drivesLock.isWriteLockOnCurrentThread());
+    Assert(m->pParent->getMediaTreeLockHandle().isWriteLockOnCurrentThread());
 
     MediaList llNew;
     MediaList *pllCached;
@@ -1763,7 +1765,7 @@ HRESULT Host::findHostDriveById(DeviceType_T mediumType,
 {
     MediaList *pllMedia;
 
-    AutoWriteLock wlock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock wlock(m->pParent->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
     HRESULT rc = getDrives(mediumType, fRefresh, pllMedia);
     if (SUCCEEDED(rc))
     {
@@ -1803,7 +1805,7 @@ HRESULT Host::findHostDriveByName(DeviceType_T mediumType,
 {
     MediaList *pllMedia;
 
-    AutoWriteLock wlock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock wlock(m->pParent->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
     HRESULT rc = getDrives(mediumType, fRefresh, pllMedia);
     if (SUCCEEDED(rc))
     {
@@ -1839,7 +1841,7 @@ HRESULT Host::findHostDriveByNameOrId(DeviceType_T mediumType,
                                       const Utf8Str &strNameOrId,
                                       ComObjPtr<Medium> &pMedium)
 {
-    AutoWriteLock wlock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock wlock(m->pParent->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
 
     Guid uuid(strNameOrId);
     if (!uuid.isEmpty())
@@ -1858,7 +1860,7 @@ HRESULT Host::buildDVDDrivesList(MediaList &list)
 {
     HRESULT rc = S_OK;
 
-    Assert(m->drivesLock.isWriteLockOnCurrentThread());
+    Assert(m->pParent->getMediaTreeLockHandle().isWriteLockOnCurrentThread());
 
     try
     {
@@ -1940,7 +1942,7 @@ HRESULT Host::buildFloppyDrivesList(MediaList &list)
 {
     HRESULT rc = S_OK;
 
-    Assert(m->drivesLock.isWriteLockOnCurrentThread());
+    Assert(m->pParent->getMediaTreeLockHandle().isWriteLockOnCurrentThread());
 
     try
     {
@@ -2003,7 +2005,7 @@ HRESULT Host::addChild(HostUSBDeviceFilter *pChild)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoWriteLock alock(&m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     m->llChildren.push_back(pChild);
 
@@ -2015,7 +2017,7 @@ HRESULT Host::removeChild(HostUSBDeviceFilter *pChild)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoWriteLock alock(&m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     for (USBDeviceFilterList::iterator it = m->llChildren.begin();
          it != m->llChildren.end();
@@ -2095,7 +2097,7 @@ HRESULT Host::onUSBDeviceFilterChange(HostUSBDeviceFilter *aFilter,
  */
 void Host::getUSBFilters(Host::USBDeviceFilterList *aGlobalFilters)
 {
-    AutoReadLock alock(&m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     *aGlobalFilters = m->llUSBDeviceFilters;
 }

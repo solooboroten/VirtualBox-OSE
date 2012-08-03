@@ -1,4 +1,4 @@
-/* $Id: PGMPool.cpp 37354 2011-06-07 15:05:32Z vboxsync $ */
+/* $Id: PGMPool.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -130,7 +130,7 @@ static const DBGCCMD    g_aCmds[] =
  * Initializes the pool
  *
  * @returns VBox status code.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 int pgmR3PoolInit(PVM pVM)
 {
@@ -428,7 +428,7 @@ int pgmR3PoolInit(PVM pVM)
 /**
  * Relocate the page pool data.
  *
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 void pgmR3PoolRelocate(PVM pVM)
 {
@@ -453,12 +453,19 @@ void pgmR3PoolRelocate(PVM pVM)
  * I.e. adds more pages to it, assuming that hasn't reached cMaxPages yet.
  *
  * @returns VBox status code.
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 VMMR3DECL(int) PGMR3PoolGrow(PVM pVM)
 {
     PPGMPOOL pPool = pVM->pgm.s.pPoolR3;
-    AssertReturn(pPool->cCurPages < pPool->cMaxPages, VERR_INTERNAL_ERROR);
+    AssertReturn(pPool->cCurPages < pPool->cMaxPages, VERR_PGM_POOL_MAXED_OUT_ALREADY);
+
+    /* With 32-bit guests and no EPT, the CR3 limits the root pages to low
+       (below 4 GB) memory. */
+    /** @todo change the pool to handle ROOT page allocations specially when
+     *        required. */
+    bool fCanUseHighMemory = HWACCMIsNestedPagingActive(pVM)
+                          && HWACCMGetShwPagingMode(pVM) == PGMMODE_EPT;
 
     pgmLock(pVM);
 
@@ -467,22 +474,24 @@ VMMR3DECL(int) PGMR3PoolGrow(PVM pVM)
      */
     uint32_t cPages = pPool->cMaxPages - pPool->cCurPages;
     cPages = RT_MIN(PGMPOOL_CFG_MAX_GROW, cPages);
-    LogFlow(("PGMR3PoolGrow: Growing the pool by %d (%#x) pages.\n", cPages, cPages));
+    LogFlow(("PGMR3PoolGrow: Growing the pool by %d (%#x) pages. fCanUseHighMemory=%RTbool\n", cPages, cPages, fCanUseHighMemory));
 
     for (unsigned i = pPool->cCurPages; cPages-- > 0; i++)
     {
         PPGMPOOLPAGE pPage = &pPool->aPages[i];
 
-        /* Allocate all pages in low (below 4 GB) memory as 32 bits guests need a page table root in low memory. */
-        pPage->pvPageR3 = MMR3PageAllocLow(pVM);
+        if (fCanUseHighMemory)
+            pPage->pvPageR3 = MMR3PageAlloc(pVM);
+        else
+            pPage->pvPageR3 = MMR3PageAllocLow(pVM);
         if (!pPage->pvPageR3)
         {
-            Log(("We're out of memory!! i=%d\n", i));
+            Log(("We're out of memory!! i=%d fCanUseHighMemory=%RTbool\n", i, fCanUseHighMemory));
             pgmUnlock(pVM);
             return i ? VINF_SUCCESS : VERR_NO_PAGE_MEMORY;
         }
         pPage->Core.Key  = MMPage2Phys(pVM, pPage->pvPageR3);
-        AssertFatal(pPage->Core.Key < _4G);
+        AssertFatal(pPage->Core.Key < _4G || fCanUseHighMemory);
         pPage->GCPhys    = NIL_RTGCPHYS;
         pPage->enmKind   = PGMPOOLKIND_FREE;
         pPage->idx       = pPage - &pPool->aPages[0];
@@ -533,7 +542,7 @@ static DECLCALLBACK(void) pgmR3PoolFlushReusedPage(PPGMPOOL pPool, PPGMPOOLPAGE 
  *
  * @returns VINF_SUCCESS if the handler has carried out the operation.
  * @returns VINF_PGM_HANDLER_DO_DEFAULT if the caller should carry out the access operation.
- * @param   pVM             VM Handle.
+ * @param   pVM             Pointer to the VM.
  * @param   GCPhys          The physical address the guest is writing to.
  * @param   pvPhys          The HC mapping of that address.
  * @param   pvBuf           What the guest is reading/writing.
@@ -541,15 +550,17 @@ static DECLCALLBACK(void) pgmR3PoolFlushReusedPage(PPGMPOOL pPool, PPGMPOOLPAGE 
  * @param   enmAccessType   The access type.
  * @param   pvUser          User argument.
  */
-static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser)
+static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf,
+                                                PGMACCESSTYPE enmAccessType, void *pvUser)
 {
     STAM_PROFILE_START(&pVM->pgm.s.pPoolR3->StatMonitorR3, a);
-    PPGMPOOL pPool = pVM->pgm.s.pPoolR3;
-    PPGMPOOLPAGE pPage = (PPGMPOOLPAGE)pvUser;
+    PPGMPOOL        pPool = pVM->pgm.s.pPoolR3;
+    PPGMPOOLPAGE    pPage = (PPGMPOOLPAGE)pvUser;
+    PVMCPU          pVCpu = VMMGetCpu(pVM);
     LogFlow(("pgmR3PoolAccessHandler: GCPhys=%RGp %p:{.Core=%RHp, .idx=%d, .GCPhys=%RGp, .enmType=%d}\n",
              GCPhys, pPage, pPage->Core.Key, pPage->idx, pPage->GCPhys, pPage->enmKind));
 
-    PVMCPU pVCpu = VMMGetCpu(pVM);
+    NOREF(pvBuf); NOREF(enmAccessType);
 
     /*
      * We don't have to be very sophisticated about this since there are relativly few calls here.
@@ -626,7 +637,7 @@ static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *
  * it to complete this function.
  *
  * @returns VINF_SUCCESS (VBox strict status code).
- * @param   pVM     The VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   pVCpu   The VMCPU for the EMT we're being called on. Unused.
  * @param   fpvFlushRemTlb  When not NULL, we'll flush the REM TLB as well.
  *                          (This is the pvUser, so it has to be void *.)
@@ -636,6 +647,7 @@ DECLCALLBACK(VBOXSTRICTRC) pgmR3PoolClearAllRendezvous(PVM pVM, PVMCPU pVCpu, vo
 {
     PPGMPOOL pPool = pVM->pgm.s.CTX_SUFF(pPool);
     STAM_PROFILE_START(&pPool->StatClearAll, c);
+    NOREF(pVCpu);
 
     pgmLock(pVM);
     Log(("pgmR3PoolClearAllRendezvous: cUsedPages=%d fpvFlushRemTbl=%RTbool\n", pPool->cUsedPages, !!fpvFlushRemTbl));
@@ -852,7 +864,7 @@ DECLCALLBACK(VBOXSTRICTRC) pgmR3PoolClearAllRendezvous(PVM pVM, PVMCPU pVCpu, vo
 
         /* First write protect the page again to catch all write accesses. (before checking for changes -> SMP) */
         int rc = PGMHandlerPhysicalReset(pVM, pPage->GCPhys & PAGE_BASE_GC_MASK);
-        Assert(rc == VINF_SUCCESS);
+        AssertRCSuccess(rc);
         pPage->fDirty = false;
 
         pPool->aDirtyPages[i].uIdx = NIL_PGMPOOL_IDX;
@@ -886,7 +898,7 @@ DECLCALLBACK(VBOXSTRICTRC) pgmR3PoolClearAllRendezvous(PVM pVM, PVMCPU pVCpu, vo
 /**
  * Clears the shadow page pool.
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   fFlushRemTlb    When set, the REM TLB is scheduled for flushing as
  *                          well.
  */
@@ -896,12 +908,13 @@ void pgmR3PoolClearAll(PVM pVM, bool fFlushRemTlb)
     AssertRC(rc);
 }
 
+
 /**
  * Protect all pgm pool page table entries to monitor writes
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  *
- * Remark: assumes the caller will flush all TLBs (!!)
+ * @remarks ASSUMES the caller will flush all TLBs!!
  */
 void pgmR3PoolWriteProtectPages(PVM pVM)
 {
@@ -984,6 +997,7 @@ static DECLCALLBACK(int) pgmR3PoolCmdCheck(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, 
     DBGC_CMDHLP_REQ_VM_RET(pCmdHlp, pCmd, pVM);
     DBGC_CMDHLP_ASSERT_PARSER_RET(pCmdHlp, pCmd, -1, cArgs == 0);
     uint32_t cErrors = 0;
+    NOREF(paArgs);
 
     PPGMPOOL pPool = pVM->pgm.s.CTX_SUFF(pPool);
     for (unsigned i = 0; i < pPool->cCurPages; i++)

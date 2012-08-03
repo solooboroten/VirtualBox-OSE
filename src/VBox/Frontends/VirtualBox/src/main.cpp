@@ -1,4 +1,4 @@
-/* $Id: main.cpp 38324 2011-08-05 14:02:53Z vboxsync $ */
+/* $Id: main.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -25,7 +25,7 @@
 #else /* !VBOX_WITH_PRECOMPILED_HEADERS */
 #include "VBoxGlobal.h"
 #include "UIMessageCenter.h"
-#include "VBoxSelectorWnd.h"
+#include "UISelectorWindow.h"
 #include "VBoxUtils.h"
 #ifdef Q_WS_MAC
 # include "UICocoaApplication.h"
@@ -76,8 +76,8 @@ QString g_QStrHintLinuxNoDriver = QApplication::tr(
   "there is a permission problem with /dev/vboxdrv. Please reinstall the kernel "
   "module by executing<br/><br/>"
   "  <font color=blue>'/etc/init.d/vboxdrv setup'</font><br/><br/>"
-  "as root. Users of Ubuntu, Fedora or Mandriva should install the DKMS "
-  "package first. This package keeps track of Linux kernel changes and "
+  "as root. If it is available in your distribution, you should install the "
+  "DKMS package first. This package keeps track of Linux kernel changes and "
   "recompiles the vboxdrv kernel module if necessary."
   );
 
@@ -282,9 +282,11 @@ static void showHelp()
             "  (*) For AMD-V/VT-x setups the effect is --recompile-all.\n"
             "\n"
 # ifdef VBOX_WITH_DEBUGGER_GUI
-            "The following environment variables are evaluated:\n"
-            "  VBOX_GUI_DBG_ENABLED       enable the GUI debug menu if set\n"
-            "  VBOX_GUI_DBG_AUTO_SHOW     show debug windows at VM startup\n"
+            "The following environment (and extra data) variables are evaluated:\n"
+            "  VBOX_GUI_DBG_ENABLED (GUI/Dbg/Enabled)\n"
+            "                             enable the GUI debug menu if set\n"
+            "  VBOX_GUI_DBG_AUTO_SHOW (GUI/Dbg/AutoShow)\n"
+            "                             show debug windows at VM startup\n"
             "  VBOX_GUI_NO_DEBUGGER       disable the GUI debug menu and debug windows\n"
 # endif
             "\n",
@@ -384,11 +386,8 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             QApplication::setStyle (new QPlastiqueStyle);
 
 #ifdef Q_OS_SOLARIS
-        /* Solaris have some issue with cleanlooks style which leads to application
-         * crash in case of using it on Qt4.4 version, lets make the same substitute */
-        if (VBoxGlobal::qtRTVersionString().startsWith ("4.4") &&
-            qobject_cast <QCleanlooksStyle*> (QApplication::style()))
-            QApplication::setStyle (new QPlastiqueStyle);
+        /* Use plastique look 'n feel for Solaris instead of the default motif (Qt 4.7.x) */
+        QApplication::setStyle (new QPlastiqueStyle);
 #endif
 
 #ifdef Q_WS_X11
@@ -504,7 +503,7 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
                 {
                     /* Allow to prevent this message */
                     QString str = vboxGlobal().virtualBox().
-                        GetExtraData (VBoxDefs::GUI_PreventBetaWarning);
+                        GetExtraData(GUI_PreventBetaWarning);
                     if (str != vboxVersion)
                         msgCenter().showBETAWarning();
                 }
@@ -524,9 +523,6 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
                     vboxGlobal().selectorWnd().show();
 #ifdef VBOX_WITH_REGISTRATION_REQUEST
                     vboxGlobal().showRegistrationDialog (false /* aForce */);
-#endif
-#ifdef VBOX_WITH_UPDATE_REQUEST
-                    vboxGlobal().showUpdateDialog (false /* aForce */);
 #endif
 #ifdef VBOX_GUI_WITH_SYSTRAY
                 }
@@ -570,20 +566,13 @@ int main (int argc, char **argv, char **envp)
         }
     }
 
-    int rc;
-    if (!fInitSUPLib)
-        rc = RTR3Init();
-    else
-        rc = RTR3InitAndSUPLib();
+    int rc = RTR3InitExe(argc, &argv, fInitSUPLib ? RTR3INIT_FLAGS_SUPLIB : 0);
     if (RT_FAILURE(rc))
     {
         QApplication a (argc, &argv[0]);
 #ifdef Q_OS_SOLARIS
-        /* Solaris have some issue with cleanlooks style which leads to application
-         * crash in case of using it on Qt4.4 version, lets make the same substitute */
-        if (VBoxGlobal::qtRTVersionString().startsWith ("4.4") &&
-            qobject_cast <QCleanlooksStyle*> (QApplication::style()))
-            QApplication::setStyle (new QPlastiqueStyle);
+        /* Use plastique look 'n feel for Solaris instead of the default motif (Qt 4.7.x) */
+        QApplication::setStyle (new QPlastiqueStyle);
 #endif
         QString msgTitle = QApplication::tr ("VirtualBox - Runtime Error");
         QString msgText = "<html>";
@@ -591,6 +580,7 @@ int main (int argc, char **argv, char **envp)
         switch (rc)
         {
             case VERR_VM_DRIVER_NOT_INSTALLED:
+            case VERR_VM_DRIVER_LOAD_ERROR:
                 msgText += QApplication::tr (
                         "<b>Cannot access the kernel driver!</b><br/><br/>");
 # ifdef RT_OS_LINUX

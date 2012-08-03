@@ -1,4 +1,4 @@
-/* $Id: utf-8.cpp 36555 2011-04-05 12:34:09Z vboxsync $ */
+/* $Id: utf-8.cpp 40938 2012-04-16 11:58:26Z vboxsync $ */
 /** @file
  * IPRT - UTF-8 Decoding.
  */
@@ -349,6 +349,37 @@ RTDECL(size_t) RTStrPurgeEncoding(char *psz)
     return cErrors;
 }
 RT_EXPORT_SYMBOL(RTStrPurgeEncoding);
+
+
+RTDECL(ssize_t) RTStrPurgeComplementSet(char *psz, PCRTUNICP puszValidSet, char chReplacement)
+{
+    size_t cReplacements = 0;
+    AssertReturn(chReplacement && (unsigned)chReplacement < 128, -1);
+    for (;;)
+    {
+        RTUNICP Cp;
+        PCRTUNICP pCp;
+        char *pszOld = psz;
+        if (RT_FAILURE(RTStrGetCpEx((const char **)&psz, &Cp)))
+            return -1;
+        if (!Cp)
+            break;
+        for (pCp = puszValidSet; *pCp; pCp += 2)
+        {
+            AssertReturn(*(pCp + 1), -1);
+            if (*pCp <= Cp && *(pCp + 1) >= Cp) /* No, I won't do * and ++. */
+                break;
+        }
+        if (!*pCp)
+        {
+            for (; pszOld != psz; ++pszOld)
+                *pszOld = chReplacement;
+            ++cReplacements;
+        }
+    }
+    return cReplacements;
+}
+RT_EXPORT_SYMBOL(RTStrPurgeComplementSet);
 
 
 RTDECL(int) RTStrToUni(const char *pszString, PRTUNICP *ppaCps)

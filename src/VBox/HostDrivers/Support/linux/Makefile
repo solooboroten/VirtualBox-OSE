@@ -1,11 +1,11 @@
-# $Revision: 37233 $
+# $Id: Makefile 41354 2012-05-19 18:18:42Z vboxsync $
 ## @file
 # Makefile for the VirtualBox Linux Host Driver.
 #
 
 #
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -73,6 +73,7 @@ OBJS   = \
 	linux/SUPDrv-linux.o \
 	SUPDrv.o \
 	SUPDrvSem.o \
+	SUPDrvTracer.o \
 	r0drv/alloc-r0drv.o \
 	r0drv/initterm-r0drv.o \
 	r0drv/memobj-r0drv.o \
@@ -119,7 +120,12 @@ OBJS   = \
 	common/misc/handletable.o \
 	common/misc/handletablectx.o \
 	common/misc/thread.o \
+	common/string/RTStrCopy.o \
+	common/string/RTStrCopyEx.o \
 	common/string/RTStrCopyP.o \
+	common/string/RTStrNCmp.o \
+	common/string/RTStrNLen.o \
+	common/string/stringalloc.o \
 	common/string/strformat.o \
 	common/string/strformatrt.o \
 	common/string/strformattype.o \
@@ -152,6 +158,9 @@ OBJS += math/gcc/divdi3.o \
 endif
 ifeq ($(BUILD_TARGET_ARCH),amd64)
 OBJS += common/alloc/heapsimple.o
+endif
+ifdef VBOX_WITH_NATIVE_DTRACE
+OBJS += SUPDrvDTrace.o
 endif
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -245,6 +254,9 @@ endif
 ifndef CONFIG_VBOXDRV_FIXEDMAJOR
  KFLAGS  += -DCONFIG_VBOXDRV_AS_MISC
 endif
+ifdef VBOX_WITH_NATIVE_DTRACE
+ KFLAGS  += -DVBOX_WITH_NATIVE_DTRACE
+endif
 ifeq ($(BUILD_TARGET_ARCH),amd64)
  KFLAGS  += -DRT_ARCH_AMD64
 else
@@ -269,8 +281,9 @@ all: $(MODULE)
 
 obj-m += $(MODULE).o
 
+# OL/UEK: disable module signing for external modules -- we don't have any private key
 $(MODULE):
-	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) -C $(KERN_DIR) modules
+	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) CONFIG_MODULE_SIG= -C $(KERN_DIR) modules
 
 install: $(MODULE)
 	@mkdir -p $(MODULE_DIR); \

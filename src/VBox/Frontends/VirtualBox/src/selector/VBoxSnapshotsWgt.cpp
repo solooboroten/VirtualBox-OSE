@@ -1,4 +1,4 @@
-/* $Id: VBoxSnapshotsWgt.cpp 38393 2011-08-10 10:25:56Z vboxsync $ */
+/* $Id: VBoxSnapshotsWgt.cpp 42382 2012-07-25 09:35:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -20,23 +20,28 @@
 #ifdef VBOX_WITH_PRECOMPILED_HEADERS
 # include "precomp.h"
 #else  /* !VBOX_WITH_PRECOMPILED_HEADERS */
-/* Local includes */
-#include "UIIconPool.h"
-#include "UIMessageCenter.h"
-#include "VBoxSnapshotDetailsDlg.h"
-#include "VBoxSnapshotsWgt.h"
-#include "VBoxTakeSnapshotDlg.h"
-#include "UICloneVMWizard.h"
-#include "UIToolBar.h"
-#include "UIVirtualBoxEventHandler.h"
-#include "UISelectorShortcuts.h"
 
-/* Global includes */
+/* Qt includes: */
 #include <QDateTime>
 #include <QHeaderView>
 #include <QMenu>
 #include <QScrollBar>
 #include <QWindowsStyle>
+
+/* GUI includes: */
+#include "UIIconPool.h"
+#include "UIMessageCenter.h"
+#include "VBoxSnapshotDetailsDlg.h"
+#include "VBoxSnapshotsWgt.h"
+#include "VBoxTakeSnapshotDlg.h"
+#include "UIWizardCloneVM.h"
+#include "UIToolBar.h"
+#include "UIVirtualBoxEventHandler.h"
+#include "UISelectorShortcuts.h"
+#include "UIConverter.h"
+
+/* COM includes: */
+#include "CConsole.h"
 
 #endif /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
@@ -184,7 +189,7 @@ public:
         if (mMachine.isNull())
             return;
 
-        setIcon (0, vboxGlobal().toIcon (aState));
+        setIcon (0, gpConverter->toPixmap (aState));
         mMachineState = aState;
         mTimestamp.setTime_t (mMachine.GetLastStateChange() / 1000);
     }
@@ -271,7 +276,7 @@ private:
         else
         {
             dateTime = VBoxSnapshotsWgt::tr ("%1 since %2", "Current State (time or date + time)")
-                .arg (vboxGlobal().toString (mMachineState)).arg (dateTime);
+                .arg (gpConverter->toString (mMachineState)).arg (dateTime);
         }
 
         QString toolTip = QString ("<nobr><b>%1</b>%2</nobr><br><nobr>%3</nobr>")
@@ -639,7 +644,11 @@ void VBoxSnapshotsWgt::sltDeleteSnapshot()
 
     /* Open a direct session (this call will handle all errors) */
     bool busy = mSessionState != KSessionState_Unlocked;
-    CSession session = vboxGlobal().openSession (mMachineId, busy /* aExisting */);
+    CSession session;
+    if (busy)
+        session = vboxGlobal().openExistingSession(mMachineId);
+    else
+        session = vboxGlobal().openSession(mMachineId);
     if (session.isNull())
         return;
 
@@ -696,7 +705,8 @@ void VBoxSnapshotsWgt::sltCloneSnapshot()
     }
     AssertReturn(!machine.isNull(), (void)0);
 
-    UICloneVMWizard wzd(this, machine, snapshot);
+    /* Show Clone VM wizard: */
+    UIWizardCloneVM wzd(this, machine, snapshot);
     wzd.exec();
 }
 
@@ -772,8 +782,11 @@ bool VBoxSnapshotsWgt::takeSnapshot()
     AssertReturn(pItem, (bool)0);
 
     /* Open a session to work with corresponding VM: */
-    CSession session = vboxGlobal().openSession(mMachineId,
-                                                mSessionState != KSessionState_Unlocked /* connect to existing */);
+    CSession session;
+    if (mSessionState != KSessionState_Unlocked)
+        session = vboxGlobal().openExistingSession(mMachineId);
+    else
+        session = vboxGlobal().openSession(mMachineId);
     fIsValid = !session.isNull();
 
     if (fIsValid)

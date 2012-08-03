@@ -22,16 +22,16 @@ LANGUAGE	= C++
 
 FORMS = \
     src/VBoxVMInformationDlg.ui \
-    src/VBoxMediaManagerDlg.ui \
     src/VBoxSnapshotDetailsDlg.ui \
     src/VBoxTakeSnapshotDlg.ui \
-    src/VBoxUpdateDlg.ui \
-    src/VBoxVMLogViewer.ui \
+    src/UIVMLogViewer.ui \
+    src/medium/UIMediumManager.ui \
     src/settings/UISettingsDialog.ui \
     src/settings/global/UIGlobalSettingsGeneral.ui \
     src/settings/global/UIGlobalSettingsInput.ui \
     src/settings/global/UIGlobalSettingsUpdate.ui \
     src/settings/global/UIGlobalSettingsLanguage.ui \
+    src/settings/global/UIGlobalSettingsDisplay.ui \
     src/settings/global/UIGlobalSettingsNetwork.ui \
     src/settings/global/UIGlobalSettingsNetworkDetails.ui \
     src/settings/global/UIGlobalSettingsExtension.ui \
@@ -48,29 +48,6 @@ FORMS = \
     src/settings/machine/UIMachineSettingsUSBFilterDetails.ui \
     src/settings/machine/UIMachineSettingsSF.ui \
     src/settings/machine/UIMachineSettingsSFDetails.ui \
-    src/wizards/clonevm/UICloneVMWizardPage1.ui \
-    src/wizards/clonevm/UICloneVMWizardPage2.ui \
-    src/wizards/clonevm/UICloneVMWizardPage3.ui \
-    src/wizards/newvm/UINewVMWzdPage1.ui \
-    src/wizards/newvm/UINewVMWzdPage2.ui \
-    src/wizards/newvm/UINewVMWzdPage3.ui \
-    src/wizards/newvm/UINewVMWzdPage4.ui \
-    src/wizards/newvm/UINewVMWzdPage5.ui \
-    src/wizards/newhd/UINewHDWizardPageWelcome.ui \
-    src/wizards/newhd/UINewHDWizardPageFormat.ui \
-    src/wizards/newhd/UINewHDWizardPageVariant.ui \
-    src/wizards/newhd/UINewHDWizardPageOptions.ui \
-    src/wizards/newhd/UINewHDWizardPageSummary.ui \
-    src/wizards/firstrun/UIFirstRunWzdPage1.ui \
-    src/wizards/firstrun/UIFirstRunWzdPage2.ui \
-    src/wizards/firstrun/UIFirstRunWzdPage3.ui \
-    src/wizards/exportappliance/UIExportApplianceWzdPage1.ui \
-    src/wizards/exportappliance/UIExportApplianceWzdPage2.ui \
-    src/wizards/exportappliance/UIExportApplianceWzdPage3.ui \
-    src/wizards/exportappliance/UIExportApplianceWzdPage4.ui \
-    src/wizards/importappliance/UIImportApplianceWzdPage1.ui \
-    src/wizards/importappliance/UIImportApplianceWzdPage2.ui \
-    src/wizards/registration/UIRegistrationWzdPage1.ui \
     src/widgets/UIApplianceEditorWidget.ui \
     src/selector/VBoxSnapshotsWgt.ui \
     src/runtime/UIVMCloseDialog.ui

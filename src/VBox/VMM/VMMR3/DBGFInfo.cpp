@@ -1,4 +1,4 @@
-/* $Id: DBGFInfo.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: DBGFInfo.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, Info.
  */
@@ -77,7 +77,7 @@ static const DBGFINFOHLP g_dbgfR3InfoStdErrHlp =
  * Initialize the info handlers.
  *
  * @returns VBox status code.
- * @param   pVM     VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 int dbgfR3InfoInit(PVM pVM)
 {
@@ -107,7 +107,7 @@ int dbgfR3InfoInit(PVM pVM)
  * Terminate the info handlers.
  *
  * @returns VBox status code.
- * @param   pVM     VM handle.
+ * @param   pVM     Pointer to the VM.
  */
 int dbgfR3InfoTerm(PVM pVM)
 {
@@ -124,6 +124,7 @@ int dbgfR3InfoTerm(PVM pVM)
  * @copydoc DBGFINFOHLP::pfnPrintf */
 static DECLCALLBACK(void) dbgfR3InfoLog_Printf(PCDBGFINFOHLP pHlp, const char *pszFormat, ...)
 {
+    NOREF(pHlp);
     va_list args;
     va_start(args, pszFormat);
     RTLogPrintfV(pszFormat, args);
@@ -134,6 +135,7 @@ static DECLCALLBACK(void) dbgfR3InfoLog_Printf(PCDBGFINFOHLP pHlp, const char *p
  * @copydoc DBGFINFOHLP::pfnPrintfV */
 static DECLCALLBACK(void) dbgfR3InfoLog_PrintfV(PCDBGFINFOHLP pHlp, const char *pszFormat, va_list args)
 {
+    NOREF(pHlp);
     RTLogPrintfV(pszFormat, args);
 }
 
@@ -154,6 +156,7 @@ VMMR3DECL(PCDBGFINFOHLP) DBGFR3InfoLogHlp(void)
  * @copydoc DBGFINFOHLP::pfnPrintf */
 static DECLCALLBACK(void) dbgfR3InfoLogRel_Printf(PCDBGFINFOHLP pHlp, const char *pszFormat, ...)
 {
+    NOREF(pHlp);
     va_list args;
     va_start(args, pszFormat);
     RTLogRelPrintfV(pszFormat, args);
@@ -164,6 +167,7 @@ static DECLCALLBACK(void) dbgfR3InfoLogRel_Printf(PCDBGFINFOHLP pHlp, const char
  * @copydoc DBGFINFOHLP::pfnPrintfV */
 static DECLCALLBACK(void) dbgfR3InfoLogRel_PrintfV(PCDBGFINFOHLP pHlp, const char *pszFormat, va_list args)
 {
+    NOREF(pHlp);
     RTLogRelPrintfV(pszFormat, args);
 }
 
@@ -172,6 +176,7 @@ static DECLCALLBACK(void) dbgfR3InfoLogRel_PrintfV(PCDBGFINFOHLP pHlp, const cha
  * @copydoc DBGFINFOHLP::pfnPrintf */
 static DECLCALLBACK(void) dbgfR3InfoStdErr_Printf(PCDBGFINFOHLP pHlp, const char *pszFormat, ...)
 {
+    NOREF(pHlp);
     va_list args;
     va_start(args, pszFormat);
     RTStrmPrintfV(g_pStdErr, pszFormat, args);
@@ -182,6 +187,7 @@ static DECLCALLBACK(void) dbgfR3InfoStdErr_Printf(PCDBGFINFOHLP pHlp, const char
  * @copydoc DBGFINFOHLP::pfnPrintfV */
 static DECLCALLBACK(void) dbgfR3InfoStdErr_PrintfV(PCDBGFINFOHLP pHlp, const char *pszFormat, va_list args)
 {
+    NOREF(pHlp);
     RTStrmPrintfV(g_pStdErr, pszFormat, args);
 }
 
@@ -204,7 +210,7 @@ VMMR3DECL(PCDBGFINFOHLP) DBGFR3InfoLogRelHlp(void)
  * Upon successful return the we're inside the crit sect and the caller must leave it.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   pszDesc     The description of the info and any arguments the handler may take.
  * @param   fFlags      The flags.
@@ -271,7 +277,7 @@ static int dbgfR3InfoRegister(PVM pVM, const char *pszName, const char *pszDesc,
  * Register a info handler owned by a device.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   pszDesc     The description of the info and any arguments the handler may take.
  * @param   pfnHandler  The handler function to be called to display the info.
@@ -317,7 +323,7 @@ VMMR3DECL(int) DBGFR3InfoRegisterDevice(PVM pVM, const char *pszName, const char
  * Register a info handler owned by a driver.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   pszDesc     The description of the info and any arguments the handler may take.
  * @param   pfnHandler  The handler function to be called to display the info.
@@ -363,7 +369,7 @@ VMMR3DECL(int) DBGFR3InfoRegisterDriver(PVM pVM, const char *pszName, const char
  * Register a info handler owned by an internal component.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   pszDesc     The description of the info and any arguments the handler may take.
  * @param   pfnHandler  The handler function to be called to display the info.
@@ -378,7 +384,7 @@ VMMR3DECL(int) DBGFR3InfoRegisterInternal(PVM pVM, const char *pszName, const ch
  * Register a info handler owned by an internal component.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   pszDesc     The description of the info and any arguments the handler may take.
  * @param   pfnHandler  The handler function to be called to display the info.
@@ -418,7 +424,7 @@ VMMR3DECL(int) DBGFR3InfoRegisterInternalEx(PVM pVM, const char *pszName, const 
  * Register a info handler owned by an external component.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   pszDesc     The description of the info and any arguments the handler may take.
  * @param   pfnHandler  The handler function to be called to display the info.
@@ -459,7 +465,7 @@ VMMR3DECL(int) DBGFR3InfoRegisterExternal(PVM pVM, const char *pszName, const ch
  * Deregister one(/all) info handler(s) owned by a device.
  *
  * @returns VBox status code.
- * @param   pVM         VM Handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDevIns     Device instance.
  * @param   pszName     The identifier of the info. If NULL all owned by the device.
  */
@@ -534,7 +540,7 @@ VMMR3DECL(int) DBGFR3InfoDeregisterDevice(PVM pVM, PPDMDEVINS pDevIns, const cha
  * Deregister one(/all) info handler(s) owned by a driver.
  *
  * @returns VBox status code.
- * @param   pVM         VM Handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDrvIns     Driver instance.
  * @param   pszName     The identifier of the info. If NULL all owned by the driver.
  */
@@ -610,7 +616,7 @@ VMMR3DECL(int) DBGFR3InfoDeregisterDriver(PVM pVM, PPDMDRVINS pDrvIns, const cha
  * Internal deregistration helper.
  *
  * @returns VBox status code.
- * @param   pVM         VM Handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info.
  * @param   enmType     The info owner type.
  */
@@ -659,7 +665,7 @@ static int dbgfR3InfoDeregister(PVM pVM, const char *pszName, DBGFINFOTYPE enmTy
  * Deregister a info handler owned by an internal component.
  *
  * @returns VBox status code.
- * @param   pVM         VM Handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info. If NULL all owned by the device.
  */
 VMMR3DECL(int) DBGFR3InfoDeregisterInternal(PVM pVM, const char *pszName)
@@ -673,7 +679,7 @@ VMMR3DECL(int) DBGFR3InfoDeregisterInternal(PVM pVM, const char *pszName)
  * Deregister a info handler owned by an external component.
  *
  * @returns VBox status code.
- * @param   pVM         VM Handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszName     The identifier of the info. If NULL all owned by the device.
  */
 VMMR3DECL(int) DBGFR3InfoDeregisterExternal(PVM pVM, const char *pszName)
@@ -684,24 +690,22 @@ VMMR3DECL(int) DBGFR3InfoDeregisterExternal(PVM pVM, const char *pszName)
 
 
 /**
- * Display a piece of info writing to the supplied handler.
+ * Worker for DBGFR3Info and DBGFR3InfoEx.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
- * @param   pszName     The identifier of the info to display.
- * @param   pszArgs     Arguments to the info handler.
- * @param   pHlp        The output helper functions. If NULL the logger will be used.
+ * @param   pVM                 Pointer to the VM.
+ * @param   idCpu               Which CPU to run EMT bound handlers on.
+ *                              VMCPUID_ANY or a valid CPU ID.
+ * @param   pszName             What to dump.
+ * @param   pszArgs             Arguments, optional.
+ * @param   pHlp                Output helper, optional.
  */
-VMMR3DECL(int) DBGFR3Info(PVM pVM, const char *pszName, const char *pszArgs, PCDBGFINFOHLP pHlp)
+static DECLCALLBACK(int) dbgfR3Info(PVM pVM, VMCPUID idCpu, const char *pszName, const char *pszArgs, PCDBGFINFOHLP pHlp)
 {
     /*
      * Validate input.
      */
-    if (!pszName)
-    {
-        AssertMsgFailed(("!pszName\n"));
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertPtrReturn(pszName, VERR_INVALID_POINTER);
     if (pHlp)
     {
         if (    !pHlp->pfnPrintf
@@ -740,36 +744,34 @@ VMMR3DECL(int) DBGFR3Info(PVM pVM, const char *pszName, const char *pszArgs, PCD
         {
             case DBGFINFOTYPE_DEV:
                 if (Info.fFlags & DBGFINFO_FLAGS_RUN_ON_EMT)
-                    rc = VMR3ReqCallVoidWait(pVM, VMCPUID_ANY, (PFNRT)Info.u.Dev.pfnHandler, 3, Info.u.Dev.pDevIns, pHlp, pszArgs);
+                    rc = VMR3ReqCallVoidWait(pVM, idCpu, (PFNRT)Info.u.Dev.pfnHandler, 3, Info.u.Dev.pDevIns, pHlp, pszArgs);
                 else
                     Info.u.Dev.pfnHandler(Info.u.Dev.pDevIns, pHlp, pszArgs);
                 break;
 
             case DBGFINFOTYPE_DRV:
                 if (Info.fFlags & DBGFINFO_FLAGS_RUN_ON_EMT)
-                    rc = VMR3ReqCallVoidWait(pVM, VMCPUID_ANY, (PFNRT)Info.u.Drv.pfnHandler, 3, Info.u.Drv.pDrvIns, pHlp, pszArgs);
+                    rc = VMR3ReqCallVoidWait(pVM, idCpu, (PFNRT)Info.u.Drv.pfnHandler, 3, Info.u.Drv.pDrvIns, pHlp, pszArgs);
                 else
                     Info.u.Drv.pfnHandler(Info.u.Drv.pDrvIns, pHlp, pszArgs);
                 break;
 
             case DBGFINFOTYPE_INT:
                 if (Info.fFlags & DBGFINFO_FLAGS_RUN_ON_EMT)
-                    rc = VMR3ReqCallVoidWait(pVM, VMCPUID_ANY, (PFNRT)Info.u.Int.pfnHandler, 3, pVM, pHlp, pszArgs);
+                    rc = VMR3ReqCallVoidWait(pVM, idCpu, (PFNRT)Info.u.Int.pfnHandler, 3, pVM, pHlp, pszArgs);
                 else
                     Info.u.Int.pfnHandler(pVM, pHlp, pszArgs);
                 break;
 
             case DBGFINFOTYPE_EXT:
                 if (Info.fFlags & DBGFINFO_FLAGS_RUN_ON_EMT)
-                    rc = VMR3ReqCallVoidWait(pVM, VMCPUID_ANY, (PFNRT)Info.u.Ext.pfnHandler, 3, Info.u.Ext.pvUser, pHlp, pszArgs);
+                    rc = VMR3ReqCallVoidWait(pVM, idCpu, (PFNRT)Info.u.Ext.pfnHandler, 3, Info.u.Ext.pvUser, pHlp, pszArgs);
                 else
                     Info.u.Ext.pfnHandler(Info.u.Ext.pvUser, pHlp, pszArgs);
                 break;
 
             default:
-                AssertMsgFailed(("Invalid info type enmType=%d\n", Info.enmType));
-                rc = VERR_INTERNAL_ERROR;
-                break;
+                AssertMsgFailedReturn(("Invalid info type enmType=%d\n", Info.enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
         }
     }
     else
@@ -781,12 +783,46 @@ VMMR3DECL(int) DBGFR3Info(PVM pVM, const char *pszName, const char *pszArgs, PCD
     return rc;
 }
 
+/**
+ * Display a piece of info writing to the supplied handler.
+ *
+ * @returns VBox status code.
+ * @param   pVM         Pointer to the VM.
+ * @param   pszName     The identifier of the info to display.
+ * @param   pszArgs     Arguments to the info handler.
+ * @param   pHlp        The output helper functions. If NULL the logger will be used.
+ */
+VMMR3DECL(int) DBGFR3Info(PVM pVM, const char *pszName, const char *pszArgs, PCDBGFINFOHLP pHlp)
+{
+    return dbgfR3Info(pVM, VMCPUID_ANY, pszName, pszArgs, pHlp);
+}
+
+
+/**
+ * Display a piece of info writing to the supplied handler.
+ *
+ * @returns VBox status code.
+ * @param   pVM         Pointer to the VM.
+ * @param   idCpu       The CPU to exectue the request on.  Pass NIL_VMCPUID
+ *                      to not involve any EMT.
+ * @param   pszName     The identifier of the info to display.
+ * @param   pszArgs     Arguments to the info handler.
+ * @param   pHlp        The output helper functions. If NULL the logger will be used.
+ */
+VMMR3DECL(int) DBGFR3InfoEx(PVM pVM, VMCPUID idCpu, const char *pszName, const char *pszArgs, PCDBGFINFOHLP pHlp)
+{
+    if (idCpu == NIL_VMCPUID)
+        return dbgfR3Info(pVM, VMCPUID_ANY, pszName, pszArgs, pHlp);
+    return VMR3ReqPriorityCallWait(pVM, idCpu,
+                                   (PFNRT)dbgfR3Info, 5, pVM, idCpu, pszName, pszArgs, pHlp);
+}
+
 
 /**
  * Wrapper for DBGFR3Info that outputs to the release log.
  *
  * @returns See DBGFR3Info.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszName             See DBGFR3Info.
  * @param   pszArgs             See DBGFR3Info.
  */
@@ -800,7 +836,7 @@ VMMR3DECL(int) DBGFR3InfoLogRel(PVM pVM, const char *pszName, const char *pszArg
  * Wrapper for DBGFR3Info that outputs to standard error.
  *
  * @returns See DBGFR3Info.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszName             See DBGFR3Info.
  * @param   pszArgs             See DBGFR3Info.
  */
@@ -816,7 +852,7 @@ VMMR3DECL(int) DBGFR3InfoStdErr(PVM pVM, const char *pszName, const char *pszArg
  * This is intended used by the fatal error dump only.
  *
  * @returns
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszIncludePat   Simple string pattern of info items to include.
  * @param   pszExcludePat   Simple string pattern of info items to exclude.
  * @param   pszSepFmt       Item separator format string.  The item name will be
@@ -892,9 +928,7 @@ VMMR3DECL(int) DBGFR3InfoMulti(PVM pVM, const char *pszIncludePat, const char *p
                     break;
 
                 default:
-                    AssertMsgFailed(("Invalid info type enmType=%d\n", pInfo->enmType));
-                    rc = VERR_INTERNAL_ERROR;
-                    break;
+                    AssertMsgFailedReturn(("Invalid info type enmType=%d\n", pInfo->enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
             }
         }
     }
@@ -909,7 +943,7 @@ VMMR3DECL(int) DBGFR3InfoMulti(PVM pVM, const char *pszIncludePat, const char *p
  * Enumerate all the register info handlers.
  *
  * @returns VBox status code.
- * @param   pVM             VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pfnCallback     Pointer to callback function.
  * @param   pvUser          User argument to pass to the callback.
  */
@@ -950,7 +984,7 @@ VMMR3DECL(int) DBGFR3InfoEnum(PVM pVM, PFNDBGFINFOENUM pfnCallback, void *pvUser
 /**
  * Info handler, internal version.
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pHlp        Callback functions for doing output.
  * @param   pszArgs     Argument string. Optional and specific to the handler.
  */

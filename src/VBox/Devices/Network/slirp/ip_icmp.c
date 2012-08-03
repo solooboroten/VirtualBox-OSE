@@ -1,4 +1,4 @@
-/* $Id: ip_icmp.c 37936 2011-07-14 03:54:41Z vboxsync $ */
+/* $Id: ip_icmp.c 40582 2012-03-23 04:18:12Z vboxsync $ */
 /** @file
  * NAT - IP/ICMP handling.
  */
@@ -88,11 +88,19 @@ static const int icmp_flush[19] =
 /* ADDR MASK REPLY (18) */   0
 };
 
+static void icmp_cache_clean(PNATState pData, int iEntries);
+
 int
-icmp_init(PNATState pData)
+icmp_init(PNATState pData, int iIcmpCacheLimit)
 {
     pData->icmp_socket.so_type = IPPROTO_ICMP;
     pData->icmp_socket.so_state = SS_ISFCONNECTED;
+    if (iIcmpCacheLimit < 0)
+    {
+        LogRel(("NAT: iIcmpCacheLimit is invalid %d, will be alter to default value 100\n", iIcmpCacheLimit));
+        iIcmpCacheLimit = 100;
+    }
+    pData->iIcmpCacheLimit = iIcmpCacheLimit;
 #ifndef RT_OS_WINDOWS
 # ifndef RT_OS_DARWIN
     pData->icmp_socket.s = socket(PF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -159,6 +167,22 @@ icmp_init(PNATState pData)
     return 0;
 }
 
+/**
+ * Cleans ICMP cache.
+ */
+void
+icmp_finit(PNATState pData)
+{
+    icmp_cache_clean(pData, -1);
+#ifdef RT_OS_WINDOWS
+    pData->pfIcmpCloseHandle(pData->icmp_socket.sh);
+    FreeLibrary(pData->hmIcmpLibrary);
+    RTMemFree(pData->pvIcmpBuffer);
+#else
+    closesocket(pData->icmp_socket.s);
+#endif
+}
+
 /*
  * ip here is ip header + 64bytes readed from ICMP packet
  */
@@ -175,10 +199,9 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
     struct socket *head_socket = NULL;
     struct socket *last_socket = NULL;
     struct socket *so = NULL;
-    struct in_addr laddr, faddr;
+    struct in_addr faddr;
     u_short lport, fport;
 
-    laddr.s_addr = ~0;
     faddr.s_addr = ~0;
 
     lport = ~0;
@@ -234,7 +257,6 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
             udp = (struct udphdr *)((char *)ip + (ip->ip_hl << 2));
             faddr.s_addr = ip->ip_dst.s_addr;
             fport = udp->uh_dport;
-            laddr.s_addr = ip->ip_src.s_addr;
             lport = udp->uh_sport;
             last_socket = udp_last_so;
             /* fall through */
@@ -246,7 +268,6 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
                 head_socket = &tcb; /* head_socket could be initialized with udb*/
                 faddr.s_addr = ip->ip_dst.s_addr;
                 fport = tcp->th_dport;
-                laddr.s_addr = ip->ip_src.s_addr;
                 lport = tcp->th_sport;
                 last_socket = tcp_last_so;
             }
@@ -294,6 +315,9 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
          * better add flag if it should removed from lis
          */
         LIST_INSERT_HEAD(&pData->icmp_msg_head, icm, im_list);
+        pData->cIcmpCacheSize++;
+        if (pData->cIcmpCacheSize > pData->iIcmpCacheLimit)
+            icmp_cache_clean(pData, pData->iIcmpCacheLimit/2);
         LogFlowFunc(("LEAVE: icm:%p\n", icm));
         return (icm);
     }
@@ -307,6 +331,40 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
     return NULL;
 }
 
+/**
+ * iEntries how many entries to leave, if iEntries < 0, clean all
+ */
+static void icmp_cache_clean(PNATState pData, int iEntries)
+{
+    int iIcmpCount = 0;
+    struct icmp_msg *icm = NULL;
+    LogFlowFunc(("iEntries:%d\n", iEntries));
+    if (iEntries > pData->cIcmpCacheSize)
+    {
+        LogFlowFuncLeave();
+        return;
+    }
+    while(!LIST_EMPTY(&pData->icmp_msg_head))
+    {
+        icm = LIST_FIRST(&pData->icmp_msg_head);
+        if (    iEntries > 0
+            &&  iIcmpCount < iEntries)
+        {
+            iIcmpCount++;
+            continue;
+        }
+
+        LIST_REMOVE(icm, im_list);
+        if (icm->im_m)
+        {
+            pData->cIcmpCacheSize--;
+            m_freem(pData, icm->im_m);
+        }
+        RTMemFree(icm);
+    }
+    LogFlowFuncLeave();
+}
+
 static int
 icmp_attach(PNATState pData, struct mbuf *m)
 {
@@ -318,6 +376,9 @@ icmp_attach(PNATState pData, struct mbuf *m)
     icm->im_m = m;
     icm->im_so = m->m_so;
     LIST_INSERT_HEAD(&pData->icmp_msg_head, icm, im_list);
+    pData->cIcmpCacheSize++;
+    if (pData->cIcmpCacheSize > pData->iIcmpCacheLimit)
+        icmp_cache_clean(pData, pData->iIcmpCacheLimit/2);
     return 0;
 }
 
@@ -568,14 +629,12 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
         goto end_error;
 
     ip = mtod(msrc, struct ip *);
-#if DEBUG
-    {
-        char bufa[20], bufb[20];
-        strcpy(bufa, inet_ntoa(ip->ip_src));
-        strcpy(bufb, inet_ntoa(ip->ip_dst));
-        Log2((" %.16s to %.16s\n", bufa, bufb));
-    }
-#endif
+    LogFunc(("msrc: %RTnaipv4 -> %RTnaipv4\n", ip->ip_src, ip->ip_dst));
+
+    /* if source IP datagram hasn't got src address don't bother with sending ICMP error */
+    if (ip->ip_src.s_addr == INADDR_ANY)
+        goto end_error;
+
     if (   ip->ip_off & IP_OFFMASK
         && type != ICMP_SOURCEQUENCH)
         goto end_error;    /* Only reply to fragment 0 */
@@ -649,13 +708,13 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     {
         /* DEBUG : append message to ICMP packet */
         int message_len;
-        char *cpnt;
         message_len = strlen(message);
         if (message_len > ICMP_MAXDATALEN)
             message_len = ICMP_MAXDATALEN;
-        cpnt = (char *)m->m_data+m->m_len;
         m_append(pData, m, message_len, message);
     }
+#else
+    NOREF(message);
 #endif
 
     icp->icmp_cksum = 0;
@@ -683,9 +742,6 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     m_freem(pData, msrc);
     LogFlowFuncLeave();
     return;
-
-end_error_free_m:
-    m_freem(pData, m);
 
 end_error:
 
@@ -716,7 +772,6 @@ icmp_reflect(PNATState pData, struct mbuf *m)
 {
     register struct ip *ip = mtod(m, struct ip *);
     int hlen = ip->ip_hl << 2;
-    int optlen = hlen - sizeof(struct ip);
     register struct icmp *icp;
     LogFlowFunc(("ENTER: m:%p\n", m));
 

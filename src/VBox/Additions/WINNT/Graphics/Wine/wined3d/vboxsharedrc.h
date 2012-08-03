@@ -1,4 +1,4 @@
-/* $Id: vboxsharedrc.h 38112 2011-07-22 13:26:19Z vboxsync $ */
+/* $Id: vboxsharedrc.h 41109 2012-05-02 08:37:46Z vboxsync $ */
 /** @file
  *
  * VBox extension to Wine D3D - shared resource
@@ -23,11 +23,12 @@
 #define VBOXSHRC_GET_SHAREHANDLE(_o) ((HANDLE)(_o)->resource.sharerc_handle)
 #define VBOXSHRC_SET_SHAREHANDLE(_o, _h) ((_o)->resource.sharerc_handle = (DWORD)(_h))
 #define VBOXSHRC_COPY_SHAREDATA(_oDst, _oSrc) do { \
-        VBOXSHRC_GET_SHAREFLAFS(_oDst) = VBOXSHRC_GET_SHAREFLAFS(_oSrc); \
-        VBOXSHRC_SET_SHAREHANDLE(_oDst, VBOXSHRC_GET_SHAREFLAFS(_oSrc)); \
+        VBOXSHRC_GET_SHAREFLAFS(_oDst) = VBOXSHRC_GET_SHAREFLAFS(_oSrc);   \
+        VBOXSHRC_SET_SHAREHANDLE(_oDst, VBOXSHRC_GET_SHAREHANDLE(_oSrc)); \
     } while (0)
 #define VBOXSHRC_SET_SHARED(_o) (VBOXSHRC_GET_SHAREFLAFS(_o) |= VBOXSHRC_F_SHARED)
 #define VBOXSHRC_SET_SHARED_OPENED(_o) (VBOXSHRC_GET_SHAREFLAFS(_o) |= VBOXSHRC_F_SHARED_OPENED)
+
 #define VBOXSHRC_IS_SHARED(_o) (!!(VBOXSHRC_GET_SHAREFLAFS(_o) & VBOXSHRC_F_SHARED))
 #define VBOXSHRC_IS_SHARED_OPENED(_o) (!!(VBOXSHRC_GET_SHAREFLAFS(_o) & VBOXSHRC_F_SHARED_OPENED))
 #define VBOXSHRC_IS_SHARED_UNLOCKED(_o) (VBOXSHRC_IS_SHARED(_o) && !VBOXSHRC_IS_LOCKED(_o))
@@ -44,12 +45,5 @@
 #define VBOXSHRC_IS_LOCKED(_o) ( \
         !!((_o)->resource.sharerc_locks) \
         )
-#ifdef VBOX_WINE_WITH_IPRT
-# include <iprt/assert.h>
-#else
-# define AssertBreakpoint() do { } while (0)
-# define Assert(_expr) do { } while (0)
-#endif
-
 
 #endif /* #ifndef ___vboxsharedrc_h___ */

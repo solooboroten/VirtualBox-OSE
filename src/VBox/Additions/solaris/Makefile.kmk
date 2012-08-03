@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 38082 2011-07-20 14:26:24Z vboxsync $
+# $Id: Makefile.kmk 42470 2012-07-31 06:59:12Z vboxsync $
 ## @file
 # Makefile for the Solaris guest additions base directory.
 #
 
 #
-# Copyright (C) 2008-2010 Oracle Corporation
+# Copyright (C) 2008-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -25,14 +25,15 @@
 #
 
 SUB_DEPTH = ../../../..
-include	$(KBUILD_PATH)/subheader.kmk
+include $(KBUILD_PATH)/subheader.kmk
 
-ifneq ($(KBUILD_HOST),solaris)
-$(error "The Solaris guest additions installer can only be built on Solaris!")
-endif
+#ifneq ($(KBUILD_HOST),solaris)
+#$(error "The Solaris guest additions installer can only be built on Solaris!")
+#endif
 
-ifeq ($(KBUILD_HOST),solaris)
+ifeq ($(KBUILD_TARGET),solaris)
  include $(PATH_SUB_CURRENT)/SharedFolders/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Mouse/Makefile.kmk
  include $(PATH_SUB_CURRENT)/DRM/Makefile.kmk
 endif
 
@@ -67,8 +68,9 @@ SOLARIS_ADD_SYSLIBINST_DIR_32           := $(SOLARIS_ADDINST_OUT_DIR)/usr/lib
 SOLARIS_ADD_SYSLIBINST_DIR_64           := $(SOLARIS_ADDINST_OUT_DIR)/usr/lib/amd64
 
 SOLARIS_ADD_USRBIN_DIR                  := $(SOLARIS_ADDINST_OUT_DIR)/usr/bin
+SOLARIS_ADD_USRSBIN_DIR                 := $(SOLARIS_ADDINST_OUT_DIR)/usr/sbin
 SOLARIS_ADD_ETCFS_DIR                   := $(SOLARIS_ADDINST_OUT_DIR)/etc/fs/vboxfs
-SOLARIS_ADD_SERVICESINST_DIR            := $(SOLARIS_ADDINST_OUT_DIR)/var/svc/manifest/system/virtualbox
+SOLARIS_ADD_SERVICESINST_DIR            := $(SOLARIS_ADDINST_OUT_DIR)/var/svc/manifest/application/virtualbox
 
 ifeq ($(KBUILD_TARGET_ARCH),x86)
  SOLARIS_ADDDIR_NAME_ISA                := $(SOLARIS_ADDDIR_NAME_32)
@@ -124,8 +126,10 @@ solaris-addcommon_INST = bin/additions/
 solaris-addcommon_MODE = a+r,u+w
 solaris-addcommon_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Additions/common/VBoxGuest/VBoxGuest-solaris.conf=>vboxguest.conf \
+	$(PATH_ROOT)/src/VBox/Additions/solaris/Mouse/vboxms.conf=>vboxms.conf \
 	$(VBOX_PATH_X11_ADDITION_INSTALLER)/vboxclient.desktop \
 	$(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)/vboxservice.xml \
+	$(PATH_ROOT)/src/VBox/Additions/solaris/Mouse/vboxmslnk.xml \
 	$(VBOX_BRAND_LICENSE_TXT)=>LICENSE
 
 #
@@ -140,6 +144,7 @@ BLDDIRS          += \
 	opt/VirtualBoxAdditions/$(SOLARIS_ADDDIR_NAME_64) \
 	usr \
 	usr/bin \
+	usr/sbin \
 	usr/lib \
 	usr/lib/amd64 \
 	usr/kernel \
@@ -148,8 +153,8 @@ BLDDIRS          += \
 	var \
 	var/svc \
 	var/svc/manifest \
-	var/svc/manifest/system \
-	var/svc/manifest/system/virtualbox \
+	var/svc/manifest/application \
+	var/svc/manifest/application/virtualbox \
 	)
 
 SOLARIS_ADD_STRIP_BINS = \
@@ -158,6 +163,7 @@ SOLARIS_ADD_STRIP_BINS = \
 	VBoxControl \
 	vboxfsmount	\
 	vboxfs \
+	vboxmslnk \
 	$(if ($VBOX_WITH_PAM),pam_vbox.so,) \
 	$(if $(VBOX_OSE),,vboxfs_s10)
 
@@ -171,22 +177,14 @@ SOLARIS_ADD_SYSLIBS = \
 	VBoxOGLpackspu.so
 
 SOLARIS_ADD_DRIVERS = \
-	vboxguest
+	vboxguest \
+	vboxms
 
 SOLARIS_ADD_DRIVERS_CONF = \
-	vboxguest.conf
+	vboxguest.conf \
+	vboxms.conf
 
 SOLARIS_ADD_XORG_DRIVERS = \
-	vboxmouse_drv_13.so \
-	vboxmouse_drv_14.so \
-	vboxmouse_drv_15.so \
-	vboxmouse_drv_16.so \
-	vboxmouse_drv_17.so \
-	vboxmouse_drv_18.so \
-	vboxmouse_drv_19.so \
-	vboxmouse_drv_110.so \
-	vboxmouse_drv_70.so \
-	vboxmouse_drv_71.so \
 	vboxvideo_drv_13.so \
 	vboxvideo_drv_14.so \
 	vboxvideo_drv_15.so \
@@ -195,12 +193,13 @@ SOLARIS_ADD_XORG_DRIVERS = \
 	vboxvideo_drv_18.so \
 	vboxvideo_drv_19.so \
 	vboxvideo_drv_110.so \
+	vboxvideo_drv_111.so \
+	vboxvideo_drv_112.so \
 	vboxvideo_drv_70.so \
 	vboxvideo_drv_71.so
 
 SOLARIS_ADD_COMMON_BINS = \
 	vboxguest.sh \
-	x11config.pl \
 	x11config15sol.pl \
 	x11restore.pl \
 	VBox.sh \
@@ -212,6 +211,9 @@ SOLARIS_ADD_USRBIN_LINKS = \
 	VBoxClient \
 	VBoxControl
 
+SOLARIS_ADD_USRSBIN_LINKS = \
+	vboxmslnk
+
 SOLARIS_ADD_COMMON = \
 	vboxclient.desktop \
 	solaris_xorg.conf \
@@ -219,7 +221,8 @@ SOLARIS_ADD_COMMON = \
 	LICENSE
 
 SOLARIS_ADD_SERVICES = \
-	vboxservice.xml
+	vboxservice.xml \
+	vboxmslnk.xml
 
 ifdef VBOX_COMPRESS
  SOLARIS_ADD_COMPRESS_FILES = \
@@ -233,9 +236,10 @@ ifdef VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE
   SOLARIS_ARCH_ADD_DEPFILES = \
    $(addprefix $(SOLARIS_VBOXADDINST_DIR_64)/,$(SOLARIS_ADD_STRIP_BINS)) \
 	$(addprefix $(SOLARIS_ADD_SYSLIBINST_DIR_32)/,$(SOLARIS_ADD_SYSLIBS)) \
-	$(addprefix $(SOLARIS_ADD_DRIVERINST_DIR_64)/,$(SOLARIS_ADD_DRIVERS)) \
+	$(addprefix $(SOLARIS_ADD_SYSLIBINST_DIR_64)/,$(SOLARIS_ADD_SYSLIBS)) \
 	$(addprefix $(SOLARIS_VBOXADDINST_DIR_64)/,$(SOLARIS_ADD_XORG_DRIVERS)) \
 	$(addprefix $(SOLARIS_VBOXADDINST_DIR_32)/,$(SOLARIS_ADD_STRIP_BINS)) \
+	$(addprefix $(SOLARIS_ADD_DRIVERINST_DIR_64)/,$(SOLARIS_ADD_DRIVERS)) \
 	$(addprefix $(SOLARIS_ADD_DRIVERINST_DIR_32)/,$(SOLARIS_ADD_DRIVERS)) \
 	$(addprefix $(SOLARIS_ADD_DRIVERINST_DIR)/,$(SOLARIS_ADD_DRIVERS_CONF)) \
 	$(addprefix $(SOLARIS_VBOXADDINST_DIR_32)/,$(SOLARIS_ADD_XORG_DRIVERS))
@@ -252,11 +256,12 @@ SOLARIS_ARCH_ADD_DEPFILES += \
 	$(addprefix $(SOLARIS_VBOXADDINST_DIR)/,$(SOLARIS_ADD_COMMON_BINS)) \
 	$(addprefix $(SOLARIS_VBOXADDINST_DIR)/,$(SOLARIS_ADD_COMMON)) \
 	$(addprefix $(SOLARIS_ADD_SERVICESINST_DIR)/,$(SOLARIS_ADD_SERVICES)) \
-	$(addprefix $(SOLARIS_ADD_USRBIN_DIR)/,$(SOLARIS_ADD_USRBIN_LINKS))
+	$(addprefix $(SOLARIS_ADD_USRBIN_DIR)/,$(SOLARIS_ADD_USRBIN_LINKS)) \
+	$(addprefix $(SOLARIS_ADD_USRSBIN_DIR)/,$(SOLARIS_ADD_USRSBIN_LINKS))
 
 
 
-include $(KBUILD_PATH)/subfooter.kmk
+include $(FILE_KBUILD_SUB_FOOTER)
 
 #
 # -=-=-=-=-=-=-=- Additions package -=-=-=-=-=-=-=-
@@ -271,9 +276,9 @@ $(PATH_STAGE_BIN)/additions/$(PKGFILENAME): \
 		$(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)/vboxguest.depend \
 		$(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)/vboxguest.sh \
 		$(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)/vboxservice.xml \
+		$(PATH_ROOT)/src/VBox/Additions/solaris/Mouse/vboxmslnk.xml \
 		$(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)/VBox.sh \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/98vboxadd-xclient \
-		$(VBOX_PATH_X11_ADDITION_INSTALLER)/x11config.pl \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/x11config15sol.pl \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/x11restore.pl \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/solaris_xorg.conf \
@@ -301,6 +306,7 @@ $(PATH_STAGE_BIN)/additions/$(PKGFILENAME): \
 	#$(QUIET)$(INSTALL) -m 0644 $(VBOX_BRAND_LICENSE_TXT)                                                  $(SOLARIS_ADDINST_OUT_DIR)/vboxguest.copyright
 	$(call MSG_L1,Creating install package: $@)
 	$(QUIET)$(MKDIR) -p $(SOLARIS_ADD_ETCFS_DIR)
+	$(QUIET)$(MKDIR) -p $(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)
 	$(QUIET)$(LN_SYMLINK) -f ../..$(SOLARIS_VBOXADDINST_SUBDIR)/1099.vboxclient                           $(SOLARIS_ADD_USRBIN_DIR)/VBoxClient-all
 ifdef VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE
  ifdef VBOX_COMPRESS
@@ -314,7 +320,9 @@ else # !VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE
  endif
 	$(LN_SYMLINK) -f ../../..$(SOLARIS_VBOXADDINST_SUBDIR)/$(SOLARIS_ADDDIR_NAME_ISA)/vboxfsmount         $(SOLARIS_ADD_ETCFS_DIR)/mount
 endif
-	$(QUIET)$(SOLARIS_ADDINST_OUT_DIR)/makepackage.sh $(SOLARIS_ADDINST_OUT_DIR) $(PKGFILENAME) $(VBOX_SVN_REV)
+	$(QUIET)$(INSTALL) -m 0644 $(VBOX_PATH_SOLARIS_ADDITION_INSTALLER)/vboxservice.xml                    $(SOLARIS_ADD_SERVICESINST_DIR)/vboxservice.xml
+	$(QUIET)$(INSTALL) -m 0644 	$(PATH_ROOT)/src/VBox/Additions/solaris/Mouse/vboxmslnk.xml                      $(SOLARIS_ADD_SERVICESINST_DIR)/vboxmslnk.xml
+	$(QUIET)$(SOLARIS_ADDINST_OUT_DIR)/makepackage.sh $(SOLARIS_ADDINST_OUT_DIR) $(PKGFILENAME) $(VBOX_SVN_REV) $(VBOX_SOL_PKG_DEV)
 	$(QUIET)$(INSTALL) -m 0644 $(SOLARIS_ADDINST_OUT_DIR)/$(PKGFILENAME) $(PATH_STAGE_BIN)/additions/$(PKGFILENAME)
 	$(QUIET)$(RM) -f $(SOLARIS_ADDINST_OUT_DIR)/$(PKGFILENAME)
 
@@ -399,3 +407,9 @@ $(addprefix $(SOLARIS_ADD_USRBIN_DIR)/,$(SOLARIS_ADD_USRBIN_LINKS)): \
 		$(SOLARIS_ADD_USRBIN_DIR)/% : % | $$(dir $$@)
 	$(LN_SYMLINK) -f ../..$(SOLARIS_VBOXADDINST_SUBDIR)/$< $@
 
+#
+# Symlinks from /usr/sbin/ to /opt/VirtualBoxAdditions
+#
+$(addprefix $(SOLARIS_ADD_USRSBIN_DIR)/,$(SOLARIS_ADD_USRSBIN_LINKS)): \
+		$(SOLARIS_ADD_USRSBIN_DIR)/% : % | $$(dir $$@)
+	$(LN_SYMLINK) -f ../..$(SOLARIS_VBOXADDINST_SUBDIR)/$< $@

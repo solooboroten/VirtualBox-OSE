@@ -756,6 +756,8 @@ RT_C_DECLS_END
 #define VWRN_NEGATIVE_UNSIGNED              57
 /** Error while characters translation (unicode and so). */
 #define VERR_NO_TRANSLATION                 (-58)
+/** Error while characters translation (unicode and so). */
+#define VWRN_NO_TRANSLATION                 58
 /** Encountered unicode code point which is reserved for use as endian indicator (0xffff or 0xfffe). */
 #define VERR_CODE_POINT_ENDIAN_INDICATOR    (-59)
 /** Encountered unicode code point in the surrogate range (0xd800 to 0xdfff). */
@@ -863,6 +865,16 @@ RT_C_DECLS_END
 #define VERR_DUPLICATE                      (-98)
 /** Something is missing. */
 #define VERR_MISSING                        (-99)
+/** An unexpected (/unknown) exception was caught. */
+#define VERR_UNEXPECTED_EXCEPTION           (-22400)
+/** Buffer underflow. */
+#define VERR_BUFFER_UNDERFLOW               (-22401)
+/** Buffer underflow. */
+#define VINF_BUFFER_UNDERFLOW               22401
+/** Uneven input. */
+#define VERR_UNEVEN_INPUT                   (-22402)
+/** Something is not available or not working properly. */
+#define VERR_NOT_AVAILABLE                  (-22403)
 /** @} */
 
 
@@ -1008,7 +1020,7 @@ RT_C_DECLS_END
 /** @name Internal Processing Errors
  * @{
  */
-/** Internal error - we're screwed if this happens.  */
+/** Internal error - this should never happen.  */
 #define VERR_INTERNAL_ERROR                 (-225)
 /** Internal error no. 2. */
 #define VERR_INTERNAL_ERROR_2               (-226)
@@ -1027,6 +1039,8 @@ RT_C_DECLS_END
 /** Internal error: Uninitialized status code.
  * @remarks This is used by value elsewhere.  */
 #define VERR_IPE_UNINITIALIZED_STATUS       (-233)
+/** Internal error: Supposedly unreachable default case in a switch. */
+#define VERR_IPE_NOT_REACHED_DEFAULT_CASE   (-234)
 /** @} */
 
 
@@ -1069,6 +1083,10 @@ RT_C_DECLS_END
 #define VERR_PIPE_NOT_CONNECTED             (-305)
 /** More data available in pipe. */
 #define VERR_MORE_DATA                      (-306)
+/** Expected read pipe, got a write pipe instead. */
+#define VERR_PIPE_NOT_READ                  (-307)
+/** Expected write pipe, got a read pipe instead. */
+#define VERR_PIPE_NOT_WRITE                 (-308)
 /** @} */
 
 
@@ -1105,6 +1123,9 @@ RT_C_DECLS_END
 #define VERR_SEM_DESTROYED                  (-363)
 /** Nested ownership requests are not permitted for this semaphore type. */
 #define VERR_SEM_NESTED                     (-364)
+/** The release call only release a semaphore nesting, i.e. the caller is still
+ * holding the semaphore. */
+#define VINF_SEM_NESTED                     (364)
 /** Deadlock detected. */
 #define VERR_DEADLOCK                       (-365)
 /** Ping-Pong listen or speak out of turn error. */
@@ -1371,6 +1392,12 @@ RT_C_DECLS_END
 #define VERR_LDRELF_INVALID_RELOCATION_OFFSET   (-639)
 /** The ELF loader didn't find the symbol/string table for the image. */
 #define VERR_LDRELF_NO_SYMBOL_OR_NO_STRING_TABS (-640)
+/** Invalid link address. */
+#define VERR_LDR_INVALID_LINK_ADDRESS           (-647)
+/** Invalid image relative virtual address. */
+#define VERR_LDR_INVALID_RVA                    (-648)
+/** Invalid segment:offset address. */
+#define VERR_LDR_INVALID_SEG_OFFSET             (-649)
 /** @}*/
 
 /** @name Debug Info Reader Status Codes.
@@ -1422,6 +1449,28 @@ RT_C_DECLS_END
 #define VERR_DBG_NOT_LINUX_KALLSYMS             (-666)
 /** No debug module interpreter matching the debug info. */
 #define VERR_DBG_NO_MATCHING_INTERPRETER        (-667)
+/** Bad DWARF line number header. */
+#define VERR_DWARF_BAD_LINE_NUMBER_HEADER       (-668)
+/** Unexpected end of DWARF unit. */
+#define VERR_DWARF_UNEXPECTED_END               (-669)
+/** DWARF LEB value overflows the decoder type. */
+#define VERR_DWARF_LEB_OVERFLOW                 (-670)
+/** Bad DWARF extended line number opcode. */
+#define VERR_DWARF_BAD_LNE                      (-671)
+/** Bad DWARF string. */
+#define VERR_DWARF_BAD_STRING                   (-672)
+/** Bad DWARF position. */
+#define VERR_DWARF_BAD_POS                      (-673)
+/** Bad DWARF info. */
+#define VERR_DWARF_BAD_INFO                     (-674)
+/** Bad DWARF abbreviation data. */
+#define VERR_DWARF_BAD_ABBREV                   (-675)
+/** A DWARF abbreviation was not found. */
+#define VERR_DWARF_ABBREV_NOT_FOUND             (-676)
+/** Encountered an unknown attribute form. */
+#define VERR_DWARF_UNKNOWN_FORM                 (-677)
+/** Encountered an unexpected attribute form. */
+#define VERR_DWARF_UNEXPECTED_FORM              (-678)
 /** @} */
 
 /** @name Request Packet Status Codes.
@@ -1456,6 +1505,9 @@ RT_C_DECLS_END
 #define VERR_ENV_VAR_NOT_FOUND                  (-750)
 /** The specified environment variable was not found. (RTEnvUnsetEx) */
 #define VINF_ENV_VAR_NOT_FOUND                  (750)
+/** Unable to translate all the variables in the default environment due to
+ * codeset issues (LANG / LC_ALL / LC_CTYPE). */
+#define VWRN_ENV_NOT_FULLY_TRANSLATED           (751)
 /** @} */
 
 /** @name Multiprocessor Status Codes.
@@ -1519,6 +1571,12 @@ RT_C_DECLS_END
 #define VERR_MANIFEST_DIGEST_MISMATCH           (-902)
 /** The file list doesn't match to the content of the manifest file. */
 #define VERR_MANIFEST_FILE_MISMATCH             (-903)
+/** The specified attribute (name) was not found in the manifest.  */
+#define VERR_MANIFEST_ATTR_NOT_FOUND            (-904)
+/** The attribute type did not match. */
+#define VERR_MANIFEST_ATTR_TYPE_MISMATCH        (-905)
+/** No attribute of the specified types was found. */
+#define VERR_MANIFEST_ATTR_TYPE_NOT_FOUND        (-906)
 /** @} */
 
 /** @name RTTar status codes
@@ -1639,10 +1697,29 @@ RT_C_DECLS_END
 #define VERR_DVM_MAP_NO_VOLUME                      (-22201)
 /** @} */
 
-/** @name RTDvm status codes
+/** @name Logger status codes
  * @{ */
 /** The internal logger revision did not match. */
 #define VERR_LOG_REVISION_MISMATCH                  (-22300)
+/** @} */
+
+/* see above, 22400..22499 is used for misc codes! */
+
+/** @name Logger status codes
+ * @{ */
+/** Power off is not supported by the hardware or the OS. */
+#define VERR_SYS_CANNOT_POWER_OFF                   (-22500)
+/** The halt action was requested, but the OS may actually power
+ * off the machine. */
+#define VINF_SYS_MAY_POWER_OFF                      (22501)
+/** Shutdown failed. */
+#define VERR_SYS_SHUTDOWN_FAILED                    (-22502)
+/** @} */
+
+/** @name Filesystem status codes
+ * @{ */
+/** Filesystem can't be opened because it is corrupt. */
+#define VERR_FILESYSTEM_CORRUPT                     (-22600)
 /** @} */
 
 /* SED-END */

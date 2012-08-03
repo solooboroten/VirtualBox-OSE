@@ -1,4 +1,4 @@
-/* $Id: vfschain.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: vfschain.cpp 39515 2011-12-02 13:41:07Z vboxsync $ */
 /** @file
  * IPRT - Virtual File System, Chains.
  */
@@ -55,8 +55,8 @@
 static RTONCE       g_rtVfsChainElementInitOnce;
 /** Critical section protecting g_rtVfsChainElementProviderList. */
 static RTCRITSECT   g_rtVfsChainElementCritSect;
-/** List of VFS chain element providers. */
-static RTLISTNODE   g_rtVfsChainElementProviderList;
+/** List of VFS chain element providers (RTVFSCHAINELEMENTREG). */
+static RTLISTANCHOR g_rtVfsChainElementProviderList;
 
 
 /**
@@ -505,9 +505,12 @@ RTDECL(int)     RTVfsChainSpecParse(const char *pszSpec, uint32_t fFlags, RTVFSC
     }
 
     /*
-     * Cleanup and set the error indicator on failure.
+     * Return the chain on success; Cleanup and set the error indicator on
+     * failure.
      */
-    if (RT_FAILURE(rc))
+    if (RT_SUCCESS(rc))
+        *ppSpec = pSpec;
+    else
     {
         if (ppszError)
             *ppszError = pszSrc;

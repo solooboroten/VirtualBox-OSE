@@ -230,6 +230,54 @@ static HRESULT WINAPI IWineD3DTextureImpl_GetParent(IWineD3DTexture *iface, IUnk
     return resource_get_parent((IWineD3DResource *)iface, pParent);
 }
 
+#ifdef VBOX_WITH_WDDM
+static HRESULT WINAPI IWineD3DTextureImpl_SetShRcState(IWineD3DTexture *iface, VBOXWINEEX_SHRC_STATE enmState) {
+    IWineD3DTextureImpl *This = (IWineD3DTextureImpl*)iface;
+    struct wined3d_context *context = NULL;
+    HRESULT hr = IWineD3DResourceImpl_SetShRcState((IWineD3DResource*)iface, enmState);
+    unsigned int i;
+
+    if (FAILED(hr))
+    {
+        ERR("IWineD3DResource_SetShRcState failed");
+        return hr;
+    }
+
+    for (i = 0; i < This->baseTexture.levels; ++i)
+    {
+        if (This->surfaces[i])
+        {
+            HRESULT tmpHr = IWineD3DResource_SetShRcState((IWineD3DResource*)This->surfaces[i], enmState);
+            Assert(tmpHr == S_OK);
+        }
+    }
+
+    if (!This->resource.device->isInDraw)
+    {
+        context = context_acquire(This->resource.device, NULL, CTXUSAGE_RESOURCELOAD);
+        if (!context)
+        {
+            ERR("zero context!");
+            return E_FAIL;
+        }
+
+        if (!context->valid)
+        {
+            ERR("context invalid!");
+            context_release(context);
+            return E_FAIL;
+        }
+    }
+
+    device_cleanup_durtify_texture_target(This->resource.device, This->target);
+
+    if (context)
+        context_release(context);
+
+    return WINED3D_OK;
+}
+#endif
+
 /* ******************************************************
    IWineD3DTexture IWineD3DBaseTexture parts follow
    ****************************************************** */
@@ -288,22 +336,28 @@ static HRESULT WINAPI IWineD3DTextureImpl_BindTexture(IWineD3DTexture *iface, BO
         for (i = 0; i < This->baseTexture.levels; ++i) {
             surface_set_texture_name(This->surfaces[i], gl_tex->name, This->baseTexture.is_srgb);
         }
+
         /* Conditinal non power of two textures use a different clamping default. If we're using the GL_WINE_normalized_texrect
          * partial driver emulation, we're dealing with a GL_TEXTURE_2D texture which has the address mode set to repeat - something
          * that prevents us from hitting the accelerated codepath. Thus manually set the GL state. The same applies to filtering.
          * Even if the texture has only one mip level, the default LINEAR_MIPMAP_LINEAR filter causes a SW fallback on macos.
          */
         if(IWineD3DBaseTexture_IsCondNP2(iface)) {
-            ENTER_GL();
-            glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            checkGLcall("glTexParameteri(dimension, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)");
-            glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            checkGLcall("glTexParameteri(dimension, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)");
-            glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            checkGLcall("glTexParameteri(dimension, GL_TEXTURE_MIN_FILTER, GL_NEAREST)");
-            glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-            checkGLcall("glTexParameteri(dimension, GL_TEXTURE_MAG_FILTER, GL_NEAREST)");
-            LEAVE_GL();
+#ifdef VBOX_WITH_WDDM
+            if (!VBOXSHRC_IS_SHARED_OPENED(This))
+#endif
+            {
+                ENTER_GL();
+                glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                checkGLcall("glTexParameteri(dimension, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)");
+                glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                checkGLcall("glTexParameteri(dimension, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)");
+                glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                checkGLcall("glTexParameteri(dimension, GL_TEXTURE_MIN_FILTER, GL_NEAREST)");
+                glTexParameteri(IWineD3DTexture_GetTextureDimensions(iface), GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                checkGLcall("glTexParameteri(dimension, GL_TEXTURE_MAG_FILTER, GL_NEAREST)");
+                LEAVE_GL();
+            }
             gl_tex->states[WINED3DTEXSTA_ADDRESSU]      = WINED3DTADDRESS_CLAMP;
             gl_tex->states[WINED3DTEXSTA_ADDRESSV]      = WINED3DTADDRESS_CLAMP;
             gl_tex->states[WINED3DTEXSTA_MAGFILTER]     = WINED3DTEXF_POINT;
@@ -418,6 +472,9 @@ static const IWineD3DTextureVtbl IWineD3DTexture_Vtbl =
     IWineD3DTextureImpl_PreLoad,
     IWineD3DTextureImpl_UnLoad,
     IWineD3DTextureImpl_GetType,
+#ifdef VBOX_WITH_WDDM
+    IWineD3DTextureImpl_SetShRcState,
+#endif
     /* IWineD3DBaseTexture */
     IWineD3DTextureImpl_SetLOD,
     IWineD3DTextureImpl_GetLOD,
@@ -437,6 +494,18 @@ static const IWineD3DTextureVtbl IWineD3DTexture_Vtbl =
     IWineD3DTextureImpl_UnlockRect,
     IWineD3DTextureImpl_AddDirtyRect
 };
+
+void texture_state_init(IWineD3DTexture *iface, struct gl_texture *gl_tex)
+{
+    basetexture_state_init((IWineD3DBaseTexture*)iface, gl_tex);
+    if(IWineD3DBaseTexture_IsCondNP2(iface)) {
+        gl_tex->states[WINED3DTEXSTA_ADDRESSU]      = WINED3DTADDRESS_CLAMP;
+        gl_tex->states[WINED3DTEXSTA_ADDRESSV]      = WINED3DTADDRESS_CLAMP;
+        gl_tex->states[WINED3DTEXSTA_MAGFILTER]     = WINED3DTEXF_POINT;
+        gl_tex->states[WINED3DTEXSTA_MINFILTER]     = WINED3DTEXF_POINT;
+        gl_tex->states[WINED3DTEXSTA_MIPFILTER]     = WINED3DTEXF_NONE;
+    }
+}
 
 HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT levels,
         IWineD3DDeviceImpl *device, DWORD usage, WINED3DFORMAT format, WINED3DPOOL pool,
@@ -620,6 +689,7 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
 #ifdef VBOX_WITH_WDDM
     if (VBOXSHRC_IS_SHARED(texture))
     {
+        struct wined3d_context * context;
         Assert(shared_handle);
         for (i = 0; i < texture->baseTexture.levels; ++i)
         {
@@ -631,23 +701,42 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
             Assert(!((IWineD3DSurfaceImpl*)texture->surfaces[i])->texture_name);
         }
 #endif
-        IWineD3DSurface_LoadLocation(texture->surfaces[0], SFLAG_INTEXTURE, NULL);
-        if (!VBOXSHRC_IS_SHARED_OPENED(texture))
+        for (i = 0; i < texture->baseTexture.levels; ++i)
         {
-            Assert(!(*shared_handle));
-            *shared_handle = VBOXSHRC_GET_SHAREHANDLE(texture);
-        }
-        else
-        {
-            Assert(*shared_handle);
-            Assert(*shared_handle == VBOXSHRC_GET_SHAREHANDLE(texture));
+            if (!VBOXSHRC_IS_SHARED_OPENED(texture))
+            {
+                IWineD3DSurface_LoadLocation(texture->surfaces[i], SFLAG_INTEXTURE, NULL);
+                Assert(!(*shared_handle));
+                *shared_handle = VBOXSHRC_GET_SHAREHANDLE(texture);
+            }
+            else
+            {
+                surface_setup_location_onopen((IWineD3DSurfaceImpl*)texture->surfaces[i]);
+                Assert(*shared_handle);
+                Assert(*shared_handle == VBOXSHRC_GET_SHAREHANDLE(texture));
+            }
         }
 #ifdef DEBUG
         for (i = 0; i < texture->baseTexture.levels; ++i)
         {
-            Assert((*shared_handle) == ((IWineD3DSurfaceImpl*)texture->surfaces[i])->texture_name);
+            Assert((GLuint)(*shared_handle) == ((IWineD3DSurfaceImpl*)texture->surfaces[i])->texture_name);
         }
 #endif
+
+        Assert(!device->isInDraw);
+
+        /* flush to ensure the texture is allocated/referenced before it is used/released by another
+         * process opening/creating it */
+        context = context_acquire(device, NULL, CTXUSAGE_RESOURCELOAD);
+        if (context->valid)
+        {
+            wglFlush();
+        }
+        else
+        {
+            ERR("invalid context!");
+        }
+        context_release(context);
     }
     else
     {

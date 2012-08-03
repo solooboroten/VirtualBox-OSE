@@ -55,6 +55,9 @@
 # error CHROMIUM_THREADSAFE have to be defined
 #endif
 
+#ifdef CHROMIUM_THREADSAFE
+# include <cr_threads.h>
+#endif
 /*#define VBOX_TEST_MEGOO*/
 
 #if 0 && defined(CR_NEWWINTRACK) && !defined(WINDOWS)
@@ -110,6 +113,15 @@ struct context_info_t
     unsigned long id;          /* the client-visible handle */
     GLint visBits;
     WindowInfo *currentDrawable;
+
+#if defined(VBOX_WITH_CRHGSMI) && defined(IN_GUEST)
+    GLint spuConnection;
+    struct VBOXUHGSMI *pHgsmi;
+#endif
+
+#ifdef CHROMIUM_THREADSAFE
+    VBOXTLSREFDATA
+#endif
 
 #ifdef WINDOWS
     HGLRC hglrc;
@@ -224,7 +236,9 @@ typedef struct {
     /* contexts */
     int freeContextNumber;
     CRHashTable *contextTable;
+#ifndef CHROMIUM_THREADSAFE
     ContextInfo *currentContext; /* may be NULL */
+#endif
 
     /* windows */
     CRHashTable *windowTable;
@@ -257,8 +271,34 @@ typedef struct {
 
 } Stub;
 
+#ifdef CHROMIUM_THREADSAFE
+/* we place the g_stubCurrentContextTLS outside the Stub data because Stub data is inited by the client's call,
+ * while we need g_stubCurrentContextTLS the g_stubCurrentContextTLS to be valid at any time to be able to handle
+ * THREAD_DETACH cleanup on windows.
+ * Note that we can not do
+ *  STUB_INIT_LOCK();
+ *  if (stub_initialized) stubSetCurrentContext(NULL);
+ *  STUB_INIT_UNLOCK();
+ * on THREAD_DETACH since it may cause deadlock, i.e. in this situation loader lock is acquired first and then the init lock,
+ * but since we use GetModuleFileName in crGetProcName called from stubInitLocked, the lock order might be the oposite.
+ * Note that GetModuleFileName acquires the loader lock.
+ * */
+extern CRtsd g_stubCurrentContextTSD;
+
+DECLINLINE(ContextInfo*) stubGetCurrentContext()
+{
+    ContextInfo* ctx;
+    VBoxTlsRefGetCurrentFunctional(ctx, ContextInfo, &g_stubCurrentContextTSD);
+    return ctx;
+}
+# define stubSetCurrentContext(_ctx) VBoxTlsRefSetCurrent(ContextInfo, &g_stubCurrentContextTSD, _ctx)
+#else
+# define stubGetCurrentContext() (stub.currentContext)
+# define stubSetCurrentContext(_ctx) do { stub.currentContext = (_ctx); } while (0)
+#endif
 
 extern Stub stub;
+
 extern DECLEXPORT(SPUDispatchTable) glim;
 extern SPUDispatchTable stubThreadsafeDispatch;
 extern DECLEXPORT(SPUDispatchTable) stubNULLDispatch;
@@ -298,18 +338,30 @@ extern void stubCheckXExtensions(WindowInfo *pWindow);
 #endif
 
 
-extern ContextInfo *stubNewContext( const char *dpyName, GLint visBits, ContextType type, unsigned long shareCtx );
+extern ContextInfo *stubNewContext( const char *dpyName, GLint visBits, ContextType type, unsigned long shareCtx
+#if defined(VBOX_WITH_CRHGSMI) && defined(IN_GUEST)
+        , struct VBOXUHGSMI *pHgsmi
+#endif
+        );
 extern void stubDestroyContext( unsigned long contextId );
 extern GLboolean stubMakeCurrent( WindowInfo *window, ContextInfo *context );
 extern GLint stubNewWindow( const char *dpyName, GLint visBits );
+extern void stubDestroyWindow( GLint con, GLint window );
 extern void stubSwapBuffers(WindowInfo *window, GLint flags);
 extern void stubGetWindowGeometry(WindowInfo *win, int *x, int *y, unsigned int *w, unsigned int *h);
 extern GLboolean stubUpdateWindowGeometry(WindowInfo *pWindow, GLboolean bForceUpdate);
 extern GLboolean stubIsWindowVisible(WindowInfo *win);
 extern bool stubInit(void);
 
+extern void stubForcedFlush(GLint con);
 extern void APIENTRY stub_GetChromiumParametervCR( GLenum target, GLuint index, GLenum type, GLsizei count, GLvoid *values );
 
 extern void APIENTRY glBoundsInfoCR(const CRrecti *, const GLbyte *, GLint, GLint);
+
+#if defined(VBOX_WITH_CRHGSMI) && defined(IN_GUEST)
+# define CR_CTX_CON(_pCtx) ((_pCtx)->spuConnection)
+#else
+# define CR_CTX_CON(_pCtx) (0)
+#endif
 
 #endif /* CR_STUB_H */

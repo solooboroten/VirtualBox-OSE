@@ -22,11 +22,18 @@
 # terms and conditions of either the GPL or the CDDL or both.
 #
 
+LC_ALL=C
+export LC_ALL
+
+LANG=C
+export LANG
+
 SILENTUNLOAD=""
 MODNAME="vboxguest"
 VFSMODNAME="vboxfs"
+VMSMODNAME="vboxms"
 MODDIR32="/usr/kernel/drv"
-MODDIR64=$MODDIR32/amd64
+MODDIR64="/usr/kernel/drv/amd64"
 VFSDIR32="/usr/kernel/fs"
 VFSDIR64="/usr/kernel/fs/amd64"
 
@@ -56,11 +63,13 @@ check_if_installed()
 
 module_loaded()
 {
-    if test -f "/etc/name_to_major"; then
-        loadentry=`cat /etc/name_to_major | grep "$1 "`
-    else
-        loadentry=`/usr/sbin/modinfo | grep "$1 "`
+    if test -z "$1"; then
+        abort "missing argument to module_loaded()"
     fi
+
+    modname=$1
+    # modinfo should now work properly since we prevent module autounloading.
+    loadentry=`/usr/sbin/modinfo | grep "$modname "`
     if test -z "$loadentry"; then
         return 1
     fi
@@ -79,6 +88,12 @@ vboxfs_loaded()
     return $?
 }
 
+vboxms_loaded()
+{
+    module_loaded $VMSMODNAME
+    return $?
+}
+
 check_root()
 {
     # the reason we don't use "-u" is that some versions of id are old and do not
@@ -93,25 +108,20 @@ check_root()
 
 start_module()
 {
-    if vboxguest_loaded; then
-        info "VirtualBox guest kernel module already loaded."
+    /usr/sbin/add_drv -i'pci80ee,cafe' -m'* 0666 root sys' $MODNAME
+    if test ! vboxguest_loaded; then
+        abort "Failed to load VirtualBox guest kernel module."
+    elif test -c "/devices/pci@0,0/pci80ee,cafe@4:$MODNAME"; then
+        info "VirtualBox guest kernel module loaded."
     else
-        /usr/sbin/add_drv -i'pci80ee,cafe' -m'* 0666 root sys' $MODNAME
-        sync
-        if test ! vboxguest_loaded; then
-            abort "Failed to load VirtualBox guest kernel module."
-        elif test -c "/devices/pci@0,0/pci80ee,cafe@4:$MODNAME"; then
-            info "VirtualBox guest kernel module loaded."
-        else
-            abort "Aborting due to attach failure."
-        fi
+        info "VirtualBox guest kernel module failed to attach."
     fi
 }
 
 stop_module()
 {
     if vboxguest_loaded; then
-        /usr/sbin/rem_drv $MODNAME || abort "## Failed to unload VirtualBox guest kernel module."
+        /usr/sbin/rem_drv $MODNAME || abort "Failed to unload VirtualBox guest kernel module."
         info "VirtualBox guest kernel module unloaded."
     elif test -z "$SILENTUNLOAD"; then
         info "VirtualBox guest kernel module not loaded."
@@ -125,7 +135,7 @@ start_vboxfs()
     else
         /usr/sbin/modload -p fs/$VFSMODNAME || abort "Failed to load VirtualBox FileSystem kernel module."
         if test ! vboxfs_loaded; then
-            abort "Failed to load VirtualBox FileSystem kernel module."
+            info "Failed to load VirtualBox FileSystem kernel module."
         else
             info "VirtualBox FileSystem kernel module loaded."
         fi
@@ -145,20 +155,26 @@ stop_vboxfs()
     fi
 }
 
-restart_module()
+start_vboxms()
 {
-    stop_module
-    sync
-    start_module
-    return 0
+    /usr/sbin/add_drv -m'* 0666 root sys' $VMSMODNAME
+    if test ! vboxms_loaded; then
+        abort "Failed to load VirtualBox pointer integration module."
+    elif test -c "/devices/pseudo/$VMSMODNAME@0:$VMSMODNAME"; then
+        info "VirtualBox pointer integration module loaded."
+    else
+        info "VirtualBox pointer integration module failed to attach."
+    fi
 }
 
-restart_all()
+stop_vboxms()
 {
-    stop_module
-    sync
-    start_module
-    return 0
+    if vboxms_loaded; then
+        /usr/sbin/rem_drv $VMSMODNAME || abort "Failed to unload VirtualBox pointer integration module."
+        info "VirtualBox pointer integration module unloaded."
+    elif test -z "$SILENTUNLOAD"; then
+        info "VirtualBox pointer integration module not loaded."
+    fi
 }
 
 status_module()
@@ -172,8 +188,18 @@ status_module()
 
 stop_all()
 {
+    stop_vboxms
     stop_vboxfs
     stop_module
+    return 0
+}
+
+restart_all()
+{
+    stop_all
+    start_module
+    start_vboxfs
+    start_vboxms
     return 0
 }
 
@@ -193,12 +219,11 @@ restartall)
     ;;
 start)
     start_module
+    start_vboxms
     ;;
 stop)
+    stop_vboxms
     stop_module
-    ;;
-restart)
-    restart_module
     ;;
 status)
     status_module
@@ -208,6 +233,12 @@ vfsstart)
     ;;
 vfsstop)
     stop_vboxfs
+    ;;
+vmsstart)
+    start_vboxms
+    ;;
+vmsstop)
+    stop_vboxms
     ;;
 *)
     echo "Usage: $0 {start|stop|restart|status}"

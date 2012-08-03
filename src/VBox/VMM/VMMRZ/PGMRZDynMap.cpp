@@ -1,4 +1,4 @@
-/* $Id: PGMRZDynMap.cpp 36627 2011-04-08 15:38:47Z vboxsync $ */
+/* $Id: PGMRZDynMap.cpp 41836 2012-06-19 16:20:52Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, dynamic mapping cache.
  */
@@ -87,19 +87,19 @@
  * This will declare a temporary variable and expands to two statements!
  */
 # define PGMRZDYNMAP_SPINLOCK_ACQUIRE(pThis) \
-    RTSPINLOCKTMP   MySpinlockTmp = RTSPINLOCKTMP_INITIALIZER; \
-    RTSpinlockAcquire((pThis)->hSpinlock, &MySpinlockTmp)
+    RTSpinlockAcquire((pThis)->hSpinlock)
+
 /**
  * Releases the spinlock.
  */
 # define PGMRZDYNMAP_SPINLOCK_RELEASE(pThis) \
-    RTSpinlockRelease((pThis)->hSpinlock, &MySpinlockTmp)
+    RTSpinlockRelease((pThis)->hSpinlock)
 
 /**
  * Re-acquires the spinlock.
  */
 # define PGMRZDYNMAP_SPINLOCK_REACQUIRE(pThis) \
-    RTSpinlockAcquire((pThis)->hSpinlock, &MySpinlockTmp)
+    RTSpinlockAcquire((pThis)->hSpinlock)
 #else
 # define PGMRZDYNMAP_SPINLOCK_ACQUIRE(pThis)   do { } while (0)
 # define PGMRZDYNMAP_SPINLOCK_RELEASE(pThis)   do { } while (0)
@@ -303,7 +303,7 @@ typedef CTX_MID(PGM,DYNMAPENTRY) PGMRZDYNMAPENTRY;
  * @sa PGMR0DYNMAPENTRY, PGMRCDYNMAPENTRY  */
 typedef PGMRZDYNMAPENTRY *PPGMRZDYNMAPENTRY;
 
-/** Pointer the mapping cache instance for the current context.
+/** Pointer to the mapping cache instance for the current context.
  * @sa PGMR0DYNMAP, PGMRCDYNMAP  */
 typedef CTX_MID(PGM,DYNMAP) *PPGMRZDYNMAP;
 
@@ -337,13 +337,13 @@ static int  pgmR0DynMapTest(PVM pVM);
 /**
  * Initializes the auto mapping sets for a VM.
  *
- * @returns VINF_SUCCESS on success, VERR_INTERNAL_ERROR on failure.
- * @param   pVM         The VM in question.
+ * @returns VINF_SUCCESS on success, VERR_PGM_DYNMAP_IPE on failure.
+ * @param   pVM         Pointer to the VM.
  */
 static int pgmRZDynMapInitAutoSetsForVM(PVM pVM)
 {
     VMCPUID idCpu = pVM->cCpus;
-    AssertReturn(idCpu > 0 && idCpu <= VMM_MAX_CPU_COUNT, VERR_INTERNAL_ERROR);
+    AssertReturn(idCpu > 0 && idCpu <= VMM_MAX_CPU_COUNT, VERR_PGM_DYNMAP_IPE);
     while (idCpu-- > 0)
     {
         PPGMMAPSET pSet = &pVM->aCpus[idCpu].pgm.s.AutoSet;
@@ -399,7 +399,7 @@ VMMR0DECL(int) PGMR0DynMapInit(void)
             pThis->fLegacyMode = false;
             break;
         default:
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_PGM_DYNMAP_IPE;
             break;
     }
     if (RT_SUCCESS(rc))
@@ -407,7 +407,7 @@ VMMR0DECL(int) PGMR0DynMapInit(void)
         rc = RTSemFastMutexCreate(&pThis->hInitLock);
         if (RT_SUCCESS(rc))
         {
-            rc = RTSpinlockCreate(&pThis->hSpinlock);
+            rc = RTSpinlockCreate(&pThis->hSpinlock, RTSPINLOCK_FLAGS_INTERRUPT_UNSAFE, "PGMR0DynMap");
             if (RT_SUCCESS(rc))
             {
                 pThis->u32Magic = PGMRZDYNMAP_MAGIC;
@@ -465,7 +465,7 @@ VMMR0DECL(void) PGMR0DynMapTerm(void)
  * Initializes the dynamic mapping cache for a new VM.
  *
  * @returns VBox status code.
- * @param   pVM         Pointer to the shared VM structure.
+ * @param   pVM         Pointer to the VM.
  */
 VMMR0DECL(int) PGMR0DynMapInitVM(PVM pVM)
 {
@@ -488,7 +488,7 @@ VMMR0DECL(int) PGMR0DynMapInitVM(PVM pVM)
      * Reference and if necessary setup or expand the cache.
      */
     PPGMRZDYNMAP pThis = g_pPGMR0DynMap;
-    AssertPtrReturn(pThis, VERR_INTERNAL_ERROR);
+    AssertPtrReturn(pThis, VERR_PGM_DYNMAP_IPE);
     rc = RTSemFastMutexRequest(pThis->hInitLock);
     AssertLogRelRCReturn(rc, rc);
 
@@ -520,7 +520,7 @@ VMMR0DECL(int) PGMR0DynMapInitVM(PVM pVM)
 /**
  * Terminates the dynamic mapping cache usage for a VM.
  *
- * @param   pVM         Pointer to the shared VM structure.
+ * @param   pVM         Pointer to the VM.
  */
 VMMR0DECL(void) PGMR0DynMapTermVM(PVM pVM)
 {
@@ -818,7 +818,7 @@ static int pgmR0DynMapPagingArrayMapPte(PPGMRZDYNMAP pThis, PPGMR0DYNMAPPGLVL pP
              */
             ASMIntEnable();
             if (i + 1 == pPgLvl->cLevels)
-                AssertReturn(pSeg->cPTs < cMaxPTs, VERR_INTERNAL_ERROR);
+                AssertReturn(pSeg->cPTs < cMaxPTs, VERR_PGM_DYNMAP_IPE);
             else
             {
                 int rc2 = RTR0MemObjFree(pPgLvl->a[i].hMemObj, true /* fFreeMappings */); AssertRC(rc2);
@@ -871,7 +871,7 @@ static int pgmR0DynMapPagingArrayMapPte(PPGMRZDYNMAP pThis, PPGMR0DYNMAPPGLVL pP
                     "PGMR0DynMap: pv=%p pvPage=%p iEntry=%#x fLegacyMode=%RTbool\n",
                     i, pPgLvl->cLevels, uEntry, pPgLvl->a[i].fAndMask, pPgLvl->a[i].fResMask, uEntry & pPgLvl->a[i].fAndMask,
                     pPgLvl->a[i].u.pv, pvPage, iEntry, pThis->fLegacyMode));
-            return VERR_INTERNAL_ERROR;
+            return VERR_PGM_DYNMAP_IPE;
         }
         /*Log(("#%d: iEntry=%4d uEntry=%#llx pvEntry=%p HCPhys=%RHp \n", i, iEntry, uEntry, pvEntry, pPgLvl->a[i].HCPhys));*/
     }
@@ -1006,7 +1006,7 @@ static int pgmR0DynMapAddSeg(PPGMRZDYNMAP pThis, uint32_t cPages)
             {
                 LogRel(("pgmR0DynMapAddSeg: internal error - page #%u HCPhysPage=%RHp HCPhysPte=%RHp pbPage=%p pvPte=%p\n",
                         iPage - pSeg->iPage, HCPhysPage, HCPhysPte, pbPage, pThis->paPages[iPage].uPte.pv));
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_PGM_DYNMAP_IPE;
                 break;
             }
 #endif
@@ -1061,6 +1061,8 @@ static int pgmR0DynMapAddSeg(PPGMRZDYNMAP pThis, uint32_t cPages)
         AssertRC(rc2);
         pSeg->hMemObj = NIL_RTR0MEMOBJ;
     }
+    else if (rc == VERR_NO_PAGE_MEMORY || rc == VERR_NO_PHYS_MEMORY)
+        rc = VERR_NO_MEMORY;
     RTMemFree(pSeg);
 
     /* Don't bother resizing the arrays, but free them if we're the only user. */
@@ -1088,7 +1090,7 @@ static int pgmR0DynMapSetup(PPGMRZDYNMAP pThis)
      */
     uint32_t cMinPages;
     uint32_t cPages = pgmR0DynMapCalcNewSize(pThis, &cMinPages);
-    AssertReturn(cPages, VERR_INTERNAL_ERROR);
+    AssertReturn(cPages, VERR_PGM_DYNMAP_IPE);
     int rc = pgmR0DynMapAddSeg(pThis, cPages);
     if (rc == VERR_NO_MEMORY)
     {
@@ -1131,7 +1133,7 @@ static int pgmR0DynMapExpand(PPGMRZDYNMAP pThis)
      */
     uint32_t cMinPages;
     uint32_t cPages = pgmR0DynMapCalcNewSize(pThis, &cMinPages);
-    AssertReturn(cPages, VERR_INTERNAL_ERROR);
+    AssertReturn(cPages, VERR_PGM_DYNMAP_IPE);
     if (pThis->cPages >= cPages)
         return VINF_SUCCESS;
 
@@ -1250,7 +1252,7 @@ static void pgmR0DynMapTearDown(PPGMRZDYNMAP pThis)
  * Initializes the dynamic mapping cache in raw-mode context.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  */
 VMMRCDECL(int) PGMRCDynMapInit(PVM pVM)
 {
@@ -1527,6 +1529,8 @@ DECLINLINE(uint32_t) pgmR0DynMapPage(PPGMRZDYNMAP pThis, RTHCPHYS HCPhys, int32_
     bool fInvalidateIt = RTCpuSetIsMemberByIndex(&paPages[iPage].PendingSet, iRealCpu);
     if (RT_UNLIKELY(fInvalidateIt))
         RTCpuSetDelByIndex(&paPages[iPage].PendingSet, iRealCpu);
+#else
+    NOREF(iRealCpu);
 #endif
 
     PGMRZDYNMAP_SPINLOCK_RELEASE(pThis);
@@ -1550,7 +1554,7 @@ DECLINLINE(uint32_t) pgmR0DynMapPage(PPGMRZDYNMAP pThis, RTHCPHYS HCPhys, int32_
 
 
 /**
- * Assert the the integrity of the pool.
+ * Assert the integrity of the pool.
  *
  * @returns VBox status code.
  */
@@ -1566,8 +1570,6 @@ static int pgmRZDynMapAssertIntegrity(PPGMRZDYNMAP pThis)
     if (!pThis->cUsers)
         return VERR_INVALID_PARAMETER;
 
-
-    int                 rc          = VINF_SUCCESS;
     PGMRZDYNMAP_SPINLOCK_ACQUIRE(pThis);
 
 #define CHECK_RET(expr, a) \
@@ -1577,7 +1579,7 @@ static int pgmRZDynMapAssertIntegrity(PPGMRZDYNMAP pThis)
             PGMRZDYNMAP_SPINLOCK_RELEASE(pThis); \
             RTAssertMsg1Weak(#expr, __LINE__, __FILE__, __PRETTY_FUNCTION__); \
             RTAssertMsg2Weak a; \
-            return VERR_INTERNAL_ERROR; \
+            return VERR_PGM_DYNMAP_IPE; \
         } \
     } while (0)
 
@@ -1684,7 +1686,7 @@ static int pgmRZDynMapAssertIntegrity(PPGMRZDYNMAP pThis)
 
 #ifdef IN_RING0
 /**
- * Assert the the integrity of the pool.
+ * Assert the integrity of the pool.
  *
  * @returns VBox status code.
  */
@@ -1696,7 +1698,7 @@ VMMR0DECL(int) PGMR0DynMapAssertIntegrity(void)
 
 #ifdef IN_RC
 /**
- * Assert the the integrity of the pool.
+ * Assert the integrity of the pool.
  *
  * @returns VBox status code.
  */
@@ -2528,12 +2530,12 @@ static int pgmR0DynMapTest(PVM pVM)
         if (RT_FAILURE(rc) || pv != pv2)
         {
             LogRel(("failed(%d): rc=%Rrc; pv=%p pv2=%p i=%p\n", __LINE__, rc, pv, pv2, i));
-            if (RT_SUCCESS(rc)) rc = VERR_INTERNAL_ERROR;
+            if (RT_SUCCESS(rc)) rc = VERR_PGM_DYNMAP_IPE;
         }
         else if (pSet->cEntries != 5)
         {
             LogRel(("failed(%d): cEntries=%d expected %d\n", __LINE__, pSet->cEntries, RT_ELEMENTS(pSet->aEntries) / 2));
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_PGM_DYNMAP_IPE;
         }
         else if (   pSet->aEntries[4].cRefs != UINT16_MAX - 1
                  || pSet->aEntries[3].cRefs != UINT16_MAX - 1
@@ -2545,7 +2547,7 @@ static int pgmR0DynMapTest(PVM pVM)
             for (i = 0; i < pSet->cEntries; i++)
                 LogRel(("[%d]=%d, ", i, pSet->aEntries[i].cRefs));
             LogRel(("\n"));
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_PGM_DYNMAP_IPE;
         }
         if (RT_SUCCESS(rc))
             rc = PGMR0DynMapAssertIntegrity();
@@ -2567,12 +2569,12 @@ static int pgmR0DynMapTest(PVM pVM)
             if (RT_FAILURE(rc) || pv == pv2)
             {
                 LogRel(("failed(%d): rc=%Rrc; pv=%p pv2=%p i=%d\n", __LINE__, rc, pv, pv2, i));
-                if (RT_SUCCESS(rc)) rc = VERR_INTERNAL_ERROR;
+                if (RT_SUCCESS(rc)) rc = VERR_PGM_DYNMAP_IPE;
             }
             else if (pSet->cEntries != RT_ELEMENTS(pSet->aEntries))
             {
                 LogRel(("failed(%d): cEntries=%d expected %d\n", __LINE__, pSet->cEntries, RT_ELEMENTS(pSet->aEntries)));
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_PGM_DYNMAP_IPE;
             }
             LogRel(("Load=%u/%u/%u Set=%u/%u\n", pThis->cLoad, pThis->cMaxLoad, pThis->cPages - pThis->cPages, pSet->cEntries, RT_ELEMENTS(pSet->aEntries)));
             if (RT_SUCCESS(rc))
@@ -2610,7 +2612,7 @@ static int pgmR0DynMapTest(PVM pVM)
                 {
                     LogRel(("failed(%d): rc=%Rrc, wanted %d ; pv2=%p Set=%u/%u; i=%d\n", __LINE__,
                             rc, VERR_PGM_DYNMAP_FULL_SET, pv2, pSet->cEntries, RT_ELEMENTS(pSet->aEntries), i));
-                    if (RT_SUCCESS(rc)) rc = VERR_INTERNAL_ERROR;
+                    if (RT_SUCCESS(rc)) rc = VERR_PGM_DYNMAP_IPE;
                 }
             }
         }
@@ -2648,7 +2650,7 @@ static int pgmR0DynMapTest(PVM pVM)
             {
                 LogRel(("failed(%d): cFailures=%d pu32Real=%p pu32=%p u32Expect=%#x *pu32=%#x\n", __LINE__,
                         Test.cFailures, pu32Real, Test.pu32, Test.u32Expect, *Test.pu32));
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_PGM_DYNMAP_IPE;
             }
             else
                 LogRel(("pu32Real=%p pu32=%p u32Expect=%#x *pu32=%#x\n",

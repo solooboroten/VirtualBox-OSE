@@ -1,4 +1,4 @@
-/* $Id: tstDir-2.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: tstDir-2.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
 /** @file
  * IPRT Testcase - Directory listing & filtering .
  */
@@ -32,7 +32,7 @@
 int main(int argc, char **argv)
 {
     int rcRet = 0;
-    RTR3Init();
+    RTR3InitExe(argc, &argv, 0);
 
     /*
      * Iterate arguments.
@@ -41,7 +41,7 @@ int main(int argc, char **argv)
     {
         /* open */
         PRTDIR pDir;
-        int rc = RTDirOpenFiltered(&pDir, argv[i], RTDIRFILTER_WINNT);
+        int rc = RTDirOpenFiltered(&pDir, argv[i], RTDIRFILTER_WINNT, 0);
         if (RT_SUCCESS(rc))
         {
             for (;;)

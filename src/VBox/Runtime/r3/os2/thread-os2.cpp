@@ -1,4 +1,4 @@
-/* $Id: thread-os2.cpp 37154 2011-05-19 12:54:32Z vboxsync $ */
+/* $Id: thread-os2.cpp 40304 2012-02-29 20:02:14Z vboxsync $ */
 /** @file
  * IPRT - Threads, OS/2.
  */
@@ -45,6 +45,7 @@
 #include <iprt/assert.h>
 #include <iprt/alloc.h>
 #include <iprt/asm-amd64-x86.h>
+#include <iprt/cpuset.h>
 #include <iprt/string.h>
 #include <iprt/err.h>
 #include "internal/thread.h"
@@ -187,6 +188,13 @@ RTDECL(int)   RTThreadSleep(RTMSINTERVAL cMillies)
 }
 
 
+RTDECL(int)   RTThreadSleepNoLog(RTMSINTERVAL cMillies)
+{
+    DosSleep(cMillies);
+    return VINF_SUCCESS;
+}
+
+
 RTDECL(bool) RTThreadYield(void)
 {
     uint64_t u64TS = ASMReadTSC();
@@ -197,11 +205,6 @@ RTDECL(bool) RTThreadYield(void)
     return fRc;
 }
 
-
-RTR3DECL(int) RTThreadGetAffinity(PRTCPUSET pCpuSet)
-{
-    return VINF_SUCCESS;
-}
 
 RTR3DECL(int) RTThreadGetAffinity(PRTCPUSET pCpuSet)
 {

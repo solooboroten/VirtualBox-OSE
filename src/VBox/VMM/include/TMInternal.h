@@ -1,4 +1,4 @@
-/* $Id: TMInternal.h 37527 2011-06-17 10:18:02Z vboxsync $ */
+/* $Id: TMInternal.h 41783 2012-06-16 19:24:15Z vboxsync $ */
 /** @file
  * TM - Internal header file.
  */
@@ -727,7 +727,7 @@ void                    tmTimerQueueSchedule(PVM pVM, PTMTIMERQUEUE pQueue);
 void                    tmTimerQueuesSanityChecks(PVM pVM, const char *pszWhere);
 #endif
 
-int                     tmCpuTickPause(PVM pVM, PVMCPU pVCpu);
+int                     tmCpuTickPause(PVMCPU pVCpu);
 int                     tmCpuTickResume(PVM pVM, PVMCPU pVCpu);
 
 int                     tmVirtualPauseLocked(PVM pVM);
@@ -742,7 +742,7 @@ DECLEXPORT(uint64_t)    tmVirtualNanoTSRediscover(PRTTIMENANOTSDATA pData);
  * @retval  VINF_SUCCESS on success (always in ring-3).
  * @retval  VERR_SEM_BUSY in RC and R0 if the semaphore is busy.
  *
- * @param   a_pVM       The VM handle.
+ * @param   a_pVM       Pointer to the VM.
  *
  * @remarks The virtual sync timer queue requires the virtual sync lock.
  */
@@ -754,7 +754,7 @@ DECLEXPORT(uint64_t)    tmVirtualNanoTSRediscover(PRTTIMENANOTSDATA pData);
  * @retval  VINF_SUCCESS on success.
  * @retval  VERR_SEM_BUSY if busy.
  *
- * @param   a_pVM       The VM handle.
+ * @param   a_pVM       Pointer to the VM.
  *
  * @remarks The virtual sync timer queue requires the virtual sync lock.
  */

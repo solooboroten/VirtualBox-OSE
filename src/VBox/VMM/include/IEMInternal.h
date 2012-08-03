@@ -1,10 +1,10 @@
-/* $Id: IEMInternal.h 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: IEMInternal.h 42453 2012-07-30 15:23:18Z vboxsync $ */
 /** @file
  * IEM - Internal header file.
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -33,6 +33,15 @@ RT_C_DECLS_BEGIN
  */
 
 
+/** Finish and move to types.h */
+typedef union
+{
+    uint32_t u32;
+} RTFLOAT32U;
+typedef RTFLOAT32U *PRTFLOAT32U;
+typedef RTFLOAT32U const *PCRTFLOAT32U;
+
+
 /**
  * Operand or addressing mode.
  */
@@ -58,6 +67,57 @@ typedef enum IEMMODEX
     IEMMODEX_8BIT
 } IEMMODEX;
 AssertCompileSize(IEMMODEX, 4);
+
+
+/**
+ * Branch types.
+ */
+typedef enum IEMBRANCH
+{
+    IEMBRANCH_JUMP = 1,
+    IEMBRANCH_CALL,
+    IEMBRANCH_TRAP,
+    IEMBRANCH_SOFTWARE_INT,
+    IEMBRANCH_HARDWARE_INT
+} IEMBRANCH;
+AssertCompileSize(IEMBRANCH, 4);
+
+
+/**
+ * A FPU result.
+ */
+typedef struct IEMFPURESULT
+{
+    /** The output value. */
+    RTFLOAT80U      r80Result;
+    /** The output status. */
+    uint16_t        FSW;
+} IEMFPURESULT;
+AssertCompileMemberOffset(IEMFPURESULT, FSW, 10);
+/** Pointer to a FPU result. */
+typedef IEMFPURESULT *PIEMFPURESULT;
+/** Pointer to a const FPU result. */
+typedef IEMFPURESULT const *PCIEMFPURESULT;
+
+
+/**
+ * A FPU result consisting of two output values and FSW.
+ */
+typedef struct IEMFPURESULTTWO
+{
+    /** The first output value. */
+    RTFLOAT80U      r80Result1;
+    /** The output status. */
+    uint16_t        FSW;
+    /** The second output value. */
+    RTFLOAT80U      r80Result2;
+} IEMFPURESULTTWO;
+AssertCompileMemberOffset(IEMFPURESULTTWO, FSW, 10);
+AssertCompileMemberOffset(IEMFPURESULTTWO, r80Result2, 12);
+/** Pointer to a FPU result consisting of two output values and FSW. */
+typedef IEMFPURESULTTWO *PIEMFPURESULTTWO;
+/** Pointer to a const FPU result consisting of two output values and FSW. */
+typedef IEMFPURESULTTWO const *PCIEMFPURESULTTWO;
 
 
 #ifdef IEM_VERIFICATION_MODE
@@ -116,7 +176,7 @@ typedef struct IEMVERIFYEVTREC
         {
             RTGCPHYS    GCPhys;
             uint32_t    cb;
-            uint8_t     ab[32];
+            uint8_t     ab[512];
         } RamWrite;
     } u;
 } IEMVERIFYEVTREC;
@@ -155,11 +215,17 @@ typedef struct IEMCPU
     /** Exception / interrupt recursion depth. */
     int8_t                  cXcptRecursions;
     /** Explicit alignment padding. */
-    bool                    afAlignment1[5];
+    bool                    afAlignment1[1];
     /** The CPL. */
     uint8_t                 uCpl;
     /** The current CPU execution mode (CS). */
     IEMMODE                 enmCpuMode;
+    /** Info status code that needs to be propagated to the IEM caller.
+     * This cannot be passed internally, as it would complicate all success
+     * checks within the interpreter making the code larger and almost impossible
+     * to get right.  Instead, we'll store status codes to pass on here.  Each
+     * source of these codes will perform appropriate sanity checks. */
+    int32_t                 rcPassUp;
 
     /** @name Statistics
      * @{  */
@@ -167,6 +233,19 @@ typedef struct IEMCPU
     uint32_t                cInstructions;
     /** The number of potential exits. */
     uint32_t                cPotentialExits;
+    /** The number of bytes data or stack written (mostly for IEMExecOneEx).
+     * This may contain uncommitted writes.  */
+    uint32_t                cbWritten;
+    /** Counts the VERR_IEM_INSTR_NOT_IMPLEMENTED returns. */
+    uint32_t                cRetInstrNotImplemented;
+    /** Counts the VERR_IEM_ASPECT_NOT_IMPLEMENTED returns. */
+    uint32_t                cRetAspectNotImplemented;
+    /** Counts informational statuses returned (other than VINF_SUCCESS). */
+    uint32_t                cRetInfStatuses;
+    /** Counts other error statuses returned. */
+    uint32_t                cRetErrStatuses;
+    /** Number of times rcPassUp has been used. */
+    uint32_t                cRetPassUpStatus;
 #ifdef IEM_VERIFICATION_MODE
     /** The Number of I/O port reads that has been performed. */
     uint32_t                cIOReads;
@@ -217,11 +296,15 @@ typedef struct IEMCPU
     uint8_t                 cbOpcode;
     /** The opcode bytes. */
     uint8_t                 abOpcode[15];
+    /** Offset into abOpcodes where the FPU instruction starts.
+     * Only set by the FPU escape opcodes (0xd8-0xdf) and used later on when the
+     * instruction result is committed. */
+    uint8_t                 offFpuOpcode;
 
     /** @}*/
 
     /** Alignment padding for aMemMappings. */
-    uint8_t                 abAlignment2[5];
+    uint8_t                 abAlignment2[4];
 
     /** The number of active guest memory mappings. */
     uint8_t                 cActiveMappings;
@@ -242,6 +325,13 @@ typedef struct IEMCPU
         uint32_t            u32Alignment4; /**< Alignment padding. */
 #endif
     } aMemMappings[3];
+
+    /** Locking records for the mapped memory. */
+    union
+    {
+        PGMPAGEMAPLOCK      Lock;
+        uint64_t            au64Padding[2];
+    } aMemMappingLocks[3];
 
     /** Bounce buffer info.
      * This runs in parallel to aMemMappings. */
@@ -265,7 +355,7 @@ typedef struct IEMCPU
      * This runs in parallel to aMemMappings and aMemBbMappings. */
     struct
     {
-        uint8_t             ab[64];
+        uint8_t             ab[512];
     } aBounceBuffers[3];
 
 #ifdef IEM_VERIFICATION_MODE
@@ -308,8 +398,11 @@ typedef IEMCPU *PIEMCPU;
 #define IEM_ACCESS_WHAT_STACK           UINT32_C(0x00000030)
 #define IEM_ACCESS_WHAT_SYS             UINT32_C(0x00000040)
 #define IEM_ACCESS_WHAT_MASK            UINT32_C(0x00000070)
+/** The writes are partial, so if initialize the bounce buffer with the
+ * orignal RAM content. */
+#define IEM_ACCESS_PARTIAL_WRITE        UINT32_C(0x00000100)
 /** Used in aMemMappings to indicate that the entry is bounce buffered. */
-#define IEM_ACCESS_BOUNCE_BUFFERED      UINT32_C(0x00000100)
+#define IEM_ACCESS_BOUNCE_BUFFERED      UINT32_C(0x00000200)
 /** Read+write data alias. */
 #define IEM_ACCESS_DATA_RW              (IEM_ACCESS_TYPE_READ  | IEM_ACCESS_TYPE_WRITE | IEM_ACCESS_WHAT_DATA)
 /** Write data alias. */
@@ -324,30 +417,34 @@ typedef IEMCPU *PIEMCPU;
 #define IEM_ACCESS_STACK_R              (IEM_ACCESS_TYPE_READ  | IEM_ACCESS_WHAT_STACK)
 /** Stack read+write alias. */
 #define IEM_ACCESS_STACK_RW             (IEM_ACCESS_TYPE_READ  | IEM_ACCESS_TYPE_WRITE | IEM_ACCESS_WHAT_STACK)
+/** Read system table alias. */
+#define IEM_ACCESS_SYS_R                (IEM_ACCESS_TYPE_READ  | IEM_ACCESS_WHAT_SYS)
+/** Read+write system table alias. */
+#define IEM_ACCESS_SYS_RW               (IEM_ACCESS_TYPE_READ  | IEM_ACCESS_TYPE_WRITE | IEM_ACCESS_WHAT_SYS)
 /** @} */
 
 /** @name Prefix constants (IEMCPU::fPrefixes)
  * @{ */
-#define IEM_OP_PRF_SEG_CS               RT_BIT_32(0)
-#define IEM_OP_PRF_SEG_SS               RT_BIT_32(1)
-#define IEM_OP_PRF_SEG_DS               RT_BIT_32(2)
-#define IEM_OP_PRF_SEG_ES               RT_BIT_32(3)
-#define IEM_OP_PRF_SEG_FS               RT_BIT_32(4)
-#define IEM_OP_PRF_SEG_GS               RT_BIT_32(5)
+#define IEM_OP_PRF_SEG_CS               RT_BIT_32(0)  /**< CS segment prefix (0x2e). */
+#define IEM_OP_PRF_SEG_SS               RT_BIT_32(1)  /**< SS segment prefix (0x36). */
+#define IEM_OP_PRF_SEG_DS               RT_BIT_32(2)  /**< DS segment prefix (0x3e). */
+#define IEM_OP_PRF_SEG_ES               RT_BIT_32(3)  /**< ES segment prefix (0x26). */
+#define IEM_OP_PRF_SEG_FS               RT_BIT_32(4)  /**< FS segment prefix (0x64). */
+#define IEM_OP_PRF_SEG_GS               RT_BIT_32(5)  /**< GS segment prefix (0x65). */
 #define IEM_OP_PRF_SEG_MASK             UINT32_C(0x3f)
 
-#define IEM_OP_PRF_SIZE_OP              RT_BIT_32(8)
-#define IEM_OP_PRF_SIZE_REX_W           RT_BIT_32(9)
-#define IEM_OP_PRF_SIZE_ADDR            RT_BIT_32(10)
+#define IEM_OP_PRF_SIZE_OP              RT_BIT_32(8)  /**< Operand size prefix (0x66). */
+#define IEM_OP_PRF_SIZE_REX_W           RT_BIT_32(9)  /**< REX.W prefix (0x48-0x4f). */
+#define IEM_OP_PRF_SIZE_ADDR            RT_BIT_32(10) /**< Address size prefix (0x67). */
 
-#define IEM_OP_PRF_LOCK                 RT_BIT_32(16)
-#define IEM_OP_PRF_REPNZ                RT_BIT_32(17)
-#define IEM_OP_PRF_REPZ                 RT_BIT_32(18)
+#define IEM_OP_PRF_LOCK                 RT_BIT_32(16) /**< Lock prefix (0xf0). */
+#define IEM_OP_PRF_REPNZ                RT_BIT_32(17) /**< Repeat-not-zero prefix (0xf2). */
+#define IEM_OP_PRF_REPZ                 RT_BIT_32(18) /**< Repeat-if-zero prefix (0xf3). */
 
-#define IEM_OP_PRF_REX                  RT_BIT_32(24)
-#define IEM_OP_PRF_REX_R                RT_BIT_32(25)
-#define IEM_OP_PRF_REX_B                RT_BIT_32(26)
-#define IEM_OP_PRF_REX_X                RT_BIT_32(27)
+#define IEM_OP_PRF_REX                  RT_BIT_32(24) /**< Any REX prefix (0x40-0x4f). */
+#define IEM_OP_PRF_REX_R                RT_BIT_32(25) /**< REX.R prefix (0x44,0x45,0x46,0x47,0x4c,0x4d,0x4e,0x4f). */
+#define IEM_OP_PRF_REX_B                RT_BIT_32(26) /**< REX.B prefix (0x41,0x43,0x45,0x47,0x49,0x4b,0x4d,0x4f). */
+#define IEM_OP_PRF_REX_X                RT_BIT_32(27) /**< REX.X prefix (0x42,0x43,0x46,0x47,0x4a,0x4b,0x4e,0x4f). */
 /** @} */
 
 /**
@@ -666,6 +763,195 @@ FNIEMAIMPLMULDIVU64 iemAImpl_mul_u64, iemAImpl_imul_u64;
 FNIEMAIMPLMULDIVU64 iemAImpl_div_u64, iemAImpl_idiv_u64;
 /** @} */
 
+/** @name Byte Swap.
+ * @{  */
+IEM_DECL_IMPL_TYPE(void, iemAImpl_bswap_u16,(uint32_t *pu32Dst)); /* Yes, 32-bit register access. */
+IEM_DECL_IMPL_TYPE(void, iemAImpl_bswap_u32,(uint32_t *pu32Dst));
+IEM_DECL_IMPL_TYPE(void, iemAImpl_bswap_u64,(uint64_t *pu64Dst));
+/** @}  */
+
+
+/** @name FPU operations taking a 32-bit float argument
+ * @{ */
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR32FSW,(PCX86FXSTATE pFpuState, uint16_t *pFSW,
+                                                      PCRTFLOAT80U pr80Val1, PCRTFLOAT32U pr32Val2));
+typedef FNIEMAIMPLFPUR32FSW *PFNIEMAIMPLFPUR32FSW;
+
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR32,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes,
+                                                   PCRTFLOAT80U pr80Val1, PCRTFLOAT32U pr32Val2));
+typedef FNIEMAIMPLFPUR32    *PFNIEMAIMPLFPUR32;
+
+FNIEMAIMPLFPUR32FSW iemAImpl_fcom_r80_by_r32;
+FNIEMAIMPLFPUR32    iemAImpl_fadd_r80_by_r32;
+FNIEMAIMPLFPUR32    iemAImpl_fmul_r80_by_r32;
+FNIEMAIMPLFPUR32    iemAImpl_fsub_r80_by_r32;
+FNIEMAIMPLFPUR32    iemAImpl_fsubr_r80_by_r32;
+FNIEMAIMPLFPUR32    iemAImpl_fdiv_r80_by_r32;
+FNIEMAIMPLFPUR32    iemAImpl_fdivr_r80_by_r32;
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_fld_r32_to_r80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, PCRTFLOAT32U pr32Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fst_r80_to_r32,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                 PRTFLOAT32U pr32Val, PCRTFLOAT80U pr80Val));
+/** @} */
+
+/** @name FPU operations taking a 64-bit float argument
+ * @{ */
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR64,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes,
+                                                   PCRTFLOAT80U pr80Val1, PCRTFLOAT64U pr64Val2));
+typedef FNIEMAIMPLFPUR64   *PFNIEMAIMPLFPUR64;
+
+FNIEMAIMPLFPUR64  iemAImpl_fadd_r80_by_r64;
+FNIEMAIMPLFPUR64  iemAImpl_fmul_r80_by_r64;
+FNIEMAIMPLFPUR64  iemAImpl_fsub_r80_by_r64;
+FNIEMAIMPLFPUR64  iemAImpl_fsubr_r80_by_r64;
+FNIEMAIMPLFPUR64  iemAImpl_fdiv_r80_by_r64;
+FNIEMAIMPLFPUR64  iemAImpl_fdivr_r80_by_r64;
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_fcom_r80_by_r64,(PCX86FXSTATE pFpuState, uint16_t *pFSW,
+                                                  PCRTFLOAT80U pr80Val1, PCRTFLOAT64U pr64Val2));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fld_r64_to_r80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, PCRTFLOAT64U pr64Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fst_r80_to_r64,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                 PRTFLOAT64U pr32Val, PCRTFLOAT80U pr80Val));
+/** @} */
+
+/** @name FPU operations taking a 80-bit float argument
+ * @{ */
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes,
+                                                   PCRTFLOAT80U pr80Val1, PCRTFLOAT80U pr80Val2));
+typedef FNIEMAIMPLFPUR80    *PFNIEMAIMPLFPUR80;
+FNIEMAIMPLFPUR80            iemAImpl_fadd_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fmul_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fsub_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fsubr_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fdiv_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fdivr_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fprem_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fprem1_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fscale_r80_by_r80;
+
+FNIEMAIMPLFPUR80            iemAImpl_fpatan_r80_by_r80;
+FNIEMAIMPLFPUR80            iemAImpl_fyl2xp1_r80_by_r80;
+
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR80FSW,(PCX86FXSTATE pFpuState, uint16_t *pFSW,
+                                                      PCRTFLOAT80U pr80Val1, PCRTFLOAT80U pr80Val2));
+typedef FNIEMAIMPLFPUR80FSW *PFNIEMAIMPLFPUR80FSW;
+FNIEMAIMPLFPUR80FSW         iemAImpl_fcom_r80_by_r80;
+FNIEMAIMPLFPUR80FSW         iemAImpl_fucom_r80_by_r80;
+
+typedef IEM_DECL_IMPL_TYPE(uint32_t, FNIEMAIMPLFPUR80EFL,(PCX86FXSTATE pFpuState, uint16_t *pu16Fsw,
+                                                          PCRTFLOAT80U pr80Val1, PCRTFLOAT80U pr80Val2));
+typedef FNIEMAIMPLFPUR80EFL *PFNIEMAIMPLFPUR80EFL;
+FNIEMAIMPLFPUR80EFL         iemAImpl_fcomi_r80_by_r80;
+FNIEMAIMPLFPUR80EFL         iemAImpl_fucomi_r80_by_r80;
+
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR80UNARY,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, PCRTFLOAT80U pr80Val));
+typedef FNIEMAIMPLFPUR80UNARY *PFNIEMAIMPLFPUR80UNARY;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_fabs_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_fchs_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_f2xm1_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_fyl2x_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_fsqrt_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_frndint_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_fsin_r80;
+FNIEMAIMPLFPUR80UNARY       iemAImpl_fcos_r80;
+
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR80UNARYFSW,(PCX86FXSTATE pFpuState, uint16_t *pu16Fsw, PCRTFLOAT80U pr80Val));
+typedef FNIEMAIMPLFPUR80UNARYFSW *PFNIEMAIMPLFPUR80UNARYFSW;
+FNIEMAIMPLFPUR80UNARYFSW    iemAImpl_ftst_r80;
+FNIEMAIMPLFPUR80UNARYFSW    iemAImpl_fxam_r80;
+
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR80LDCONST,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes));
+typedef FNIEMAIMPLFPUR80LDCONST *PFNIEMAIMPLFPUR80LDCONST;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fld1;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fldl2t;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fldl2e;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fldpi;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fldlg2;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fldln2;
+FNIEMAIMPLFPUR80LDCONST     iemAImpl_fldz;
+
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUR80UNARYTWO,(PCX86FXSTATE pFpuState, PIEMFPURESULTTWO pFpuResTwo,
+                                                           PCRTFLOAT80U pr80Val));
+typedef FNIEMAIMPLFPUR80UNARYTWO *PFNIEMAIMPLFPUR80UNARYTWO;
+FNIEMAIMPLFPUR80UNARYTWO    iemAImpl_fptan_r80_r80;
+FNIEMAIMPLFPUR80UNARYTWO    iemAImpl_fxtract_r80_r80;
+FNIEMAIMPLFPUR80UNARYTWO    iemAImpl_fsincos_r80_r80;
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_fld_r80_from_r80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, PCRTFLOAT80U pr80Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fst_r80_to_r80,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                 PRTFLOAT80U pr80Dst, PCRTFLOAT80U pr80Src));
+
+/** @} */
+
+/** @name FPU operations taking a 16-bit signed integer argument
+ * @{  */
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUI16,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes,
+                                                   PCRTFLOAT80U pr80Val1, int16_t const *pi16Val2));
+typedef FNIEMAIMPLFPUI16    *PFNIEMAIMPLFPUI16;
+
+FNIEMAIMPLFPUI16    iemAImpl_fiadd_r80_by_i16;
+FNIEMAIMPLFPUI16    iemAImpl_fimul_r80_by_i16;
+FNIEMAIMPLFPUI16    iemAImpl_fisub_r80_by_i16;
+FNIEMAIMPLFPUI16    iemAImpl_fisubr_r80_by_i16;
+FNIEMAIMPLFPUI16    iemAImpl_fidiv_r80_by_i16;
+FNIEMAIMPLFPUI16    iemAImpl_fidivr_r80_by_i16;
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_ficom_r80_by_i16,(PCX86FXSTATE pFpuState, uint16_t *pu16Fsw,
+                                                   PCRTFLOAT80U pr80Val1, int16_t const *pi16Val2));
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_fild_i16_to_r80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, int16_t const *pi16Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fist_r80_to_i16,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                  int16_t *pi16Val, PCRTFLOAT80U pr80Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fistt_r80_to_i16,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                   int16_t *pi16Val, PCRTFLOAT80U pr80Val));
+/** @}  */
+
+/** @name FPU operations taking a 32-bit signed integer argument
+ * @{  */
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUI32,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes,
+                                                   PCRTFLOAT80U pr80Val1, int32_t const *pi32Val2));
+typedef FNIEMAIMPLFPUI32    *PFNIEMAIMPLFPUI32;
+
+FNIEMAIMPLFPUI32    iemAImpl_fiadd_r80_by_i32;
+FNIEMAIMPLFPUI32    iemAImpl_fimul_r80_by_i32;
+FNIEMAIMPLFPUI32    iemAImpl_fisub_r80_by_i32;
+FNIEMAIMPLFPUI32    iemAImpl_fisubr_r80_by_i32;
+FNIEMAIMPLFPUI32    iemAImpl_fidiv_r80_by_i32;
+FNIEMAIMPLFPUI32    iemAImpl_fidivr_r80_by_i32;
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_ficom_r80_by_i32,(PCX86FXSTATE pFpuState, uint16_t *pu16Fsw,
+                                                   PCRTFLOAT80U pr80Val1, int32_t const *pi32Val2));
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_fild_i32_to_r80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, int32_t const *pi32Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fist_r80_to_i32,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                  int32_t *pi32Val, PCRTFLOAT80U pr80Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fistt_r80_to_i32,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                   int32_t *pi32Val, PCRTFLOAT80U pr80Val));
+/** @}  */
+
+/** @name FPU operations taking a 64-bit signed integer argument
+ * @{  */
+typedef IEM_DECL_IMPL_TYPE(void, FNIEMAIMPLFPUI64,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes,
+                                                   PCRTFLOAT80U pr80Val1, int64_t const *pi64Val2));
+typedef FNIEMAIMPLFPUI64    *PFNIEMAIMPLFPUI64;
+
+FNIEMAIMPLFPUI64    iemAImpl_fiadd_r80_by_i64;
+FNIEMAIMPLFPUI64    iemAImpl_fimul_r80_by_i64;
+FNIEMAIMPLFPUI64    iemAImpl_fisub_r80_by_i64;
+FNIEMAIMPLFPUI64    iemAImpl_fisubr_r80_by_i64;
+FNIEMAIMPLFPUI64    iemAImpl_fidiv_r80_by_i64;
+FNIEMAIMPLFPUI64    iemAImpl_fidivr_r80_by_i64;
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_ficom_r80_by_i64,(PCX86FXSTATE pFpuState, uint16_t *pu16Fsw,
+                                                   PCRTFLOAT80U pr80Val1, int64_t const *pi64Val2));
+
+IEM_DECL_IMPL_DEF(void, iemAImpl_fild_i64_to_r80,(PCX86FXSTATE pFpuState, PIEMFPURESULT pFpuRes, int64_t const *pi64Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fist_r80_to_i64,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                  int64_t *pi64Val, PCRTFLOAT80U pr80Val));
+IEM_DECL_IMPL_DEF(void, iemAImpl_fistt_r80_to_i64,(PCX86FXSTATE pFpuState, uint16_t *pu16FSW,
+                                                   int64_t *pi32Val, PCRTFLOAT80U pr80Val));
+/** @}  */
+
 
 /** @name Function tables.
  * @{
@@ -919,8 +1205,9 @@ typedef IEMOPSHIFTDBLSIZES const *PCIEMOPSHIFTDBLSIZES;
  * @param   a_Type3             The type of the 4th argument.
  * @param   a_Arg3              The name of the 4th argument.
  */
-# define IEM_CIMPL_DEF_4(a_Name, a_Type0, a_Arg0, a_Type1, a_Arg1, a_Type2, a_Arg2, a_Type3, aArg3) \
-    IEM_DECL_IMPL_DEF(VBOXSTRICTRC, a_Name, (PIEMCPU pIemCpu, uint8_t cbInstr, a_Type0 a_Arg0, a_Type1 a_Arg1, a_Type2 a_Arg2, a_Type3 a_Arg3))
+# define IEM_CIMPL_DEF_4(a_Name, a_Type0, a_Arg0, a_Type1, a_Arg1, a_Type2, a_Arg2, a_Type3, a_Arg3) \
+    IEM_DECL_IMPL_DEF(VBOXSTRICTRC, a_Name, (PIEMCPU pIemCpu, uint8_t cbInstr, a_Type0 a_Arg0, a_Type1 a_Arg1, \
+                                             a_Type2 a_Arg2, a_Type3 a_Arg3))
 /**
  * For calling a C instruction implementation function taking four extra
  * arguments.

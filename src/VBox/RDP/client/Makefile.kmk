@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 38302 2011-08-03 14:24:50Z vboxsync $
+# $Id: Makefile.kmk 41477 2012-05-29 11:43:27Z vboxsync $
 ## @file
 # VBox - rdesktop with VRDP enhancements sub-makefile.
 #
 
 #
-# Copyright (C) 2006-2011 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -43,6 +43,9 @@ rdesktop-vrdp_DEFS = \
 	HAVE_SYS_PARAM_H=1 HAVE_SYS_MOUNT_H=1 HAVE_STRUCT_STATVFS_F_NAMEMAX=1 \
 	KEYMAP_PATH=$(if $(findstring RTPATH_APP_PRIVATE,$(DEFS)),RTPATH_APP_PRIVATE,\"/opt/VirtualBox\")\"/rdesktop-vrdp-keymaps\" \
 	RDESKTOP=1
+ifdef WITH_BIRD_VD_HACKS
+ rdesktop-vrdp_DEFS += WITH_BIRD_VD_HACKS
+endif
 
 rdesktop-vrdp_DEFS.linux = \
 	HAVE_MNTENT_H=1 HAVE_SETMNTENT=1 STAT_STATVFS=1 HAVE_SYS_VFS_H=1 HAVE_STRUCT_STATFS_F_NAMELEN=1 \
@@ -54,9 +57,11 @@ ifdef VBOX_WITH_LINUX_COMPILER_H
  rdesktop-vrdp_DEFS.linux += VBOX_WITH_LINUX_COMPILER_H
 endif
 # @todo once rdp proxy is available on Solaris, add WITH_RDPUSB=1
+# snv_166+ dirent.h: defines dd_fd only if __USE_LEGACY_PROTOTYPES__ is defined, otherwise uses d_fd, let's just
+# define __USE_LEGACY_PROTOTYPES__ until our buildbox is updated sufficiently
 rdesktop-vrdp_DEFS.solaris = \
-	HAVE_SYS_FILIO_H=1 RDPSND_SUN=1 HAVE_ICONV_H=1 ICONV_CONST=const STAT_STATVFS64=1 _FILE_OFFSET_BITS=64 \
-	DIR_FD_MEMBER_NAME=dd_fd HAVE_SYS_VFS_H=1 HAVE_SYS_STATFS_H=1
+	HAVE_SYS_FILIO_H=1 RDPSND_SUN=1 HAVE_ICONV_H=1 ICONV_CONST= STAT_STATVFS64=1 _FILE_OFFSET_BITS=64 \
+	DIR_FD_MEMBER_NAME=dd_fd __USE_LEGACY_PROTOTYPES__ HAVE_SYS_VFS_H=1 HAVE_SYS_STATFS_H=1
 rdesktop-vrdp_DEFS.freebsd = \
 	RDPSND_OSS=1 HAVE_ICONV_H=1 ICONV_CONST=const HAVE_SYS_STATVFS_H=1 _FILE_OFFSET_BITS=64 HAVE_DIRFD=1
 
@@ -272,6 +277,7 @@ rdesktop-src_SOURCES = \
 	$(PATH_ROOT)/include/iprt/file.h=>include/iprt/file.h \
 	$(PATH_ROOT)/include/iprt/fs.h=>include/iprt/fs.h \
 	$(PATH_ROOT)/include/iprt/linux/sysfs.h=>include/iprt/linux/sysfs.h \
+	$(PATH_ROOT)/include/iprt/list.h=>include/iprt/list.h \
 	$(PATH_ROOT)/include/iprt/log.h=>include/iprt/log.h \
 	$(PATH_ROOT)/include/iprt/mem.h=>include/iprt/mem.h \
 	$(PATH_ROOT)/include/iprt/net.h=>include/iprt/net.h \
@@ -309,6 +315,7 @@ rdesktop-src_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Runtime/common/err/RTErrConvertFromErrno.cpp=>Runtime/common/err/RTErrConvertFromErrno.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/err/RTErrConvertToErrno.cpp=>Runtime/common/err/RTErrConvertToErrno.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/path/RTPathAppend.cpp=>Runtime/common/path/RTPathAppend.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/common/path/RTPathAppendEx.cpp=>Runtime/common/path/RTPathAppendEx.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/path/RTPathCountComponents.cpp=>Runtime/common/path/RTPathCountComponents.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/path/RTPathFilename.cpp=>Runtime/common/path/RTPathFilename.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/path/rtPathRootSpecLen.cpp=>Runtime/common/path/rtPathRootSpecLen.cpp \
@@ -317,6 +324,8 @@ rdesktop-src_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Runtime/common/path/rtPathVolumeSpecLen.cpp=>Runtime/common/path/rtPathVolumeSpecLen.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/RTStrCopy.cpp=>Runtime/common/string/RTStrCopy.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/RTStrNLen.cpp=>Runtime/common/string/RTStrNLen.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/common/string/RTStrCmp.cpp=>Runtime/common/string/RTStrCmp.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/common/string/RTStrNCmp.cpp=>Runtime/common/string/RTStrNCmp.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/straprintf.cpp=>Runtime/common/string/straprintf.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/stringalloc.cpp=>Runtime/common/string/stringalloc.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/strformat.cpp=>Runtime/common/string/strformat.cpp \
@@ -328,6 +337,7 @@ rdesktop-src_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/unidata.cpp=>Runtime/common/string/unidata.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/utf-16.cpp=>Runtime/common/string/utf-16.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/string/utf-8.cpp=>Runtime/common/string/utf-8.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/common/string/utf-8-case.cpp=>Runtime/common/string/utf-8-case.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/common/time/timesysalias.cpp=>Runtime/common/time/timesysalias.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/generic/pathhost-generic.cpp=>Runtime/generic/pathhost-generic.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/alignmentchecks.h=>include/internal/alignmentchecks.h \
@@ -336,6 +346,7 @@ rdesktop-src_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/fs.h=>include/internal/fs.h \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/iprt.h=>include/internal/iprt.h \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/magics.h=>include/internal/magics.h \
+	$(PATH_ROOT)/src/VBox/Runtime/include/internal/mem.h=>include/internal/mem.h \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/path.h=>include/internal/path.h \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/process.h=>include/internal/process.h \
 	$(PATH_ROOT)/src/VBox/Runtime/include/internal/string.h=>include/internal/string.h \
@@ -350,7 +361,10 @@ rdesktop-src_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/dir-posix.cpp=>Runtime/r3/posix/dir-posix.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/env-posix.cpp=>Runtime/r3/posix/env-posix.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/fileio-posix.cpp=>Runtime/r3/posix/fileio-posix.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/fs2-posix.cpp=>Runtime/r3/posix/fs2-posix.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/fs3-posix.cpp=>Runtime/r3/posix/fs3-posix.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/path-posix.cpp=>Runtime/r3/posix/path-posix.cpp \
+	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/path2-posix.cpp=>Runtime/r3/posix/path2-posix.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/r3/posix/utf8-posix.cpp=>Runtime/r3/posix/utf8-posix.cpp \
 	$(PATH_ROOT)/src/VBox/Runtime/r3/stream.cpp=>Runtime/r3/stream.cpp
 
@@ -366,5 +380,5 @@ $$(rdesktop-tarball_0_OUTDIR)/rdesktop-vrdp.tar.gz: \
 	$(QUIET)cd $(PATH_STAGE)/$(rdesktop-src_INST).. && tar -cf - $(VBOX_RDESKTOP_SRC_SUBDIR)/ | gzip - > $@
 
 
-include $(KBUILD_PATH)/subfooter.kmk
+include $(FILE_KBUILD_SUB_FOOTER)
 

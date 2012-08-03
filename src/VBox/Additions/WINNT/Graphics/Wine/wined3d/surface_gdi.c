@@ -251,6 +251,7 @@ IWineGDISurfaceImpl_Flip(IWineD3DSurface *iface,
 
     hr = IWineD3DSwapChain_Present((IWineD3DSwapChain *)swapchain,
             NULL, NULL, swapchain->win_handle, NULL, 0);
+
     IWineD3DSwapChain_Release((IWineD3DSwapChain *) swapchain);
     return hr;
 }
@@ -664,6 +665,9 @@ const IWineD3DSurfaceVtbl IWineGDISurface_Vtbl =
     IWineGDISurfaceImpl_PreLoad,
     IWineGDISurfaceImpl_UnLoad,
     IWineD3DBaseSurfaceImpl_GetType,
+#ifdef VBOX_WITH_WDDM
+    IWineD3DResourceImpl_SetShRcState,
+#endif
     /* IWineD3DSurface */
     IWineD3DBaseSurfaceImpl_GetContainer,
     IWineD3DBaseSurfaceImpl_GetDesc,

@@ -1328,6 +1328,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateVertexShader(IWineD3DDevice *ifac
         return hr;
     }
 
+#ifdef VBOX_WINE_WITH_SHADER_CACHE
+    object = vertexshader_check_cached(This, object);
+#endif
+
     TRACE("Created vertex shader %p.\n", object);
     *ppVertexShader = (IWineD3DVertexShader *)object;
 
@@ -1387,6 +1391,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreatePixelShader(IWineD3DDevice *iface
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
     }
+
+#ifdef VBOX_WINE_WITH_SHADER_CACHE
+    object = pixelshader_check_cached(This, object);
+#endif
 
     TRACE("Created pixel shader %p.\n", object);
     *ppPixelShader = (IWineD3DPixelShader *)object;
@@ -1592,6 +1600,14 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Init3D(IWineD3DDevice *iface,
     if(This->d3d_initialized) return WINED3DERR_INVALIDCALL;
     if(!This->adapter->opengl) return WINED3DERR_INVALIDCALL;
 
+#ifdef VBOX_WITH_WDDM
+    if (!pPresentationParameters->pHgsmi)
+    {
+        ERR("hgsmi not specified!");
+        return WINED3DERR_INVALIDCALL;
+    }
+    This->pHgsmi = pPresentationParameters->pHgsmi;
+#endif
     TRACE("(%p) : Creating stateblock\n", This);
     /* Creating the startup stateBlock - Note Special Case: 0 => Don't fill in yet! */
     hr = IWineD3DDevice_CreateStateBlock(iface,
@@ -1901,6 +1917,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Uninit3D(IWineD3DDevice *iface,
         }
     }
 
+#ifdef VBOX_WINE_WITH_SHADER_CACHE
+    shader_chaches_term(This);
+#endif
+
     /* Destroy the shader backend. Note that this has to happen after all shaders are destroyed. */
     This->blitter->free_private(iface);
     This->frag_pipe->free_private(iface);
@@ -2056,6 +2076,7 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetDirect3D(IWineD3DDevice *iface, IWin
 }
 
 static UINT WINAPI IWineD3DDeviceImpl_GetAvailableTextureMem(IWineD3DDevice *iface) {
+#ifndef VBOX_WITH_WDDM
     IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *)iface;
 
     TRACE("(%p) : simulating %dMB, returning %dMB left\n",  This,
@@ -2063,6 +2084,10 @@ static UINT WINAPI IWineD3DDeviceImpl_GetAvailableTextureMem(IWineD3DDevice *ifa
          ((This->adapter->TextureRam - This->adapter->UsedTextureRam) / (1024*1024)));
     /* return simulated texture memory left */
     return (This->adapter->TextureRam - This->adapter->UsedTextureRam);
+#else
+    ERR("Should not be here!");
+    return 0;
+#endif
 }
 
 /*****
@@ -3031,7 +3056,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetVertexShaderConstantB(
     TRACE("(iface %p, srcData %p, start %d, count %d)\n",
             iface, srcData, start, count);
 
-    if (!srcData || start >= MAX_CONST_B) return WINED3DERR_INVALIDCALL;
+    if (!srcData || start >= MAX_CONST_B)
+    {
+        ERR("incorrect vertex shader const data: start(%u), srcData(0x%p), count(%u)", start, srcData, count);
+        return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(&This->updateStateBlock->vertexShaderConstantB[start], srcData, cnt * sizeof(BOOL));
     for (i = 0; i < cnt; i++)
@@ -3059,7 +3088,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetVertexShaderConstantB(
             iface, dstData, start, count);
 
     if (dstData == NULL || cnt < 0)
+    {
+        ERR("incorrect vertex shader const data: start(%u), dstData(0x%p), count(%u)", start, dstData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(dstData, &This->stateBlock->vertexShaderConstantB[start], cnt * sizeof(BOOL));
     return WINED3D_OK;
@@ -3077,7 +3109,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetVertexShaderConstantI(
     TRACE("(iface %p, srcData %p, start %d, count %d)\n",
             iface, srcData, start, count);
 
-    if (!srcData || start >= MAX_CONST_I) return WINED3DERR_INVALIDCALL;
+    if (!srcData || start >= MAX_CONST_I)
+    {
+        ERR("incorrect vertex shader const data: start(%u), srcData(0x%p), count(%u)", start, srcData, count);
+        return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(&This->updateStateBlock->vertexShaderConstantI[start * 4], srcData, cnt * sizeof(int) * 4);
     for (i = 0; i < cnt; i++)
@@ -3106,7 +3142,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetVertexShaderConstantI(
             iface, dstData, start, count);
 
     if (dstData == NULL || ((signed int) MAX_CONST_I - (signed int) start) <= 0)
+    {
+        ERR("incorrect vertex shader const data: start(%u), dstData(0x%p), count(%u)", start, dstData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(dstData, &This->stateBlock->vertexShaderConstantI[start * 4], cnt * sizeof(int) * 4);
     return WINED3D_OK;
@@ -3126,7 +3165,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetVertexShaderConstantF(
 
     /* Specifically test start > limit to catch MAX_UINT overflows when adding start + count */
     if (srcData == NULL || start + count > This->d3d_vshader_constantF || start > This->d3d_vshader_constantF)
+    {
+        ERR("incorrect vertex shader const data: start(%u), srcData(0x%p), count(%u)", start, srcData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(&This->updateStateBlock->vertexShaderConstantF[start * 4], srcData, count * sizeof(float) * 4);
     if(TRACE_ON(d3d)) {
@@ -3160,7 +3202,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetVertexShaderConstantF(
             iface, dstData, start, count);
 
     if (dstData == NULL || cnt < 0)
+    {
+        ERR("incorrect vertex shader const data: start(%u), dstData(0x%p), count(%u)", start, dstData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(dstData, &This->stateBlock->vertexShaderConstantF[start * 4], cnt * sizeof(float) * 4);
     return WINED3D_OK;
@@ -3429,7 +3474,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetPixelShaderConstantB(
     TRACE("(iface %p, srcData %p, start %u, count %u)\n",
             iface, srcData, start, count);
 
-    if (!srcData || start >= MAX_CONST_B) return WINED3DERR_INVALIDCALL;
+    if (!srcData || start >= MAX_CONST_B)
+    {
+        ERR("incorrect pixel shader const data: start(%u), srcData(0x%p), count(%u)", start, srcData, count);
+        return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(&This->updateStateBlock->pixelShaderConstantB[start], srcData, cnt * sizeof(BOOL));
     for (i = 0; i < cnt; i++)
@@ -3457,7 +3506,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetPixelShaderConstantB(
             iface, dstData, start, count);
 
     if (dstData == NULL || cnt < 0)
+    {
+        ERR("incorrect pixel shader const data: start(%u), dstData(0x%p), count(%u)", start, dstData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(dstData, &This->stateBlock->pixelShaderConstantB[start], cnt * sizeof(BOOL));
     return WINED3D_OK;
@@ -3475,7 +3527,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetPixelShaderConstantI(
     TRACE("(iface %p, srcData %p, start %u, count %u)\n",
             iface, srcData, start, count);
 
-    if (!srcData || start >= MAX_CONST_I) return WINED3DERR_INVALIDCALL;
+    if (!srcData || start >= MAX_CONST_I)
+    {
+        ERR("incorrect pixel shader const data: start(%u), srcData(0x%p), count(%u)", start, srcData, count);
+        return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(&This->updateStateBlock->pixelShaderConstantI[start * 4], srcData, cnt * sizeof(int) * 4);
     for (i = 0; i < cnt; i++)
@@ -3504,7 +3560,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetPixelShaderConstantI(
             iface, dstData, start, count);
 
     if (dstData == NULL || cnt < 0)
+    {
+        ERR("incorrect pixel shader const data: start(%u), dstData(0x%p), count(%u)", start, dstData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(dstData, &This->stateBlock->pixelShaderConstantI[start * 4], cnt * sizeof(int) * 4);
     return WINED3D_OK;
@@ -3524,7 +3583,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetPixelShaderConstantF(
 
     /* Specifically test start > limit to catch MAX_UINT overflows when adding start + count */
     if (srcData == NULL || start + count > This->d3d_pshader_constantF || start > This->d3d_pshader_constantF)
+    {
+        ERR("incorrect pixel shader const data: start(%u), srcData(0x%p), count(%u)", start, srcData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(&This->updateStateBlock->pixelShaderConstantF[start * 4], srcData, count * sizeof(float) * 4);
     if(TRACE_ON(d3d)) {
@@ -3558,7 +3620,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetPixelShaderConstantF(
             iface, dstData, start, count);
 
     if (dstData == NULL || cnt < 0)
+    {
+        ERR("incorrect pixel shader const data: start(%u), dstData(0x%p), count(%u)", start, dstData, count);
         return WINED3DERR_INVALIDCALL;
+    }
 
     memcpy(dstData, &This->stateBlock->pixelShaderConstantF[start * 4], cnt * sizeof(float) * 4);
     return WINED3D_OK;
@@ -4079,7 +4144,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_SetTexture(IWineD3DDevice *iface,
     /* Windows accepts overflowing this array... we do not. */
     if (stage >= sizeof(This->stateBlock->textures) / sizeof(*This->stateBlock->textures))
     {
+#ifdef DEBUG_misha
+        ERR("Ignoring invalid stage %u.\n", stage);
+#else
         WARN("Ignoring invalid stage %u.\n", stage);
+#endif
         return WINED3D_OK;
     }
 
@@ -6274,20 +6343,12 @@ static HRESULT updateSurfaceDesc(IWineD3DSurfaceImpl *surface, const WINED3DPRES
 
     if (surface->texture_name)
     {
-#ifdef VBOX_WITH_WDDM
-# ifdef DEBUG_misha
-        /* shared case needs testing! */
-        Assert(!VBOXSHRC_IS_SHARED(surface));
-# endif
-        if (!VBOXSHRC_IS_SHARED_OPENED(surface))
-#endif
-        {
-            struct wined3d_context *context = context_acquire(device, NULL, CTXUSAGE_RESOURCELOAD);
-            ENTER_GL();
-            glDeleteTextures(1, &surface->texture_name);
-            LEAVE_GL();
-            context_release(context);
-        }
+        IWineD3DDeviceImpl *This = device; /* <- to make the below texture_gl_delete macro work and avoid other modifications */
+        struct wined3d_context *context = context_acquire(device, NULL, CTXUSAGE_RESOURCELOAD);
+        ENTER_GL();
+        texture_gl_delete(surface, surface->texture_name);
+        LEAVE_GL();
+        context_release(context);
         surface->texture_name = 0;
         surface->Flags &= ~SFLAG_CLIENT;
     }
@@ -6402,6 +6463,10 @@ static HRESULT create_primary_opengl_context(IWineD3DDevice *iface, IWineD3DSwap
     HRESULT hr;
     IWineD3DSurfaceImpl *target;
 
+#ifdef VBOX_WITH_WDDM
+    ERR("Should not be here!");
+#endif
+
 #ifndef VBOX_WITH_WDDM
     /* Recreate the primary swapchain's context */
     swapchain->context = HeapAlloc(GetProcessHeap(), 0, sizeof(*swapchain->context));
@@ -6413,7 +6478,11 @@ static HRESULT create_primary_opengl_context(IWineD3DDevice *iface, IWineD3DSwap
 #endif
 
     target = (IWineD3DSurfaceImpl *)(swapchain->backBuffer ? swapchain->backBuffer[0] : swapchain->frontBuffer);
-    if (!(context = context_create(swapchain, target, swapchain->ds_format)))
+    if (!(context = context_create(swapchain, target, swapchain->ds_format
+#ifdef VBOX_WITH_WDDM
+                , This->pHgsmi
+#endif
+            )))
     {
         WARN("Failed to create context.\n");
 #ifndef VBOX_WITH_WDDM
@@ -6635,10 +6704,14 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Reset(IWineD3DDevice* iface, WINED3DPRE
                 swapchain_setup_fullscreen_window(swapchain, pPresentationParameters->BackBufferWidth,
                         pPresentationParameters->BackBufferHeight);
             } else {
+#ifndef VBOX_WITH_WDDM
                 /* Fullscreen -> fullscreen mode change */
                 MoveWindow(swapchain->device_window, 0, 0,
                            pPresentationParameters->BackBufferWidth, pPresentationParameters->BackBufferHeight,
                            TRUE);
+#else
+                ERR("reset: fullscreen unexpected!");
+#endif
             }
         }
         else if (!swapchain->presentParms.Windowed)
@@ -6675,14 +6748,17 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Reset(IWineD3DDevice* iface, WINED3DPRE
 
     if(wined3d_settings.offscreen_rendering_mode == ORM_FBO)
     {
+#ifndef VBOX_WITH_WDDM
         RECT client_rect;
         GetClientRect(swapchain->win_handle, &client_rect);
+#endif
 
         if(!swapchain->presentParms.BackBufferCount)
         {
             TRACE("Single buffered rendering\n");
             swapchain->render_to_fbo = FALSE;
         }
+#ifndef VBOX_WITH_WDDM
         else if(swapchain->presentParms.BackBufferWidth  != client_rect.right  ||
                 swapchain->presentParms.BackBufferHeight != client_rect.bottom )
         {
@@ -6692,6 +6768,7 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Reset(IWineD3DDevice* iface, WINED3DPRE
                     client_rect.right, client_rect.bottom);
             swapchain->render_to_fbo = TRUE;
         }
+#endif
         else
         {
             TRACE("Rendering directly to GL_BACK\n");
@@ -6909,29 +6986,6 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetSurfaceFromDC(IWineD3DDevice *iface,
     return WINED3DERR_INVALIDCALL;
 }
 
-#ifdef VBOX_WITH_WDDM
-static HRESULT WINAPI IWineD3DDeviceImpl_Flush(IWineD3DDevice *iface)
-{
-    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
-    struct wined3d_context *context;
-    int i;
-    for (i = 0; i < This->numContexts; ++i)
-    {
-        context = This->contexts[i];
-        if (context_acquire_context(context, NULL, CTXUSAGE_RESOURCELOAD, TRUE))
-        {
-            Assert(context->valid);
-            wglFlush();
-            context_release(context);
-        }
-        else
-        {
-            WARN("Invalid context, skipping flush.\n");
-        }
-    }
-    return WINED3D_OK;
-}
-
 static HRESULT WINAPI IWineD3DDeviceImpl_AddSwapChain(IWineD3DDevice *iface, IWineD3DSwapChain *swapchain)
 {
     IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
@@ -6979,7 +7033,7 @@ static HRESULT WINAPI IWineD3DDeviceImpl_RemoveSwapChain(IWineD3DDevice *iface, 
             memcpy (pvNewBuf + i, This->swapchains +i+1, (This->NumberOfSwapChains - i)*sizeof(IWineD3DSwapChain *));
         }
 
-        This->swapchains = (IWineD3DSwapChain *)pvNewBuf;
+        This->swapchains = pvNewBuf;
     }
     else
     {
@@ -6989,6 +7043,80 @@ static HRESULT WINAPI IWineD3DDeviceImpl_RemoveSwapChain(IWineD3DDevice *iface, 
         }
     }
     return WINED3D_OK;
+}
+
+#ifdef VBOX_WITH_WDDM
+static HRESULT WINAPI IWineD3DDeviceImpl_Flush(IWineD3DDevice *iface)
+{
+    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
+    struct wined3d_context *context;
+    int i;
+
+    /* first call swapchain flush to ensure all swapchain-pending data gets flushed */
+    for (i = 0; i < This->NumberOfSwapChains; ++i)
+    {
+        IWineD3DSwapChain *pSwapchain = This->swapchains[i];
+        IWineD3DSwapChain_Flush(pSwapchain);
+    }
+
+    for (i = 0; i < This->numContexts; ++i)
+    {
+        context = This->contexts[i];
+        if (context_acquire_context(context, NULL, CTXUSAGE_RESOURCELOAD, TRUE))
+        {
+            Assert(context->valid);
+            wglFlush();
+            context_release(context);
+        }
+        else
+        {
+            WARN("Invalid context, skipping flush.\n");
+        }
+    }
+    return WINED3D_OK;
+}
+
+/* context activation is done by the caller */
+void device_cleanup_durtify_texture_target(IWineD3DDeviceImpl *This, GLuint texture_target)
+{
+    const struct wined3d_gl_info *gl_info = &This->adapter->gl_info;
+    unsigned int i;
+    GLint active_texture=GL_TEXTURE0_ARB;
+    ENTER_GL();
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
+
+    for (i = 0; i < gl_info->limits.textures; ++i)
+    {
+        /* Make appropriate texture active */
+        GL_EXTCALL(glActiveTextureARB(GL_TEXTURE0_ARB + i));
+        checkGLcall("glActiveTextureARB");
+
+        /* don't do  glGet GL_TEXTURE_BINDING_xxx just ensure nothing is bound to IWineD3DSurfaceImpl::texture_target,
+         * and dirtify the state later */
+        if (texture_target == GL_TEXTURE_2D)
+            glBindTexture(texture_target, This->dummyTextureName[i]);
+        else
+            glBindTexture(texture_target, 0);
+    }
+
+    /* restore tha active texture unit */
+    GL_EXTCALL(glActiveTextureARB(active_texture));
+    checkGLcall("glActiveTextureARB");
+    LEAVE_GL();
+
+    /* dirtify */
+    for (i = 0; i < gl_info->limits.textures; ++i)
+    {
+        DWORD active_sampler = This->rev_tex_unit_map[i];
+
+        if (active_sampler != WINED3D_UNMAPPED_STAGE)
+        {
+            IWineD3DDeviceImpl_MarkStateDirty(This, STATE_SAMPLER(active_sampler));
+        }
+    }
+
+    /* do flush to ensure this all goes to host */
+    wglFlush();
 }
 #endif
 
@@ -7144,11 +7272,12 @@ static const IWineD3DDeviceVtbl IWineD3DDevice_Vtbl =
     IWineD3DDeviceImpl_GetSurfaceFromDC,
     IWineD3DDeviceImpl_AcquireFocusWindow,
     IWineD3DDeviceImpl_ReleaseFocusWindow,
+    /* VBox extensions */
+    IWineD3DDeviceImpl_AddSwapChain,
+    IWineD3DDeviceImpl_RemoveSwapChain,
 #ifdef VBOX_WITH_WDDM
     /* VBox WDDM extensions */
     IWineD3DDeviceImpl_Flush,
-    IWineD3DDeviceImpl_AddSwapChain,
-    IWineD3DDeviceImpl_RemoveSwapChain,
 #endif
 };
 
@@ -7223,6 +7352,10 @@ HRESULT device_init(IWineD3DDeviceImpl *device, IWineD3DImpl *wined3d,
     }
 
     device->blitter = adapter->blitter;
+
+#ifdef VBOX_WINE_WITH_SHADER_CACHE
+    shader_chaches_init(device);
+#endif
 
     return WINED3D_OK;
 }

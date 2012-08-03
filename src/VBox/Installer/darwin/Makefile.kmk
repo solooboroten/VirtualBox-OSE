@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 38390 2011-08-09 23:12:52Z vboxsync $
+# $Id: Makefile.kmk 42575 2012-08-03 11:15:07Z vboxsync $
 ## @file
 # Install misc stuff and create dist packages for Mac OS X.
 #
 
 #
-# Copyright (C) 2006-2011 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -106,7 +106,7 @@ endif
 #OTHER_CLEAN = TODO
 
 
-include $(KBUILD_PATH)/subfooter.kmk
+include $(FILE_KBUILD_SUB_FOOTER)
 
 
 #
@@ -154,6 +154,8 @@ $(VBOX_PATH_DIST)/VirtualBox-$(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_
 		$@ \
 		$(VBOX_PATH_PACK_TMP)/DiskImage/
 	sudo mv $(VBOX_PATH_PACK_TMP)/DiskImage.tmp $(VBOX_PATH_PACK_TMP)/DiskImage
+	@# Remove .dmg packages from old depend builds
+	$(QUIET)$(RM) -f $(wildcard $(VBOX_PATH_DIST)/VirtualBox-*-r*.dmg)
 	@# Populate the image with uninstaller, readme, picture, and .VolumeIcon.icns. (TODO)
 	$(INSTALL) $(VBOX_PATH_DI_SRC)/DiskImage/VirtualBox_Uninstall.tool  $(VBOX_PATH_PACK_TMP)/DiskImage/
 ifeq (1,1)
@@ -542,6 +544,7 @@ VBOX_DI_VBAPP_DYLIBS = \
 	MacOS/VBoxRT.dylib \
 	MacOS/VBoxSharedFolders.dylib \
 	MacOS/VBoxSharedClipboard.dylib \
+	MacOS/VBoxDragAndDropSvc.dylib \
 	MacOS/VBoxGuestPropSvc.dylib \
 	MacOS/VBoxVMM.dylib \
 	MacOS/VBoxXPCOM.dylib \
@@ -588,6 +591,10 @@ if defined(VBOX_WITH_PYTHON) && !defined(VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_6)
  VBOX_DI_VBAPP_DYLIBS += \
  	MacOS/VBoxPython2_6.so
 endif
+if defined(VBOX_WITH_PYTHON) && !defined(VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_7)
+ VBOX_DI_VBAPP_DYLIBS += \
+ 	MacOS/VBoxPython2_7.so
+endif
 
 VBOX_DI_VBAPP_DYLIBS.x86 := \
 	MacOS/VBoxREM32.dylib \
@@ -626,7 +633,8 @@ VBOX_DI_VBAPP_PROGS = \
 	MacOS/VBoxNetAdpCtl \
 	MacOS/VBoxNetDHCP \
 	MacOS/VBoxExtPackHelperApp \
-	MacOS/VBoxBalloonCtrl
+	MacOS/VBoxBalloonCtrl \
+	MacOS/VBoxAutostart
 ifdef VBOX_WITH_WEBSERVICES
  VBOX_DI_VBAPP_PROGS += \
  	MacOS/vboxwebsrv
@@ -749,6 +757,8 @@ $(VBOX_PATH_PACK_TMP)/Packages/VirtualBox.pkg: \
                 $(if-expr defined(VBOX_WITH_JXPCOM), $(addprefix $(VBOX_PATH_DIST)/, sdk/bindings/xpcom/java/vboxjxpcom.jar),) \
 		$(if $(VBOX_WITH_WEBSERVICES),$(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxwebsrv.plist,) \
 		$(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxballoonctrl.plist \
+		$(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxautostart.plist \
+		$(VBOX_PATH_DI_SRC)/VirtualBox/VBoxAutostartDarwin.sh \
 		$(VBOX_DARWIN_INST_DEP_ON_MAKEFILE)
 	$(call MSG_TOOL,PackageMaker,,,$@)
 	@# Cleanup any previously failed attempts.
@@ -804,6 +814,8 @@ ifdef VBOX_WITH_WEBSERVICES
 	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxwebsrv.plist   $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
 endif
 	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxballoonctrl.plist $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
+	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxautostart.plist $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
+	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/VBoxAutostartDarwin.sh $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
 	@# Install the python stuff
 ifdef VBOX_WITH_PYTHON
 	$(foreach f,$(VBOX_DI_VBAPP_PYTHON_FILES) \
@@ -1025,6 +1037,8 @@ ifdef VBOX_WITH_WEBSERVICES
 endif
 	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxBalloonCtrl '#!/bin/bash'
 	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxBalloonCtrl 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxBalloonCtrl "$$@"'
+	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxAutostart '#!/bin/bash'
+	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxAutostart 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxAutostart "$$@"'
 	@# Set the correct owners and file permissions.
 	sudo chmod 0755 $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/*
 	sudo chown    root:admin $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root

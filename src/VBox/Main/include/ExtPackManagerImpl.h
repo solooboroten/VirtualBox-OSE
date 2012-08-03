@@ -1,4 +1,4 @@
-/* $Id: ExtPackManagerImpl.h 37843 2011-07-08 12:34:18Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.h 39878 2012-01-25 16:30:07Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
@@ -43,7 +43,7 @@ public:
 
     HRESULT     FinalConstruct();
     void        FinalRelease();
-    HRESULT     initWithFile(const char *a_pszFile, class ExtPackManager *a_pExtPackMgr, VirtualBox *a_pVirtualBox);
+    HRESULT     initWithFile(const char *a_pszFile, const char *a_pszDigest, class ExtPackManager *a_pExtPackMgr, VirtualBox *a_pVirtualBox);
     void        uninit();
     RTMEMEF_NEW_AND_DELETE_OPERATORS();
     /** @}  */
@@ -54,6 +54,7 @@ public:
     STDMETHOD(COMGETTER(Description))(BSTR *a_pbstrDescription);
     STDMETHOD(COMGETTER(Version))(BSTR *a_pbstrVersion);
     STDMETHOD(COMGETTER(Revision))(ULONG *a_puRevision);
+    STDMETHOD(COMGETTER(Edition))(BSTR *a_pbstrEdition);
     STDMETHOD(COMGETTER(VRDEModule))(BSTR *a_pbstrVrdeModule);
     STDMETHOD(COMGETTER(PlugIns))(ComSafeArrayOut(IExtPackPlugIn *, a_paPlugIns));
     STDMETHOD(COMGETTER(Usable))(BOOL *a_pfUsable);
@@ -117,6 +118,7 @@ public:
     STDMETHOD(COMGETTER(Description))(BSTR *a_pbstrDescription);
     STDMETHOD(COMGETTER(Version))(BSTR *a_pbstrVersion);
     STDMETHOD(COMGETTER(Revision))(ULONG *a_puRevision);
+    STDMETHOD(COMGETTER(Edition))(BSTR *a_pbstrEdition);
     STDMETHOD(COMGETTER(VRDEModule))(BSTR *a_pbstrVrdeModule);
     STDMETHOD(COMGETTER(PlugIns))(ComSafeArrayOut(IExtPackPlugIn *, a_paPlugIns));
     STDMETHOD(COMGETTER(Usable))(BOOL *a_pfUsable);

@@ -1,10 +1,10 @@
-/* $Id: PGMSharedPage.cpp 36891 2011-04-29 13:22:57Z vboxsync $ */
+/* $Id: PGMSharedPage.cpp 41803 2012-06-17 17:20:33Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, Shared page handling
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -35,39 +35,50 @@
 
 #include "PGMInline.h"
 
+
+#ifdef VBOX_WITH_PAGE_SHARING
+
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-#if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
+# ifdef VBOX_STRICT
 /** Keep a copy of all registered shared modules for the .pgmcheckduppages debugger command. */
-static PGMMREGISTERSHAREDMODULEREQ g_apSharedModules[512] = {0};
-static unsigned g_cSharedModules = 0;
-#endif
+static PGMMREGISTERSHAREDMODULEREQ  g_apSharedModules[512] = {0};
+static unsigned                     g_cSharedModules = 0;
+# endif /* VBOX_STRICT */
+
 
 /**
  * Registers a new shared module for the VM
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle
- * @param   enmGuestOS          Guest OS type
- * @param   pszModuleName       Module name
- * @param   pszVersion          Module version
- * @param   GCBaseAddr          Module base address
- * @param   cbModule            Module size
- * @param   cRegions            Number of shared region descriptors
- * @param   pRegions            Shared region(s)
+ * @param   pVM                 Pointer to the VM.
+ * @param   enmGuestOS          Guest OS type.
+ * @param   pszModuleName       Module name.
+ * @param   pszVersion          Module version.
+ * @param   GCBaseAddr          Module base address.
+ * @param   cbModule            Module size.
+ * @param   cRegions            Number of shared region descriptors.
+ * @param   paRegions           Shared region(s).
+ *
+ * @todo    This should be a GMMR3 call. No need to involve GMM here.
  */
-VMMR3DECL(int) PGMR3SharedModuleRegister(PVM pVM, VBOXOSFAMILY enmGuestOS, char *pszModuleName, char *pszVersion, RTGCPTR GCBaseAddr, uint32_t cbModule,
-                                         unsigned cRegions, VMMDEVSHAREDREGIONDESC *pRegions)
+VMMR3DECL(int) PGMR3SharedModuleRegister(PVM pVM, VBOXOSFAMILY enmGuestOS, char *pszModuleName, char *pszVersion,
+                                         RTGCPTR GCBaseAddr, uint32_t cbModule, uint32_t cRegions,
+                                         VMMDEVSHAREDREGIONDESC const *paRegions)
 {
-#ifdef VBOX_WITH_PAGE_SHARING
+    Log(("PGMR3SharedModuleRegister family=%d name=%s version=%s base=%RGv size=%x cRegions=%d\n",
+         enmGuestOS, pszModuleName, pszVersion, GCBaseAddr, cbModule, cRegions));
+
+    /*
+     * Sanity check.
+     */
+    AssertReturn(cRegions <= VMMDEVSHAREDREGIONDESC_MAX, VERR_INVALID_PARAMETER);
+
+    /*
+     * Allocate and initialize a GMM request.
+     */
     PGMMREGISTERSHAREDMODULEREQ pReq;
-
-    Log(("PGMR3SharedModuleRegister family=%d name=%s version=%s base=%RGv size=%x cRegions=%d\n", enmGuestOS, pszModuleName, pszVersion, GCBaseAddr, cbModule, cRegions));
-
-    /* Sanity check. */
-    AssertReturn(cRegions < VMMDEVSHAREDREGIONDESC_MAX, VERR_INVALID_PARAMETER);
-
     pReq = (PGMMREGISTERSHAREDMODULEREQ)RTMemAllocZ(RT_OFFSETOF(GMMREGISTERSHAREDMODULEREQ, aRegions[cRegions]));
     AssertReturn(pReq, VERR_NO_MEMORY);
 
@@ -75,115 +86,118 @@ VMMR3DECL(int) PGMR3SharedModuleRegister(PVM pVM, VBOXOSFAMILY enmGuestOS, char 
     pReq->GCBaseAddr    = GCBaseAddr;
     pReq->cbModule      = cbModule;
     pReq->cRegions      = cRegions;
-    for (unsigned i = 0; i < cRegions; i++)
-        pReq->aRegions[i] = pRegions[i];
+    for (uint32_t i = 0; i < cRegions; i++)
+        pReq->aRegions[i] = paRegions[i];
 
-    if (    RTStrCopy(pReq->szName, sizeof(pReq->szName), pszModuleName) != VINF_SUCCESS
-        ||  RTStrCopy(pReq->szVersion, sizeof(pReq->szVersion), pszVersion) != VINF_SUCCESS)
+    int rc = RTStrCopy(pReq->szName, sizeof(pReq->szName), pszModuleName);
+    if (RT_SUCCESS(rc))
     {
-        RTMemFree(pReq);
-        return VERR_BUFFER_OVERFLOW;
-    }
-
-    int rc = GMMR3RegisterSharedModule(pVM, pReq);
-# if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
-    if (rc == VINF_SUCCESS)
-    {
-        PGMMREGISTERSHAREDMODULEREQ *ppSharedModule = NULL;
-
-        if (g_cSharedModules < RT_ELEMENTS(g_apSharedModules))
+        rc = RTStrCopy(pReq->szVersion, sizeof(pReq->szVersion), pszVersion);
+        if (RT_SUCCESS(rc))
         {
-            for (unsigned i = 0; i < RT_ELEMENTS(g_apSharedModules); i++)
-            {
-                if (g_apSharedModules[i] == NULL)
-                {
-                    ppSharedModule = &g_apSharedModules[i];
-                    break;
-                }
-            }
-            Assert(ppSharedModule);
+            /*
+             * Issue the request.  In strict builds, do some local tracking.
+             */
+            rc = GMMR3RegisterSharedModule(pVM, pReq);
+            if (RT_SUCCESS(rc))
+                rc = pReq->rc;
+            AssertMsg(rc == VINF_SUCCESS || rc == VINF_GMM_SHARED_MODULE_ALREADY_REGISTERED, ("%Rrc\n", rc));
 
-            if (ppSharedModule)
+# ifdef VBOX_STRICT
+            if (   rc == VINF_SUCCESS
+                && g_cSharedModules < RT_ELEMENTS(g_apSharedModules))
             {
-                *ppSharedModule = (PGMMREGISTERSHAREDMODULEREQ)RTMemAllocZ(RT_OFFSETOF(GMMREGISTERSHAREDMODULEREQ, aRegions[cRegions]));
-                memcpy(*ppSharedModule, pReq, RT_OFFSETOF(GMMREGISTERSHAREDMODULEREQ, aRegions[cRegions]));
-                g_cSharedModules++;
+                unsigned i;
+                for (i = 0; i < RT_ELEMENTS(g_apSharedModules); i++)
+                    if (g_apSharedModules[i] == NULL)
+                    {
+
+                        size_t const cbSharedModule = RT_OFFSETOF(GMMREGISTERSHAREDMODULEREQ, aRegions[cRegions]);
+                        g_apSharedModules[i] = (PGMMREGISTERSHAREDMODULEREQ)RTMemDup(pReq, cbSharedModule);
+                        g_cSharedModules++;
+                        break;
+                    }
+                Assert(i < RT_ELEMENTS(g_apSharedModules));
             }
+# endif /* VBOX_STRICT */
+            if (RT_SUCCESS(rc))
+                rc = VINF_SUCCESS;
         }
     }
-# endif
 
     RTMemFree(pReq);
-    Assert(rc == VINF_SUCCESS || rc == VINF_PGM_SHARED_MODULE_COLLISION || rc == VINF_PGM_SHARED_MODULE_ALREADY_REGISTERED);
-    if (RT_FAILURE(rc))
-        return rc;
-
-    return VINF_SUCCESS;
-#else
-    return VERR_NOT_IMPLEMENTED;
-#endif
+    return rc;
 }
+
 
 /**
  * Unregisters a shared module for the VM
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle
- * @param   pszModuleName       Module name
- * @param   pszVersion          Module version
- * @param   GCBaseAddr          Module base address
- * @param   cbModule            Module size
+ * @param   pVM                 Pointer to the VM.
+ * @param   pszModuleName       Module name.
+ * @param   pszVersion          Module version.
+ * @param   GCBaseAddr          Module base address.
+ * @param   cbModule            Module size.
+ *
+ * @todo    This should be a GMMR3 call. No need to involve GMM here.
  */
 VMMR3DECL(int) PGMR3SharedModuleUnregister(PVM pVM, char *pszModuleName, char *pszVersion, RTGCPTR GCBaseAddr, uint32_t cbModule)
 {
-#ifdef VBOX_WITH_PAGE_SHARING
-    PGMMUNREGISTERSHAREDMODULEREQ pReq;
-
     Log(("PGMR3SharedModuleUnregister name=%s version=%s base=%RGv size=%x\n", pszModuleName, pszVersion, GCBaseAddr, cbModule));
+    AssertMsgReturn(cbModule > 0 && cbModule < _1G, ("%u\n", cbModule), VERR_OUT_OF_RANGE);
 
-    pReq = (PGMMUNREGISTERSHAREDMODULEREQ)RTMemAllocZ(sizeof(*pReq));
+
+    /*
+     * Forward the request to GMM (ring-0).
+     */
+    PGMMUNREGISTERSHAREDMODULEREQ pReq = (PGMMUNREGISTERSHAREDMODULEREQ)RTMemAlloc(sizeof(*pReq));
     AssertReturn(pReq, VERR_NO_MEMORY);
 
     pReq->GCBaseAddr    = GCBaseAddr;
+    pReq->u32Alignment  = 0;
     pReq->cbModule      = cbModule;
 
-    if (    RTStrCopy(pReq->szName, sizeof(pReq->szName), pszModuleName) != VINF_SUCCESS
-        ||  RTStrCopy(pReq->szVersion, sizeof(pReq->szVersion), pszVersion) != VINF_SUCCESS)
+    int rc = RTStrCopy(pReq->szName, sizeof(pReq->szName), pszModuleName);
+    if (RT_SUCCESS(rc))
     {
-        RTMemFree(pReq);
-        return VERR_BUFFER_OVERFLOW;
-    }
-    int rc = GMMR3UnregisterSharedModule(pVM, pReq);
-    RTMemFree(pReq);
-
-# if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
-    for (unsigned i = 0; i < g_cSharedModules; i++)
-    {
-        if (    g_apSharedModules[i]
-            &&  !strcmp(g_apSharedModules[i]->szName, pszModuleName)
-            &&  !strcmp(g_apSharedModules[i]->szVersion, pszVersion))
+        rc = RTStrCopy(pReq->szVersion, sizeof(pReq->szVersion), pszVersion);
+        if (RT_SUCCESS(rc))
         {
-            RTMemFree(g_apSharedModules[i]);
-            g_apSharedModules[i] = NULL;
-            g_cSharedModules--;
-            break;
+            rc = GMMR3UnregisterSharedModule(pVM, pReq);
+
+# ifdef VBOX_STRICT
+            /*
+             * Update our local tracking.
+             */
+            for (unsigned i = 0; i < g_cSharedModules; i++)
+            {
+                if (    g_apSharedModules[i]
+                    &&  !strcmp(g_apSharedModules[i]->szName, pszModuleName)
+                    &&  !strcmp(g_apSharedModules[i]->szVersion, pszVersion))
+                {
+                    RTMemFree(g_apSharedModules[i]);
+                    g_apSharedModules[i] = NULL;
+                    g_cSharedModules--;
+                    break;
+                }
+            }
+# endif /* VBOX_STRICT */
         }
     }
-# endif
+
+    RTMemFree(pReq);
     return rc;
-#else
-    return VERR_NOT_IMPLEMENTED;
-#endif
 }
 
-#ifdef VBOX_WITH_PAGE_SHARING
+
 /**
  * Rendezvous callback that will be called once.
  *
  * @returns VBox strict status code.
- * @param   pVM                 VM handle.
- * @param   pVCpu               The VMCPU handle for the calling EMT.
- * @param   pvUser              Not used;
+ * @param   pVM                 Pointer to the VM.
+ * @param   pVCpu               Pointer to the VMCPU of the calling EMT.
+ * @param   pvUser              Pointer to a VMCPUID with the requester's ID.
  */
 static DECLCALLBACK(VBOXSTRICTRC) pgmR3SharedModuleRegRendezvous(PVM pVM, PVMCPU pVCpu, void *pvUser)
 {
@@ -205,51 +219,51 @@ static DECLCALLBACK(VBOXSTRICTRC) pgmR3SharedModuleRegRendezvous(PVM pVM, PVMCPU
     rc = GMMR3CheckSharedModules(pVM);
     pgmUnlock(pVM);
     AssertLogRelRC(rc);
+
     return rc;
 }
 
 /**
  * Shared module check helper (called on the way out).
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   VMCPUID     VCPU id
  */
 static DECLCALLBACK(void) pgmR3CheckSharedModulesHelper(PVM pVM, VMCPUID idCpu)
 {
     /* We must stall other VCPUs as we'd otherwise have to send IPI flush commands for every single change we make. */
-    int rc = VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_ONE_BY_ONE, pgmR3SharedModuleRegRendezvous, &idCpu);
-    Assert(rc == VINF_SUCCESS);
+    STAM_REL_PROFILE_START(&pVM->pgm.s.StatShModCheck, a);
+    int rc = VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_ALL_AT_ONCE, pgmR3SharedModuleRegRendezvous, &idCpu);
+    AssertRCSuccess(rc);
+    STAM_REL_PROFILE_STOP(&pVM->pgm.s.StatShModCheck, a);
 }
-#endif
+
 
 /**
  * Check all registered modules for changes.
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle
+ * @param   pVM                 Pointer to the VM
  */
 VMMR3DECL(int) PGMR3SharedModuleCheckAll(PVM pVM)
 {
-#ifdef VBOX_WITH_PAGE_SHARING
     /* Queue the actual registration as we are under the IOM lock right now. Perform this operation on the way out. */
     return VMR3ReqCallNoWait(pVM, VMCPUID_ANY_QUEUE, (PFNRT)pgmR3CheckSharedModulesHelper, 2, pVM, VMMGetCpuId(pVM));
-#else
-    return VERR_NOT_IMPLEMENTED;
-#endif
 }
 
+
+# ifdef DEBUG
 /**
  * Query the state of a page in a shared module
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle
- * @param   GCPtrPage           Page address
- * @param   pfShared            Shared status (out)
- * @param   puPageFlags         Page flags (out)
+ * @param   pVM                 Pointer to the VM.
+ * @param   GCPtrPage           Page address.
+ * @param   pfShared            Shared status (out).
+ * @param   pfPageFlags         Page flags (out).
  */
-VMMR3DECL(int) PGMR3SharedModuleGetPageState(PVM pVM, RTGCPTR GCPtrPage, bool *pfShared, uint64_t *puPageFlags)
+VMMR3DECL(int) PGMR3SharedModuleGetPageState(PVM pVM, RTGCPTR GCPtrPage, bool *pfShared, uint64_t *pfPageFlags)
 {
-#if defined(VBOX_WITH_PAGE_SHARING) && defined(DEBUG)
     /* Debug only API for the page fusion testcase. */
     RTGCPHYS GCPhys;
     uint64_t fFlags;
@@ -259,40 +273,39 @@ VMMR3DECL(int) PGMR3SharedModuleGetPageState(PVM pVM, RTGCPTR GCPtrPage, bool *p
     int rc = PGMGstGetPage(VMMGetCpu(pVM), GCPtrPage, &fFlags, &GCPhys);
     switch (rc)
     {
-    case VINF_SUCCESS:
-    {
-        PPGMPAGE pPage = pgmPhysGetPage(pVM, GCPhys);
-        if (pPage)
+        case VINF_SUCCESS:
         {
-            *pfShared    = PGM_PAGE_IS_SHARED(pPage);
-            *puPageFlags = fFlags;
+            PPGMPAGE pPage = pgmPhysGetPage(pVM, GCPhys);
+            if (pPage)
+            {
+                *pfShared    = PGM_PAGE_IS_SHARED(pPage);
+                *pfPageFlags = fFlags;
+            }
+            else
+                rc = VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS;
+            break;
         }
-        else
-            rc = VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS;
-        break;
-    }
-    case VERR_PAGE_NOT_PRESENT:
-    case VERR_PAGE_TABLE_NOT_PRESENT:
-    case VERR_PAGE_MAP_LEVEL4_NOT_PRESENT:
-    case VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT:
-        *pfShared = false;
-        *puPageFlags = 0;
-        rc = VINF_SUCCESS;
-        break;
 
-    default:
-        break;
+        case VERR_PAGE_NOT_PRESENT:
+        case VERR_PAGE_TABLE_NOT_PRESENT:
+        case VERR_PAGE_MAP_LEVEL4_NOT_PRESENT:
+        case VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT:
+            *pfShared    = false;
+            *pfPageFlags = 0;
+            rc = VINF_SUCCESS;
+            break;
+
+        default:
+            break;
     }
 
     pgmUnlock(pVM);
     return rc;
-#else
-    return VERR_NOT_IMPLEMENTED;
-#endif
 }
+# endif /* DEBUG */
 
+# ifdef VBOX_STRICT
 
-#if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
 /**
  * The '.pgmcheckduppages' command.
  *
@@ -303,15 +316,16 @@ VMMR3DECL(int) PGMR3SharedModuleGetPageState(PVM pVM, RTGCPTR GCPtrPage, bool *p
  * @param   paArgs      Pointer to (readonly) array of arguments.
  * @param   cArgs       Number of arguments in the array.
  */
-DECLCALLBACK(int)  pgmR3CmdCheckDuplicatePages(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
+DECLCALLBACK(int) pgmR3CmdCheckDuplicatePages(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
 {
     unsigned cBallooned = 0;
-    unsigned cShared = 0;
-    unsigned cZero = 0;
-    unsigned cUnique = 0;
+    unsigned cShared    = 0;
+    unsigned cZero      = 0;
+    unsigned cUnique    = 0;
     unsigned cDuplicate = 0;
     unsigned cAllocZero = 0;
-    unsigned cPages = 0;
+    unsigned cPages     = 0;
+    NOREF(pCmd); NOREF(paArgs); NOREF(cArgs);
 
     pgmLock(pVM);
 
@@ -341,20 +355,19 @@ DECLCALLBACK(int)  pgmR3CmdCheckDuplicatePages(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdH
                     case PGM_PAGE_STATE_ALLOCATED:
                     case PGM_PAGE_STATE_WRITE_MONITORED:
                     {
-                        const void *pvPage;
                         /* Check if the page was allocated, but completely zero. */
-                        int rc = pgmPhysGCPhys2CCPtrInternalReadOnly(pVM, pPage, GCPhys, &pvPage);
-                        if (    rc == VINF_SUCCESS
+                        PGMPAGEMAPLOCK PgMpLck;
+                        const void    *pvPage;
+                        int rc = pgmPhysGCPhys2CCPtrInternalReadOnly(pVM, pPage, GCPhys, &pvPage, &PgMpLck);
+                        if (    RT_SUCCESS(rc)
                             &&  ASMMemIsZeroPage(pvPage))
-                        {
                             cAllocZero++;
-                        }
-                        else
-                        if (GMMR3IsDuplicatePage(pVM, PGM_PAGE_GET_PAGEID(pPage)))
+                        else if (GMMR3IsDuplicatePage(pVM, PGM_PAGE_GET_PAGEID(pPage)))
                             cDuplicate++;
                         else
                             cUnique++;
-
+                        if (RT_SUCCESS(rc))
+                            pgmPhysReleaseInternalPageMappingLock(pVM, &PgMpLck);
                         break;
                     }
 
@@ -384,6 +397,7 @@ DECLCALLBACK(int)  pgmR3CmdCheckDuplicatePages(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdH
     return VINF_SUCCESS;
 }
 
+
 /**
  * The '.pgmsharedmodules' command.
  *
@@ -394,12 +408,12 @@ DECLCALLBACK(int)  pgmR3CmdCheckDuplicatePages(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdH
  * @param   paArgs      Pointer to (readonly) array of arguments.
  * @param   cArgs       Number of arguments in the array.
  */
-DECLCALLBACK(int)  pgmR3CmdShowSharedModules(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
+DECLCALLBACK(int) pgmR3CmdShowSharedModules(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
 {
-    unsigned i = 0;
+    NOREF(pCmd); NOREF(paArgs); NOREF(cArgs);
 
     pgmLock(pVM);
-    do
+    for (unsigned i = 0; i < RT_ELEMENTS(g_apSharedModules); i++)
     {
         if (g_apSharedModules[i])
         {
@@ -407,11 +421,11 @@ DECLCALLBACK(int)  pgmR3CmdShowSharedModules(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp
             for (unsigned j = 0; j < g_apSharedModules[i]->cRegions; j++)
                 pCmdHlp->pfnPrintf(pCmdHlp, NULL, "--- Region %d: base %RGv size %x\n", j, g_apSharedModules[i]->aRegions[j].GCRegionAddr, g_apSharedModules[i]->aRegions[j].cbRegion);
         }
-        i++;
-    } while (i < RT_ELEMENTS(g_apSharedModules));
+    }
     pgmUnlock(pVM);
 
     return VINF_SUCCESS;
 }
 
-#endif /* VBOX_STRICT && HC_ARCH_BITS == 64*/
+# endif /* VBOX_STRICT*/
+#endif /* VBOX_WITH_PAGE_SHARING */

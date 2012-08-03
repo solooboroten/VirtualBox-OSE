@@ -1,4 +1,4 @@
-/* $Id: NetIf-generic.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: NetIf-generic.cpp 41290 2012-05-14 18:07:13Z vboxsync $ */
 /** @file
  * VirtualBox Main - Generic NetIf implementation.
  */
@@ -165,13 +165,24 @@ int NetIfCreateHostOnlyNetworkInterface(VirtualBox *pVBox,
             }
             else
                 strcat(szAdpCtl, "add");
+            if (strlen(szAdpCtl) < RTPATH_MAX - sizeof(" 2>&1"))
+                strcat(szAdpCtl, " 2>&1");
             FILE *fp = popen(szAdpCtl, "r");
 
             if (fp)
             {
-                char szBuf[VBOXNET_MAX_SHORT_NAME];
+                char szBuf[128]; /* We are not interested in long error messages. */
                 if (fgets(szBuf, sizeof(szBuf), fp))
                 {
+                    if (!strncmp(VBOXNETADPCTL_NAME ":", szBuf, sizeof(VBOXNETADPCTL_NAME)))
+                    {
+                        progress->notifyComplete(E_FAIL,
+                                                 COM_IIDOF(IHostNetworkInterface),
+                                                 HostNetworkInterface::getStaticComponentName(),
+                                                 "%s", szBuf);
+                        pclose(fp);
+                        return E_FAIL;
+                    }
                     char *pLast = szBuf + strlen(szBuf) - 1;
                     if (pLast >= szBuf && *pLast == '\n')
                         *pLast = 0;
@@ -204,18 +215,30 @@ int NetIfCreateHostOnlyNetworkInterface(VirtualBox *pVBox,
                         }
                         RTMemFree(pInfo);
                     }
+                    if ((rc = pclose(fp)) != 0)
+                    {
+                        progress->notifyComplete(E_FAIL,
+                                                 COM_IIDOF(IHostNetworkInterface),
+                                                 HostNetworkInterface::getStaticComponentName(),
+                                                 "Failed to execute '"VBOXNETADPCTL_NAME " add' (exit status: %d)", rc);
+                        rc = VERR_INTERNAL_ERROR;
+                    }
                 }
-                if ((rc = pclose(fp)) != 0)
+                else
                 {
+                    /* Failed to add an interface */
+                    rc = VERR_PERMISSION_DENIED;
                     progress->notifyComplete(E_FAIL,
                                              COM_IIDOF(IHostNetworkInterface),
                                              HostNetworkInterface::getStaticComponentName(),
-                                             "Failed to execute '"VBOXNETADPCTL_NAME " add' (exit status: %d)", rc);
-                    rc = VERR_INTERNAL_ERROR;
+                                             "Failed to execute '"VBOXNETADPCTL_NAME " add' (exit status: %d). Check permissions!", rc);
+                    pclose(fp);
                 }
             }
             if (RT_SUCCESS(rc))
                 progress->notifyComplete(rc);
+            else
+                hrc = E_FAIL;
         }
     }
 

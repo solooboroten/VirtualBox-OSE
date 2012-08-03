@@ -7,6 +7,9 @@
 #ifndef CR_VERSION_H
 #define CR_VERSION_H
 
+#define SHCROGL_SSM_VERSION_BEFORE_CTXUSAGE_BITS       28
+#define SHCROGL_SSM_VERSION_BEFORE_FRONT_DRAW_TRACKING 29
+#define SHCROGL_SSM_VERSION                            30
 
 /* These define the Chromium release number.
  * Alpha Release = 0.1.0, Beta Release = 0.2.0
@@ -67,6 +70,7 @@
 #define CR_ARB_texture_env_crossbar 1
 #define CR_ARB_texture_env_dot3 1
 #define CR_ARB_texture_mirrored_repeat 1
+#define CR_ATI_texture_mirror_once 1
 #define CR_ARB_texture_non_power_of_two 1
 #define CR_ARB_transpose_matrix 1
 #define CR_ARB_vertex_buffer_object 1

@@ -1,4 +1,4 @@
-/* $Id: Virtio.h 33325 2010-10-21 20:34:14Z vboxsync $ */
+/* $Id: Virtio.h 41809 2012-06-18 06:39:51Z vboxsync $ */
 /** @file
  * Virtio.h - Virtio Declarations
  */
@@ -303,14 +303,20 @@ DECLINLINE(uint16_t) vringReadAvailIndex(PVPCISTATE pState, PVRING pVRing)
     return tmp;
 }
 
-bool vqueueGet(PVPCISTATE pState, PVQUEUE pQueue, PVQUEUEELEM pElem);
+bool vqueueSkip(PVPCISTATE pState, PVQUEUE pQueue);
+bool vqueueGet(PVPCISTATE pState, PVQUEUE pQueue, PVQUEUEELEM pElem, bool fRemove = true);
 void vqueuePut(PVPCISTATE pState, PVQUEUE pQueue, PVQUEUEELEM pElem, uint32_t uLen, uint32_t uReserved = 0);
 void vqueueNotify(PVPCISTATE pState, PVQUEUE pQueue);
 void vqueueSync(PVPCISTATE pState, PVQUEUE pQueue);
 
+DECLINLINE(bool) vqueuePeek(PVPCISTATE pState, PVQUEUE pQueue, PVQUEUEELEM pElem)
+{
+    return vqueueGet(pState, pQueue, pElem, /* fRemove */ false);
+}
 
 DECLINLINE(bool) vqueueIsReady(PVPCISTATE pState, PVQUEUE pQueue)
 {
+    NOREF(pState);
     return !!pQueue->VRing.addrAvail;
 }
 

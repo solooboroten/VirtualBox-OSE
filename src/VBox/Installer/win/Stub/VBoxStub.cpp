@@ -1,4 +1,4 @@
-/* $Id: VBoxStub.cpp 37989 2011-07-18 08:51:46Z vboxsync $ */
+/* $Id: VBoxStub.cpp 39613 2011-12-14 15:16:15Z vboxsync $ */
 /** @file
  * VBoxStub - VirtualBox's Windows installer stub.
  */
@@ -345,7 +345,7 @@ int WINAPI WinMain(HINSTANCE  hInstance,
     }
 
     /* Init IPRT. */
-    int vrc = RTR3Init();
+    int vrc = RTR3InitExe(argc, &argv, 0);
     if (RT_FAILURE(vrc))
         return vrc;
 
@@ -474,7 +474,7 @@ int WINAPI WinMain(HINSTANCE  hInstance,
         }
         if (!RTDirExists(szExtractPath))
         {
-            vrc = RTDirCreate(szExtractPath, 0700);
+            vrc = RTDirCreate(szExtractPath, 0700, 0);
             AssertMsgRCBreak(vrc, ("Could not create temp directory!\n"));
         }
 

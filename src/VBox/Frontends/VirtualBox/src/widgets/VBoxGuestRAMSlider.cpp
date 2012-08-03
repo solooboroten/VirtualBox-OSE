@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestRAMSlider.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxGuestRAMSlider.cpp 41587 2012-06-06 04:19:03Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -17,9 +17,12 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* VBox includes */
+/* GUI includes: */
 #include "VBoxGuestRAMSlider.h"
 #include "VBoxGlobal.h"
+
+/* COM includes: */
+#include "CSystemProperties.h"
 
 VBoxGuestRAMSlider::VBoxGuestRAMSlider (QWidget *aParent /* = 0 */)
   : QIAdvancedSlider (aParent)
@@ -63,7 +66,7 @@ uint VBoxGuestRAMSlider::maxRAM() const
 
 void VBoxGuestRAMSlider::init()
 {
-    ulong fullSize = vboxGlobal().virtualBox().GetHost().GetMemorySize();
+    ulong fullSize = vboxGlobal().host().GetMemorySize();
     CSystemProperties sys = vboxGlobal().virtualBox().GetSystemProperties();
     mMinRAM = sys.GetMinGuestRAM();
     mMaxRAM = RT_MIN (RT_ALIGN (fullSize, _1G / _1M), sys.GetMaxGuestRAM());

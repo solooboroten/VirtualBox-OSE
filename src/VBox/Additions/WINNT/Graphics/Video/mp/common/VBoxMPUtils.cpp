@@ -1,4 +1,4 @@
-/* $Id: VBoxMPUtils.cpp 36955 2011-05-04 12:35:05Z vboxsync $ */
+/* $Id: VBoxMPUtils.cpp 42151 2012-07-13 16:45:06Z vboxsync $ */
 
 /** @file
  * VBox Miniport utils
@@ -30,8 +30,13 @@ RT_C_DECLS_END
 /* specifies whether the vboxVDbgBreakF should break in the debugger
  * windbg seems to have some issues when there is a lot ( >~50) of sw breakpoints defined
  * to simplify things we just insert breaks for the case of intensive debugging WDDM driver*/
-bool g_bVBoxVDbgBreakF = false;
-bool g_bVBoxVDbgBreakFv = false;
+#ifndef VBOX_WDDM_WIN8
+int g_bVBoxVDbgBreakF = false;
+int g_bVBoxVDbgBreakFv = false;
+#else
+int g_bVBoxVDbgBreakF = false;
+int g_bVBoxVDbgBreakFv = false;
+#endif
 #endif
 
 #pragma alloc_text(PAGE, VBoxQueryWinVersion)
@@ -49,36 +54,26 @@ vboxWinVersion_t VBoxQueryWinVersion()
     static vboxWinVersion_t s_WinVersion = UNKNOWN_WINVERSION;
 
     if (s_WinVersion != UNKNOWN_WINVERSION)
-    {
         return s_WinVersion;
-    }
 
     checkedBuild = PsGetVersion(&major, &minor, &build, NULL);
     LOG(("running on version %d.%d, build %d(checked=%d)", major, minor, build, (int)checkedBuild));
 
     if(major == 6)
     {
-        if (minor == 1)
-        {
+        if (minor == 2)
+            s_WinVersion = WIN8;
+        else if (minor == 1)
             s_WinVersion = WIN7;
-        }
         else if (minor == 0)
-        {
             s_WinVersion = WINVISTA; /* Or Windows Server 2008. */
-        }
     }
     else if (major == 5)
-    {
         s_WinVersion = (minor>=1) ? WINXP:WIN2K;
-    }
     else if (major == 4)
-    {
         s_WinVersion = WINNT4;
-    }
     else
-    {
         WARN(("NT4 required!"));
-    }
     return s_WinVersion;
 }
 

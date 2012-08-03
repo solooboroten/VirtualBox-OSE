@@ -1,4 +1,4 @@
-/* $Id: VBoxMPCommon.cpp 36867 2011-04-28 07:27:03Z vboxsync $ */
+/* $Id: VBoxMPCommon.cpp 40566 2012-03-21 14:12:23Z vboxsync $ */
 
 /** @file
  * VBox Miniport common utils
@@ -32,7 +32,7 @@ int VBoxMPCmnMapAdapterMemory(PVBOXMP_COMMON pCommon, void **ppv, uint32_t ulOff
     }
 
     PHYSICAL_ADDRESS FrameBuffer;
-    FrameBuffer.QuadPart = VBE_DISPI_LFB_PHYSICAL_ADDRESS + ulOffset;
+    FrameBuffer.QuadPart = VBoxCommonFromDeviceExt(pPEXT)->phVRAM.QuadPart + ulOffset;
 
     PVOID VideoRamBase = NULL;
     ULONG VideoRamLength = ulSize;

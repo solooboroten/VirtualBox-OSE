@@ -10,19 +10,6 @@
 #include "stub.h"
 #include <iprt/thread.h>
 
-static void crForcedFlush()
-{
-#if 0
-    GLint buffer;
-    stub.spu->dispatch_table.GetIntegerv(GL_DRAW_BUFFER, &buffer);
-    stub.spu->dispatch_table.DrawBuffer(GL_FRONT);
-    stub.spu->dispatch_table.Flush();
-    stub.spu->dispatch_table.DrawBuffer(buffer);
-#else
-    stub.spu->dispatch_table.Flush();
-#endif
-}
-
 #ifdef GLX
 Display* stubGetWindowDisplay(WindowInfo *pWindow)
 {
@@ -62,7 +49,11 @@ GLint APIENTRY crCreateContext( const char *dpyName, GLint visBits )
     /* XXX in Chromium 1.5 and earlier, the last parameter was UNDECIDED.
      * That didn't seem right so it was changed to CHROMIUM. (Brian)
      */
-    context = stubNewContext(dpyName, visBits, CHROMIUM, 0);
+    context = stubNewContext(dpyName, visBits, CHROMIUM, 0
+#if defined(VBOX_WITH_CRHGSMI) && defined(IN_GUEST)
+        , NULL
+#endif
+            );
     return context ? (int) context->id : -1;
 }
 
@@ -87,18 +78,22 @@ void APIENTRY crMakeCurrent( GLint window, GLint context )
 
 GLint APIENTRY crGetCurrentContext( void )
 {
+    ContextInfo *context;
     stubInit();
-    if (stub.currentContext)
-      return (GLint) stub.currentContext->id;
+    context = stubGetCurrentContext();
+    if (context)
+      return (GLint) context->id;
     else
       return 0;
 }
 
 GLint APIENTRY crGetCurrentWindow( void )
 {
+    ContextInfo *context;
     stubInit();
-    if (stub.currentContext && stub.currentContext->currentDrawable)
-      return stub.currentContext->currentDrawable->spuWindow;
+    context = stubGetCurrentContext();
+    if (context && context->currentDrawable)
+      return context->currentDrawable->spuWindow;
     else
       return -1;
 }
@@ -122,36 +117,7 @@ GLint APIENTRY crWindowCreate( const char *dpyName, GLint visBits )
 
 void APIENTRY crWindowDestroy( GLint window )
 {
-    WindowInfo *winInfo = (WindowInfo *)
-        crHashtableSearch(stub.windowTable, (unsigned int) window);
-    if (winInfo && winInfo->type == CHROMIUM && stub.spu)
-    {
-        crHashtableLock(stub.windowTable);
-
-        stub.spu->dispatch_table.WindowDestroy( winInfo->spuWindow );
-
-#ifdef WINDOWS
-        if (winInfo->hVisibleRegion != INVALID_HANDLE_VALUE)
-        {
-            DeleteObject(winInfo->hVisibleRegion);
-        }
-#elif defined(GLX)
-        if (winInfo->pVisibleRegions)
-        {
-            XFree(winInfo->pVisibleRegions);
-        }
-# ifdef CR_NEWWINTRACK
-        if (winInfo->syncDpy)
-        {
-            XCloseDisplay(winInfo->syncDpy);
-        }
-# endif
-#endif
-        crForcedFlush();
-        crHashtableDelete(stub.windowTable, window, crFree);
-
-        crHashtableUnlock(stub.windowTable);
-    }
+    stubDestroyWindow( 0, window );
 }
 
 void APIENTRY crWindowSize( GLint window, GLint w, GLint h )
@@ -231,7 +197,12 @@ GLboolean stubUpdateWindowGeometry(WindowInfo *pWindow, GLboolean bForceUpdate)
         if (stub.trackWindowSize) {
             if (bForceUpdate || winW != pWindow->width || winH != pWindow->height) {
                 crDebug("Dispatched WindowSize (%i)", pWindow->spuWindow);
-                stub.spuDispatch.WindowSize(pWindow->spuWindow, winW, winH);
+#ifdef VBOX_WITH_WDDM
+                if (!stub.bRunningUnderWDDM || pWindow->mapped)
+#endif
+                {
+                    stub.spuDispatch.WindowSize(pWindow->spuWindow, winW, winH);
+                }
                 pWindow->width = winW;
                 pWindow->height = winH;
                 res = GL_TRUE;
@@ -240,7 +211,12 @@ GLboolean stubUpdateWindowGeometry(WindowInfo *pWindow, GLboolean bForceUpdate)
         if (stub.trackWindowPos) {
             if (bForceUpdate || winX != pWindow->x || winY != pWindow->y) {
                 crDebug("Dispatched WindowPosition (%i)", pWindow->spuWindow);
-                stub.spuDispatch.WindowPosition(pWindow->spuWindow, winX, winY);
+#ifdef VBOX_WITH_WDDM
+                if (!stub.bRunningUnderWDDM || pWindow->mapped)
+#endif
+                {
+                    stub.spuDispatch.WindowPosition(pWindow->spuWindow, winX, winY);
+                }
                 pWindow->x = winX;
                 pWindow->y = winY;
                 res = GL_TRUE;
@@ -357,7 +333,7 @@ static void stubCBCheckWindowsInfo(unsigned long key, void *data1, void *data2)
 
                 if (stubUpdateWindowGeometry(winInfo, GL_FALSE) || changed)
                 {
-                    crForcedFlush();
+                    stubForcedFlush(0);
                 }
                 break;
             }
@@ -371,7 +347,7 @@ static void stubCBCheckWindowsInfo(unsigned long key, void *data1, void *data2)
             {
                 if (stub.trackWindowVisibleRgn && stubUpdateWindowVisibileRegions(winInfo))
                 {
-                    crForcedFlush();
+                    stubForcedFlush(0);
                 }
                 break;
             }
@@ -381,7 +357,7 @@ static void stubCBCheckWindowsInfo(unsigned long key, void *data1, void *data2)
                 if (stub.trackWindowVisibleRgn && stubUpdateWindowVisibileRegions(winInfo))
                 {
                     crDebug("Visibility info updated due to unknown hooked message (%d)", pMsgInfo->message);
-                    crForcedFlush();
+                    stubForcedFlush(0);
                 }
                 break;
             }

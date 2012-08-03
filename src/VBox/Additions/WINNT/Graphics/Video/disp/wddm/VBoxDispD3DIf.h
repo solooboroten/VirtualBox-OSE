@@ -1,4 +1,4 @@
-/* $Id: VBoxDispD3DIf.h 38363 2011-08-08 19:01:30Z vboxsync $ */
+/* $Id: VBoxDispD3DIf.h 42557 2012-08-02 20:31:05Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -23,7 +23,25 @@
 #include <iprt/critsect.h>
 #include <iprt/semaphore.h>
 
+#       define _InterlockedExchange           _InterlockedExchange_StupidDDKVsCompilerCrap
+#       define _InterlockedExchangeAdd        _InterlockedExchangeAdd_StupidDDKVsCompilerCrap
+#       define _InterlockedCompareExchange    _InterlockedCompareExchange_StupidDDKVsCompilerCrap
+#       define _InterlockedAddLargeStatistic  _InterlockedAddLargeStatistic_StupidDDKVsCompilerCrap
+#       define _interlockedbittestandset      _interlockedbittestandset_StupidDDKVsCompilerCrap
+#       define _interlockedbittestandreset    _interlockedbittestandreset_StupidDDKVsCompilerCrap
+#       define _interlockedbittestandset64    _interlockedbittestandset64_StupidDDKVsCompilerCrap
+#       define _interlockedbittestandreset64  _interlockedbittestandreset64_StupidDDKVsCompilerCrap
+#       pragma warning(disable : 4163)
 #include <D3D9.h>
+#       pragma warning(default : 4163)
+#       undef  _InterlockedExchange
+#       undef  _InterlockedExchangeAdd
+#       undef  _InterlockedCompareExchange
+#       undef  _InterlockedAddLargeStatistic
+#       undef  _interlockedbittestandset
+#       undef  _interlockedbittestandreset
+#       undef  _interlockedbittestandset64
+#       undef  _interlockedbittestandreset64
 
 #include "../../../Wine/vbox/VBoxWineEx.h"
 
@@ -44,12 +62,43 @@ typedef struct VBOXDISPD3D
 
     PFNVBOXWINEEXD3DDEV9_UPDATE pfnVBoxWineExD3DDev9Update;
 
+    PFNVBOXWINEEXD3DDEV9_TERM pfnVBoxWineExD3DDev9Term;
+
+    PFNVBOXWINEEXD3DRC9_SETSHRCSTATE pfnVBoxWineExD3DRc9SetShRcState;
+
+    PFNVBOXWINEEXD3DSWAPCHAIN9_PRESENT pfnVBoxWineExD3DSwapchain9Present;
 
     /* module handle */
     HMODULE hD3DLib;
 } VBOXDISPD3D;
 
+typedef struct VBOXWDDMDISP_FORMATS
+{
+    uint32_t cFormstOps;
+    const struct _FORMATOP* paFormstOps;
+    uint32_t cSurfDescs;
+    struct _DDSURFACEDESC *paSurfDescs;
+} VBOXWDDMDISP_FORMATS, *PVBOXWDDMDISP_FORMATS;
+
+typedef struct VBOXWDDMDISP_D3D
+{
+    VBOXDISPD3D D3D;
+    IDirect3D9Ex * pD3D9If;
+    D3DCAPS9 Caps;
+    UINT cMaxSimRTs;
+} VBOXWDDMDISP_D3D, *PVBOXWDDMDISP_D3D;
+
+void VBoxDispD3DGlobalInit();
+void VBoxDispD3DGlobalTerm();
+HRESULT VBoxDispD3DGlobalOpen(PVBOXWDDMDISP_D3D pD3D, PVBOXWDDMDISP_FORMATS pFormats);
+void VBoxDispD3DGlobalClose(PVBOXWDDMDISP_D3D pD3D, PVBOXWDDMDISP_FORMATS pFormats);
+
 HRESULT VBoxDispD3DOpen(VBOXDISPD3D *pD3D);
 void VBoxDispD3DClose(VBOXDISPD3D *pD3D);
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+HRESULT VBoxDispD3DGlobal2DFormatsInit(struct VBOXWDDMDISP_ADAPTER *pAdapter);
+void VBoxDispD3DGlobal2DFormatsTerm(struct VBOXWDDMDISP_ADAPTER *pAdapter);
+#endif
 
 #endif /* ifndef ___VBoxDispD3DIf_h___ */

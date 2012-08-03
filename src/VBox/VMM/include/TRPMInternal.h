@@ -1,10 +1,10 @@
-/* $Id: TRPMInternal.h 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: TRPMInternal.h 41943 2012-06-28 02:33:43Z vboxsync $ */
 /** @file
  * TRPM - Internal header file.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,7 +25,7 @@
 
 
 
-/* Enable to allow trap forwarding in GC. */
+/** Enable to allow trap forwarding in GC. */
 #define TRPM_FORWARD_TRAPS_IN_GC
 
 /** First interrupt handler. Used for validating input. */
@@ -57,8 +57,6 @@ RT_C_DECLS_BEGIN
 #define TRPM_TRAP_IN_IRET       5
 /** Set if this is a V86 resume. */
 #define TRPM_TRAP_IN_V86        RT_BIT(30)
-/** If set this is a hypervisor register set. If cleared it's a guest set. */
-#define TRPM_TRAP_IN_HYPER      RT_BIT(31)
 /** @} */
 
 
@@ -155,12 +153,20 @@ typedef struct TRPM
     STAMCOUNTER             StatTrap0dRdTsc;    /**< Number of RDTSC #GPs. */
 
 #ifdef VBOX_WITH_STATISTICS
-    /* R3: Statistics for interrupt handlers (allocated on the hypervisor heap). */
+    /** Statistics for interrupt handlers (allocated on the hypervisor heap) - R3
+     * pointer. */
     R3PTRTYPE(PSTAMCOUNTER) paStatForwardedIRQR3;
-    /* R0: Statistics for interrupt handlers (allocated on the hypervisor heap). */
+    /** Statistics for interrupt handlers - R0 pointer. */
     R0PTRTYPE(PSTAMCOUNTER) paStatForwardedIRQR0;
-    /* RC: Statistics for interrupt handlers (allocated on the hypervisor heap). */
+    /** Statistics for interrupt handlers - RC pointer. */
     RCPTRTYPE(PSTAMCOUNTER) paStatForwardedIRQRC;
+
+    /** Host interrupt statistics (allocated on the hypervisor heap) - RC ptr. */
+    RCPTRTYPE(PSTAMCOUNTER) paStatHostIrqRC;
+    /** Host interrupt statistics (allocated on the hypervisor heap) - R3 ptr. */
+    R3PTRTYPE(PSTAMCOUNTER) paStatHostIrqR3;
+    /** Host interrupt statistics (allocated on the hypervisor heap) - R0 ptr. */
+    R0PTRTYPE(PSTAMCOUNTER) paStatHostIrqR0;
 #endif
 } TRPM;
 
@@ -196,11 +202,11 @@ typedef struct TRPMCPU
     uint32_t                offVMCpu;
 
     /** Active Interrupt or trap vector number.
-     * If not ~0U this indicates that we're currently processing
-     * a interrupt, trap, fault, abort, whatever which have arrived
-     * at that vector number.
+     * If not UINT32_MAX this indicates that we're currently processing a
+     * interrupt, trap, fault, abort, whatever which have arrived at that
+     * vector number.
      */
-    RTUINT                  uActiveVector;
+    uint32_t                uActiveVector;
 
     /** Active trap type. */
     TRPMEVENT               enmActiveType;
@@ -240,7 +246,7 @@ VMMRCDECL(int) trpmRCShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
  * Clear guest trap/interrupt gate handler
  *
  * @returns VBox status code.
- * @param   pVM         The VM to operate on.
+ * @param   pVM         Pointer to the VM.
  * @param   iTrap       Interrupt/trap number.
  */
 VMMDECL(int) trpmClearGuestTrapHandler(PVM pVM, unsigned iTrap);
@@ -252,7 +258,7 @@ VMMDECL(int) trpmClearGuestTrapHandler(PVM pVM, unsigned iTrap);
  * Clear passthrough interrupt gate handler (reset to default handler)
  *
  * @returns VBox status code.
- * @param   pVM         The VM to operate on.
+ * @param   pVM         Pointer to the VM.
  * @param   iTrap       Trap/interrupt gate number.
  */
 VMMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap);

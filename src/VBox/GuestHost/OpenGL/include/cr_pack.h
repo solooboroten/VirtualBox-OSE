@@ -50,7 +50,12 @@ typedef void (*CRPackFlushFunc)(void *arg);
 typedef void (*CRPackSendHugeFunc)(CROpcode, void *);
 typedef void (*CRPackErrorHandlerFunc)(int line, const char *file, GLenum error, const char *info);
 
-
+typedef enum
+{
+    CRPackBeginEndStateNone = 0, /* not in begin end */
+    CRPackBeginEndStateStarted,       /* begin issued */
+    CRPackBeginEndStateFlushDone /* begin issued & buffer flash is done thus part of commands is issued to host */
+} CRPackBeginEndState;
 /**
  * Packer context
  */
@@ -62,15 +67,43 @@ struct CRPackContext_t
     CRPackSendHugeFunc SendHuge;
     CRPackErrorHandlerFunc Error;
     CRCurrentStatePointers current;
+    CRPackBeginEndState enmBeginEndState;
     GLvectorf bounds_min, bounds_max;
     int updateBBOX;
     int swapping;
     CRPackBuffer *currentBuffer;
+#ifdef CHROMIUM_THREADSAFE
     CRmutex mutex;
+#endif
     char *file;  /**< for debugging only */
     int line;    /**< for debugging only */
 };
 
+#if !defined(IN_RING0)
+# define CR_PACKER_CONTEXT_ARGSINGLEDECL
+# define CR_PACKER_CONTEXT_ARGDECL
+# define CR_PACKER_CONTEXT_ARG
+# define CR_PACKER_CONTEXT_ARGCTX(C)
+# ifdef CHROMIUM_THREADSAFE
+extern CRtsd _PackerTSD;
+#  define CR_GET_PACKER_CONTEXT(C) CRPackContext *C = (CRPackContext *) crGetTSD(&_PackerTSD)
+#  define CR_LOCK_PACKER_CONTEXT(PC) crLockMutex(&((PC)->mutex))
+#  define CR_UNLOCK_PACKER_CONTEXT(PC) crUnlockMutex(&((PC)->mutex))
+# else
+extern DLLDATA(CRPackContext) cr_packer_globals;
+#  define CR_GET_PACKER_CONTEXT(C) CRPackContext *C = &cr_packer_globals
+#  define CR_LOCK_PACKER_CONTEXT(PC)
+#  define CR_UNLOCK_PACKER_CONTEXT(PC)
+# endif
+#else /* if defined IN_RING0 */
+# define CR_PACKER_CONTEXT_ARGSINGLEDECL CRPackContext *_pCtx
+# define CR_PACKER_CONTEXT_ARGDECL CR_PACKER_CONTEXT_ARGSINGLEDECL,
+# define CR_PACKER_CONTEXT_ARG _pCtx,
+# define CR_PACKER_CONTEXT_ARGCTX(C) C,
+# define CR_GET_PACKER_CONTEXT(C) CRPackContext *C = _pCtx
+# define CR_LOCK_PACKER_CONTEXT(PC)
+# define CR_UNLOCK_PACKER_CONTEXT(PC)
+#endif
 
 extern DECLEXPORT(CRPackContext *) crPackNewContext(int swapping);
 extern DECLEXPORT(void) crPackDeleteContext(CRPackContext *pc);
@@ -97,10 +130,10 @@ extern DECLEXPORT(GLboolean) crPackGetBoundingBox( CRPackContext *pc,
                                 GLfloat *xmin, GLfloat *ymin, GLfloat *zmin,
                                 GLfloat *xmax, GLfloat *ymax, GLfloat *zmax);
 
-extern DECLEXPORT(void) crPackAppendBuffer( const CRPackBuffer *buffer );
-extern DECLEXPORT(void) crPackAppendBoundedBuffer( const CRPackBuffer *buffer, const CRrecti *bounds );
-extern DECLEXPORT(int) crPackCanHoldBuffer( const CRPackBuffer *buffer );
-extern DECLEXPORT(int) crPackCanHoldBoundedBuffer( const CRPackBuffer *buffer );
+extern DECLEXPORT(void) crPackAppendBuffer( CR_PACKER_CONTEXT_ARGDECL const CRPackBuffer *buffer );
+extern DECLEXPORT(void) crPackAppendBoundedBuffer( CR_PACKER_CONTEXT_ARGDECL const CRPackBuffer *buffer, const CRrecti *bounds );
+extern DECLEXPORT(int) crPackCanHoldBuffer( CR_PACKER_CONTEXT_ARGDECL const CRPackBuffer *buffer );
+extern DECLEXPORT(int) crPackCanHoldBoundedBuffer( CR_PACKER_CONTEXT_ARGDECL const CRPackBuffer *buffer );
 
 #if defined(LINUX) || defined(WINDOWS)
 #define CR_UNALIGNED_ACCESS_OKAY
@@ -110,9 +143,9 @@ extern DECLEXPORT(int) crPackCanHoldBoundedBuffer( const CRPackBuffer *buffer );
 extern DECLEXPORT(void) crWriteUnalignedDouble( void *buffer, double d );
 extern DECLEXPORT(void) crWriteSwappedDouble( void *buffer, double d );
 
-extern DECLEXPORT(void) *crPackAlloc( unsigned int len );
-extern DECLEXPORT(void) crHugePacket( CROpcode op, void *ptr );
-extern DECLEXPORT(void) crPackFree( void *ptr );
+extern DECLEXPORT(void) *crPackAlloc( CR_PACKER_CONTEXT_ARGDECL unsigned int len );
+extern DECLEXPORT(void) crHugePacket( CR_PACKER_CONTEXT_ARGDECL CROpcode op, void *ptr );
+extern DECLEXPORT(void) crPackFree( CR_PACKER_CONTEXT_ARGDECL void *ptr );
 extern DECLEXPORT(void) crNetworkPointerWrite( CRNetworkPointer *, void * );
 
 extern DECLEXPORT(void) crPackExpandDrawArrays(GLenum mode, GLint first, GLsizei count, CRClientState *c);
@@ -135,19 +168,6 @@ extern DECLEXPORT(void) crPackExpandMultiDrawArraysEXTSWAP( GLenum mode, GLint *
 
 extern DECLEXPORT(void) crPackExpandMultiDrawElementsEXT( GLenum mode, const GLsizei *count, GLenum type, const GLvoid **indices, GLsizei primcount, CRClientState *c );
 extern DECLEXPORT(void) crPackExpandMultiDrawElementsEXTSWAP( GLenum mode, const GLsizei *count, GLenum type, const GLvoid **indices, GLsizei primcount, CRClientState *c );
-
-
-#ifdef CHROMIUM_THREADSAFE
-extern CRtsd _PackerTSD;
-#define CR_GET_PACKER_CONTEXT(C) CRPackContext *C = (CRPackContext *) crGetTSD(&_PackerTSD)
-#define CR_LOCK_PACKER_CONTEXT(PC) crLockMutex(&((PC)->mutex))
-#define CR_UNLOCK_PACKER_CONTEXT(PC) crUnlockMutex(&((PC)->mutex))
-#else
-extern DLLDATA(CRPackContext) cr_packer_globals;
-#define CR_GET_PACKER_CONTEXT(C) CRPackContext *C = &cr_packer_globals
-#define CR_LOCK_PACKER_CONTEXT(PC)
-#define CR_UNLOCK_PACKER_CONTEXT(PC)
-#endif
 
 
 /**
@@ -202,6 +222,9 @@ crPackCanHoldOpcode(const CRPackContext *pc, int num_opcode, int num_data)
     if ( !crPackCanHoldOpcode( pc, 1, (len) ) ) {                   \
       pc->Flush( pc->flush_arg );                                   \
       CRASSERT(crPackCanHoldOpcode( pc, 1, (len) ) );               \
+      if (pc->enmBeginEndState == CRPackBeginEndStateStarted) {     \
+        pc->enmBeginEndState = CRPackBeginEndStateFlushDone;        \
+      }                                                             \
     }                                                               \
     data_ptr = pc->buffer.data_current;                             \
     pc->buffer.data_current += (len);                               \
@@ -217,6 +240,7 @@ crPackCanHoldOpcode(const CRPackContext *pc, int num_opcode, int num_data)
     CR_LOCK_PACKER_CONTEXT(pc);                                     \
     CRASSERT( pc->currentBuffer );                                  \
     if ( pc->buffer.holds_BeginEnd && !pc->buffer.in_BeginEnd ) {   \
+      CRASSERT( 0 );  /* should never be here currently */          \
       pc->Flush( pc->flush_arg );                                   \
       pc->buffer.holds_BeginEnd = 0;                                \
     }                                                               \
@@ -230,6 +254,7 @@ crPackCanHoldOpcode(const CRPackContext *pc, int num_opcode, int num_data)
   do {                                                              \
     CRASSERT( pc->currentBuffer );                                  \
     if ( pc->buffer.holds_BeginEnd && !pc->buffer.in_BeginEnd ) {   \
+      CRASSERT( 0 );  /* should never be here currently */          \
       pc->Flush( pc->flush_arg );                                   \
       pc->buffer.holds_BeginEnd = 0;                                \
     }                                                               \
@@ -247,6 +272,9 @@ crPackCanHoldOpcode(const CRPackContext *pc, int num_opcode, int num_data)
     if ( !crPackCanHoldOpcode( pc, 1, (len) ) ) {       \
       pc->Flush( pc->flush_arg );                       \
       CRASSERT( crPackCanHoldOpcode( pc, 1, (len) ) );  \
+      if (pc->enmBeginEndState == CRPackBeginEndStateStarted) {     \
+        pc->enmBeginEndState = CRPackBeginEndStateFlushDone;        \
+      }                                                             \
     }                                                   \
     data_ptr = pc->buffer.data_current;                 \
     pc->current.vtx_count++;                            \

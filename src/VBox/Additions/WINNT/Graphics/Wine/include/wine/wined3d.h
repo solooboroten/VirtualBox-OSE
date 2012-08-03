@@ -6,6 +6,10 @@
 #ifndef __WIDL_WINED3D_H
 #define __WIDL_WINED3D_H
 
+#if defined(VBOX_WITH_WDDM) || defined(VBOX_WINE_WITHOUT_LIBWINE)
+# error "unexpected include!!"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -3428,6 +3432,12 @@ typedef struct IWineD3DResourceVtbl {
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DResource* This);
 
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DResource* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
+
     END_INTERFACE
 } IWineD3DResourceVtbl;
 interface IWineD3DResource {
@@ -3450,6 +3460,9 @@ interface IWineD3DResource {
 #define IWineD3DResource_PreLoad(This) (This)->lpVtbl->PreLoad(This)
 #define IWineD3DResource_UnLoad(This) (This)->lpVtbl->UnLoad(This)
 #define IWineD3DResource_GetType(This) (This)->lpVtbl->GetType(This)
+# ifdef VBOX_WITH_WDDM
+#  define IWineD3DResource_SetShRcState(This, enmState) (This)->lpVtbl->SetShRcState(This, enmState)
+# endif
 #endif
 
 #endif
@@ -4054,6 +4067,12 @@ typedef struct IWineD3DSurfaceVtbl {
 
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DSurface* This);
+
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DResource* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
 
     /*** IWineD3DSurface methods ***/
     HRESULT (STDMETHODCALLTYPE *GetContainer)(
@@ -4670,6 +4689,12 @@ typedef struct IWineD3DVolumeVtbl {
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DVolume* This);
 
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DResource* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
+
     /*** IWineD3DVolume methods ***/
     HRESULT (STDMETHODCALLTYPE *GetContainer)(
         IWineD3DVolume* This,
@@ -4883,6 +4908,12 @@ typedef struct IWineD3DBaseTextureVtbl {
 
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DBaseTexture* This);
+
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DResource* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
 
     /*** IWineD3DBaseTexture methods ***/
     DWORD (STDMETHODCALLTYPE *SetLOD)(
@@ -5130,6 +5161,12 @@ typedef struct IWineD3DTextureVtbl {
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DTexture* This);
 
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DTexture* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
+
     /*** IWineD3DBaseTexture methods ***/
     DWORD (STDMETHODCALLTYPE *SetLOD)(
         IWineD3DTexture* This,
@@ -5375,6 +5412,12 @@ typedef struct IWineD3DCubeTextureVtbl {
 
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DCubeTexture* This);
+
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DCubeTexture* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
 
     /*** IWineD3DBaseTexture methods ***/
     DWORD (STDMETHODCALLTYPE *SetLOD)(
@@ -5625,6 +5668,12 @@ typedef struct IWineD3DVolumeTextureVtbl {
 
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DVolumeTexture* This);
+
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DResource* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
 
     /*** IWineD3DBaseTexture methods ***/
     DWORD (STDMETHODCALLTYPE *SetLOD)(
@@ -6169,6 +6218,10 @@ typedef struct IWineD3DSwapChainVtbl {
 #ifdef VBOX_WITH_WDDM
     HRESULT (STDMETHODCALLTYPE *Flush)(
         IWineD3DSwapChain* This);
+
+    HRESULT (STDMETHODCALLTYPE *PresentRt)(
+        IWineD3DSwapChain* This,
+        IWineD3DSurface* surf);
 #endif
     END_INTERFACE
 } IWineD3DSwapChainVtbl;
@@ -6197,6 +6250,7 @@ interface IWineD3DSwapChain {
 #define IWineD3DSwapChain_GetGammaRamp(This,ramp) (This)->lpVtbl->GetGammaRamp(This,ramp)
 #ifdef VBOX_WITH_WDDM
 #define IWineD3DSwapChain_Flush(This) (This)->lpVtbl->Flush(This)
+#define IWineD3DSwapChain_PresentRt(This,surf) (This)->lpVtbl->PresentRt(This,surf)
 #endif
 #endif
 
@@ -6376,6 +6430,12 @@ typedef struct IWineD3DBufferVtbl {
 
     WINED3DRESOURCETYPE (STDMETHODCALLTYPE *GetType)(
         IWineD3DBuffer* This);
+
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *SetShRcState)(
+        IWineD3DResource* This,
+        VBOXWINEEX_SHRC_STATE enmState);
+#endif
 
     /*** IWineD3DBuffer methods ***/
     HRESULT (STDMETHODCALLTYPE *Map)(
@@ -7342,15 +7402,15 @@ interface IWineD3DDevice : public IWineD3DBase
     virtual void STDMETHODCALLTYPE ReleaseFocusWindow(
         ) = 0;
 
-#ifdef VBOX_WITH_WDDM
-    virtual HRESULT STDMETHODCALLTYPE Flush(
-        ) = 0;
-
     virtual HRESULT STDMETHODCALLTYPE AddSwapChain(
         IWineD3DSwapChain *swapchain) = 0;
 
     virtual HRESULT STDMETHODCALLTYPE RemoveSwapChain(
         IWineD3DSwapChain *swapchain) = 0;
+
+#ifdef VBOX_WITH_WDDM
+    virtual HRESULT STDMETHODCALLTYPE Flush(
+        ) = 0;
 #endif
 };
 #else
@@ -8117,10 +8177,6 @@ typedef struct IWineD3DDeviceVtbl {
     void (STDMETHODCALLTYPE *ReleaseFocusWindow)(
         IWineD3DDevice* This);
 
-#ifdef VBOX_WITH_WDDM
-    HRESULT (STDMETHODCALLTYPE *Flush)(
-        IWineD3DDevice* This);
-
     HRESULT (STDMETHODCALLTYPE *AddSwapChain)(
         IWineD3DDevice* This,
         IWineD3DSwapChain *swapchain);
@@ -8128,6 +8184,10 @@ typedef struct IWineD3DDeviceVtbl {
     HRESULT (STDMETHODCALLTYPE *RemoveSwapChain)(
         IWineD3DDevice* This,
         IWineD3DSwapChain *swapchain);
+
+#ifdef VBOX_WITH_WDDM
+    HRESULT (STDMETHODCALLTYPE *Flush)(
+        IWineD3DDevice* This);
 #endif
 
     END_INTERFACE
@@ -8289,10 +8349,10 @@ interface IWineD3DDevice {
 #define IWineD3DDevice_GetSurfaceFromDC(This,dc,surface) (This)->lpVtbl->GetSurfaceFromDC(This,dc,surface)
 #define IWineD3DDevice_AcquireFocusWindow(This,window) (This)->lpVtbl->AcquireFocusWindow(This,window)
 #define IWineD3DDevice_ReleaseFocusWindow(This) (This)->lpVtbl->ReleaseFocusWindow(This)
-#ifdef VBOX_WITH_WDDM
-#define IWineD3DDevice_Flush(This) (This)->lpVtbl->Flush(This)
 #define IWineD3DDevice_AddSwapChain(This,swapchain) (This)->lpVtbl->AddSwapChain(This,swapchain)
 #define IWineD3DDevice_RemoveSwapChain(This,swapchain) (This)->lpVtbl->RemoveSwapChain(This,swapchain)
+#ifdef VBOX_WITH_WDDM
+#define IWineD3DDevice_Flush(This) (This)->lpVtbl->Flush(This)
 #endif
 #endif
 

@@ -1,10 +1,10 @@
-/* $Id: DevApic.h 37481 2011-06-15 18:59:27Z vboxsync $ */
+/* $Id: DevApic.h 42526 2012-08-02 10:31:28Z vboxsync $ */
 /** @file
  * Advanced Programmable Interrupt Controller (APIC) Device Definitions.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

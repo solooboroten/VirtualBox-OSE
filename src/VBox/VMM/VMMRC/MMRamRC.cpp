@@ -1,4 +1,4 @@
-/* $Id: MMRamRC.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: MMRamRC.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * MMRamGC - Guest Context Ram access Routines, pair for MMRamGCA.asm.
  */
@@ -51,7 +51,7 @@ DECLASM(void) MMGCRamWrite_Error(void);
  * This handler will be automatically removed at page fault.
  * In other case it must be removed by MMGCRamDeregisterTrapHandler call.
  *
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  */
 VMMRCDECL(void) MMGCRamRegisterTrapHandler(PVM pVM)
 {
@@ -63,7 +63,7 @@ VMMRCDECL(void) MMGCRamRegisterTrapHandler(PVM pVM)
  * Remove MMGCRam Hypervisor page fault handler.
  * See description of MMGCRamRegisterTrapHandler call.
  *
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  */
 VMMRCDECL(void) MMGCRamDeregisterTrapHandler(PVM pVM)
 {
@@ -75,21 +75,52 @@ VMMRCDECL(void) MMGCRamDeregisterTrapHandler(PVM pVM)
  * Read data in guest context with #PF control.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDst        Where to store the read data.
  * @param   pSrc        Pointer to the data to read.
- * @param   cb          Size of data to read, only 1/2/4/8 is valid.
+ * @param   cb          Size of data to read.
  */
 VMMRCDECL(int) MMGCRamRead(PVM pVM, void *pDst, void *pSrc, size_t cb)
 {
     int    rc;
     PVMCPU pVCpu = VMMGetCpu0(pVM);
 
-    TRPMSaveTrap(pVCpu);  /* save the current trap info, because it will get trashed if our access failed. */
+    /*
+     * Save the current trap info, because it will get trashed if our access failed.
+     */
+    TRPMSaveTrap(pVCpu);
 
+    /*
+     * Need to serve the request in a silly loop because the assembly code wasn't
+     * written for abrbitrary sizes, only 1/2/4/8.
+     */
     MMGCRamRegisterTrapHandler(pVM);
-    rc = MMGCRamReadNoTrapHandler(pDst, pSrc, cb);
+    for (;;)
+    {
+        size_t cbThisRead;
+        switch (cb)
+        {
+            case 1: cbThisRead = 1; break;
+            case 2: cbThisRead = 2; break;
+            case 3: cbThisRead = 2; break;
+            case 4: cbThisRead = 4; break;
+            case 5: cbThisRead = 4; break;
+            case 6: cbThisRead = 4; break;
+            case 7: cbThisRead = 4; break;
+            default:
+            case 8: cbThisRead = 8; break;
+        }
+        rc = MMGCRamReadNoTrapHandler(pDst, pSrc, cbThisRead);
+        if (RT_FAILURE(rc) || cbThisRead == cb)
+            break;
+
+        /* advance */
+        cb   -= cbThisRead;
+        pDst  = (uint8_t *)pDst + cbThisRead;
+        pSrc  = (uint8_t *)pSrc + cbThisRead;
+    }
     MMGCRamDeregisterTrapHandler(pVM);
+
     if (RT_FAILURE(rc))
         TRPMRestoreTrap(pVCpu);
 
@@ -101,7 +132,7 @@ VMMRCDECL(int) MMGCRamRead(PVM pVM, void *pDst, void *pSrc, size_t cb)
  * Write data in guest context with #PF control.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDst        Where to write the data.
  * @param   pSrc        Pointer to the data to write.
  * @param   cb          Size of data to write, only 1/2/4 is valid.
@@ -142,7 +173,7 @@ DECLCALLBACK(int) mmGCRamTrap0eHandler(PVM pVM, PCPUMCTXCORE pRegFrame)
         &&  (uintptr_t)pRegFrame->eip < (uintptr_t)&MMGCRamReadNoTrapHandler_EndProc)
     {
         /* Must be a read violation. */
-        AssertReturn(!(TRPMGetErrorCode(VMMGetCpu0(pVM)) & X86_TRAP_PF_RW), VERR_INTERNAL_ERROR);
+        AssertReturn(!(TRPMGetErrorCode(VMMGetCpu0(pVM)) & X86_TRAP_PF_RW), VERR_MM_BAD_TRAP_TYPE_IPE);
         pRegFrame->eip = (uintptr_t)&MMGCRamRead_Error;
         return VINF_SUCCESS;
     }
@@ -154,7 +185,7 @@ DECLCALLBACK(int) mmGCRamTrap0eHandler(PVM pVM, PCPUMCTXCORE pRegFrame)
         &&  (uintptr_t)pRegFrame->eip < (uintptr_t)&MMGCRamWriteNoTrapHandler_EndProc)
     {
         /* Must be a write violation. */
-        AssertReturn(TRPMGetErrorCode(VMMGetCpu0(pVM)) & X86_TRAP_PF_RW, VERR_INTERNAL_ERROR);
+        AssertReturn(TRPMGetErrorCode(VMMGetCpu0(pVM)) & X86_TRAP_PF_RW, VERR_MM_BAD_TRAP_TYPE_IPE);
         pRegFrame->eip = (uintptr_t)&MMGCRamWrite_Error;
         return VINF_SUCCESS;
     }

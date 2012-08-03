@@ -1,10 +1,10 @@
-/* $Id: VMMSwitcher.cpp 36415 2011-03-24 18:20:04Z vboxsync $ */
+/* $Id: VMMSwitcher.cpp 42025 2012-07-05 12:52:41Z vboxsync $ */
 /** @file
  * VMM - The Virtual Machine Monitor, World Switcher(s).
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -95,7 +95,7 @@ static PVMMSWITCHERDEF s_apSwitchers[VMMSWITCHER_MAX] =
  * put on linear contiguous backing.
  *
  * @returns VBox status code.
- * @param   pVM     Pointer to the shared VM structure.
+ * @param   pVM     Pointer to the VM.
  */
 int vmmR3SwitcherInit(PVM pVM)
 {
@@ -228,7 +228,7 @@ int vmmR3SwitcherInit(PVM pVM)
 /**
  * Relocate the switchers, called by VMMR#Relocate.
  *
- * @param   pVM         Pointer to the shared VM structure.
+ * @param   pVM         Pointer to the VM.
  * @param   offDelta    The relocation delta.
  */
 void vmmR3SwitcherRelocate(PVM pVM, RTGCINTPTR offDelta)
@@ -257,21 +257,23 @@ void vmmR3SwitcherRelocate(PVM pVM, RTGCINTPTR offDelta)
      */
     PVMMSWITCHERDEF pSwitcher   = s_apSwitchers[pVM->vmm.s.enmSwitcher];
     RTRCPTR         RCPtr       = pVM->vmm.s.pvCoreCodeRC + pVM->vmm.s.aoffSwitchers[pVM->vmm.s.enmSwitcher];
-    pVM->vmm.s.pfnGuestToHostRC         = RCPtr + pSwitcher->offGCGuestToHost;
-    pVM->vmm.s.pfnCallTrampolineRC      = RCPtr + pSwitcher->offGCCallTrampoline;
-    pVM->pfnVMMGCGuestToHostAsm         = RCPtr + pSwitcher->offGCGuestToHostAsm;
-    pVM->pfnVMMGCGuestToHostAsmHyperCtx = RCPtr + pSwitcher->offGCGuestToHostAsmHyperCtx;
-    pVM->pfnVMMGCGuestToHostAsmGuestCtx = RCPtr + pSwitcher->offGCGuestToHostAsmGuestCtx;
+    pVM->vmm.s.pfnRCToHost              = RCPtr + pSwitcher->offRCToHost;
+    pVM->vmm.s.pfnCallTrampolineRC      = RCPtr + pSwitcher->offRCCallTrampoline;
+    pVM->pfnVMMRCToHostAsm              = RCPtr + pSwitcher->offRCToHostAsm;
+    pVM->pfnVMMRCToHostAsmNoReturn      = RCPtr + pSwitcher->offRCToHostAsmNoReturn;
 
 //    AssertFailed();
+#else
+    NOREF(pVM);
 #endif
+    NOREF(offDelta);
 }
 
 
 /**
  * Generic switcher code relocator.
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pSwitcher   The switcher definition.
  * @param   pu8CodeR3   Pointer to the core code block for the switcher, ring-3 mapping.
  * @param   R0PtrCode   Pointer to the core code block for the switcher, ring-0 mapping.
@@ -533,8 +535,11 @@ static void vmmR3SwitcherGenericRelocate(PVM pVM, PVMMSWITCHERDEF pSwitcher, RTR
             case FIX_EFER_OR_MASK:
             {
                 uint32_t u32OrMask = MSR_K6_EFER_LME | MSR_K6_EFER_SCE;
-                /** note: we don't care if cpuid 0x8000001 isn't supported as that implies long mode isn't either, so this switcher would never be used. */
-                if (!!(ASMCpuId_EDX(0x80000001) & X86_CPUID_AMD_FEATURE_EDX_NX))
+                /*
+                 * We don't care if cpuid 0x8000001 isn't supported as that implies
+                 * long mode isn't supported either, so this switched would never be used.
+                 */
+                if (!!(ASMCpuId_EDX(0x80000001) & X86_CPUID_EXT_FEATURE_EDX_NX))
                     u32OrMask |= MSR_K6_EFER_NXE;
 
                 *uSrc.pu32 = u32OrMask;
@@ -810,35 +815,40 @@ static void vmmR3SwitcherGenericRelocate(PVM pVM, PVMMSWITCHERDEF pSwitcher, RTR
              * Disassemble it.
              */
             RTLogPrintf("  %s: offCode=%#x cbCode=%#x\n", pszDesc, offCode, cbCode);
-            DISCPUSTATE Cpu;
 
-            memset(&Cpu, 0, sizeof(Cpu));
-            Cpu.mode = CPUMODE_32BIT;
             while (cbCode > 0)
             {
                 /* try label it */
-                if (pSwitcher->offR0HostToGuest == offCode)
-                    RTLogPrintf(" *R0HostToGuest:\n");
-                if (pSwitcher->offGCGuestToHost == offCode)
-                    RTLogPrintf(" *GCGuestToHost:\n");
-                if (pSwitcher->offGCCallTrampoline == offCode)
-                    RTLogPrintf(" *GCCallTrampoline:\n");
-                if (pSwitcher->offGCGuestToHostAsm == offCode)
-                    RTLogPrintf(" *GCGuestToHostAsm:\n");
-                if (pSwitcher->offGCGuestToHostAsmHyperCtx == offCode)
-                    RTLogPrintf(" *GCGuestToHostAsmHyperCtx:\n");
-                if (pSwitcher->offGCGuestToHostAsmGuestCtx == offCode)
-                    RTLogPrintf(" *GCGuestToHostAsmGuestCtx:\n");
+                if (pSwitcher->offR0ToRawMode == offCode)
+                    RTLogPrintf(" *R0ToRawMode:\n");
+                if (pSwitcher->offRCToHost == offCode)
+                    RTLogPrintf(" *RCToHost:\n");
+                if (pSwitcher->offRCCallTrampoline == offCode)
+                    RTLogPrintf(" *RCCallTrampoline:\n");
+                if (pSwitcher->offRCToHostAsm == offCode)
+                    RTLogPrintf(" *RCToHostAsm:\n");
+                if (pSwitcher->offRCToHostAsmNoReturn == offCode)
+                    RTLogPrintf(" *RCToHostAsmNoReturn:\n");
 
                 /* disas */
-                uint32_t cbInstr = 0;
-                char szDisas[256];
-                if (RT_SUCCESS(DISInstr(&Cpu, (uintptr_t)pu8CodeR3 + offCode, uBase - (uintptr_t)pu8CodeR3, &cbInstr, szDisas)))
-                    RTLogPrintf("  %04x: %s", offCode, szDisas); //for whatever reason szDisas includes '\n'.
+                uint32_t    cbInstr = 0;
+                DISCPUSTATE Cpu;
+                char        szDisas[256];
+                int rc = DISInstr(pu8CodeR3 + offCode, DISCPUMODE_32BIT, &Cpu, &cbInstr);
+                if (RT_SUCCESS(rc))
+                {
+                    Cpu.uInstrAddr += uBase - (uintptr_t)pu8CodeR3;
+                    DISFormatYasmEx(&Cpu, szDisas, sizeof(szDisas),
+                                    DIS_FMT_FLAGS_ADDR_LEFT | DIS_FMT_FLAGS_BYTES_LEFT | DIS_FMT_FLAGS_BYTES_SPACED
+                                    | DIS_FMT_FLAGS_RELATIVE_BRANCH,
+                                    NULL, NULL);
+                }
+                if (RT_SUCCESS(rc))
+                    RTLogPrintf("  %04x: %s\n", offCode, szDisas);
                 else
                 {
-                    RTLogPrintf("  %04x: %02x '%c'\n",
-                                offCode, pu8CodeR3[offCode], RT_C_IS_PRINT(pu8CodeR3[offCode]) ? pu8CodeR3[offCode] : ' ');
+                    RTLogPrintf("  %04x: %02x '%c' (rc=%Rrc\n",
+                                offCode, pu8CodeR3[offCode], RT_C_IS_PRINT(pu8CodeR3[offCode]) ? pu8CodeR3[offCode] : ' ', rc);
                     cbInstr = 1;
                 }
                 offCode += cbInstr;
@@ -933,7 +943,7 @@ DECLCALLBACK(void) vmmR3SwitcherAMD64ToPAE_Relocate(PVM pVM, PVMMSWITCHERDEF pSw
  * Selects the switcher to be used for switching to raw-mode context.
  *
  * @returns VBox status code.
- * @param   pVM             VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   enmSwitcher     The new switcher.
  * @remark  This function may be called before the VMM is initialized.
  */
@@ -963,14 +973,13 @@ VMMR3_INT_DECL(int) VMMR3SelectSwitcher(PVM pVM, VMMSWITCHER enmSwitcher)
         pVM->vmm.s.enmSwitcher = enmSwitcher;
 
         RTR0PTR     pbCodeR0 = (RTR0PTR)pVM->vmm.s.pvCoreCodeR0 + pVM->vmm.s.aoffSwitchers[enmSwitcher]; /** @todo fix the pvCoreCodeR0 type */
-        pVM->vmm.s.pfnHostToGuestR0 = pbCodeR0 + pSwitcher->offR0HostToGuest;
+        pVM->vmm.s.pfnR0ToRawMode           = pbCodeR0 + pSwitcher->offR0ToRawMode;
 
-        RTGCPTR     GCPtr = pVM->vmm.s.pvCoreCodeRC + pVM->vmm.s.aoffSwitchers[enmSwitcher];
-        pVM->vmm.s.pfnGuestToHostRC         = GCPtr + pSwitcher->offGCGuestToHost;
-        pVM->vmm.s.pfnCallTrampolineRC      = GCPtr + pSwitcher->offGCCallTrampoline;
-        pVM->pfnVMMGCGuestToHostAsm         = GCPtr + pSwitcher->offGCGuestToHostAsm;
-        pVM->pfnVMMGCGuestToHostAsmHyperCtx = GCPtr + pSwitcher->offGCGuestToHostAsmHyperCtx;
-        pVM->pfnVMMGCGuestToHostAsmGuestCtx = GCPtr + pSwitcher->offGCGuestToHostAsmGuestCtx;
+        RTRCPTR     RCPtr = pVM->vmm.s.pvCoreCodeRC + pVM->vmm.s.aoffSwitchers[enmSwitcher];
+        pVM->vmm.s.pfnRCToHost              = RCPtr + pSwitcher->offRCToHost;
+        pVM->vmm.s.pfnCallTrampolineRC      = RCPtr + pSwitcher->offRCCallTrampoline;
+        pVM->pfnVMMRCToHostAsm              = RCPtr + pSwitcher->offRCToHostAsm;
+        pVM->pfnVMMRCToHostAsmNoReturn      = RCPtr + pSwitcher->offRCToHostAsmNoReturn;
         return VINF_SUCCESS;
     }
 
@@ -982,13 +991,13 @@ VMMR3_INT_DECL(int) VMMR3SelectSwitcher(PVM pVM, VMMSWITCHER enmSwitcher)
  * Disable the switcher logic permanently.
  *
  * @returns VBox status code.
- * @param   pVM             VM handle.
+ * @param   pVM             Pointer to the VM.
  */
 VMMR3_INT_DECL(int) VMMR3DisableSwitcher(PVM pVM)
 {
 /** @todo r=bird: I would suggest that we create a dummy switcher which just does something like:
  * @code
- *       mov eax, VERR_INTERNAL_ERROR
+ *       mov eax, VERR_VMM_DUMMY_SWITCHER
  *       ret
  * @endcode
  * And then check for fSwitcherDisabled in VMMR3SelectSwitcher() in order to prevent it from being removed.
@@ -1002,7 +1011,7 @@ VMMR3_INT_DECL(int) VMMR3DisableSwitcher(PVM pVM)
  * Gets the switcher to be used for switching to GC.
  *
  * @returns host to guest ring 0 switcher entrypoint
- * @param   pVM             VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   enmSwitcher     The new switcher.
  */
 VMMR3_INT_DECL(RTR0PTR) VMMR3GetHostToGuestSwitcher(PVM pVM, VMMSWITCHER enmSwitcher)
@@ -1024,7 +1033,7 @@ VMMR3_INT_DECL(RTR0PTR) VMMR3GetHostToGuestSwitcher(PVM pVM, VMMSWITCHER enmSwit
     if (pSwitcher)
     {
         RTR0PTR     pbCodeR0 = (RTR0PTR)pVM->vmm.s.pvCoreCodeR0 + pVM->vmm.s.aoffSwitchers[enmSwitcher]; /** @todo fix the pvCoreCodeR0 type */
-        return pbCodeR0 + pSwitcher->offR0HostToGuest;
+        return pbCodeR0 + pSwitcher->offR0ToRawMode;
     }
     return NIL_RTR0PTR;
 }

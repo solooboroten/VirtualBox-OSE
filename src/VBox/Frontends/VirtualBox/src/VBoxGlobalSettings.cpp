@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobalSettings.cpp 37544 2011-06-17 13:54:47Z vboxsync $ */
+/* $Id: VBoxGlobalSettings.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -20,14 +20,21 @@
 #ifdef VBOX_WITH_PRECOMPILED_HEADERS
 # include "precomp.h"
 #else  /* !VBOX_WITH_PRECOMPILED_HEADERS */
-/* Qt includes */
+
+/* Qt includes: */
 #include <QString>
 #include <QRegExp>
 #include <QVariant>
 
+/* GUI includes: */
+#include "UIDefs.h"
 #include "VBoxGlobalSettings.h"
 #include "UIHotKeyEditor.h"
-#include "COMDefs.h"
+
+/* COM includes: */
+#include "COMEnums.h"
+#include "CVirtualBox.h"
+
 #endif /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
 /** @class VBoxGlobalSettingsData
@@ -120,7 +127,7 @@ gPropertyMap[] =
     { "GUI/ProxySettings",                         "proxySettings",           "[\\s\\S]*", true },
     { "GUI/TrayIcon/Enabled",                      "trayIconEnabled",         "true|false", true },
 #ifdef Q_WS_MAC
-    { VBoxDefs::GUI_PresentationModeEnabled,       "presentationModeEnabled", "true|false", true },
+    { GUI_PresentationModeEnabled,                 "presentationModeEnabled", "true|false", true },
 #endif /* Q_WS_MAC */
     { "GUI/HostScreenSaverDisabled",               "hostScreenSaverDisabled", "true|false", true }
 };

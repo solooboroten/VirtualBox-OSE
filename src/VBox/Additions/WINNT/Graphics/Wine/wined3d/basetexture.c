@@ -34,6 +34,8 @@
 #include "config.h"
 #include "wined3d_private.h"
 
+#define GLINFO_LOCATION      (This->resource.device->adapter->gl_info)
+
 WINE_DEFAULT_DEBUG_CHANNEL(d3d_texture);
 
 HRESULT basetexture_init(IWineD3DBaseTextureImpl *texture, UINT levels, WINED3DRESOURCETYPE resource_type,
@@ -99,10 +101,10 @@ void basetexture_cleanup(IWineD3DBaseTexture *iface)
 }
 
 /* A GL context is provided by the caller */
-static void gltexture_delete(struct gl_texture *tex)
+static void gltexture_delete(IWineD3DTextureImpl *This, struct gl_texture *tex)
 {
     ENTER_GL();
-    glDeleteTextures(1, &tex->name);
+    texture_gl_delete(This, tex->name);
     LEAVE_GL();
     tex->name = 0;
 }
@@ -111,31 +113,20 @@ void basetexture_unload(IWineD3DBaseTexture *iface)
 {
     IWineD3DTextureImpl *This = (IWineD3DTextureImpl *)iface;
     IWineD3DDeviceImpl *device = This->resource.device;
-
-#ifdef VBOX_WITH_WDDM
-    if (VBOXSHRC_IS_SHARED_OPENED(This))
+    struct wined3d_context *context = NULL;
+    if (This->baseTexture.texture_rgb.name || This->baseTexture.texture_srgb.name)
     {
-        This->baseTexture.texture_rgb.name = 0;
-        This->baseTexture.texture_srgb.name = 0;
+        context = context_acquire(device, NULL, CTXUSAGE_RESOURCELOAD);
     }
-    else
-#endif
-    {
-        struct wined3d_context *context = NULL;
-        if (This->baseTexture.texture_rgb.name || This->baseTexture.texture_srgb.name)
-        {
-            context = context_acquire(device, NULL, CTXUSAGE_RESOURCELOAD);
-        }
 
-        if(This->baseTexture.texture_rgb.name) {
-            gltexture_delete(&This->baseTexture.texture_rgb);
-        }
-        if(This->baseTexture.texture_srgb.name) {
-            gltexture_delete(&This->baseTexture.texture_srgb);
-        }
-
-        if (context) context_release(context);
+    if(This->baseTexture.texture_rgb.name) {
+        gltexture_delete(This, &This->baseTexture.texture_rgb);
     }
+    if(This->baseTexture.texture_srgb.name) {
+        gltexture_delete(This, &This->baseTexture.texture_srgb);
+    }
+
+    if (context) context_release(context);
 
     This->baseTexture.texture_rgb.dirty = TRUE;
     This->baseTexture.texture_srgb.dirty = TRUE;
@@ -265,6 +256,26 @@ BOOL basetexture_get_dirty(IWineD3DBaseTexture *iface)
     return This->baseTexture.texture_rgb.dirty || This->baseTexture.texture_srgb.dirty;
 }
 
+void basetexture_state_init(IWineD3DBaseTexture *iface, struct gl_texture *gl_tex)
+{
+    /* Initialise the state of the texture object
+    to the openGL defaults, not the directx defaults */
+    gl_tex->states[WINED3DTEXSTA_ADDRESSU]      = WINED3DTADDRESS_WRAP;
+    gl_tex->states[WINED3DTEXSTA_ADDRESSV]      = WINED3DTADDRESS_WRAP;
+    gl_tex->states[WINED3DTEXSTA_ADDRESSW]      = WINED3DTADDRESS_WRAP;
+    gl_tex->states[WINED3DTEXSTA_BORDERCOLOR]   = 0;
+    gl_tex->states[WINED3DTEXSTA_MAGFILTER]     = WINED3DTEXF_LINEAR;
+    gl_tex->states[WINED3DTEXSTA_MINFILTER]     = WINED3DTEXF_POINT; /* GL_NEAREST_MIPMAP_LINEAR */
+    gl_tex->states[WINED3DTEXSTA_MIPFILTER]     = WINED3DTEXF_LINEAR; /* GL_NEAREST_MIPMAP_LINEAR */
+    gl_tex->states[WINED3DTEXSTA_MAXMIPLEVEL]   = 0;
+    gl_tex->states[WINED3DTEXSTA_MAXANISOTROPY] = 1;
+    gl_tex->states[WINED3DTEXSTA_SRGBTEXTURE]   = 0;
+    gl_tex->states[WINED3DTEXSTA_ELEMENTINDEX]  = 0;
+    gl_tex->states[WINED3DTEXSTA_DMAPOFFSET]    = 0;
+    gl_tex->states[WINED3DTEXSTA_TSSADDRESSW]   = WINED3DTADDRESS_WRAP;
+    IWineD3DBaseTexture_SetDirty(iface, TRUE);
+}
+
 /* Context activation is done by the caller. */
 HRESULT basetexture_bind(IWineD3DBaseTexture *iface, BOOL srgb, BOOL *set_surface_desc)
 {
@@ -290,12 +301,18 @@ HRESULT basetexture_bind(IWineD3DBaseTexture *iface, BOOL srgb, BOOL *set_surfac
 #ifdef VBOX_WITH_WDDM
         if (VBOXSHRC_IS_SHARED_OPENED(This))
         {
-            gl_tex->name = VBOXSHRC_GET_SHAREHANDLE(This);
+            ERR("should not be here!");
+            gl_tex->name = (GLuint)VBOXSHRC_GET_SHAREHANDLE(This);
+            GL_EXTCALL(glChromiumParameteriCR(GL_RCUSAGE_TEXTURE_SET_CR, gl_tex->name));
+            TRACE("Assigned shared texture %d\n", gl_tex->name);
         }
         else
 #endif
         {
+            isNewTexture = TRUE;
             glGenTextures(1, &gl_tex->name);
+            checkGLcall("glGenTextures");
+            TRACE("Generated texture %d\n", gl_tex->name);
 #ifdef VBOX_WITH_WDDM
             if (VBOXSHRC_IS_SHARED(This))
             {
@@ -303,8 +320,7 @@ HRESULT basetexture_bind(IWineD3DBaseTexture *iface, BOOL srgb, BOOL *set_surfac
             }
 #endif
         }
-        checkGLcall("glGenTextures");
-        TRACE("Generated texture %d\n", gl_tex->name);
+#ifndef VBOX_WITH_WDDM
         if (This->resource.pool == WINED3DPOOL_DEFAULT) {
             /* Tell opengl to try and keep this texture in video ram (well mostly) */
             GLclampf tmp;
@@ -312,25 +328,16 @@ HRESULT basetexture_bind(IWineD3DBaseTexture *iface, BOOL srgb, BOOL *set_surfac
             glPrioritizeTextures(1, &gl_tex->name, &tmp);
 
         }
+#else
+        /* chromium code on host fails to resolve texture name to texture obj for some reason
+         * @todo: investigate */
+#endif
         /* Initialise the state of the texture object
         to the openGL defaults, not the directx defaults */
-        gl_tex->states[WINED3DTEXSTA_ADDRESSU]      = WINED3DTADDRESS_WRAP;
-        gl_tex->states[WINED3DTEXSTA_ADDRESSV]      = WINED3DTADDRESS_WRAP;
-        gl_tex->states[WINED3DTEXSTA_ADDRESSW]      = WINED3DTADDRESS_WRAP;
-        gl_tex->states[WINED3DTEXSTA_BORDERCOLOR]   = 0;
-        gl_tex->states[WINED3DTEXSTA_MAGFILTER]     = WINED3DTEXF_LINEAR;
-        gl_tex->states[WINED3DTEXSTA_MINFILTER]     = WINED3DTEXF_POINT; /* GL_NEAREST_MIPMAP_LINEAR */
-        gl_tex->states[WINED3DTEXSTA_MIPFILTER]     = WINED3DTEXF_LINEAR; /* GL_NEAREST_MIPMAP_LINEAR */
-        gl_tex->states[WINED3DTEXSTA_MAXMIPLEVEL]   = 0;
-        gl_tex->states[WINED3DTEXSTA_MAXANISOTROPY] = 1;
-        gl_tex->states[WINED3DTEXSTA_SRGBTEXTURE]   = 0;
-        gl_tex->states[WINED3DTEXSTA_ELEMENTINDEX]  = 0;
-        gl_tex->states[WINED3DTEXSTA_DMAPOFFSET]    = 0;
-        gl_tex->states[WINED3DTEXSTA_TSSADDRESSW]   = WINED3DTADDRESS_WRAP;
-        IWineD3DBaseTexture_SetDirty(iface, TRUE);
-        isNewTexture = TRUE;
+        basetexture_state_init(iface, gl_tex);
 
-        if(This->resource.usage & WINED3DUSAGE_AUTOGENMIPMAP) {
+        if(isNewTexture
+                && This->resource.usage & WINED3DUSAGE_AUTOGENMIPMAP) {
             /* This means double binding the texture at creation, but keeps the code simpler all
              * in all, and the run-time path free from additional checks
              */

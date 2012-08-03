@@ -3,7 +3,7 @@
 # libraries VBox OSE depends on.
 
 #
-# Copyright (C) 2006-2011 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -90,9 +90,9 @@ WITH_HARDENING=1
 WITH_UDPTUNNEL=1
 WITH_VDE=0
 WITH_VNC=0
+WITH_EXTPACK=1
 WITH_DOCS=1
 BUILD_LIBXML2=
-BUILD_LIBXSLT=
 BUILD_LIBCURL=
 BUILD_LIBSSL=
 PASSIVE_MESA=0
@@ -413,9 +413,9 @@ check_gcc()
       elif [ $cc_maj -lt 3 \
              -o \( $cc_maj -eq 3 -a $cc_min -lt 2 \) \
              -o \( $cc_maj -eq 4 -a $cc_min -lt 1 -a "$OS" != "darwin" \) \
-             -o \( $cc_maj -eq 4 -a $cc_min -gt 6 \) \
+             -o \( $cc_maj -eq 4 -a $cc_min -gt 7 \) \
              -o $cc_maj -gt 4 ]; then
-        log_failure "gcc version $cc_ver found, expected gcc 3.x with x>1 or gcc 4.x with 0<x<7"
+        log_failure "gcc version $cc_ver found, expected gcc 3.x with x>1 or gcc 4.x with 0<x<8"
         fail really
       else
         log_success "found version $cc_ver"
@@ -538,6 +538,63 @@ check_as86()
       cnf_append "VBOX_AS86" "`which_wrapper $AS86`"
     fi
   fi
+}
+
+
+#
+# Check for the OpenWatcom compiler, needed for compiling the BIOS
+#
+# If the system has Open Watcom installed, WATCOM will be set in the
+# environment.  If the user has her/his own Open Watcom install it will be
+# pointed to by on the command line, which will set the WATCOM variable.
+# The only exception is detecting OpenWatcom in tools/common/openwatcom.
+#
+check_open_watcom()
+{
+  test_header "Open Watcom"
+
+  if [ -z "$WATCOM" ]; then
+    WATCOM=`/bin/ls -rd1 $PWD/tools/common/openwatcom/* 2> /dev/null | head -1`
+    if [ -z "$WATCOM" ]; then
+      log_failure "Open Watcom was not found"
+      cnf_append "VBOX_WITH_OPEN_WATCOM" ""
+      return 0;
+    fi
+  fi
+
+  case "$OS" in
+    "darwin")   wc_bin="binosx";;  # ??
+    "dos")      wc_bin="binw";;
+    "freebsd")  wc_bin="binfbsd";; # ??
+    "linux")    wc_bin="binl";;
+    "solaris")  wc_bin="binsol";;  # ??
+    "os2")      wc_bin="binp";;
+    "win")      wc_bin="binnt";;
+    *)          wc_bin="binl";;
+  esac
+
+  # Check that the tools we use are there.
+  for prog in wasm wcc wlink;
+  do
+    if [ ! -f "$WATCOM/$wc_bin/$prog" ]; then
+      log_failure "$WATCOM/$wc_bin/$prog does not exist or is not a regular file."
+      fail
+    fi
+  done
+
+  # Use WASM to get the version.
+  wasm_ver=`$WATCOM/$wc_bin/wasm -? 2>&1 | sed -e '1!d' -e 's/Open Watcom Assembler Version *//'`
+  if [ -z "$wasm_ver" ]; then
+    log_failure "$WATCOM/$wc_bin/wasm -? did not produce the expected response"
+    fail
+  fi
+  log_success "found version $wasm_ver"
+  cnf_append "PATH_TOOL_OPENWATCOM" "$WATCOM"
+  cnf_append "VBOX_WITH_OPEN_WATCOM" "1"
+
+  unset wasm_ver
+  unset wc_wasm
+  unset wc_bin
 }
 
 
@@ -709,89 +766,6 @@ EOF
       fi
     else
       log_failure "neither pkg-config nor xml2-config found"
-      fail
-    fi
-  fi
-}
-
-
-#
-# Check for libxslt, needed by VBoxSettings. For now we depend on 1.1.15,
-# as Solaris right now has no newer version and it definitely works.
-# 1.1.17 is available on Ubuntu Edgy which fulfils the minimal libxml2
-# requirement (2.6.26).
-#
-check_libxslt()
-{
-  if [ -z "$BUILD_LIBXSLT" ]; then
-    test_header libxslt
-    if which_wrapper pkg-config > /dev/null; then
-      libxslt_ver=`pkg-config libxslt --modversion 2>> $LOG`
-      if [ $? -ne 0 ]; then
-        log_failure "libxslt not found"
-        fail
-      else
-        FLGXSLT=`pkg-config libxslt --cflags`
-        INCXSLT=`strip_I "$FLGXSLT"`
-        LIBXSLT=`pkg-config libxslt --libs`
-        cat > $ODIR.tmp_src.cc << EOF
-#include <cstdio>
-#include <libxslt/xsltconfig.h>
-extern "C" int main(void)
-{
-  printf("found version %s", LIBXSLT_DOTTED_VERSION);
-#if LIBXSLT_VERSION >= 10117
-  printf(", OK.\n");
-  return 0;
-#else
-  printf(", expected version 1.1.17 or higher\n");
-  return 1;
-#endif
-}
-EOF
-        [ -n "$INCXSLT" ] && I_INCXSLT=`prefix_I "$INCXSLT"`
-        if test_compile "$LIBXSLT $LIBPTHREAD $I_INCXSLT" xslt xslt; then
-          if test_execute; then
-            cnf_append "SDK_VBOX_LIBXSLT_INCS" "$INCXSLT"
-            cnf_append "SDK_VBOX_LIBXSLT_LIBS" "`strip_l "$LIBXSLT"`"
-          fi
-        fi
-      fi
-    elif which_wrapper xslt-config; then
-      libxslt_ver=`xslt-config --version`
-      if [ $? -ne 0 ]; then
-        log_failure "xslt-config not working"
-        fail
-      else
-        log_success "found version $libxslt_ver"
-        FLGXSLT=`xslt-config --cflags`
-        INCXSLT=`strip_I "$FLGXSLT"`
-        LIBXSLT=`xslt-config --libs`
-        cat > $ODIR.tmp_src.cc << EOF
-#include <cstdio>
-#include <libxslt/xsltconfig.h>
-extern "C" int main(void)
-{
-  printf("found version %s", LIBXSLT_DOTTED_VERSION);
-#if LIBXSLT_VERSION >= 10117
-  printf(", OK.\n");
-  return 0;
-#else
-  printf(", expected version 1.1.17 or higher\n");
-  return 1;
-#endif
-}
-EOF
-        [ -n "$INCXSLT" ] && I_INCXSLT=`prefix_I "$INCXSLT"`
-        if test_compile "$LIBXSLT $LIBPTHREAD $I_INCXSLT" xslt xslt; then
-          if test_execute; then
-            cnf_append "SDK_VBOX_LIBXSLT_INCS" "$INCXSLT"
-            cnf_append "SDK_VBOX_LIBXSLT_LIBS" "`strip_l "$LIBXSLT"`"
-          fi
-        fi
-      fi
-    else
-      log_failure "neither pkg-config nor xslt-config found"
       fail
     fi
   fi
@@ -983,21 +957,21 @@ extern "C" int main()
   for (; *v !='.' && *v != '\0'; v++) micro = micro*10 + *v-'0';
 
   printf("found version %s", LIBVNCSERVER_PACKAGE_VERSION);
-  if (major*10000 + minor*100 + micro >= 907)
+  if (major*10000 + minor*100 + micro >= 900)
   {
     printf(", OK.\n");
     return 0;
   }
   else
   {
-    printf(", expected version 0.9.7 or higher\n");
+    printf(", expected version 0.9 or higher\n");
     return 1;
   }
 }
 EOF
   if test_compile "$LIBVNCSERVER $INCVNCSERVER" libvncserver libvncserver; then
     if test_execute; then
-      cnf_append "VBOX_WITH_VNC" "1"
+      cnf_append "VBOX_WITH_EXTPACK_VNC" "1"
     fi
   fi
 }
@@ -1506,18 +1480,18 @@ check_qt4()
       if which_wrapper pkg-config > /dev/null; then
         # this braindead path is necessary for mdv2008.1
         qt4_ver=`\
-            PKG_CONFIG_PATH=/usr/lib/qt4/lib/pkgconfig \
+            PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/lib/qt4/lib/pkgconfig \
             pkg-config QtCore --modversion 2>> $LOG`
         if [ $? -ne 0 ]; then
           log_failure "QtCore not found"
           fail
         else
           FLGQT4=`\
-              PKG_CONFIG_PATH=/usr/lib/qt4/lib/pkgconfig \
+              PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/lib/qt4/lib/pkgconfig \
               pkg-config QtCore --cflags`
           INCQT4=`strip_I "$FLGQT4"`
           LIBQT4=`\
-              PKG_CONFIG_PATH=/usr/lib/qt4/lib/pkgconfig \
+              PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/lib/qt4/lib/pkgconfig \
               PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 \
               pkg-config QtCore --libs`
           foundqt4=1
@@ -1534,11 +1508,11 @@ check_qt4()
 extern "C" int main(void)
 {
   printf("found version %s", QT_VERSION_STR);
-#if QT_VERSION >= 0x040400
+#if QT_VERSION >= 0x040602
   printf(", OK.\n");
   return 0;
 #else
-  printf(", expected version 4.4.0 or higher\n");
+  printf(", expected version 4.6.2 or higher\n");
   return 1;
 #endif
 }
@@ -1567,11 +1541,11 @@ EOF
 extern "C" int main(void)
 {
   printf("found version %s", QT_VERSION_STR);
-#if QT_VERSION >= 0x040400
+#if QT_VERSION >= 0x040602
   printf(", OK.\n");
   return 0;
 #else
-  printf(", expected version 4.4.0 or higher\n");
+  printf(", expected version 4.6.2 or higher\n");
   return 1;
 #endif
 }
@@ -1819,6 +1793,7 @@ check_libcap()
   cat > $ODIR.tmp_src.cc << EOF
 #include <cstdio>
 #include <sys/types.h>
+#include <linux/types.h>
 #include <sys/capability.h>
 
 extern "C" int main(void)
@@ -2019,6 +1994,30 @@ setup_wine()
 check_gsoap()
 {
   test_header "GSOAP compiler"
+  if [ -z "$GSOAP" -a -z "$GSOAP_IMPORT" ]; then
+    if which_wrapper pkg-config > /dev/null; then
+      GSOAP_CXX_LIBS=`pkg-config gsoapssl++ --libs 2>> $LOG`
+      if [ $? -eq 0 ]; then
+        GSOAP=`pkg-config gsoapssl++ --variable=exec_prefix`
+        GSOAP_IMPORT="$GSOAP/share/gsoap/import"
+        if [ ! -d "$GSOAP_IMPORT"  -a  -d "$GSOAP/include/gsoap" ]; then
+          GSOAP_IMPORT="$GSOAP/include/gsoap"
+        fi
+        cnf_append "VBOX_GSOAP_INSTALLED"   "1"
+        cnf_append "VBOX_PATH_GSOAP"        "$GSOAP"
+        cnf_append "VBOX_PATH_GSOAP_IMPORT" "$GSOAP_IMPORT"
+        if [ -f "$GSOAP/share/gsoap/stdsoap2.cpp" ]; then
+          cnf_append "VBOX_GSOAP_CXX_SOURCES" "$GSOAP/share/gsoap/stdsoap2.cpp"
+        else
+          cnf_append "VBOX_GSOAP_CXX_SOURCES" ""
+        fi
+        cnf_append "VBOX_GSOAP_CXX_LIBS"    "`strip_l "$GSOAP_CXX_LIBS"`"
+        gsoap_version=`pkg-config gsoapssl++ --modversion`
+        log_success "found version $gsoap_version"
+        return
+      fi
+    fi
+  fi
   if [ -z "$GSOAP" ]; then
     GSOAP="/usr"
   fi
@@ -2042,7 +2041,7 @@ check_gsoap()
           else
             cnf_append "VBOX_GSOAP_CXX_SOURCES" ""
           fi
-          cnf_append "VBOX_GSOAP_CXX_LIBS"    "libgsoap++"
+          cnf_append "VBOX_GSOAP_CXX_LIBS"    "libgsoapssl++"
           log_success "found"
         else
           log_failure "stlvector.h not found -- disabling webservice"
@@ -2076,8 +2075,6 @@ check_darwinversion()
       darwin_ver="10.7" # Lion
       sdk=/Developer/SDKs/MacOSX10.6.sdk
       CXX_FLAGS="-mmacosx-version-min=10.6 -isysroot $sdk -Wl,-syslibroot,$sdk"
-      # We disable the java stuff until Apple make the java stuff downloadable.
-      WITH_JAVA=0
       ;;
     10\.*)
       darwin_ver="10.6" # Snow Leopard
@@ -2091,6 +2088,7 @@ check_darwinversion()
       fi
 #      test "$CC" = "gcc" && CC="gcc-4.0"
 #      test "$CXX" = "g++" && CXX="g++-4.0"
+      cnf_append "VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_7" "1"
       ;;
     9\.*)
       darwin_ver="10.5" # Leopard
@@ -2099,6 +2097,7 @@ check_darwinversion()
 #      test "$CC" = "gcc" && CC="gcc-4.0"
 #      test "$CXX" = "g++" && CXX="g++-4.0"
       cnf_append "VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_6" "1"
+      cnf_append "VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_7" "1"
       ;;
     8\.*)
       darwin_ver="10.4" # Tiger
@@ -2108,6 +2107,7 @@ check_darwinversion()
 #      test "$CXX" = "g++" && CXX="g++-4.0"
       cnf_append "VBOX_WITH_COCOA_QT" ""
       cnf_append "VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_6" "1"
+      cnf_append "VBOX_WITHOUT_VBOXPYTHON_FOR_OSX_10_7" "1"
       ;;
     *)
       echo "  failed to determine Darwin version. (uname -r: $darwin_ver)"
@@ -2179,13 +2179,13 @@ EOF
 [ $WITH_OPENGL  -eq 1 ] && echo "  --disable-opengl         disable OpenGL support (2D & 3D)"
 [ $WITH_GSOAP   -eq 0 ] && echo "  --enable-webservice      enable the webservice stuff"
 [ $OSE          -eq 1 ] && echo "  --enable-vnc             enable the VNC server"
+[ $OSE          -eq 0 ] && echo "  --disable-extpack        don't build the extpack"
 [ $WITH_DOCS    -eq 1 ] && echo "  --disable-docs           don't build the documentation"
 [ "$OS" = "linux" -o "$OS" = "freebsd" ] && echo "  --enable-vde             enable VDE networking"
 cat << EOF
   --disable-udptunnel      disable UDP tunnel networking
   --disable-hardening      don't be strict about /dev/vboxdrv access
   --build-libxml2          build libxml2 from sources
-  --build-libxslt          build libxslt from sources
 EOF
 [ $OSE -eq 0 ] && cat << EOF
   --build-libssl           build openssl from sources
@@ -2209,6 +2209,7 @@ EOF
 [ $WITH_GSOAP  -eq 1 ] && echo "  --with-gsoap-import=PATH directory for gSOAP import files (stlvector.h)"
 cat << EOF
   --with-openssl-dir=DIR   directory for OpenSSL headers/libraries
+  --with-ow-dir=DIR        directory where Open Watcom can be found [$WATCOM]
   --out-path=PATH          the folder to which configuration and build output
                            should go
 
@@ -2242,12 +2243,9 @@ if [ "$OS" = "darwin" ]; then
   WITH_PULSE=0
   WITH_DBUS=0
   WITH_KMODS=0
-  BUILD_LIBXSLT=1
   BUILD_LIBXML2=1
   [ $OSE -eq 1 ] || BUILD_LIBCURL=1
-  [ $OSE -eq 1 ] || BUILD_LIBSSL=1
 fi
-
 
 # scan command line options
 for option in $*; do
@@ -2282,6 +2280,9 @@ for option in $*; do
       OPENSSLDIR=`echo $option | cut -d'=' -f2`
       INCCRYPTO="-I${OPENSSLDIR}/include"
       LIBCRYPTO="${OPENSSLDIR}/lib/libcrypto.a ${OPENSSLDIR}/lib/libssl.a"
+      ;;
+    --with-ow-dir=*)
+      WATCOM=`echo $option | cut -d'=' -f2`
       ;;
     --with-gsoap-dir=*)
       GSOAP=`echo $option | cut -d'=' -f2`
@@ -2355,6 +2356,9 @@ for option in $*; do
     --disable-hardening)
       WITH_HARDENING=0
       ;;
+    --disable-extpack)
+      WITH_EXTPACK=0
+      ;;
     --disable-docs)
       WITH_DOCS=0
       ;;
@@ -2375,9 +2379,6 @@ for option in $*; do
       ;;
     --build-libxml2)
       BUILD_LIBXML2=1
-      ;;
-    --build-libxslt)
-      BUILD_LIBXSLT=1
       ;;
     --build-libssl)
       BUILD_LIBSSL=1
@@ -2512,6 +2513,15 @@ if [ $OSE -ge 1 ]; then
   echo >> $CNF
 fi
 
+# extpack
+if [ $OSE -eq 0 ]; then
+  if [ $WITH_EXTPACK -eq 1 ]; then
+    BUILD_LIBSSL=1
+  else
+    cnf_append "VBOX_WITH_EXTPACK_PUEL_BUILD" ""
+  fi
+fi
+
 # headless
 if [ -n "$HEADLESS" ]; then
   cnf_append "VBOX_HEADLESS" "1"
@@ -2528,6 +2538,7 @@ fi
 [ $WITH_SDL_TTF   -eq 0 ] && cnf_append "VBOX_WITH_SECURELABEL" ""
 [ $WITH_PYTHON    -eq 0 ] && cnf_append "VBOX_WITH_PYTHON" ""
 [ $WITH_JAVA      -eq 0 ] && cnf_append "VBOX_WITH_JXPCOM" ""
+[ $WITH_JAVA      -eq 0 ] && cnf_append "VBOX_WITH_JWS" ""
 [ $WITH_HARDENING -eq 0 ] && cnf_append "VBOX_WITHOUT_HARDENING" "1"
 [ $WITH_HARDENING -eq 2 ] && cnf_append "VBOX_WITH_HARDENING" "2"
 [ $WITH_VMMRAW    -eq 0 ] && cnf_append "VBOX_WITH_RAW_MODE" ""
@@ -2540,6 +2551,7 @@ fi
 check_gcc
 [ "$OS" != "darwin"  ] && check_as86
 [ "$OS" != "darwin"  ] && check_bcc
+check_open_watcom
 [ "$OS" != "darwin"  ] && check_iasl
 # don't check for yasm for the time beeing as 0.40 and 0.50 both have known bugs
 # [ "$OS" != "darwin" ] && check_yasm
@@ -2549,7 +2561,6 @@ check_gcc
 # the libraries
 [ "$OS" != "darwin"  ] && check_pthread
 check_libxml2
-[ $WITH_XPCOM  -eq 1 ] && check_libxslt
 [ $WITH_LIBIDL -eq 1 ] && check_libidl
 check_ssl
 check_curl
@@ -2638,7 +2649,7 @@ if [ $OSE -ge 1 ]; then
   if [ $WITH_VNC = 1 ]; then
     check_vncserver
   else
-    cnf_append "VBOX_WITH_VNC" ""
+    cnf_append "VBOX_WITH_EXTPACK_VNC" ""
   fi
 fi
 

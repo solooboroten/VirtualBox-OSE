@@ -1,4 +1,4 @@
-/* $Id: icd_drv.c 37986 2011-07-15 15:14:35Z vboxsync $ */
+/* $Id: icd_drv.c 42499 2012-08-01 10:26:43Z vboxsync $ */
 
 /** @file
  * VBox OpenGL windows ICD driver functions
@@ -38,8 +38,22 @@ static ICDTABLE icdTable = { 336, {
 #undef ICD_ENTRY
 } };
 
-static GLuint desiredVisual = CR_RGB_BIT;
+/* Currently host part will misbehave re-creating context with proper visual bits
+ * if contexts with alternative visual bits is requested.
+ * For now we just report a superset of all visual bits to avoid that.
+ * Better to it on the host side as well?
+ * We could also implement properly multiple pixel formats,
+ * which should be done by implementing offscreen rendering or multiple host contexts.
+ * */
+#define VBOX_CROGL_USE_VBITS_SUPERSET
 
+#ifdef VBOX_CROGL_USE_VBITS_SUPERSET
+static GLuint desiredVisual = CR_RGB_BIT | CR_ALPHA_BIT | CR_DEPTH_BIT | CR_STENCIL_BIT | CR_ACCUM_BIT | CR_DOUBLE_BIT;
+#else
+static GLuint desiredVisual = CR_RGB_BIT;
+#endif
+
+#ifndef VBOX_CROGL_USE_VBITS_SUPERSET
 /**
  * Compute a mask of CR_*_BIT flags which reflects the attributes of
  * the pixel format of the given hdc.
@@ -71,15 +85,18 @@ static GLuint ComputeVisBits( HDC hdc )
 
     return b;
 }
+#endif
 
 void APIENTRY DrvReleaseContext(HGLRC hglrc)
 {
+     CR_DDI_PROLOGUE();
     /*crDebug( "DrvReleaseContext(0x%x) called", hglrc );*/
     stubMakeCurrent( NULL, NULL );
 }
 
 BOOL APIENTRY DrvValidateVersion(DWORD version)
 {
+    CR_DDI_PROLOGUE();
     if (stubInit()) {
         crDebug("DrvValidateVersion %x -> TRUE\n", version);
         return TRUE;
@@ -95,6 +112,8 @@ PICDTABLE APIENTRY DrvSetContext(HDC hdc, HGLRC hglrc, void *callback)
     ContextInfo *context;
     WindowInfo *window;
     BOOL ret;
+
+    CR_DDI_PROLOGUE();
 
     /*crDebug( "DrvSetContext called(0x%x, 0x%x)", hdc, hglrc );*/
     (void) (callback);
@@ -115,6 +134,7 @@ PICDTABLE APIENTRY DrvSetContext(HDC hdc, HGLRC hglrc, void *callback)
 
 BOOL APIENTRY DrvSetPixelFormat(HDC hdc, int iPixelFormat)
 {
+    CR_DDI_PROLOGUE();
     crDebug( "DrvSetPixelFormat(0x%x, %i) called.", hdc, iPixelFormat );
 
     if ( (iPixelFormat<1) || (iPixelFormat>2) ) {
@@ -129,6 +149,8 @@ HGLRC APIENTRY DrvCreateContext(HDC hdc)
     char dpyName[MAX_DPY_NAME];
     ContextInfo *context;
 
+    CR_DDI_PROLOGUE();
+
     crDebug( "DrvCreateContext(0x%x) called.", hdc);
 
     stubInit();
@@ -136,10 +158,16 @@ HGLRC APIENTRY DrvCreateContext(HDC hdc)
     CRASSERT(stub.contextTable);
 
     sprintf(dpyName, "%d", hdc);
+#ifndef VBOX_CROGL_USE_VBITS_SUPERSET
     if (stub.haveNativeOpenGL)
         desiredVisual |= ComputeVisBits( hdc );
+#endif
 
-    context = stubNewContext(dpyName, desiredVisual, UNDECIDED, 0);
+    context = stubNewContext(dpyName, desiredVisual, UNDECIDED, 0
+#if defined(VBOX_WITH_CRHGSMI) && defined(IN_GUEST)
+        , NULL
+#endif
+            );
     if (!context)
         return 0;
 
@@ -148,6 +176,7 @@ HGLRC APIENTRY DrvCreateContext(HDC hdc)
 
 HGLRC APIENTRY DrvCreateLayerContext(HDC hdc, int iLayerPlane)
 {
+    CR_DDI_PROLOGUE();
     crDebug( "DrvCreateLayerContext(0x%x, %i) called.", hdc, iLayerPlane);
     //We don't support more than 1 layers.
     if (iLayerPlane == 0) {
@@ -163,6 +192,7 @@ BOOL APIENTRY DrvDescribeLayerPlane(HDC hdc,int iPixelFormat,
                                     int iLayerPlane, UINT nBytes,
                                     LPLAYERPLANEDESCRIPTOR plpd)
 {
+    CR_DDI_PROLOGUE();
     crWarning( "DrvDescribeLayerPlane: unimplemented" );
     CRASSERT(false);
     return 0;
@@ -172,6 +202,7 @@ int APIENTRY DrvGetLayerPaletteEntries(HDC hdc, int iLayerPlane,
                                        int iStart, int cEntries,
                                        COLORREF *pcr)
 {
+    CR_DDI_PROLOGUE();
     crWarning( "DrvGetLayerPaletteEntries: unsupported" );
     CRASSERT(false);
     return 0;
@@ -179,6 +210,7 @@ int APIENTRY DrvGetLayerPaletteEntries(HDC hdc, int iLayerPlane,
 
 int APIENTRY DrvDescribePixelFormat(HDC hdc, int iPixelFormat, UINT nBytes, LPPIXELFORMATDESCRIPTOR pfd)
 {
+    CR_DDI_PROLOGUE();
     if ( !pfd ) {
         return 2;
     }
@@ -197,6 +229,9 @@ int APIENTRY DrvDescribePixelFormat(HDC hdc, int iPixelFormat, UINT nBytes, LPPI
         pfd->dwFlags         = (PFD_DRAW_TO_WINDOW |
                                 PFD_SUPPORT_OPENGL |
                                 PFD_DOUBLEBUFFER);
+
+        pfd->dwFlags         |= 0x8000; /* <- Needed for VSG Open Inventor to be happy */
+
         pfd->iPixelType      = PFD_TYPE_RGBA;
         pfd->cColorBits      = 32;
         pfd->cRedBits        = 8;
@@ -259,6 +294,7 @@ int APIENTRY DrvDescribePixelFormat(HDC hdc, int iPixelFormat, UINT nBytes, LPPI
 
 BOOL APIENTRY DrvDeleteContext(HGLRC hglrc)
 {
+    CR_DDI_PROLOGUE();
     /*crDebug( "DrvDeleteContext(0x%x) called", hglrc );*/
     stubDestroyContext( (unsigned long) hglrc );
     return 1;
@@ -266,12 +302,14 @@ BOOL APIENTRY DrvDeleteContext(HGLRC hglrc)
 
 BOOL APIENTRY DrvCopyContext(HGLRC hglrcSrc, HGLRC hglrcDst, UINT mask)
 {
+    CR_DDI_PROLOGUE();
     crWarning( "DrvCopyContext: unsupported" );
     return 0;
 }
 
 BOOL APIENTRY DrvShareLists(HGLRC hglrc1, HGLRC hglrc2)
 {
+    CR_DDI_PROLOGUE();
     crWarning( "DrvShareLists: unsupported" );
     return 1;
 }
@@ -280,6 +318,7 @@ int APIENTRY DrvSetLayerPaletteEntries(HDC hdc, int iLayerPlane,
                                        int iStart, int cEntries,
                                        CONST COLORREF *pcr)
 {
+    CR_DDI_PROLOGUE();
     crWarning( "DrvSetLayerPaletteEntries: unsupported" );
     return 0;
 }
@@ -287,12 +326,14 @@ int APIENTRY DrvSetLayerPaletteEntries(HDC hdc, int iLayerPlane,
 
 BOOL APIENTRY DrvRealizeLayerPalette(HDC hdc, int iLayerPlane, BOOL bRealize)
 {
+    CR_DDI_PROLOGUE();
     crWarning( "DrvRealizeLayerPalette: unsupported" );
     return 0;
 }
 
 BOOL APIENTRY DrvSwapLayerBuffers(HDC hdc, UINT fuPlanes)
 {
+    CR_DDI_PROLOGUE();
     if (fuPlanes == 1)
     {
         return DrvSwapBuffers(hdc);
@@ -308,6 +349,8 @@ BOOL APIENTRY DrvSwapLayerBuffers(HDC hdc, UINT fuPlanes)
 BOOL APIENTRY DrvSwapBuffers(HDC hdc)
 {
     WindowInfo *window;
+
+    CR_DDI_PROLOGUE();
     /*crDebug( "DrvSwapBuffers(0x%x) called", hdc );*/
     window = stubGetWindowInfo(hdc);    
     stubSwapBuffers( window, 0 );

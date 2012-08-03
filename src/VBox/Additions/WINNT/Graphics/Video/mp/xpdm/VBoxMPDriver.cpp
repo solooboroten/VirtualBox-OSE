@@ -1,4 +1,4 @@
-/* $Id: VBoxMPDriver.cpp 37384 2011-06-08 15:09:14Z vboxsync $ */
+/* $Id: VBoxMPDriver.cpp 42233 2012-07-19 16:25:49Z vboxsync $ */
 
 /** @file
  * VBox XPDM Miniport driver interface functions
@@ -19,6 +19,7 @@
 #include "VBoxMPInternal.h"
 #include <VBox/Hardware/VBoxVideoVBE.h>
 #include <VBox/VBoxGuestLib.h>
+#include <VBox/VBoxVideo.h>
 #include "common/VBoxMPHGSMI.h"
 #include "common/VBoxMPCommon.h"
 #include "VBoxDisplay.h"
@@ -49,7 +50,9 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
     PVBOXMP_DEVEXT pExt = (PVBOXMP_DEVEXT) HwDeviceExtension;
     VP_STATUS rc;
     USHORT DispiId;
-    ULONG AdapterMemorySize = VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES;
+    ULONG cbVRAM = VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES;
+    PHYSICAL_ADDRESS phVRAM = {0};
+    ULONG ulApertureSize = 0;
 
     PAGED_CODE();
     LOGF_ENTER();
@@ -72,7 +75,7 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
      * Query the adapter's memory size. It's a bit of a hack, we just read
      * an ULONG from the data port without setting an index before.
      */
-    AdapterMemorySize = VideoPortReadPortUlong((PULONG)VBE_DISPI_IOPORT_DATA);
+    cbVRAM = VideoPortReadPortUlong((PULONG)VBE_DISPI_IOPORT_DATA);
 
     /* Write hw information to registry, so that it's visible in windows property dialog */
     rc = VideoPortSetRegistryParameters(pExt, L"HardwareInformation.ChipType",
@@ -82,7 +85,7 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
                                         VBoxDACType, sizeof(VBoxDACType));
     VBOXMP_WARN_VPS(rc);
     rc = VideoPortSetRegistryParameters(pExt, L"HardwareInformation.MemorySize",
-                                        &AdapterMemorySize, sizeof(ULONG));
+                                        &cbVRAM, sizeof(ULONG));
     VBOXMP_WARN_VPS(rc);
     rc = VideoPortSetRegistryParameters(pExt, L"HardwareInformation.AdapterString",
                                         VBoxAdapterString, sizeof(VBoxAdapterString));
@@ -91,7 +94,9 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
                                         VBoxBiosString, sizeof(VBoxBiosString));
     VBOXMP_WARN_VPS(rc);
 
-    /* Call VideoPortGetAccessRanges to ensure interrupt info in ConfigInfo gets set up */
+    /* Call VideoPortGetAccessRanges to ensure interrupt info in ConfigInfo gets set up
+     * and to get LFB aperture data.
+     */
     {
         VIDEO_ACCESS_RANGE tmpRanges[4];
         ULONG slot = 0;
@@ -113,6 +118,13 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
             rc = VideoPortGetAccessRanges(pExt, 0, NULL, RT_ELEMENTS(tmpRanges), tmpRanges, NULL, NULL, &slot);
         }
         VBOXMP_WARN_VPS(rc);
+        if (rc != NO_ERROR) {
+            return rc;
+        }
+
+        /* The first range is the framebuffer. We require that information. */
+        phVRAM = tmpRanges[0].RangeStart;
+        ulApertureSize = tmpRanges[0].RangeLength;
     }
 
     /* Initialize VBoxGuest library, which is used for requests which go through VMMDev. */
@@ -133,7 +145,7 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
      * The host will however support both old and new interface to keep compatibility
      * with old guest additions.
      */
-    VBoxSetupDisplaysHGSMI(&pExt->u.primary.commonInfo, AdapterMemorySize, 0);
+    VBoxSetupDisplaysHGSMI(&pExt->u.primary.commonInfo, phVRAM, ulApertureSize, cbVRAM, 0);
 
     if (pExt->u.primary.commonInfo.bHGSMI)
     {
@@ -389,9 +401,28 @@ VBoxDrvStartIO(PVOID HwDeviceExtension, PVIDEO_REQUEST_PACKET RequestPacket)
         {
             STARTIO_IN(ULONG, pAttach);
 
+            LOGF(("IOCTL_VIDEO_SWITCH_DUALVIEW: [%d] attach = %d", pExt->iDevice, *pAttach));
+
             if (pExt->iDevice>0)
             {
                 pExt->u.secondary.bEnabled = (BOOLEAN)(*pAttach);
+
+                /* Inform the host.
+                 * Currently only about secondary devices, because the driver does not support
+                 * disconnecting the primary display (it does not allow to change the primary display).
+                 */
+                if (!pExt->u.secondary.bEnabled)
+                {
+                    PVBOXMP_COMMON pCommon = VBoxCommonFromDeviceExt(pExt);
+                    if (pCommon->bHGSMI)
+                    {
+                        VBoxHGSMIProcessDisplayInfo(&pCommon->guestCtx, pExt->iDevice,
+                                                    /* cOriginX = */ 0, /* cOriginY = */ 0,
+                                                    /* offStart = */ 0, /* cbPitch = */ 0,
+                                                    /* cWidth = */ 0, /* cHeight = */ 0, /* cBPP = */ 0,
+                                                    VBVA_SCREEN_F_ACTIVE | VBVA_SCREEN_F_DISABLED);
+                    }
+                }
             }
 
             bResult = TRUE;
@@ -403,6 +434,8 @@ VBoxDrvStartIO(PVOID HwDeviceExtension, PVIDEO_REQUEST_PACKET RequestPacket)
         {
             STARTIO_IN(ULONG, pChildIndex);
             STARTIO_OUT(ULONG, pChildState);
+
+            LOGF(("IOCTL_VIDEO_GET_CHILD_STATE: [%d] idx = %d", pExt->iDevice, *pChildIndex));
 
             if (*pChildIndex>0 && *pChildIndex<=(ULONG)VBoxCommonFromDeviceExt(pExt)->cDisplays)
             {
@@ -501,6 +534,16 @@ VBoxDrvStartIO(PVOID HwDeviceExtension, PVIDEO_REQUEST_PACKET RequestPacket)
             break;
         }
 #endif
+
+        case IOCTL_VIDEO_VBOX_ISANYX:
+        {
+            STARTIO_OUT(uint32_t, pu32AnyX);
+            *pu32AnyX = pExt->fAnyX;
+            pStatus->Information = sizeof (uint32_t);
+            bResult = TRUE;
+            break;
+        }
+
         default:
         {
             WARN(("unsupported IOCTL %p, fn(%#x)",
@@ -586,6 +629,8 @@ VBoxDrvResetHW(PVOID HwDeviceExtension, ULONG Columns, ULONG Rows)
         VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ENABLE);
         VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, VBE_DISPI_DISABLED);
 
+#if 0
+        /* ResetHW is not the place to do such cleanup. See MSDN. */
         if (pExt->u.primary.pvReqFlush != NULL)
         {
             VbglGRFree((VMMDevRequestHeader *)pExt->u.primary.pvReqFlush);
@@ -595,6 +640,7 @@ VBoxDrvResetHW(PVOID HwDeviceExtension, ULONG Columns, ULONG Rows)
         VbglTerminate();
 
         VBoxFreeDisplaysHGSMI(VBoxCommonFromDeviceExt(pExt));
+#endif
     }
     else
     {
@@ -602,7 +648,8 @@ VBoxDrvResetHW(PVOID HwDeviceExtension, ULONG Columns, ULONG Rows)
     }
 
     LOGF_LEAVE();
-    return TRUE;
+    /* Tell the system to use VGA BIOS to set the text video mode. */
+    return FALSE;
 }
 
 #ifdef VBOX_WITH_VIDEOHWACCEL
@@ -713,9 +760,7 @@ ULONG DriverEntry(IN PVOID Context1, IN PVOID Context2)
     /*Allocate system resources*/
     ULONG rc = VideoPortInitialize(Context1, Context2, &vhwData, NULL);
     if (rc != NO_ERROR)
-    {
         LOG(("VideoPortInitialize failed with %#x", rc));
-    }
 
     LOGF_LEAVE();
     return rc;

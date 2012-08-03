@@ -1,4 +1,4 @@
-/* $Id: PDMQueue.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: PDMQueue.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * PDM Queue - Transport data and tasks to EMT and R3.
  */
@@ -23,7 +23,9 @@
 #include "PDMInternal.h"
 #include <VBox/vmm/pdm.h>
 #include <VBox/vmm/mm.h>
-#include <VBox/vmm/rem.h>
+#ifdef VBOX_WITH_REM
+# include <VBox/vmm/rem.h>
+#endif
 #include <VBox/vmm/vm.h>
 #include <VBox/vmm/uvm.h>
 #include <VBox/err.h>
@@ -47,7 +49,7 @@ static DECLCALLBACK(void)   pdmR3QueueTimer(PVM pVM, PTMTIMER pTimer, void *pvUs
  * Internal worker for the queue creation apis.
  *
  * @returns VBox status.
- * @param   pVM                 VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   cbItem              Item size.
  * @param   cItems              Number of items.
  * @param   cMilliesInterval    Number of milliseconds between polling the queue.
@@ -56,7 +58,7 @@ static DECLCALLBACK(void)   pdmR3QueueTimer(PVM pVM, PTMTIMER pTimer, void *pvUs
  * @param   pszName             The queue name. Unique. Not copied.
  * @param   ppQueue             Where to store the queue handle.
  */
-static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval, bool fRZEnabled,
+static int pdmR3QueueCreate(PVM pVM, size_t cbItem, uint32_t cItems, uint32_t cMilliesInterval, bool fRZEnabled,
                             const char *pszName, PPDMQUEUE *ppQueue)
 {
     PUVM pUVM = pVM->pUVM;
@@ -64,16 +66,8 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
     /*
      * Validate input.
      */
-    if (cbItem < sizeof(PDMQUEUEITEMCORE))
-    {
-        AssertMsgFailed(("cbItem=%d\n", cbItem));
-        return VERR_INVALID_PARAMETER;
-    }
-    if (cItems < 1 || cItems >= 0x10000)
-    {
-        AssertMsgFailed(("cItems=%d valid:[1-65535]\n", cItems));
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertMsgReturn(cbItem >= sizeof(PDMQUEUEITEMCORE) && cbItem < _1M, ("cbItem=%zu\n", cbItem), VERR_OUT_OF_RANGE);
+    AssertMsgReturn(cItems >= 1 && cItems <= _64K, ("cItems=%u\n", cItems), VERR_OUT_OF_RANGE);
 
     /*
      * Align the item size and calculate the structure size.
@@ -98,7 +92,7 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
     pQueue->pszName = pszName;
     pQueue->cMilliesInterval = cMilliesInterval;
     //pQueue->pTimer = NULL;
-    pQueue->cbItem = cbItem;
+    pQueue->cbItem = (uint32_t)cbItem;
     pQueue->cItems = cItems;
     //pQueue->pPendingR3 = NULL;
     //pQueue->pPendingR0 = NULL;
@@ -157,8 +151,8 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
          * This is a FIFO, so insert at the end.
          */
         /** @todo we should add a priority to the queues so we don't have to rely on
-         * the initialization order to deal with problems like #1605 (pgm/pcnet deadlock
-         * caused by the critsect queue to be last in the chain).
+         * the initialization order to deal with problems like @bugref{1605} (pgm/pcnet
+         * deadlock caused by the critsect queue to be last in the chain).
          * - Update, the critical sections are no longer using queues, so this isn't a real
          *   problem any longer. The priority might be a nice feature for later though.
          */
@@ -198,7 +192,7 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
  * Create a queue with a device owner.
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pDevIns             Device instance.
  * @param   cbItem              Size a queue item.
  * @param   cItems              Number of items in the queue.
@@ -210,8 +204,8 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
-                                      PFNPDMQUEUEDEV pfnCallback, bool fRZEnabled, const char *pszName, PPDMQUEUE *ppQueue)
+VMMR3_INT_DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, size_t cbItem, uint32_t cItems, uint32_t cMilliesInterval,
+                                           PFNPDMQUEUEDEV pfnCallback, bool fRZEnabled, const char *pszName, PPDMQUEUE *ppQueue)
 {
     LogFlow(("PDMR3QueueCreateDevice: pDevIns=%p cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p fRZEnabled=%RTbool pszName=%s\n",
              pDevIns, cbItem, cItems, cMilliesInterval, pfnCallback, fRZEnabled, pszName));
@@ -249,7 +243,7 @@ VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem
  * Create a queue with a driver owner.
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pDrvIns             Driver instance.
  * @param   cbItem              Size a queue item.
  * @param   cItems              Number of items in the queue.
@@ -260,8 +254,8 @@ VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
-                                      PFNPDMQUEUEDRV pfnCallback, const char *pszName, PPDMQUEUE *ppQueue)
+VMMR3_INT_DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, size_t cbItem, uint32_t cItems, uint32_t cMilliesInterval,
+                                           PFNPDMQUEUEDRV pfnCallback, const char *pszName, PPDMQUEUE *ppQueue)
 {
     LogFlow(("PDMR3QueueCreateDriver: pDrvIns=%p cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p pszName=%s\n",
              pDrvIns, cbItem, cItems, cMilliesInterval, pfnCallback, pszName));
@@ -299,7 +293,7 @@ VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem
  * Create a queue with an internal owner.
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   cbItem              Size a queue item.
  * @param   cItems              Number of items in the queue.
  * @param   cMilliesInterval    Number of milliseconds between polling the queue.
@@ -310,8 +304,8 @@ VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
-                                        PFNPDMQUEUEINT pfnCallback, bool fRZEnabled, const char *pszName, PPDMQUEUE *ppQueue)
+VMMR3_INT_DECL(int) PDMR3QueueCreateInternal(PVM pVM, size_t cbItem, uint32_t cItems, uint32_t cMilliesInterval,
+                                             PFNPDMQUEUEINT pfnCallback, bool fRZEnabled, const char *pszName, PPDMQUEUE *ppQueue)
 {
     LogFlow(("PDMR3QueueCreateInternal: cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p fRZEnabled=%RTbool pszName=%s\n",
              cbItem, cItems, cMilliesInterval, pfnCallback, fRZEnabled, pszName));
@@ -348,7 +342,7 @@ VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
  * Create a queue with an external owner.
  *
  * @returns VBox status code.
- * @param   pVM                 VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   cbItem              Size a queue item.
  * @param   cItems              Number of items in the queue.
  * @param   cMilliesInterval    Number of milliseconds between polling the queue.
@@ -359,7 +353,8 @@ VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval, PFNPDMQUEUEEXT pfnCallback, void *pvUser, const char *pszName, PPDMQUEUE *ppQueue)
+VMMR3_INT_DECL(int) PDMR3QueueCreateExternal(PVM pVM, size_t cbItem, uint32_t cItems, uint32_t cMilliesInterval,
+                                             PFNPDMQUEUEEXT pfnCallback, void *pvUser, const char *pszName, PPDMQUEUE *ppQueue)
 {
     LogFlow(("PDMR3QueueCreateExternal: cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p pszName=%s\n", cbItem, cItems, cMilliesInterval, pfnCallback, pszName));
 
@@ -399,7 +394,7 @@ VMMR3DECL(int) PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
  * @param   pQueue      Queue to destroy.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueDestroy(PPDMQUEUE pQueue)
+VMMR3_INT_DECL(int) PDMR3QueueDestroy(PPDMQUEUE pQueue)
 {
     LogFlow(("PDMR3QueueDestroy: pQueue=%p\n", pQueue));
 
@@ -498,11 +493,11 @@ VMMR3DECL(int) PDMR3QueueDestroy(PPDMQUEUE pQueue)
  * Destroy a all queues owned by the specified device.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDevIns     Device instance.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueDestroyDevice(PVM pVM, PPDMDEVINS pDevIns)
+VMMR3_INT_DECL(int) PDMR3QueueDestroyDevice(PVM pVM, PPDMDEVINS pDevIns)
 {
     LogFlow(("PDMR3QueueDestroyDevice: pDevIns=%p\n", pDevIns));
 
@@ -550,11 +545,11 @@ VMMR3DECL(int) PDMR3QueueDestroyDevice(PVM pVM, PPDMDEVINS pDevIns)
  * Destroy a all queues owned by the specified driver.
  *
  * @returns VBox status code.
- * @param   pVM         VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pDrvIns     Driver instance.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns)
+VMMR3_INT_DECL(int) PDMR3QueueDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns)
 {
     LogFlow(("PDMR3QueueDestroyDriver: pDrvIns=%p\n", pDrvIns));
 
@@ -601,7 +596,7 @@ VMMR3DECL(int) PDMR3QueueDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns)
 /**
  * Relocate the queues.
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   offDelta        The relocation delta.
  */
 void pdmR3QueueRelocate(PVM pVM, RTGCINTPTR offDelta)
@@ -656,10 +651,10 @@ void pdmR3QueueRelocate(PVM pVM, RTGCINTPTR offDelta)
  * Flush pending queues.
  * This is a forced action callback.
  *
- * @param   pVM     VM handle.
+ * @param   pVM     Pointer to the VM.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(void) PDMR3QueueFlushAll(PVM pVM)
+VMMR3_INT_DECL(void) PDMR3QueueFlushAll(PVM pVM)
 {
     VM_ASSERT_EMT(pVM);
     LogFlow(("PDMR3QueuesFlush:\n"));
@@ -887,14 +882,14 @@ DECLINLINE(void) pdmR3QueueFree(PPDMQUEUE pQueue, PPDMQUEUEITEMCORE pItem)
  * Timer handler for PDM queues.
  * This is called by for a single queue.
  *
- * @param   pVM     VM handle.
+ * @param   pVM     Pointer to the VM.
  * @param   pTimer  Pointer to timer.
  * @param   pvUser  Pointer to the queue.
  */
 static DECLCALLBACK(void) pdmR3QueueTimer(PVM pVM, PTMTIMER pTimer, void *pvUser)
 {
     PPDMQUEUE pQueue = (PPDMQUEUE)pvUser;
-    Assert(pTimer == pQueue->pTimer); NOREF(pTimer);
+    Assert(pTimer == pQueue->pTimer); NOREF(pTimer); NOREF(pVM);
 
     if (   pQueue->pPendingR3
         || pQueue->pPendingR0

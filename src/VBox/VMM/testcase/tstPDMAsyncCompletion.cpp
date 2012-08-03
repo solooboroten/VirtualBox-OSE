@@ -1,4 +1,4 @@
-/* $Id: tstPDMAsyncCompletion.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstPDMAsyncCompletion.cpp 39084 2011-10-22 00:37:15Z vboxsync $ */
 /** @file
  * PDM Asynchronous Completion Testcase.
  *
@@ -61,6 +61,7 @@ RTSEMEVENT              g_FinishedEventSem;
 void pfnAsyncTaskCompleted(PVM pVM, void *pvUser, void *pvUser2, int rc)
 {
     LogFlow((TESTCASE ": %s: pVM=%p pvUser=%p pvUser2=%p\n", __FUNCTION__, pVM, pvUser, pvUser2));
+    NOREF(rc);
 
     uint32_t cTasksStillLeft = ASMAtomicDecU32(&g_cTasksLeft);
 
@@ -74,10 +75,9 @@ void pfnAsyncTaskCompleted(PVM pVM, void *pvUser, void *pvUser2, int rc)
 int main(int argc, char *argv[])
 {
     int rcRet = 0; /* error count */
-    int rc = VINF_SUCCESS;
     PPDMASYNCCOMPLETIONENDPOINT pEndpointSrc, pEndpointDst;
 
-    RTR3InitAndSUPLib();
+    RTR3InitExe(argc, &argv, RTR3INIT_FLAGS_SUPLIB);
 
     if (argc != 3)
     {
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
     }
 
     PVM pVM;
-    rc = VMR3Create(1, NULL, NULL, NULL, NULL, NULL, &pVM);
+    int rc = VMR3Create(1, NULL, NULL, NULL, NULL, NULL, &pVM);
     if (RT_SUCCESS(rc))
     {
         PPDMASYNCCOMPLETIONTEMPLATE pTemplate;

@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInformationDlg.cpp 35761 2011-01-28 13:19:26Z vboxsync $ */
+/* $Id: VBoxVMInformationDlg.cpp 42261 2012-07-20 13:27:47Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,7 +21,11 @@
 # include "precomp.h"
 #else  /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
-/* Local Includes */
+/* Qt includes: */
+#include <QTimer>
+#include <QScrollBar>
+
+/* GUI includes: */
 #include "UIIconPool.h"
 #include "UIMachineLogic.h"
 #include "UIMachineView.h"
@@ -29,10 +33,19 @@
 #include "UISession.h"
 #include "VBoxGlobal.h"
 #include "VBoxVMInformationDlg.h"
+#include "UIConverter.h"
 
-/* Global Includes */
-#include <QTimer>
-#include <QScrollBar>
+/* COM includes: */
+#include "COMEnums.h"
+#include "CConsole.h"
+#include "CSystemProperties.h"
+#include "CMachineDebugger.h"
+#include "CDisplay.h"
+#include "CGuest.h"
+#include "CStorageController.h"
+#include "CMediumAttachment.h"
+#include "CNetworkAdapter.h"
+#include "CVRDEServerInfo.h"
 
 #endif /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
@@ -45,7 +58,7 @@ void VBoxVMInformationDlg::createInformationDlg(UIMachineWindow *pMachineWindow)
     {
         /* Creating new information dialog if there is no one existing */
         VBoxVMInformationDlg *id = new VBoxVMInformationDlg(pMachineWindow, Qt::Window);
-        id->centerAccording (pMachineWindow->machineWindow());
+        id->centerAccording (pMachineWindow);
         // TODO_NEW_CORE: this seems not necessary, cause we set WA_DeleteOnClose.
         id->setAttribute (Qt::WA_DeleteOnClose);
         mSelfArray [machine.GetName()] = id;
@@ -60,7 +73,7 @@ void VBoxVMInformationDlg::createInformationDlg(UIMachineWindow *pMachineWindow)
 
 VBoxVMInformationDlg::VBoxVMInformationDlg (UIMachineWindow *pMachineWindow, Qt::WindowFlags aFlags)
 # ifdef Q_WS_MAC
-    : QIWithRetranslateUI2 <QIMainDialog> (pMachineWindow->machineWindow(), aFlags)
+    : QIWithRetranslateUI2 <QIMainDialog> (pMachineWindow, aFlags)
 # else /* Q_WS_MAC */
     : QIWithRetranslateUI2 <QIMainDialog> (0, aFlags)
 # endif /* Q_WS_MAC */
@@ -116,7 +129,7 @@ VBoxVMInformationDlg::VBoxVMInformationDlg (UIMachineWindow *pMachineWindow, Qt:
     mStatTimer->start (5000);
 
     /* Preload dialog attributes for this vm */
-    QString dlgsize = mSession.GetMachine().GetExtraData (VBoxDefs::GUI_InfoDlgState);
+    QString dlgsize = mSession.GetMachine().GetExtraData(GUI_InfoDlgState);
     if (dlgsize.isEmpty())
     {
         mWidth = 400;
@@ -138,8 +151,8 @@ VBoxVMInformationDlg::~VBoxVMInformationDlg()
 {
     /* Save dialog attributes for this vm */
     QString dlgsize ("%1,%2,%3");
-    mSession.GetMachine().SetExtraData (VBoxDefs::GUI_InfoDlgState,
-        dlgsize.arg (mWidth).arg (mHeight).arg (isMaximized() ? "max" : "normal"));
+    mSession.GetMachine().SetExtraData(GUI_InfoDlgState,
+                                       dlgsize.arg(mWidth).arg(mHeight).arg(isMaximized() ? "max" : "normal"));
 
     if (!mSession.isNull() && !mSession.GetMachine().isNull())
         mSelfArray.remove (mSession.GetMachine().GetName());
@@ -451,6 +464,7 @@ void VBoxVMInformationDlg::refreshStatistics()
     /* Runtime Information */
     {
         CConsole console = mSession.GetConsole();
+
         ULONG width = 0;
         ULONG height = 0;
         ULONG bpp = 0;
@@ -460,20 +474,34 @@ void VBoxVMInformationDlg::refreshStatistics()
             .arg (height);
         if (bpp)
             resolution += QString ("x%1").arg (bpp);
-        QString virtualization = console.GetDebugger().GetHWVirtExEnabled() ?
+
+        QString clipboardMode = gpConverter->toString(m.GetClipboardMode());
+        QString dragAndDropMode = gpConverter->toString(m.GetDragAndDropMode());
+
+        CMachineDebugger debugger = console.GetDebugger();
+        QString virtualization = debugger.GetHWVirtExEnabled() ?
             VBoxGlobal::tr ("Enabled", "details report (VT-x/AMD-V)") :
             VBoxGlobal::tr ("Disabled", "details report (VT-x/AMD-V)");
-        QString nested = console.GetDebugger().GetHWVirtExNestedPagingEnabled() ?
+        QString nested = debugger.GetHWVirtExNestedPagingEnabled() ?
             VBoxGlobal::tr ("Enabled", "details report (Nested Paging)") :
             VBoxGlobal::tr ("Disabled", "details report (Nested Paging)");
-        QString addVersionStr = console.GetGuest().GetAdditionsVersion();
+
+        CGuest guest = console.GetGuest();
+        QString addVersionStr = guest.GetAdditionsVersion();
         if (addVersionStr.isEmpty())
-            addVersionStr = tr ("Not Detected", "guest additions");
-        QString osType = console.GetGuest().GetOSTypeId();
+            addVersionStr = tr("Not Detected", "guest additions");
+        else
+        {
+            ULONG revision = guest.GetAdditionsRevision();
+            if (revision != 0)
+                addVersionStr += QString(" r%1").arg(revision);
+        }
+        QString osType = guest.GetOSTypeId();
         if (osType.isEmpty())
             osType = tr ("Not Detected", "guest os type");
         else
             osType = vboxGlobal().vmGuestOSTypeDescription (osType);
+
         int vrdePort = console.GetVRDEServerInfo().GetPort();
         QString vrdeInfo = (vrdePort == 0 || vrdePort == -1)?
             tr ("Not Available", "details report (VRDE server port)") :
@@ -489,6 +517,8 @@ void VBoxVMInformationDlg::refreshStatistics()
 
         result += hdrRow.arg (":/state_running_16px.png").arg (tr ("Runtime Attributes"));
         result += formatValue (tr ("Screen Resolution"), resolution, maxLength);
+        result += formatValue (tr ("Clipboard Mode"), clipboardMode, maxLength);
+        result += formatValue (tr ("Drag'n'Drop Mode"), dragAndDropMode, maxLength);
         result += formatValue (VBoxGlobal::tr ("VT-x/AMD-V", "details report"), virtualization, maxLength);
         result += formatValue (VBoxGlobal::tr ("Nested Paging", "details report"), nested, maxLength);
         result += formatValue (tr ("Guest Additions"), addVersionStr, maxLength);
@@ -639,7 +669,7 @@ QString VBoxVMInformationDlg::formatMedium (const QString &aCtrName,
 
     QString header = "<tr><td></td><td colspan=2><nobr>&nbsp;&nbsp;%1:</nobr></td></tr>";
     CStorageController ctr = mSession.GetMachine().GetStorageControllerByName (aCtrName);
-    QString name = vboxGlobal().toString (StorageSlot (ctr.GetBus(), aPort, aDevice));
+    QString name = gpConverter->toString (StorageSlot (ctr.GetBus(), aPort, aDevice));
     return header.arg (name) + composeArticle (aBelongsTo, 2);
 }
 

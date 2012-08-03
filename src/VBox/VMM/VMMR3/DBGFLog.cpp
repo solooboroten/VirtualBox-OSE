@@ -1,4 +1,4 @@
-/* $Id: DBGFLog.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: DBGFLog.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, Log Manager.
  */
@@ -25,6 +25,7 @@
 #include <VBox/log.h>
 #include <VBox/err.h>
 #include <iprt/assert.h>
+#include <iprt/string.h>
 
 
 /*******************************************************************************
@@ -36,18 +37,47 @@ static DECLCALLBACK(int) dbgfR3LogModifyDestinations(PVM pVM, const char *pszDes
 
 
 /**
+ * Checkes for logger prefixes and selects the right logger.
+ *
+ * @returns Target logger.
+ * @param   ppsz                Pointer to the string pointer.
+ */
+static PRTLOGGER dbgfR3LogResolvedLogger(const char **ppsz)
+{
+    PRTLOGGER   pLogger;
+    const char *psz = *ppsz;
+    if (!strncmp(psz, "release:", sizeof("release:") - 1))
+    {
+        *ppsz += sizeof("release:") - 1;
+        pLogger = RTLogRelDefaultInstance();
+    }
+    else
+    {
+        if (!strncmp(psz, "debug:", sizeof("debug:") - 1))
+            *ppsz += sizeof("debug:") - 1;
+        pLogger = RTLogDefaultInstance();
+    }
+    return pLogger;
+}
+
+
+/**
  * Changes the logger group settings.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszGroupSettings    The group settings string. (VBOX_LOG)
+ *                              By prefixing the string with \"release:\" the
+ *                              changes will be applied to the release log
+ *                              instead of the debug log.  The prefix \"debug:\"
+ *                              is also recognized.
  */
 VMMR3DECL(int) DBGFR3LogModifyGroups(PVM pVM, const char *pszGroupSettings)
 {
     AssertPtrReturn(pVM, VERR_INVALID_POINTER);
     AssertPtrReturn(pszGroupSettings, VERR_INVALID_POINTER);
 
-    return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3LogModifyGroups, 2, pVM, pszGroupSettings);
+    return VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3LogModifyGroups, 2, pVM, pszGroupSettings);
 }
 
 
@@ -55,12 +85,16 @@ VMMR3DECL(int) DBGFR3LogModifyGroups(PVM pVM, const char *pszGroupSettings)
  * EMT worker for DBGFR3LogModifyGroups.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszGroupSettings    The group settings string. (VBOX_LOG)
  */
 static DECLCALLBACK(int) dbgfR3LogModifyGroups(PVM pVM, const char *pszGroupSettings)
 {
-    int rc = RTLogGroupSettings(NULL, pszGroupSettings);
+    PRTLOGGER pLogger = dbgfR3LogResolvedLogger(&pszGroupSettings);
+    if (!pLogger)
+        return VINF_SUCCESS;
+
+    int rc = RTLogGroupSettings(pLogger, pszGroupSettings);
     if (RT_SUCCESS(rc))
         rc = VMMR3UpdateLoggers(pVM);
     return rc;
@@ -71,15 +105,19 @@ static DECLCALLBACK(int) dbgfR3LogModifyGroups(PVM pVM, const char *pszGroupSett
  * Changes the logger flag settings.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszFlagSettings     The group settings string. (VBOX_LOG_FLAGS)
+ *                              By prefixing the string with \"release:\" the
+ *                              changes will be applied to the release log
+ *                              instead of the debug log.  The prefix \"debug:\"
+ *                              is also recognized.
  */
 VMMR3DECL(int) DBGFR3LogModifyFlags(PVM pVM, const char *pszFlagSettings)
 {
     AssertPtrReturn(pVM, VERR_INVALID_POINTER);
     AssertPtrReturn(pszFlagSettings, VERR_INVALID_POINTER);
 
-    return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3LogModifyFlags, 2, pVM, pszFlagSettings);
+    return VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3LogModifyFlags, 2, pVM, pszFlagSettings);
 }
 
 
@@ -87,12 +125,16 @@ VMMR3DECL(int) DBGFR3LogModifyFlags(PVM pVM, const char *pszFlagSettings)
  * EMT worker for DBGFR3LogModifyFlags.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszFlagSettings     The group settings string. (VBOX_LOG_FLAGS)
  */
 static DECLCALLBACK(int) dbgfR3LogModifyFlags(PVM pVM, const char *pszFlagSettings)
 {
-    int rc = RTLogFlags(NULL, pszFlagSettings);
+    PRTLOGGER pLogger = dbgfR3LogResolvedLogger(&pszFlagSettings);
+    if (!pLogger)
+        return VINF_SUCCESS;
+
+    int rc = RTLogFlags(pLogger, pszFlagSettings);
     if (RT_SUCCESS(rc))
         rc = VMMR3UpdateLoggers(pVM);
     return rc;
@@ -103,15 +145,19 @@ static DECLCALLBACK(int) dbgfR3LogModifyFlags(PVM pVM, const char *pszFlagSettin
  * Changes the logger destination settings.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszDestSettings     The destination settings string. (VBOX_LOG_DEST)
+ *                              By prefixing the string with \"release:\" the
+ *                              changes will be applied to the release log
+ *                              instead of the debug log.  The prefix \"debug:\"
+ *                              is also recognized.
  */
 VMMR3DECL(int) DBGFR3LogModifyDestinations(PVM pVM, const char *pszDestSettings)
 {
     AssertReturn(VALID_PTR(pVM), VERR_INVALID_POINTER);
     AssertReturn(VALID_PTR(pszDestSettings), VERR_INVALID_POINTER);
 
-    return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3LogModifyDestinations, 2, pVM, pszDestSettings);
+    return VMR3ReqPriorityCallWait(pVM, VMCPUID_ANY, (PFNRT)dbgfR3LogModifyDestinations, 2, pVM, pszDestSettings);
 }
 
 
@@ -119,11 +165,15 @@ VMMR3DECL(int) DBGFR3LogModifyDestinations(PVM pVM, const char *pszDestSettings)
  * EMT worker for DBGFR3LogModifyFlags.
  *
  * @returns VBox status code.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   pszDestSettings     The destination settings string. (VBOX_LOG_DEST)
  */
 static DECLCALLBACK(int) dbgfR3LogModifyDestinations(PVM pVM, const char *pszDestSettings)
 {
+    PRTLOGGER pLogger = dbgfR3LogResolvedLogger(&pszDestSettings);
+    if (!pLogger)
+        return VINF_SUCCESS;
+
     int rc = RTLogDestinations(NULL, pszDestSettings);
     if (RT_SUCCESS(rc))
         rc = VMMR3UpdateLoggers(pVM);

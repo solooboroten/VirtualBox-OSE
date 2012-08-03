@@ -35,7 +35,7 @@ ifndef INCL
 endif
 KFLAGS   := -D__KERNEL__ -DMODULE $(MOD_DEFS)
 ifeq ($(BUILD_TYPE),debug)
- KFLAGS  += -DDEBUG
+ KFLAGS  += -DDEBUG -DDEBUG_$(subst $(subst _, ,_),_,$(USERNAME)) -DDEBUG_USERNAME=$(subst $(subst _, ,_),_,$(USERNAME))
 endif
 
 ifeq ($(KERN_VERSION), 24)
@@ -74,8 +74,9 @@ all: $(MODULE)
 
 obj-m += $(MODULE).o
 
+# OL/UEK: disable module signing for external modules -- we don't have any private key
 $(MODULE):
-	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) modules
+	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) CONFIG_MODULE_SIG= -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) modules
 
 endif
 

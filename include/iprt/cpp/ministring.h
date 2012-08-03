@@ -687,10 +687,36 @@ public:
      * In order not to produce invalid UTF-8, the characters must be ASCII
      * values less than 128; this is not verified.
      *
-     * @param cFind Character to replace. Must be ASCII < 128.
-     * @param cReplace Character to replace cFind with. Must be ASCII < 128.
+     * @param   chFind      Character to replace. Must be ASCII < 128.
+     * @param   chReplace   Character to replace cFind with. Must be ASCII < 128.
      */
-    void findReplace(char cFind, char cReplace);
+    void findReplace(char chFind, char chReplace);
+
+    /**
+     * Count the occurences of the specified character in the string.
+     *
+     * @param   ch          What to search for. Must be ASCII < 128.
+     * @remarks QString::count
+     */
+    size_t count(char ch) const;
+
+    /**
+     * Count the occurences of the specified sub-string in the string.
+     *
+     * @param   psz         What to search for.
+     * @param   cs          Case sensitivity selector.
+     * @remarks QString::count
+     */
+    size_t count(const char *psz, CaseSensitivity cs = CaseSensitive) const;
+
+    /**
+     * Count the occurences of the specified sub-string in the string.
+     *
+     * @param   pStr        What to search for.
+     * @param   cs          Case sensitivity selector.
+     * @remarks QString::count
+     */
+    size_t count(const RTCString *pStr, CaseSensitivity cs = CaseSensitive) const;
 
     /**
      * Returns a substring of "this" as a new Utf8Str.
@@ -825,7 +851,7 @@ public:
      * @returns separated strings as string list.
      */
     RTCList<RTCString, RTCString *> split(const RTCString &a_rstrSep,
-                                          SplitMode a_enmMode = RemoveEmptyParts);
+                                          SplitMode a_enmMode = RemoveEmptyParts) const;
 
     /**
      * Joins a list of strings together using the provided separator.
@@ -951,6 +977,45 @@ RTDECL(const RTCString) operator+(const RTCString &a_rstr1, const char *a_psz2);
  * @relates RTCString
  */
 RTDECL(const RTCString) operator+(const char *a_psz1, const RTCString &a_rstr2);
+
+/**
+ * Class with RTCString::printf as constructor for your convenience.
+ *
+ * Constructing a RTCString string object from a format string and a variable
+ * number of arguments can easily be confused with the other RTCString
+ * constructors, thus this child class.
+ *
+ * The usage of this class is like the following:
+ * @code
+    RTCStringFmt strName("program name = %s", argv[0]);
+   @endcode
+ */
+class RTCStringFmt : public RTCString
+{
+public:
+
+    /**
+     * Constructs a new string given the format string and the list of the
+     * arguments for the format string.
+     *
+     * @param   a_pszFormat     Pointer to the format string (UTF-8),
+     *                          @see pg_rt_str_format.
+     * @param   ...             Ellipsis containing the arguments specified by
+     *                          the format string.
+     */
+    explicit RTCStringFmt(const char *a_pszFormat, ...)
+    {
+        va_list va;
+        va_start(va, a_pszFormat);
+        printfV(a_pszFormat, va);
+        va_end(va);
+    }
+
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
+
+protected:
+    RTCStringFmt() {}
+};
 
 /** @} */
 

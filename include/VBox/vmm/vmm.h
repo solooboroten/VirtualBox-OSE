@@ -276,8 +276,8 @@ VMMR3_INT_DECL(void)    VMMR3SendSipi(PVM pVM, VMCPUID idCpu, uint32_t uVector);
 VMMR3_INT_DECL(void)    VMMR3SendInitIpi(PVM pVM, VMCPUID idCpu);
 VMMR3DECL(int)          VMMR3RegisterPatchMemory(PVM pVM, RTGCPTR pPatchMem, unsigned cbPatchMem);
 VMMR3DECL(int)          VMMR3DeregisterPatchMemory(PVM pVM, RTGCPTR pPatchMem, unsigned cbPatchMem);
-VMMR3DECL(int)          VMMR3AtomicExecuteHandler(PVM pVM, PFNATOMICHANDLER pfnHandler, void *pvUser);
 VMMR3DECL(int)          VMMR3EmtRendezvous(PVM pVM, uint32_t fFlags, PFNVMMEMTRENDEZVOUS pfnRendezvous, void *pvUser);
+VMMR3_INT_DECL(bool)    VMMR3EmtRendezvousSetDisabled(PVMCPU pVCpu, bool fDisabled);
 /** @defgroup grp_VMMR3EmtRendezvous_fFlags     VMMR3EmtRendezvous flags
  *  @{ */
 /** Execution type mask. */
@@ -399,6 +399,10 @@ typedef enum VMMR0OPERATION
     VMMR0_DO_GMM_CHECK_SHARED_MODULES,
     /** Call GMMR0FindDuplicatePage. */
     VMMR0_DO_GMM_FIND_DUPLICATE_PAGE,
+    /** Call GMMR0QueryStatistics(). */
+    VMMR0_DO_GMM_QUERY_STATISTICS,
+    /** Call GMMR0ResetStatistics(). */
+    VMMR0_DO_GMM_RESET_STATISTICS,
 
     /** Set a GVMM or GMM configuration value. */
     VMMR0_DO_GCFGM_SET_VALUE,

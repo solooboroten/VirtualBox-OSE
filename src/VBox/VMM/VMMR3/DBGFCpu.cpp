@@ -1,4 +1,4 @@
-/* $Id: DBGFCpu.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: DBGFCpu.cpp 41783 2012-06-16 19:24:15Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, CPU State Accessors.
  */
@@ -34,7 +34,7 @@
  * Wrapper around CPUMGetGuestMode.
  *
  * @returns VINF_SUCCESS.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   idCpu               The current CPU ID.
  * @param   penmMode            Where to return the mode.
  */
@@ -51,7 +51,7 @@ static DECLCALLBACK(int) dbgfR3CpuGetMode(PVM pVM, VMCPUID idCpu, CPUMMODE *penm
  * Get the current CPU mode.
  *
  * @returns The CPU mode on success, CPUMMODE_INVALID on failure.
- * @param   pVM                 The VM handle.
+ * @param   pVM                 Pointer to the VM.
  * @param   idCpu               The target CPU ID.
  */
 VMMR3DECL(CPUMMODE) DBGFR3CpuGetMode(PVM pVM, VMCPUID idCpu)
@@ -60,7 +60,7 @@ VMMR3DECL(CPUMMODE) DBGFR3CpuGetMode(PVM pVM, VMCPUID idCpu)
     AssertReturn(idCpu < pVM->cCpus, CPUMMODE_INVALID);
 
     CPUMMODE enmMode;
-    int rc = VMR3ReqCallWait(pVM, idCpu, (PFNRT)dbgfR3CpuGetMode, 3, pVM, idCpu, &enmMode);
+    int rc = VMR3ReqPriorityCallWait(pVM, idCpu, (PFNRT)dbgfR3CpuGetMode, 3, pVM, idCpu, &enmMode);
     if (RT_FAILURE(rc))
         return CPUMMODE_INVALID;
     return enmMode;

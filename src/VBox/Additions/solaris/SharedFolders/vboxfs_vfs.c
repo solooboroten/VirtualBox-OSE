@@ -74,6 +74,10 @@ static mntopt_t sffs_options[] = {
 	/* Option	Cancels Opt	Arg	Flags		Data */
 	{"uid",		NULL,		NULL,	MO_HASVALUE,	NULL},
 	{"gid",		NULL,		NULL,	MO_HASVALUE,	NULL},
+	{"dmode",	NULL,		NULL,	MO_HASVALUE,	NULL},
+	{"fmode",	NULL,		NULL,	MO_HASVALUE,	NULL},
+	{"dmask",	NULL,		NULL,	MO_HASVALUE,	NULL},
+	{"fmask",	NULL,		NULL,	MO_HASVALUE,	NULL},
 	{"stat_ttl",	NULL,		NULL,	MO_HASVALUE,	NULL},
 	{"fsync",	NULL,		NULL,	0,	        NULL}
 };
@@ -182,8 +186,14 @@ sffs_init(int fstype, char *name)
 	 */
 	sfprov = sfprov_connect(SFPROV_VERSION);
 	if (sfprov == NULL) {
-		cmn_err(CE_WARN, "sffs_init(): couldn't init sffs provider");
+		cmn_err(CE_WARN, "sffs_init: couldn't init sffs provider");
 		return (ENODEV);
+	}
+
+	error = sfprov_set_show_symlinks();
+	if (error != 0) {
+		cmn_err(CE_WARN,  "sffs_init: host unable to show symlinks, "
+						  "rc=%d\n", error);
 	}
 
 	error = vfs_setfsops(fstype, sffs_vfsops_template, NULL);
@@ -238,6 +248,10 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	dev_t dev;
 	uid_t uid = 0;
 	gid_t gid = 0;
+	mode_t dmode = ~0;
+	mode_t fmode = ~0;
+	mode_t dmask = 0;
+	mode_t fmask = 0;
 	int stat_ttl = DEF_STAT_TTL_MS;
 	int fsync = 0;
 	char *optval;
@@ -302,12 +316,56 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 		gid = val;
 
 	/*
+	 * dmode to use for all directories
+	 */
+	if (vfs_optionisset(vfsp, "dmode", &optval) &&
+		ddi_strtol(optval, NULL, 8, &val) == 0 &&
+		(mode_t)val == val)
+		dmode = val;
+
+	/*
+	 * fmode to use for all files
+	 */
+	if (vfs_optionisset(vfsp, "fmode", &optval) &&
+		ddi_strtol(optval, NULL, 8, &val) == 0 &&
+		(mode_t)val == val)
+		fmode = val;
+
+	/*
+	 * dmask to use for all directories
+	 */
+	if (vfs_optionisset(vfsp, "dmask", &optval) &&
+		ddi_strtol(optval, NULL, 8, &val) == 0 &&
+		(mode_t)val == val)
+		dmask = val;
+
+	/*
+	 * fmask to use for all files
+	 */
+	if (vfs_optionisset(vfsp, "fmask", &optval) &&
+		ddi_strtol(optval, NULL, 8, &val) == 0 &&
+		(mode_t)val == val)
+		fmask = val;
+
+	/*
+	 * umask to use for all directories & files
+	 */
+	if (vfs_optionisset(vfsp, "umask", &optval) &&
+		ddi_strtol(optval, NULL, 8, &val) == 0 &&
+		(mode_t)val == val)
+		dmask = fmask = val;
+
+	/*
 	 * ttl to use for stat caches
 	 */
 	if (vfs_optionisset(vfsp, "stat_ttl", &optval) &&
 	    ddi_strtol(optval, NULL, 10, &val) == 0 &&
 	    (int)val == val)
+	{
 		stat_ttl = val;
+	}
+	else
+		vfs_setmntopt(vfsp, "stat_ttl", VBOXSOLQUOTE(DEF_STAT_TTL_MS), 0);
 
 	/*
 	 * whether to honor fsync
@@ -366,6 +424,10 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	sffs->sf_vfsp = vfsp;
 	sffs->sf_uid = uid;
 	sffs->sf_gid = gid;
+	sffs->sf_dmode = dmode;
+	sffs->sf_fmode = fmode;
+	sffs->sf_dmask = dmask;
+	sffs->sf_fmask = fmask;
 	sffs->sf_stat_ttl = stat_ttl;
 	sffs->sf_fsync = fsync;
 	sffs->sf_share_name = share_name;
@@ -463,47 +525,35 @@ static int
 sffs_statvfs(vfs_t *vfsp, statvfs64_t *sbp)
 {
 	sffs_data_t *sffs = (sffs_data_t *)vfsp->vfs_data;
-	uint64_t x;
-	uint32_t u;
+	sffs_fsinfo_t fsinfo;
 	dev32_t d32;
 	int error;
 
 	bzero(sbp, sizeof(*sbp));
-	error = sfprov_get_blksize(sffs->sf_handle, &x);
+	error = sfprov_get_fsinfo(sffs->sf_handle, &fsinfo);
 	if (error != 0)
 		return (error);
-	sbp->f_bsize = x;
-	sbp->f_frsize = x;
 
-	error = sfprov_get_blksavail(sffs->sf_handle, &x);
-	if (error != 0)
-		return (error);
-	sbp->f_bfree = x;
-	sbp->f_bavail = x;
-	sbp->f_files = x / 4;	/* some kind of reasonable value */
-	sbp->f_ffree = x / 4;
-	sbp->f_favail = x / 4;
+	sbp->f_bsize = fsinfo.blksize;
+	sbp->f_frsize = fsinfo.blksize;
 
-	error = sfprov_get_blksused(sffs->sf_handle, &x);
-	if (error != 0)
-		return (error);
-	sbp->f_blocks = x + sbp->f_bavail;
+	sbp->f_bfree = fsinfo.blksavail;
+	sbp->f_bavail = fsinfo.blksavail;
+	sbp->f_files = fsinfo.blksavail / 4; /* some kind of reasonable value */
+	sbp->f_ffree = fsinfo.blksavail / 4;
+	sbp->f_favail = fsinfo.blksavail / 4;
+
+	sbp->f_blocks = fsinfo.blksused + sbp->f_bavail;
 
 	(void) cmpldev(&d32, vfsp->vfs_dev);
 	sbp->f_fsid = d32;
 	strcpy(&sbp->f_basetype[0], "sffs");
 	sbp->f_flag |= ST_NOSUID;
 
-	error = sfprov_get_readonly(sffs->sf_handle, &u);
-	if (error != 0)
-		return (error);
-	if (u)
+	if (fsinfo.readonly)
 		sbp->f_flag |= ST_RDONLY;
 
-	error = sfprov_get_maxnamesize(sffs->sf_handle, &u);
-	if (error != 0)
-		return (error);
-	sbp->f_namemax = u;
+	sbp->f_namemax = fsinfo.maxnamesize;
 	return (0);
 }
 
@@ -514,6 +564,10 @@ static void sffs_print(sffs_data_t *sffs)
 	Log(("    vnode_t *sf_rootnode = 0x%p\n", sffs->sf_rootnode));
 	Log(("    uid_t sf_uid = 0x%l\n", (ulong_t)sffs->sf_uid));
 	Log(("    gid_t sf_gid = 0x%l\n", (ulong_t)sffs->sf_gid));
+	Log(("    mode_t sf_dmode = 0x%l\n", (ulong_t)sffs->sf_dmode));
+	Log(("    mode_t sf_fmode = 0x%l\n", (ulong_t)sffs->sf_fmode));
+	Log(("    mode_t sf_dmask = 0x%l\n", (ulong_t)sffs->sf_dmask));
+	Log(("    mode_t sf_fmask = 0x%l\n", (ulong_t)sffs->sf_fmask));
 	Log(("    char *sf_share_name = %s\n", sffs->sf_share_name));
 	Log(("    char *sf_mntpath = %s\n", sffs->sf_mntpath));
 	Log(("    sfp_mount_t *sf_handle = 0x%p\n", sffs->sf_handle));

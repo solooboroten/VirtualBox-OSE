@@ -1,4 +1,4 @@
-/* $Id: tstMMHyperHeap.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstMMHyperHeap.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * MM Hypervisor Heap testcase.
  */
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     /*
      * Init runtime.
      */
-    RTR3Init();
+    RTR3InitExe(argc, &argv, 0);
 
     /*
      * Create empty VM structure and call MMR3Init().

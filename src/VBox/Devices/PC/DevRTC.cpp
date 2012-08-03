@@ -1,10 +1,10 @@
-/* $Id: DevRTC.cpp 38195 2011-07-27 11:21:13Z vboxsync $ */
+/* $Id: DevRTC.cpp 41710 2012-06-14 13:53:21Z vboxsync $ */
 /** @file
  * Motorola MC146818 RTC/CMOS Device with PIIX4 extensions.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -110,6 +110,10 @@ RT_C_DECLS_END
 #define REG_B_AIE 0x20
 #define REG_B_UIE 0x10
 
+#define CMOS_BANK_LOWER_LIMIT   0x0E
+#define CMOS_BANK_UPPER_LIMIT   0x7F
+#define CMOS_BANK2_LOWER_LIMIT  0x80
+#define CMOS_BANK2_UPPER_LIMIT  0xFF
 
 /** The saved state version. */
 #define RTC_SAVED_STATE_VERSION             4
@@ -463,6 +467,79 @@ PDMBOTHCBDECL(int) rtcIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
 }
 
 #ifdef IN_RING3
+
+/* -=-=-=-=-=- Debug Info Handlers  -=-=-=-=-=- */
+
+/**
+ * @callback_method_impl{FNDBGFHANDLERDEV,
+ *      Dumps the cmos Bank Info.}
+ */
+static DECLCALLBACK(void) rtcCmosBankInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const char *pszArgs)
+{
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+
+    pHlp->pfnPrintf(pHlp,
+                    "First CMOS bank, offsets 0x0E - 0x7F\n"
+                    "Offset %02x : --- use 'info rtc' to show CMOS clock ---", 0);
+    for (unsigned iCmos = CMOS_BANK_LOWER_LIMIT; iCmos <= CMOS_BANK_UPPER_LIMIT; iCmos++)
+    {
+        if ((iCmos & 15) == 0)
+            pHlp->pfnPrintf(pHlp, "Offset %02x : %02x", iCmos, pThis->cmos_data[iCmos]);
+        else if ((iCmos & 15) == 8)
+            pHlp->pfnPrintf(pHlp, "-%02x", pThis->cmos_data[iCmos]);
+        else if ((iCmos & 15) == 15)
+            pHlp->pfnPrintf(pHlp, " %02x\n", pThis->cmos_data[iCmos]);
+        else
+            pHlp->pfnPrintf(pHlp, " %02x", pThis->cmos_data[iCmos]);
+    }
+}
+
+/**
+ * @callback_method_impl{FNDBGFHANDLERDEV,
+ *      Dumps the cmos Bank2 Info.}
+ */
+static DECLCALLBACK(void) rtcCmosBank2Info(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const char *pszArgs)
+{
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+
+    pHlp->pfnPrintf(pHlp, "Second CMOS bank, offsets 0x80 - 0xFF\n");
+    for (uint16_t iCmos = CMOS_BANK2_LOWER_LIMIT; iCmos <= CMOS_BANK2_UPPER_LIMIT; iCmos++)
+    {
+        if ((iCmos & 15) == 0)
+            pHlp->pfnPrintf(pHlp, "Offset %02x : %02x", iCmos, pThis->cmos_data[iCmos]);
+        else if ((iCmos & 15) == 8)
+            pHlp->pfnPrintf(pHlp, "-%02x", pThis->cmos_data[iCmos]);
+        else if ((iCmos & 15) == 15)
+            pHlp->pfnPrintf(pHlp, " %02x\n", pThis->cmos_data[iCmos]);
+        else
+            pHlp->pfnPrintf(pHlp, " %02x", pThis->cmos_data[iCmos]);
+    }
+}
+
+/**
+ * @callback_method_impl{FNDBGFHANDLERDEV,
+ *      Dumps the cmos RTC Info.}
+ */
+static DECLCALLBACK(void) rtcCmosClockInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const char *pszArgs)
+{
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+    uint8_t u8Sec   = from_bcd(pThis, pThis->cmos_data[RTC_SECONDS]);
+    uint8_t u8Min   = from_bcd(pThis, pThis->cmos_data[RTC_MINUTES]);
+    uint8_t u8Hr    = from_bcd(pThis, pThis->cmos_data[RTC_HOURS] & 0x7f);
+    if (   !(pThis->cmos_data[RTC_REG_B] & 0x02)
+        && (pThis->cmos_data[RTC_HOURS] & 0x80))
+        u8Hr += 12;
+    uint8_t u8Day   = from_bcd(pThis, pThis->cmos_data[RTC_DAY_OF_MONTH]);
+    uint8_t u8Month = from_bcd(pThis, pThis->cmos_data[RTC_MONTH]) ;
+    uint8_t u8Year  = from_bcd(pThis, pThis->cmos_data[RTC_YEAR]);
+    pHlp->pfnPrintf(pHlp, "Time: %02u:%02u:%02u  Date: %02u-%02u-%02u\n",
+                    u8Hr, u8Min, u8Sec, u8Year, u8Month, u8Day);
+    pHlp->pfnPrintf(pHlp, "REG A=%02x B=%02x C=%02x D=%02x\n",
+                    pThis->cmos_data[RTC_REG_A], pThis->cmos_data[RTC_REG_B],
+                    pThis->cmos_data[RTC_REG_C], pThis->cmos_data[RTC_REG_D]);
+}
+
+
 
 /* -=-=-=-=-=- Timers and their support code  -=-=-=-=-=- */
 
@@ -989,6 +1066,31 @@ static DECLCALLBACK(void) rtcRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 
 
 /**
+ * @copydoc
+ */
+static DECLCALLBACK(void) rtcReset(PPDMDEVINS pDevIns)
+{
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+
+    /* If shutdown status is non-zero, log its value. */
+    if (pThis->cmos_data[0xF])
+    {
+        LogRel(("CMOS shutdown status byte is %02X\n", pThis->cmos_data[0xF]));
+
+#if 0   /* It would be nice to log the warm reboot vector but alas, we already trashed it. */
+        uint32_t u32WarmVector;
+        int rc;
+        rc = PDMDevHlpPhysRead(pDevIns, 0x467, &u32WarmVector, sizeof(u32WarmVector));
+        AssertRC(rc);
+        LogRel((", 40:67 contains %04X:%04X\n", u32WarmVector >> 16, u32WarmVector & 0xFFFF));
+#endif
+        /* If we're going to trash the VM's memory, we also have to clear this. */
+        pThis->cmos_data[0xF] = 0;
+    }
+}
+
+
+/**
  * @interface_method_impl{PDMDEVREG,pfnConstruct}
  */
 static DECLCALLBACK(int)  rtcConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfg)
@@ -1138,6 +1240,12 @@ static DECLCALLBACK(int)  rtcConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     if (RT_FAILURE(rc))
         return rc;
 
+    /*
+     * Register debugger info callback.
+     */
+    PDMDevHlpDBGFInfoRegister(pDevIns, "cmos1", "Display CMOS Bank 1 Info (0x0e-0x7f). No arguments. See also rtc.", rtcCmosBankInfo);
+    PDMDevHlpDBGFInfoRegister(pDevIns, "cmos2", "Display CMOS Bank 2 Info (0x0e-0x7f). No arguments.", rtcCmosBank2Info);
+    PDMDevHlpDBGFInfoRegister(pDevIns, "rtc",   "Display CMOS RTC (0x00-0x0d). No arguments. See also cmos1 & cmos2", rtcCmosClockInfo);
     return VINF_SUCCESS;
 }
 
@@ -1176,7 +1284,7 @@ const PDMDEVREG g_DeviceMC146818 =
     /* pfnPowerOn */
     NULL,
     /* pfnReset */
-    NULL,
+    rtcReset,
     /* pfnSuspend */
     NULL,
     /* pfnResume */

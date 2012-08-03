@@ -18,6 +18,7 @@
  */
 
 #include "vfsmod.h"
+#include <iprt/asm.h>
 #include <linux/nfs_fs.h>
 #include <linux/vfs.h>
 
@@ -109,7 +110,11 @@ void sf_init_inode(struct sf_glob_info *sf_g, struct inode *inode,
         inode->i_fop   = &sf_dir_fops;
         /* XXX: this probably should be set to the number of entries
            in the directory plus two (. ..) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+        set_nlink(inode, 1);
+#else
         inode->i_nlink = 1;
+#endif
     }
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
     else if (RTFS_IS_SYMLINK(attr->fMode))
@@ -118,7 +123,11 @@ void sf_init_inode(struct sf_glob_info *sf_g, struct inode *inode,
         inode->i_mode &= ~sf_g->fmask;
         inode->i_mode |= S_IFLNK;
         inode->i_op    = &sf_lnk_iops;
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+        set_nlink(inode, 1);
+# else
         inode->i_nlink = 1;
+# endif
     }
 #endif
     else
@@ -128,7 +137,11 @@ void sf_init_inode(struct sf_glob_info *sf_g, struct inode *inode,
         inode->i_mode |= S_IFREG;
         inode->i_op    = &sf_reg_iops;
         inode->i_fop   = &sf_reg_fops;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+        set_nlink(inode, 1);
+#else
         inode->i_nlink = 1;
+#endif
     }
 
     inode->i_uid = sf_g->uid;
@@ -245,6 +258,13 @@ sf_dentry_revalidate(struct dentry *dentry, struct nameidata *nd)
 #endif
 {
     TRACE();
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 38)
+    /* see Documentation/filesystems/vfs.txt */
+    if (nd && nd->flags & LOOKUP_RCU)
+        return -ECHILD;
+#endif
+
     if (sf_inode_revalidate(dentry))
         return 0;
 
@@ -556,11 +576,13 @@ int sf_nlscpy(struct sf_glob_info *sf_g,
         while (in_bound_len)
         {
             int nb;
-            wchar_t uni; /** @todo this should be unicode_t in more recent kernel versions. */
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31)
+            unicode_t uni;
+
             nb = utf8_to_utf32(in, in_bound_len, &uni);
 #else
+            linux_wchar_t uni;
+
             nb = utf8_mbtowc(&uni, in, in_bound_len);
 #endif
             if (nb < 0)
@@ -827,9 +849,13 @@ struct dentry_operations sf_dentry_ops =
     .d_revalidate = sf_dentry_revalidate
 };
 
-int sf_init_backing_dev(struct sf_glob_info *sf_g, const char *name)
+int sf_init_backing_dev(struct sf_glob_info *sf_g)
 {
     int rc = 0;
+    /* Each new shared folder map gets a new uint64_t identifier,
+     * allocated in sequence.  We ASSUME the sequence will not wrap. */
+    static uint64_t s_u64Sequence = 0;
+    uint64_t u64CurrentSequence = ASMAtomicIncU64(&s_u64Sequence);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
     sf_g->bdi.ra_pages = 0; /* No readahead */
@@ -844,7 +870,8 @@ int sf_init_backing_dev(struct sf_glob_info *sf_g, const char *name)
     rc = bdi_init(&sf_g->bdi);
 #  if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 26)
     if (!rc)
-        rc = bdi_register(&sf_g->bdi, NULL, "vboxsf-%s", name);
+        rc = bdi_register(&sf_g->bdi, NULL, "vboxsf-%llu",
+                          (unsigned long long)u64CurrentSequence);
 #  endif /* >= 2.6.26 */
 # endif /* >= 2.6.24 */
 #endif /* >= 2.6.0 */

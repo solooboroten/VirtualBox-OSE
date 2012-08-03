@@ -1,10 +1,10 @@
-/* $Id: VMMDevTesting.cpp 37636 2011-06-24 14:59:59Z vboxsync $ */
+/* $Id: VMMDevTesting.cpp 41416 2012-05-23 13:04:53Z vboxsync $ */
 /** @file
  * VMMDev - Testing Extensions.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -37,6 +37,14 @@
 
 
 #ifndef VBOX_WITHOUT_TESTING_FEATURES
+
+#define VMMDEV_TESTING_OUTPUT(a) \
+    do \
+    { \
+        LogAlways(a);\
+        LogRel(a);\
+        RTPrintf a; \
+    } while (0)
 
 /**
  * @callback_method_impl{FNIOMMMIOWRITE}
@@ -150,6 +158,7 @@ PDMBOTHCBDECL(int) vmmdevTestingIoWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
                 case VMMDEV_TESTING_CMD_INIT:
                 case VMMDEV_TESTING_CMD_SUB_NEW:
                 case VMMDEV_TESTING_CMD_FAILED:
+                case VMMDEV_TESTING_CMD_SKIPPED:
                     if (   off < sizeof(pThis->TestingData.String.sz) - 1
                         && cb == 1)
                     {
@@ -164,17 +173,24 @@ PDMBOTHCBDECL(int) vmmdevTestingIoWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
                             switch (uCmd)
                             {
                                 case VMMDEV_TESTING_CMD_INIT:
-                                    RTPrintf("testing: INIT '%.*s'\n", sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz);
+                                    VMMDEV_TESTING_OUTPUT(("testing: INIT '%.*s'\n",
+                                                           sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz));
                                     break;
                                 case VMMDEV_TESTING_CMD_SUB_NEW:
-                                    RTPrintf("testing: SUB_NEW  '%.*s'\n", sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz);
+                                    VMMDEV_TESTING_OUTPUT(("testing: SUB_NEW  '%.*s'\n",
+                                                           sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz));
                                     break;
                                 case VMMDEV_TESTING_CMD_FAILED:
-                                    RTPrintf("testing: FAILED '%.*s'\n", sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz);
+                                    VMMDEV_TESTING_OUTPUT(("testing: FAILED '%.*s'\n",
+                                                           sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz));
+                                    break;
+                                case VMMDEV_TESTING_CMD_SKIPPED:
+                                    VMMDEV_TESTING_OUTPUT(("testing: SKIPPED '%.*s'\n",
+                                                           sizeof(pThis->TestingData.String.sz) - 1, pThis->TestingData.String.sz));
                                     break;
                             }
 #else
-                            return VINF_IOM_HC_IOPORT_WRITE;
+                            return VINF_IOM_R3_IOPORT_WRITE;
 #endif
                         }
                         return VINF_SUCCESS;
@@ -189,12 +205,12 @@ PDMBOTHCBDECL(int) vmmdevTestingIoWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
 #ifdef IN_RING3
                         pThis->TestingData.Error.c = u32;
                         if (uCmd == VMMDEV_TESTING_CMD_TERM)
-                            RTPrintf("testing: TERM - %u errors\n", u32);
+                            VMMDEV_TESTING_OUTPUT(("testing: TERM - %u errors\n", u32));
                         else
-                            RTPrintf("testing: SUB_DONE - %u errors\n", u32);
+                            VMMDEV_TESTING_OUTPUT(("testing: SUB_DONE - %u errors\n", u32));
                         return VINF_SUCCESS;
 #else
-                        return VINF_IOM_HC_IOPORT_WRITE;
+                        return VINF_IOM_R3_IOPORT_WRITE;
 #endif
                     }
                     break;
@@ -225,13 +241,13 @@ PDMBOTHCBDECL(int) vmmdevTestingIoWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
                         else
                         {
 #ifdef IN_RING3
-                            RTPrintf("testing: VALUE '%.*s'%*s: %'9llu (%#llx) [%u]\n",
-                                     sizeof(pThis->TestingData.Value.szName) - 1, pThis->TestingData.Value.szName,
-                                     off - 12 > 48 ? 0 : 48 - (off - 12), "",
-                                     pThis->TestingData.Value.u64Value.u, pThis->TestingData.Value.u64Value.u,
-                                     pThis->TestingData.Value.u32Unit);
+                            VMMDEV_TESTING_OUTPUT(("testing: VALUE '%.*s'%*s: %'9llu (%#llx) [%u]\n",
+                                                   sizeof(pThis->TestingData.Value.szName) - 1, pThis->TestingData.Value.szName,
+                                                   off - 12 > 48 ? 0 : 48 - (off - 12), "",
+                                                   pThis->TestingData.Value.u64Value.u, pThis->TestingData.Value.u64Value.u,
+                                                   pThis->TestingData.Value.u32Unit));
 #else
-                            return VINF_IOM_HC_IOPORT_WRITE;
+                            return VINF_IOM_R3_IOPORT_WRITE;
 #endif
                         }
                         return VINF_SUCCESS;
@@ -239,12 +255,12 @@ PDMBOTHCBDECL(int) vmmdevTestingIoWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
 #ifdef IN_RING3
                         pThis->TestingData.Error.c = u32;
                         if (uCmd == VMMDEV_TESTING_CMD_TERM)
-                            RTPrintf("testing: TERM - %u errors\n", u32);
+                            VMMDEV_TESTING_OUTPUT(("testing: TERM - %u errors\n", u32));
                         else
-                            RTPrintf("testing: SUB_DONE - %u errors\n", u32);
+                            VMMDEV_TESTING_OUTPUT(("testing: SUB_DONE - %u errors\n", u32));
                         return VINF_SUCCESS;
 #else
-                        return VINF_IOM_HC_IOPORT_WRITE;
+                        return VINF_IOM_R3_IOPORT_WRITE;
 #endif
                     }
                     break;
@@ -336,22 +352,16 @@ int vmmdevTestingInitialize(PPDMDEVINS pDevIns)
      * tests interfaces.
      */
     int rc = PDMDevHlpMMIORegister(pDevIns, VMMDEV_TESTING_MMIO_BASE, VMMDEV_TESTING_MMIO_SIZE, NULL /*pvUser*/,
-                                   vmmdevTestingMmioWrite,
-                                   vmmdevTestingMmioRead,
-                                   NULL /*pfnFill*/,
-                                   "VMMDev Testing");
+                                   IOMMMIO_FLAGS_READ_PASSTHRU | IOMMMIO_FLAGS_WRITE_PASSTHRU,
+                                   vmmdevTestingMmioWrite, vmmdevTestingMmioRead, "VMMDev Testing");
     AssertRCReturn(rc, rc);
     if (pThis->fRZEnabled)
     {
         rc = PDMDevHlpMMIORegisterR0(pDevIns, VMMDEV_TESTING_MMIO_BASE, VMMDEV_TESTING_MMIO_SIZE, NIL_RTR0PTR /*pvUser*/,
-                                     "vmmdevTestingMmioWrite",
-                                     "vmmdevTestingMmioRead",
-                                     NULL /*pszFill*/);
+                                     "vmmdevTestingMmioWrite", "vmmdevTestingMmioRead");
         AssertRCReturn(rc, rc);
         rc = PDMDevHlpMMIORegisterRC(pDevIns, VMMDEV_TESTING_MMIO_BASE, VMMDEV_TESTING_MMIO_SIZE, NIL_RTRCPTR /*pvUser*/,
-                                     "vmmdevTestingMmioWrite",
-                                     "vmmdevTestingMmioRead",
-                                     NULL /*pszFill*/);
+                                     "vmmdevTestingMmioWrite", "vmmdevTestingMmioRead");
         AssertRCReturn(rc, rc);
     }
 

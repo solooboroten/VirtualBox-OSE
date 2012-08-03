@@ -1,4 +1,4 @@
-/* $Id: VMMRZ.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: VMMRZ.cpp 41976 2012-07-01 14:16:40Z vboxsync $ */
 /** @file
  * VMM - Virtual Machine Monitor, Raw-mode and ring-0 context code.
  */
@@ -37,8 +37,8 @@
  *          needs to change it into an assertion.
  *
  *
- * @param   pVM             The VM handle.
- * @param   pVCpu           The virtual CPU handle of the calling EMT.
+ * @param   pVM             Pointer to the VM.
+ * @param   pVCpu           Pointer to the VMCPU of the calling EMT.
  * @param   enmOperation    The operation.
  * @param   uArg            The argument to the operation.
  */
@@ -79,9 +79,9 @@ VMMRZDECL(int) VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, 
 /** @todo profile this! */
     pVCpu->vmm.s.enmCallRing3Operation = enmOperation;
     pVCpu->vmm.s.u64CallRing3Arg = uArg;
-    pVCpu->vmm.s.rcCallRing3 = VERR_INTERNAL_ERROR;
+    pVCpu->vmm.s.rcCallRing3 = VERR_VMM_RING3_CALL_NO_RC;
 #ifdef IN_RC
-    pVM->vmm.s.pfnGuestToHostRC(VINF_VMM_CALL_HOST);
+    pVM->vmm.s.pfnRCToHost(VINF_VMM_CALL_HOST);
 #else
     int rc = vmmR0CallRing3LongJmp(&pVCpu->vmm.s.CallRing3JmpBufR0, VINF_VMM_CALL_HOST);
     if (RT_FAILURE(rc))
@@ -99,7 +99,7 @@ VMMRZDECL(int) VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, 
  *          be passed up the stack, or if that isn't possible then VMMRZCallRing3
  *          needs to change it into an assertion.
  *
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   enmOperation    The operation.
  * @param   uArg            The argument to the operation.
  */

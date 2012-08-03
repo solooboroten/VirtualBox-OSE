@@ -1,4 +1,4 @@
-/* $Revision: 28800 $ */
+/* $Revision: 42004 $ */
 /** @file
  * VBoxGuestLibR0 - System dependent helpers internal header.
  */
@@ -27,7 +27,11 @@
 #ifndef __VBoxGuestLib_SysHlp_h
 #define __VBoxGuestLib_SysHlp_h
 
+#include <iprt/types.h>
+
 #ifdef RT_OS_WINDOWS
+# undef PAGE_SIZE
+# undef PAGE_SHIFT
 # if (_MSC_VER >= 1400) && !defined(VBOX_WITH_PATCHED_DDK)
 #  include <iprt/asm.h>
 #  define _InterlockedExchange           _InterlockedExchange_StupidDDKVsCompilerCrap
@@ -81,6 +85,15 @@ void vbglUnlockLinear (void *pvCtx, void *pv, uint32_t u32Size);
  * @return VBox error code
  */
 int vbglDriverOpen (VBGLDRIVER *pDriver);
+
+/**
+ * Answers whether the VBoxGuest driver is opened
+ *
+ * @param pDriver      Pointer to the driver structure.
+ *
+ * @return true - if opened, false - otherwise
+ */
+bool vbglDriverIsOpened (VBGLDRIVER *pDriver);
 
 /**
  * Call VBoxGuest driver.

@@ -1,4 +1,4 @@
-/* $Id: vfsstdfile.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: vfsstdfile.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
 /** @file
  * IPRT - Virtual File System, Standard File Implementation.
  */
@@ -252,9 +252,8 @@ static DECLCALLBACK(int) rtVfsStdFile_Flush(void *pvThis)
 static DECLCALLBACK(int) rtVfsStdFile_PollOne(void *pvThis, uint32_t fEvents, RTMSINTERVAL cMillies, bool fIntr,
                                               uint32_t *pfRetEvents)
 {
-    PRTVFSSTDFILE pThis = (PRTVFSSTDFILE)pvThis;
-    int           rc;
-
+    NOREF(pvThis);
+    int rc;
     if (fEvents != RTPOLL_EVT_ERROR)
     {
         *pfRetEvents = fEvents & ~RTPOLL_EVT_ERROR;
@@ -344,10 +343,11 @@ static DECLCALLBACK(int) rtVfsStdFile_SetTimes(void *pvThis, PCRTTIMESPEC pAcces
  */
 static DECLCALLBACK(int) rtVfsStdFile_SetOwner(void *pvThis, RTUID uid, RTGID gid)
 {
-    PRTVFSSTDFILE pThis = (PRTVFSSTDFILE)pvThis;
 #if 0
+    PRTVFSSTDFILE pThis = (PRTVFSSTDFILE)pvThis;
     return RTFileSetOwner(pThis->hFile, uid, gid);
 #else
+    NOREF(pvThis); NOREF(uid); NOREF(gid);
     return VERR_NOT_IMPLEMENTED;
 #endif
 }

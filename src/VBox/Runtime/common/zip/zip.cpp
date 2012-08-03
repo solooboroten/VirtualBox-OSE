@@ -1,10 +1,10 @@
-/* $Id: zip.cpp 33982 2010-11-11 12:37:18Z vboxsync $ */
+/* $Id: zip.cpp 40098 2012-02-13 17:33:43Z vboxsync $ */
 /** @file
  * IPRT - Compression.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -315,6 +315,7 @@ static DECLCALLBACK(int) rtZipStoreCompFinish(PRTZIPCOMP pZip)
  */
 static DECLCALLBACK(int) rtZipStoreCompDestroy(PRTZIPCOMP pZip)
 {
+    NOREF(pZip);
     return VINF_SUCCESS;
 }
 
@@ -327,6 +328,7 @@ static DECLCALLBACK(int) rtZipStoreCompDestroy(PRTZIPCOMP pZip)
  */
 static DECLCALLBACK(int) rtZipStoreCompInit(PRTZIPCOMP pZip, RTZIPLEVEL enmLevel)
 {
+    NOREF(enmLevel);
     pZip->pfnCompress = rtZipStoreCompress;
     pZip->pfnFinish   = rtZipStoreCompFinish;
     pZip->pfnDestroy  = rtZipStoreCompDestroy;
@@ -393,6 +395,7 @@ static DECLCALLBACK(int) rtZipStoreDecompress(PRTZIPDECOMP pZip, void *pvBuf, si
  */
 static DECLCALLBACK(int) rtZipStoreDecompDestroy(PRTZIPDECOMP pZip)
 {
+    NOREF(pZip);
     return VINF_SUCCESS;
 }
 
@@ -419,25 +422,37 @@ static DECLCALLBACK(int) rtZipStoreDecompInit(PRTZIPDECOMP pZip)
 /**
  * Convert from zlib errno to iprt status code.
  * @returns iprt status code.
- * @param   rc      Zlib error code.
+ * @param   rc              Zlib error code.
+ * @param   fCompressing    Set if we're compressing, clear if decompressing.
  */
-static int zipErrConvertFromZlib(int rc)
+static int zipErrConvertFromZlib(int rc, bool fCompressing)
 {
-    /** @todo proper zlib error conversion. */
     switch (rc)
     {
-        case Z_ERRNO:
-            return RTErrConvertFromErrno(errno);
+        case Z_OK:
+            return VINF_SUCCESS;
+
         case Z_STREAM_ERROR:
+            return VERR_ZIP_CORRUPTED;
+
         case Z_DATA_ERROR:
+            return fCompressing ? VERR_ZIP_ERROR : VERR_ZIP_CORRUPTED;
+
         case Z_MEM_ERROR:
+            return VERR_ZIP_NO_MEMORY;
+
         case Z_BUF_ERROR:
+            return VERR_ZIP_ERROR;
+
         case Z_VERSION_ERROR:
-            return VERR_GENERAL_FAILURE;
+            return VERR_ZIP_UNSUPPORTED_VERSION;
+
+        case Z_ERRNO: /* We shouldn't see this status! */
         default:
+            AssertMsgFailed(("%d\n", rc));
             if (rc >= 0)
                 return VINF_SUCCESS;
-            return VERR_GENERAL_FAILURE;
+            return VERR_ZIP_ERROR;
     }
 }
 
@@ -468,7 +483,7 @@ static DECLCALLBACK(int) rtZipZlibCompress(PRTZIPCOMP pZip, const void *pvBuf, s
          */
         int rc = deflate(&pZip->u.Zlib, Z_NO_FLUSH);
         if (rc != Z_OK)
-            return zipErrConvertFromZlib(rc);
+            return zipErrConvertFromZlib(rc, true /*fCompressing*/);
     }
     return VINF_SUCCESS;
 }
@@ -501,7 +516,7 @@ static DECLCALLBACK(int) rtZipZlibCompFinish(PRTZIPCOMP pZip)
          */
         rc = deflate(&pZip->u.Zlib, Z_FINISH);
         if (rc != Z_OK && rc != Z_STREAM_END)
-            return zipErrConvertFromZlib(rc);
+            return zipErrConvertFromZlib(rc, true /*fCompressing*/);
     }
     return VINF_SUCCESS;
 }
@@ -517,7 +532,7 @@ static DECLCALLBACK(int) rtZipZlibCompDestroy(PRTZIPCOMP pZip)
      */
     int rc = deflateEnd(&pZip->u.Zlib);
     if (rc != Z_OK)
-        rc = zipErrConvertFromZlib(rc);
+        rc = zipErrConvertFromZlib(rc, true /*fCompressing*/);
     return rc;
 }
 
@@ -548,8 +563,8 @@ static DECLCALLBACK(int) rtZipZlibCompInit(PRTZIPCOMP pZip, RTZIPLEVEL enmLevel)
     pZip->u.Zlib.avail_out = sizeof(pZip->abBuffer) - 1;
     pZip->u.Zlib.opaque    = pZip;
 
-    int rc = deflateInit(&pZip->u.Zlib, enmLevel);
-    return rc >= 0 ? rc = VINF_SUCCESS : zipErrConvertFromZlib(rc);
+    int rc = deflateInit(&pZip->u.Zlib, iLevel);
+    return rc >= 0 ? rc = VINF_SUCCESS : zipErrConvertFromZlib(rc, true /*fCompressing*/);
 }
 
 
@@ -594,7 +609,7 @@ static DECLCALLBACK(int) rtZipZlibDecompress(PRTZIPDECOMP pZip, void *pvBuf, siz
             break;
         }
         if (rc != Z_OK)
-            return zipErrConvertFromZlib(rc);
+            return zipErrConvertFromZlib(rc, false /*fCompressing*/);
     }
     return VINF_SUCCESS;
 }
@@ -610,7 +625,7 @@ static DECLCALLBACK(int) rtZipZlibDecompDestroy(PRTZIPDECOMP pZip)
      */
     int rc = inflateEnd(&pZip->u.Zlib);
     if (rc != Z_OK)
-        rc = zipErrConvertFromZlib(rc);
+        rc = zipErrConvertFromZlib(rc, false /*fCompressing*/);
     return rc;
 }
 
@@ -629,7 +644,7 @@ static DECLCALLBACK(int) rtZipZlibDecompInit(PRTZIPDECOMP pZip)
     pZip->u.Zlib.opaque    = pZip;
 
     int rc = inflateInit(&pZip->u.Zlib);
-    return rc >= 0 ? VINF_SUCCESS : zipErrConvertFromZlib(rc);
+    return rc >= 0 ? VINF_SUCCESS : zipErrConvertFromZlib(rc, false /*fCompressing*/);
 }
 
 #endif /* RTZIP_USE_ZLIB */
@@ -1029,6 +1044,7 @@ static DECLCALLBACK(int) rtZipLZFCompFinish(PRTZIPCOMP pZip)
  */
 static DECLCALLBACK(int) rtZipLZFCompDestroy(PRTZIPCOMP pZip)
 {
+    NOREF(pZip);
     return VINF_SUCCESS;
 }
 
@@ -1041,6 +1057,7 @@ static DECLCALLBACK(int) rtZipLZFCompDestroy(PRTZIPCOMP pZip)
  */
 static DECLCALLBACK(int) rtZipLZFCompInit(PRTZIPCOMP pZip, RTZIPLEVEL enmLevel)
 {
+    NOREF(enmLevel);
     pZip->pfnCompress = rtZipLZFCompress;
     pZip->pfnFinish   = rtZipLZFCompFinish;
     pZip->pfnDestroy  = rtZipLZFCompDestroy;
@@ -1291,6 +1308,7 @@ static DECLCALLBACK(int) rtZipLZFDecompress(PRTZIPDECOMP pZip, void *pvBuf, size
  */
 static DECLCALLBACK(int) rtZipLZFDecompDestroy(PRTZIPDECOMP pZip)
 {
+    NOREF(pZip);
     return VINF_SUCCESS;
 }
 
@@ -1480,6 +1498,7 @@ RT_EXPORT_SYMBOL(RTZipCompDestroy);
  */
 static DECLCALLBACK(int) rtZipStubDecompress(PRTZIPDECOMP pZip, void *pvBuf, size_t cbBuf, size_t *pcbWritten)
 {
+    NOREF(pZip); NOREF(pvBuf); NOREF(cbBuf); NOREF(pcbWritten);
     return VERR_NOT_SUPPORTED;
 }
 
@@ -1489,6 +1508,7 @@ static DECLCALLBACK(int) rtZipStubDecompress(PRTZIPDECOMP pZip, void *pvBuf, siz
  */
 static DECLCALLBACK(int) rtZipStubDecompDestroy(PRTZIPDECOMP pZip)
 {
+    NOREF(pZip);
     return VINF_SUCCESS;
 }
 

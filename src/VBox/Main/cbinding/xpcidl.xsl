@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
-<!-- $Id: xpcidl.xsl 32404 2010-09-10 13:17:42Z vboxsync $ -->
+<!-- $Id: xpcidl.xsl 42131 2012-07-12 18:16:06Z vboxsync $ -->
 
 <!--
  *  A template to generate a XPCOM IDL compatible interface definition file
  *  from the generic interface definition expressed in XML.
 
-     Copyright (C) 2008-2010 Oracle Corporation
+     Copyright (C) 2008-2012 Oracle Corporation
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -115,12 +115,12 @@
  *      xpcom/include/nsprpub/prtypes.h
  *      xpcom/include/xpcom/nsISupportsBase.h
  *
- * These files were originally triple-licensed (MPL/GPL2/LGPL2.1). Sun
+ * These files were originally triple-licensed (MPL/GPL2/LGPL2.1). Oracle
  * elects to distribute this derived work under the LGPL2.1 only.
  */
 
 /*
- * Copyright (C) 2008-2010 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of a free software library; you can redistribute
  * it and/or modify it under the terms of the GNU Lesser General
@@ -1270,23 +1270,22 @@ typedef PCVBOXXPCOM (*PFNVBOXGETXPCOMCFUNCTIONS)(unsigned uVersion);
       <xsl:text>);&#x0A;</xsl:text>
       <!-- setter -->
       <xsl:if test="not(@readonly='yes')">
-        <xsl:text>    nsresult set</xsl:text>
+        <xsl:text>    nsresult (*Set</xsl:text>
         <xsl:call-template name="capitalize">
           <xsl:with-param name="str" select="@name"/>
         </xsl:call-template>
-        <xsl:text> (&#x0A;</xsl:text>
+        <xsl:text>)(</xsl:text>
+        <xsl:value-of select="../@name" />
+        <xsl:text> *pThis, </xsl:text>
         <!-- array size -->
-        <xsl:text>        in unsigned long </xsl:text>
+        <xsl:text>PRUint32 </xsl:text>
         <xsl:value-of select="@name"/>
-        <xsl:text>Size,&#x0A;</xsl:text>
+        <xsl:text>Size, </xsl:text>
         <!-- array pointer -->
-        <xsl:text>        [array, size_is(</xsl:text>
-        <xsl:value-of select="@name"/>
-        <xsl:text>Size)] in </xsl:text>
         <xsl:apply-templates select="@type" mode="forwarder"/>
-        <xsl:text> </xsl:text>
+        <xsl:text> *</xsl:text>
         <xsl:value-of select="@name"/>
-        <xsl:text>&#x0A;    );&#x0A;</xsl:text>
+        <xsl:text>);&#x0A;</xsl:text>
       </xsl:if>
     </xsl:when>
     <!-- normal attribute -->

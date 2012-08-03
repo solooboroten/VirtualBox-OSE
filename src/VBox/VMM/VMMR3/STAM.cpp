@@ -1,4 +1,4 @@
-/* $Id: STAM.cpp 35696 2011-01-24 18:03:33Z vboxsync $ */
+/* $Id: STAM.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * STAM - The Statistics Manager.
  */
@@ -100,7 +100,7 @@ typedef struct STAMR3SNAPSHOTONE
     char           *pszEnd;
     /** Pointer to the current buffer position. */
     char           *psz;
-    /** The VM handle. */
+    /** Pointer to the VM. */
     PVM             pVM;
     /** The number of bytes allocated. */
     size_t          cbAllocated;
@@ -217,10 +217,48 @@ static const STAMR0SAMPLE g_aGVMMStats[] =
 
 
 /**
+ * The GMM mapping records.
+ */
+static const STAMR0SAMPLE g_aGMMStats[] =
+{
+    { RT_UOFFSETOF(GMMSTATS, cMaxPages),                        STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cMaxPages",                   "The maximum number of pages GMM is allowed to allocate." },
+    { RT_UOFFSETOF(GMMSTATS, cReservedPages),                   STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cReservedPages",              "The number of pages that has been reserved." },
+    { RT_UOFFSETOF(GMMSTATS, cOverCommittedPages),              STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cOverCommittedPages",         "The number of pages that we have over-committed in reservations." },
+    { RT_UOFFSETOF(GMMSTATS, cAllocatedPages),                  STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cAllocatedPages",             "The number of actually allocated (committed if you like) pages." },
+    { RT_UOFFSETOF(GMMSTATS, cSharedPages),                     STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cSharedPages",                "The number of pages that are shared. A subset of cAllocatedPages." },
+    { RT_UOFFSETOF(GMMSTATS, cDuplicatePages),                  STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cDuplicatePages",             "The number of pages that are actually shared between VMs." },
+    { RT_UOFFSETOF(GMMSTATS, cLeftBehindSharedPages),           STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cLeftBehindSharedPages",      "The number of pages that are shared that has been left behind by VMs not doing proper cleanups." },
+    { RT_UOFFSETOF(GMMSTATS, cBalloonedPages),                  STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/cBalloonedPages",             "The number of current ballooned pages." },
+    { RT_UOFFSETOF(GMMSTATS, cChunks),                          STAMTYPE_U32,   STAMUNIT_COUNT, "/GMM/cChunks",                     "The number of allocation chunks." },
+    { RT_UOFFSETOF(GMMSTATS, cFreedChunks),                     STAMTYPE_U32,   STAMUNIT_COUNT, "/GMM/cFreedChunks",                "The number of freed chunks ever." },
+    { RT_UOFFSETOF(GMMSTATS, cShareableModules),                STAMTYPE_U32,   STAMUNIT_COUNT, "/GMM/cShareableModules",           "The number of shareable modules." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.Reserved.cBasePages),      STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/Reserved/cBasePages",      "The amount of base memory (RAM, ROM, ++) reserved by the VM." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.Reserved.cShadowPages),    STAMTYPE_U32,   STAMUNIT_PAGES, "/GMM/VM/Reserved/cShadowPages",    "The amount of memory reserved for shadow/nested page tables." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.Reserved.cFixedPages),     STAMTYPE_U32,   STAMUNIT_PAGES, "/GMM/VM/Reserved/cFixedPages",     "The amount of memory reserved for fixed allocations like MMIO2 and the hyper heap." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.Allocated.cBasePages),     STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/Allocated/cBasePages",     "The amount of base memory (RAM, ROM, ++) allocated by the VM." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.Allocated.cShadowPages),   STAMTYPE_U32,   STAMUNIT_PAGES, "/GMM/VM/Allocated/cShadowPages",   "The amount of memory allocated for shadow/nested page tables." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.Allocated.cFixedPages),    STAMTYPE_U32,   STAMUNIT_PAGES, "/GMM/VM/Allocated/cFixedPages",    "The amount of memory allocated for fixed allocations like MMIO2 and the hyper heap." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cPrivatePages),            STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/cPrivatePages",            "The current number of private pages." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cSharedPages),             STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/cSharedPages",             "The current number of shared pages." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cBalloonedPages),          STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/cBalloonedPages",          "The current number of ballooned pages." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cMaxBalloonedPages),       STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/cMaxBalloonedPages",       "The max number of pages that can be ballooned." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cReqBalloonedPages),       STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/cReqBalloonedPages",       "The number of pages we've currently requested the guest to give us." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cReqActuallyBalloonedPages),STAMTYPE_U64,  STAMUNIT_PAGES, "/GMM/VM/cReqActuallyBalloonedPages","The number of pages the guest has given us in response to the request." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cReqDeflatePages),         STAMTYPE_U64,   STAMUNIT_PAGES, "/GMM/VM/cReqDeflatePages",         "The number of pages we've currently requested the guest to take back." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.cShareableModules),        STAMTYPE_U32,   STAMUNIT_COUNT, "/GMM/VM/cShareableModules",        "The number of shareable modules traced by the VM." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.enmPolicy),                STAMTYPE_U32,   STAMUNIT_NONE,  "/GMM/VM/enmPolicy",                "The current over-commit policy." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.enmPriority),              STAMTYPE_U32,   STAMUNIT_NONE,  "/GMM/VM/enmPriority",              "The VM priority for arbitrating VMs in low and out of memory situation." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.fBallooningEnabled),       STAMTYPE_BOOL,  STAMUNIT_NONE,  "/GMM/VM/fBallooningEnabled",       "Whether ballooning is enabled or not." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.fBallooningEnabled),       STAMTYPE_BOOL,  STAMUNIT_NONE,  "/GMM/VM/fSharedPagingEnabled",     "Whether shared paging is enabled or not." },
+    { RT_UOFFSETOF(GMMSTATS, VMStats.fBallooningEnabled),       STAMTYPE_BOOL,  STAMUNIT_NONE,  "/GMM/VM/fMayAllocate",             "Whether the VM is allowed to allocate memory or not." },
+};
+
+
+/**
  * Initializes the STAM.
  *
  * @returns VBox status code.
- * @param   pVM         The VM to operate on.
+ * @param   pVM         Pointer to the VM.
  */
 VMMR3DECL(int) STAMR3InitUVM(PUVM pUVM)
 {
@@ -327,7 +365,7 @@ VMMR3DECL(int)  STAMR3RegisterU(PUVM pUVM, void *pvSample, STAMTYPE enmType, STA
  * It is not possible to register the same sample twice.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample.
  * @param   enmType     Sample type. This indicates what pvSample is pointing at.
  * @param   enmVisibility  Visibility type specifying whether unused statistics should be visible or not.
@@ -373,7 +411,7 @@ VMMR3DECL(int)  STAMR3RegisterFU(PUVM pUVM, void *pvSample, STAMTYPE enmType, ST
  * RTStrPrintf like fashion.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample.
  * @param   enmType     Sample type. This indicates what pvSample is pointing at.
  * @param   enmVisibility  Visibility type specifying whether unused statistics should be visible or not.
@@ -398,7 +436,7 @@ VMMR3DECL(int)  STAMR3RegisterF(PVM pVM, void *pvSample, STAMTYPE enmType, STAMV
  * RTStrPrintfV like fashion.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample.
  * @param   enmType     Sample type. This indicates what pvSample is pointing at.
  * @param   enmVisibility  Visibility type specifying whether unused statistics should be visible or not.
@@ -428,7 +466,7 @@ VMMR3DECL(int)  STAMR3RegisterVU(PUVM pUVM, void *pvSample, STAMTYPE enmType, ST
  * RTStrPrintfV like fashion.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample.
  * @param   enmType     Sample type. This indicates what pvSample is pointing at.
  * @param   enmVisibility  Visibility type specifying whether unused statistics should be visible or not.
@@ -449,7 +487,7 @@ VMMR3DECL(int)  STAMR3RegisterV(PVM pVM, void *pvSample, STAMTYPE enmType, STAMV
  * and name given in an RTStrPrintf like fashion.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample.
  * @param   enmVisibility  Visibility type specifying whether unused statistics should be visible or not.
  * @param   enmUnit     Sample unit.
@@ -476,7 +514,7 @@ VMMR3DECL(int)  STAMR3RegisterCallback(PVM pVM, void *pvSample, STAMVISIBILITY e
  * Same as STAMR3RegisterCallback() except for the ellipsis which is a va_list here.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample.
  * @param   enmVisibility  Visibility type specifying whether unused statistics should be visible or not.
  * @param   enmUnit     Sample unit.
@@ -502,6 +540,7 @@ VMMR3DECL(int)  STAMR3RegisterCallbackV(PVM pVM, void *pvSample, STAMVISIBILITY 
 }
 
 
+#ifdef VBOX_STRICT
 /**
  * Divide the strings into sub-strings using '/' as delimiter
  * and then compare them in strcmp fashion.
@@ -535,6 +574,7 @@ static int stamR3SlashCompare(const char *psz1, const char *psz2)
             return 0;
     }
 }
+#endif /* VBOX_STRICT */
 
 
 /**
@@ -633,6 +673,8 @@ static int stamR3RegisterU(PUVM pUVM, void *pvSample, PFNSTAMR3CALLBACKRESET pfn
         case STAMTYPE_U8_RESET:
         case STAMTYPE_X8:
         case STAMTYPE_X8_RESET:
+        case STAMTYPE_BOOL:
+        case STAMTYPE_BOOL_RESET:
         case STAMTYPE_CALLBACK:
             break;
 
@@ -737,7 +779,7 @@ VMMR3DECL(int)  STAMR3DeregisterU(PUVM pUVM, void *pvSample)
  * temporary samples.
  *
  * @returns VBox status.
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pvSample    Pointer to the sample registered with STAMR3Register().
  */
 VMMR3DECL(int)  STAMR3Deregister(PVM pVM, void *pvSample)
@@ -751,7 +793,7 @@ VMMR3DECL(int)  STAMR3Deregister(PVM pVM, void *pvSample)
  * It's possible to select a subset of the samples.
  *
  * @returns VBox status. (Basically, it cannot fail.)
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszPat      The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                      If NULL all samples are reset.
  * @remarks Don't confuse this with the other 'XYZR3Reset' methods, it's not called at VM reset.
@@ -762,11 +804,14 @@ VMMR3DECL(int)  STAMR3ResetU(PUVM pUVM, const char *pszPat)
 
     /* ring-0 */
     GVMMRESETSTATISTICSSREQ GVMMReq;
-    //GMMRESETSTATISTICSSREQ GMMReq;
+    GMMRESETSTATISTICSSREQ  GMMReq;
     bool fGVMMMatched = !pszPat || !*pszPat;
-    //bool fGMMMatched = fGVMMMatched;
+    bool fGMMMatched  = fGVMMMatched;
     if (fGVMMMatched)
+    {
         memset(&GVMMReq.Stats, 0xff, sizeof(GVMMReq.Stats));
+        memset(&GMMReq.Stats,  0xff, sizeof(GMMReq.Stats));
+    }
     else
     {
         char *pszCopy;
@@ -776,7 +821,7 @@ VMMR3DECL(int)  STAMR3ResetU(PUVM pUVM, const char *pszPat)
             return VERR_NO_MEMORY;
 
         /* GVMM */
-        memset(&GVMMReq.Stats, 0, sizeof(GVMMReq.Stats));
+        RT_ZERO(GVMMReq.Stats);
         for (unsigned i = 0; i < RT_ELEMENTS(g_aGVMMStats); i++)
             if (stamR3MultiMatch(papszExpressions, cExpressions, NULL, g_aGVMMStats[i].pszName))
             {
@@ -789,36 +834,37 @@ VMMR3DECL(int)  STAMR3ResetU(PUVM pUVM, const char *pszPat)
         }
 
         /* GMM */
-//        memset(&GMMReq.Stats, 0, sizeof(GMMReq.Stats));
-//        for (unsigned i = 0; i < RT_ELEMENTS(g_aGMMStats); i++)
-//            if (stamR3MultiMatch(papszExpressions, cExpressions, NULL, g_aGMMStats[i].pszName))
-//            {
-//                 *((uint8_t *)&GMMReq.Stats + g_aGMMStats[i].offVar) = 0xff;
-//                 fGMMMatched = true;
-//            }
+        RT_ZERO(GMMReq.Stats);
+        for (unsigned i = 0; i < RT_ELEMENTS(g_aGMMStats); i++)
+            if (stamR3MultiMatch(papszExpressions, cExpressions, NULL, g_aGMMStats[i].pszName))
+            {
+                 *((uint8_t *)&GMMReq.Stats + g_aGMMStats[i].offVar) = 0xff;
+                 fGMMMatched = true;
+            }
 
         RTMemTmpFree(papszExpressions);
         RTStrFree(pszCopy);
     }
 
     STAM_LOCK_WR(pUVM);
+
     if (fGVMMMatched)
     {
         PVM pVM = pUVM->pVM;
-        GVMMReq.Hdr.cbReq = sizeof(GVMMReq);
+        GVMMReq.Hdr.cbReq    = sizeof(GVMMReq);
         GVMMReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
-        GVMMReq.pSession = pVM->pSession;
+        GVMMReq.pSession     = pVM->pSession;
         rc = SUPR3CallVMMR0Ex(pVM->pVMR0, NIL_VMCPUID, VMMR0_DO_GVMM_RESET_STATISTICS, 0, &GVMMReq.Hdr);
     }
 
-//    if (fGMMMatched)
-//    {
-//        PVM pVM = pUVM->pVM;
-//        GMMReq.Hdr.cbReq = sizeof(Req);
-//        GMMReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
-//        GMMReq.pSession = pVM->pSession;
-//        rc = SUPR3CallVMMR0Ex(pVM->pVMR0, VMMR0_DO_GMM_RESET_STATISTICS, 0, &Req.Hdr);
-//    }
+    if (fGMMMatched)
+    {
+        PVM pVM = pUVM->pVM;
+        GMMReq.Hdr.cbReq    = sizeof(GMMReq);
+        GMMReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
+        GMMReq.pSession     = pVM->pSession;
+        rc = SUPR3CallVMMR0Ex(pVM->pVMR0, NIL_VMCPUID, VMMR0_DO_GMM_RESET_STATISTICS, 0, &GMMReq.Hdr);
+    }
 
     /* and the reset */
     stamR3EnumU(pUVM, pszPat, false /* fUpdateRing0 */, stamR3ResetOne, pUVM->pVM);
@@ -827,12 +873,13 @@ VMMR3DECL(int)  STAMR3ResetU(PUVM pUVM, const char *pszPat)
     return rc;
 }
 
+
 /**
  * Resets statistics for the specified VM.
  * It's possible to select a subset of the samples.
  *
  * @returns VBox status. (Basically, it cannot fail.)
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszPat      The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                      If NULL all samples are reset.
  * @remarks Don't confuse this with the other 'XYZR3Reset' methods, it's not called at VM reset.
@@ -849,7 +896,7 @@ VMMR3DECL(int)  STAMR3Reset(PVM pVM, const char *pszPat)
  *
  * @returns VINF_SUCCESS
  * @param   pDesc   Pointer to the current descriptor.
- * @param   pvArg   User argument - The VM handle.
+ * @param   pvArg   User argument - Pointer to the VM.
  */
 static int stamR3ResetOne(PSTAMDESC pDesc, void *pvArg)
 {
@@ -897,6 +944,10 @@ static int stamR3ResetOne(PSTAMDESC pDesc, void *pvArg)
             ASMAtomicXchgU64(pDesc->u.pu64, 0);
             break;
 
+        case STAMTYPE_BOOL_RESET:
+            ASMAtomicXchgBool(pDesc->u.pf, false);
+            break;
+
         /* These are custom and will not be touched. */
         case STAMTYPE_U8:
         case STAMTYPE_X8:
@@ -907,6 +958,7 @@ static int stamR3ResetOne(PSTAMDESC pDesc, void *pvArg)
         case STAMTYPE_U64:
         case STAMTYPE_X64:
         case STAMTYPE_RATIO_U32:
+        case STAMTYPE_BOOL:
             break;
 
         default:
@@ -974,7 +1026,7 @@ VMMR3DECL(int) STAMR3SnapshotU(PUVM pUVM, const char *pszPat, char **ppszSnapsho
  * It's possible to select a subset of the samples.
  *
  * @returns VBox status. (Basically, it cannot fail.)
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszPat          The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                          If NULL all samples are reset.
  * @param   fWithDesc       Whether to include the descriptions.
@@ -1089,6 +1141,13 @@ static int stamR3SnapshotOne(PSTAMDESC pDesc, void *pvArg)
             if (pDesc->enmVisibility == STAMVISIBILITY_USED && *pDesc->u.pu64 == 0)
                 return VINF_SUCCESS;
             stamR3SnapshotPrintf(pThis, "<X64 val=\"%#llx\"", *pDesc->u.pu64);
+            break;
+
+        case STAMTYPE_BOOL:
+        case STAMTYPE_BOOL_RESET:
+            if (pDesc->enmVisibility == STAMVISIBILITY_USED && *pDesc->u.pf == false)
+                return VINF_SUCCESS;
+            stamR3SnapshotPrintf(pThis, "<BOOL val=\"%RTbool\"", *pDesc->u.pf);
             break;
 
         default:
@@ -1231,6 +1290,7 @@ VMMR3DECL(int)  STAMR3SnapshotFreeU(PUVM pUVM, char *pszSnapshot)
 {
     if (!pszSnapshot)
         RTMemFree(pszSnapshot);
+    NOREF(pUVM);
     return VINF_SUCCESS;
 }
 
@@ -1239,7 +1299,7 @@ VMMR3DECL(int)  STAMR3SnapshotFreeU(PUVM pUVM, char *pszSnapshot)
  * Releases a statistics snapshot returned by STAMR3Snapshot().
  *
  * @returns VBox status.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszSnapshot     The snapshot data pointer returned by STAMR3Snapshot().
  *                          NULL is allowed.
  */
@@ -1273,7 +1333,7 @@ VMMR3DECL(int)  STAMR3DumpU(PUVM pUVM, const char *pszPat)
  * Dumps the selected statistics to the log.
  *
  * @returns VBox status.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszPat          The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                          If NULL all samples are written to the log.
  */
@@ -1324,7 +1384,7 @@ VMMR3DECL(int)  STAMR3DumpToReleaseLogU(PUVM pUVM, const char *pszPat)
  * Dumps the selected statistics to the release log.
  *
  * @returns VBox status.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszPat          The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                          If NULL all samples are written to the log.
  */
@@ -1355,7 +1415,7 @@ static DECLCALLBACK(void) stamR3EnumRelLogPrintf(PSTAMR3PRINTONEARGS pArgs, cons
  * Prints the selected statistics to standard out.
  *
  * @returns VBox status.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszPat          The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                          If NULL all samples are reset.
  */
@@ -1375,7 +1435,7 @@ VMMR3DECL(int)  STAMR3PrintU(PUVM pUVM, const char *pszPat)
  * Prints the selected statistics to standard out.
  *
  * @returns VBox status.
- * @param   pVM             The VM handle.
+ * @param   pVM             Pointer to the VM.
  * @param   pszPat          The name matching pattern. See somewhere_where_this_is_described_in_detail.
  *                          If NULL all samples are reset.
  */
@@ -1508,6 +1568,13 @@ static int stamR3PrintOne(PSTAMDESC pDesc, void *pvArg)
             pArgs->pfnPrintf(pArgs, "%-32s %8llx %s\n", pDesc->pszName, *pDesc->u.pu64, STAMR3GetUnit(pDesc->enmUnit));
             break;
 
+        case STAMTYPE_BOOL:
+        case STAMTYPE_BOOL_RESET:
+            if (pDesc->enmVisibility == STAMVISIBILITY_USED && *pDesc->u.pf == false)
+                return VINF_SUCCESS;
+            pArgs->pfnPrintf(pArgs, "%-32s %s %s\n", pDesc->pszName, *pDesc->u.pf ? "true    " : "false   ", STAMR3GetUnit(pDesc->enmUnit));
+            break;
+
         default:
             AssertMsgFailed(("enmType=%d\n", pDesc->enmType));
             break;
@@ -1543,7 +1610,7 @@ VMMR3DECL(int) STAMR3EnumU(PUVM pUVM, const char *pszPat, PFNSTAMR3ENUM pfnEnum,
  *
  * @returns Whatever the callback returns.
  *
- * @param   pVM         The VM handle.
+ * @param   pVM         Pointer to the VM.
  * @param   pszPat      The pattern to match samples.
  * @param   pfnEnum     The callback function.
  * @param   pvUser      The pvUser argument of the callback function.
@@ -1775,6 +1842,12 @@ static void stamR3Ring0StatsRegisterU(PUVM pUVM)
                         g_aGVMMStats[i].enmType, STAMVISIBILITY_ALWAYS, g_aGVMMStats[i].pszName,
                         g_aGVMMStats[i].enmUnit, g_aGVMMStats[i].pszDesc);
     pUVM->stam.s.cRegisteredHostCpus = 0;
+
+    /* GMM */
+    for (unsigned i = 0; i < RT_ELEMENTS(g_aGMMStats); i++)
+        stamR3RegisterU(pUVM, (uint8_t *)&pUVM->stam.s.GMMStats + g_aGMMStats[i].offVar, NULL, NULL,
+                        g_aGMMStats[i].enmType, STAMVISIBILITY_ALWAYS, g_aGMMStats[i].pszName,
+                        g_aGMMStats[i].enmUnit, g_aGMMStats[i].pszDesc);
 }
 
 
@@ -1805,7 +1878,9 @@ static void stamR3Ring0StatsUpdateMultiU(PUVM pUVM, const char * const *papszExp
     if (!pVM || !pVM->pSession)
         return;
 
-    /* GVMM */
+    /*
+     * GVMM
+     */
     bool fUpdate = false;
     for (unsigned i = 0; i < RT_ELEMENTS(g_aGVMMStats); i++)
         if (stamR3MultiMatch(papszExpressions, cExpressions, NULL, g_aGVMMStats[i].pszName))
@@ -1865,6 +1940,27 @@ static void stamR3Ring0StatsUpdateMultiU(PUVM pUVM, const char * const *papszExp
                 STAM_UNLOCK_WR(pUVM);
             }
         }
+    }
+
+    /*
+     * GMM
+     */
+    fUpdate = false;
+    for (unsigned i = 0; i < RT_ELEMENTS(g_aGMMStats); i++)
+        if (stamR3MultiMatch(papszExpressions, cExpressions, NULL, g_aGMMStats[i].pszName))
+        {
+            fUpdate = true;
+            break;
+        }
+    if (fUpdate)
+    {
+        GMMQUERYSTATISTICSSREQ Req;
+        Req.Hdr.cbReq    = sizeof(Req);
+        Req.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
+        Req.pSession     = pVM->pSession;
+        int rc = SUPR3CallVMMR0Ex(pVM->pVMR0, NIL_VMCPUID, VMMR0_DO_GMM_QUERY_STATISTICS, 0, &Req.Hdr);
+        if (RT_SUCCESS(rc))
+            pUVM->stam.s.GMMStats = Req.Stats;
     }
 }
 

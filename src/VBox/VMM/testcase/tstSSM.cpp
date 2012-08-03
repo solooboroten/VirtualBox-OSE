@@ -1,4 +1,4 @@
-/* $Id: tstSSM.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstSSM.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
 /** @file
  * Saved State Manager Testcase.
  */
@@ -31,6 +31,7 @@
 #include <VBox/err.h>
 #include <VBox/param.h>
 #include <iprt/assert.h>
+#include <iprt/file.h>
 #include <iprt/initterm.h>
 #include <iprt/mem.h>
 #include <iprt/stream.h>
@@ -103,6 +104,7 @@ void initBigMem(void)
 DECLCALLBACK(int) Item01Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 {
     uint64_t u64Start = RTTimeNanoTS();
+    NOREF(pDevIns);
 
     /*
      * Test writing some memory block.
@@ -186,6 +188,7 @@ DECLCALLBACK(int) Item01Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
  */
 DECLCALLBACK(int) Item01Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
+    NOREF(pDevIns); NOREF(uPass);
     if (uVersion != 0)
     {
         RTPrintf("Item01: uVersion=%#x, expected 0\n", uVersion);
@@ -279,6 +282,7 @@ DECLCALLBACK(int) Item01Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVers
  */
 DECLCALLBACK(int) Item02Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 {
+    NOREF(pDevIns);
     uint64_t u64Start = RTTimeNanoTS();
 
     /*
@@ -342,6 +346,7 @@ DECLCALLBACK(int) Item02Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
  */
 DECLCALLBACK(int) Item02Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
+    NOREF(pDevIns); NOREF(uPass);
     if (uVersion != 0)
     {
         RTPrintf("Item02: uVersion=%#x, expected 0\n", uVersion);
@@ -407,6 +412,7 @@ DECLCALLBACK(int) Item02Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVers
  */
 DECLCALLBACK(int) Item03Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 {
+    NOREF(pDevIns);
     uint64_t u64Start = RTTimeNanoTS();
 
     /*
@@ -436,7 +442,7 @@ DECLCALLBACK(int) Item03Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
         /* next */
         cb -= PAGE_SIZE;
         pu8Org += PAGE_SIZE;
-        if (pu8Org > &gabBigMem[sizeof(gabBigMem)])
+        if (pu8Org >= &gabBigMem[sizeof(gabBigMem)])
             pu8Org = &gabBigMem[0];
     }
 
@@ -456,6 +462,7 @@ DECLCALLBACK(int) Item03Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
  */
 DECLCALLBACK(int) Item03Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
+    NOREF(pDevIns); NOREF(uPass);
     if (uVersion != 123)
     {
         RTPrintf("Item03: uVersion=%#x, expected 123\n", uVersion);
@@ -500,7 +507,7 @@ DECLCALLBACK(int) Item03Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVers
         /* next */
         cb -= PAGE_SIZE;
         pu8Org += PAGE_SIZE;
-        if (pu8Org > &gabBigMem[sizeof(gabBigMem)])
+        if (pu8Org >= &gabBigMem[sizeof(gabBigMem)])
             pu8Org = &gabBigMem[0];
     }
 
@@ -517,6 +524,7 @@ DECLCALLBACK(int) Item03Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVers
  */
 DECLCALLBACK(int) Item04Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 {
+    NOREF(pDevIns);
     uint64_t u64Start = RTTimeNanoTS();
 
     /*
@@ -562,6 +570,7 @@ DECLCALLBACK(int) Item04Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
  */
 DECLCALLBACK(int) Item04Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
+    NOREF(pDevIns); NOREF(uPass);
     if (uVersion != 42)
     {
         RTPrintf("Item04: uVersion=%#x, expected 42\n", uVersion);
@@ -614,7 +623,7 @@ DECLCALLBACK(int) Item04Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVers
  * Creates a mockup VM structure for testing SSM.
  *
  * @returns 0 on success, 1 on failure.
- * @param   ppVM    Where to store the VM handle.
+ * @param   ppVM    Where to store Pointer to the VM.
  *
  * @todo    Move this to VMM/VM since it's stuff done by several testcases.
  */
@@ -679,7 +688,7 @@ int main(int argc, char **argv)
     /*
      * Init runtime and static data.
      */
-    RTR3InitAndSUPLib();
+    RTR3InitExe(argc, &argv, RTR3INIT_FLAGS_SUPLIB);
     RTPrintf("tstSSM: TESTING...\n");
     initBigMem();
     const char *pszFilename = "SSMTestSave#1";
@@ -899,6 +908,9 @@ int main(int argc, char **argv)
         RTPrintf("SSMR3Close #1 -> %Rrc\n", rc);
         return 1;
     }
+
+    /* delete */
+    RTFileDelete(pszFilename);
 
     RTPrintf("tstSSM: SUCCESS\n");
     return 0;

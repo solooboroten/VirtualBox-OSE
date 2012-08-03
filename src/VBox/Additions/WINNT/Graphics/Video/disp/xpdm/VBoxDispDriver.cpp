@@ -1,4 +1,4 @@
-/* $Id: VBoxDispDriver.cpp 37384 2011-06-08 15:09:14Z vboxsync $ */
+/* $Id: VBoxDispDriver.cpp 42233 2012-07-19 16:25:49Z vboxsync $ */
 
 /** @file
  * VBox XPDM Display driver interface functions
@@ -788,7 +788,6 @@ ULONG APIENTRY VBoxDispDrvDitherColor(DHPDEV dhpdev, ULONG iMode, ULONG rgb, ULO
 BOOL APIENTRY VBoxDispDrvAssertMode(DHPDEV dhpdev, BOOL bEnable)
 {
     PVBOXDISPDEV pDev = (PVBOXDISPDEV) dhpdev;
-    DWORD dwrc;
     int rc;
     LOGF_ENTER();
 
@@ -845,18 +844,16 @@ BOOL APIENTRY VBoxDispDrvAssertMode(DHPDEV dhpdev, BOOL bEnable)
 #endif
 
         /* Associate back GDI bitmap residing in our framebuffer memory with GDI's handle to our device */
-        dwrc = EngAssociateSurface((HSURF)pDev->surface.hBitmap, pDev->hDevGDI, 0);
-        if (dwrc != NO_ERROR)
+        if (!EngAssociateSurface((HSURF)pDev->surface.hBitmap, pDev->hDevGDI, 0))
         {
-            WARN(("EngAssociateSurface on bitmap failed with %#x", dwrc));
+            WARN(("EngAssociateSurface on bitmap failed"));
             return FALSE;
         }
 
         /* Associate device managed surface with GDI's handle to our device */
-        dwrc = EngAssociateSurface(pDev->surface.hSurface, pDev->hDevGDI, pDev->flDrawingHooks);
-        if (dwrc != NO_ERROR)
+        if (!EngAssociateSurface(pDev->surface.hSurface, pDev->hDevGDI, pDev->flDrawingHooks))
         {
-            WARN(("EngAssociateSurface on surface failed with %#x", dwrc));
+            WARN(("EngAssociateSurface on surface failed"));
             return FALSE;
         }
     }
@@ -1000,6 +997,25 @@ ULONG APIENTRY VBoxDispDrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvI
                           lpRgnData->rdh.dwSize, lpRgnData->rdh.iType, cjIn,
                           lpRgnData->rdh.nCount * sizeof(RECT) + sizeof(RGNDATAHEADER)));
                 }
+            }
+            break;
+        }
+        case VBOXESC_ISANYX:
+        {
+            if (pvOut && cjOut == sizeof(DWORD))
+            {
+                DWORD cbReturned;
+                DWORD dwrc = EngDeviceIoControl(pDev->hDriver, IOCTL_VIDEO_VBOX_ISANYX, NULL, 0,
+                        pvOut, sizeof (uint32_t), &cbReturned);
+                if (dwrc == NO_ERROR && cbReturned == sizeof (uint32_t))
+                    return 1;
+                WARN(("EngDeviceIoControl failed, dwrc(%d), cbReturned(%d)", dwrc, cbReturned));
+                return 0;
+            }
+            else
+            {
+                WARN(("VBOXESC_ISANYX invalid parms"));
+                return 0;
             }
             break;
         }

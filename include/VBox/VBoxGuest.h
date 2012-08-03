@@ -182,8 +182,12 @@ typedef const VBGLBIGREQ *PCVBGLBIGREQ;
 # define VBOXGUEST_IOCTL_CODE_FAST_(Function)       _IO(  'V', (Function))
 # define VBOXGUEST_IOCTL_STRIP_SIZE(Code)           IOCBASECMD(Code)
 
-#else
-/* PORTME */
+#else /* BSD Like */
+  /* Automatic buffering, size limited to 4KB on *BSD and 8KB on Darwin - commands the limit, 4KB. */
+# include <sys/ioccom.h>
+# define VBOXGUEST_IOCTL_CODE_(Function, Size)      _IOC(IOC_INOUT, 'V', (Function) | VBOXGUEST_IOCTL_FLAG, (Size))
+# define VBOXGUEST_IOCTL_CODE_FAST_(Function)       _IO('V', (Function) | VBOXGUEST_IOCTL_FLAG)
+# define VBOXGUEST_IOCTL_STRIP_SIZE(uIOCtl)         ( (uIOCtl) & ~_IOC(0,0,0,IOCPARM_MASK) )
 #endif
 
 #define VBOXGUEST_IOCTL_CODE(Function, Size)        VBOXGUEST_IOCTL_CODE_((Function) | VBOXGUEST_IOCTL_FLAG, Size)
@@ -316,6 +320,8 @@ typedef struct VBoxGuestWriteCoreDump
 } VBoxGuestWriteCoreDump;
 AssertCompileSize(VBoxGuestWriteCoreDump, 4);
 
+/** IOCTL to VBoxGuest to update the mouse status features. */
+# define VBOXGUEST_IOCTL_SET_MOUSE_STATUS         VBOXGUEST_IOCTL_CODE_(10, sizeof(uint32_t))
 
 #ifdef VBOX_WITH_HGCM
 /** IOCTL to VBoxGuest to connect to a HGCM service. */
@@ -331,6 +337,11 @@ AssertCompileSize(VBoxGuestWriteCoreDump, 4);
 /** IOCTL to VBoxGuest to make a timed call to a HGCM service. */
 # define VBOXGUEST_IOCTL_HGCM_CALL_TIMED(Size)      VBOXGUEST_IOCTL_CODE(20, (Size))
 
+/** IOCTL to VBoxGuest passed from the Kernel Mode driver, but containing a user mode data in VBoxGuestHGCMCallInfo
+ * the driver received from the UM. Called in the context of the process passing the data.
+ * @see VBoxGuestHGCMCallInfo */
+# define VBOXGUEST_IOCTL_HGCM_CALL_USERDATA(Size)      VBOXGUEST_IOCTL_CODE(21, (Size))
+
 # ifdef RT_ARCH_AMD64
 /** @name IOCTL numbers that 32-bit clients, like the Windows OpenGL guest
  *        driver, will use when taking to a 64-bit driver.
@@ -342,31 +353,36 @@ AssertCompileSize(VBoxGuestWriteCoreDump, 4);
 /** @} */
 # endif /* RT_ARCH_AMD64 */
 
+#ifdef VBOX_WITH_DPC_LATENCY_CHECKER
+#define VBOXGUEST_IOCTL_DPC VBOXGUEST_IOCTL_CODE(30, 0)
+#endif
+
 /** Get the pointer to the first HGCM parameter.  */
 # define VBOXGUEST_HGCM_CALL_PARMS(a)             ( (HGCMFunctionParameter   *)((uint8_t *)(a) + sizeof(VBoxGuestHGCMCallInfo)) )
 /** Get the pointer to the first HGCM parameter in a 32-bit request.  */
 # define VBOXGUEST_HGCM_CALL_PARMS32(a)           ( (HGCMFunctionParameter32 *)((uint8_t *)(a) + sizeof(VBoxGuestHGCMCallInfo)) )
 
-/** IOCTL to VBoxGuest to make a connect to the clipboard service.
- * @todo Seems this is no longer is use. Try remove it. */
-# define VBOXGUEST_IOCTL_CLIPBOARD_CONNECT        VBOXGUEST_IOCTL_CODE_(19, sizeof(uint32_t))
-
 #endif /* VBOX_WITH_HGCM */
 
-#ifdef RT_OS_WINDOWS
-# ifdef IN_RING0
+/** IOCTL to for setting the mouse driver callback. (kernel only)  */
+#define VBOXGUEST_IOCTL_SET_MOUSE_NOTIFY_CALLBACK   VBOXGUEST_IOCTL_CODE_(31, sizeof(VBoxGuestMouseSetNotifyCallback))
 
-typedef DECLCALLBACK(void) FNVBOXMOUSENOTIFYCB(void *pvContext);
-typedef FNVBOXMOUSENOTIFYCB *PFNVBOXMOUSENOTIFYCB;
+typedef DECLCALLBACK(void) FNVBOXGUESTMOUSENOTIFY(void *pfnUser);
+typedef FNVBOXGUESTMOUSENOTIFY *PFNVBOXGUESTMOUSENOTIFY;
+
+/** Input buffer for VBOXGUEST_IOCTL_INTERNAL_SET_MOUSE_NOTIFY_CALLBACK. */
 typedef struct VBoxGuestMouseSetNotifyCallback
 {
-    PFNVBOXMOUSENOTIFYCB pfnNotify;
-    void *pvNotify;
+    /**
+     * Mouse notification callback.
+     *
+     * @param   pvUser      The callback argument.
+     */
+    PFNVBOXGUESTMOUSENOTIFY      pfnNotify;
+    /** The callback argument*/
+    void                       *pvUser;
 } VBoxGuestMouseSetNotifyCallback;
 
-#  define VBOXGUEST_IOCTL_INTERNAL_SET_MOUSE_NOTIFY_CALLBACK   VBOXGUEST_IOCTL_CODE_(31, sizeof(VBoxGuestMouseSetNotifyCallback))
-# endif
-#endif
 
 #ifdef RT_OS_OS2
 

@@ -1,4 +1,4 @@
-/* $Id: VBoxDispDriverDDraw.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxDispDriverDDraw.cpp 39606 2011-12-14 11:23:58Z vboxsync $ */
 
 /** @file
  * VBox XPDM Display driver interface functions related to DirectDraw
@@ -76,7 +76,7 @@ VBoxDispDrvGetDirectDrawInfo(DHPDEV dhpdev, DD_HALINFO *pHalInfo, DWORD *pdwNumH
     if (!pvmList && !pdwFourCC) /* first call */
     {
         rc = VBoxDispVHWAInitHostInfo1(pDev);
-        VBOX_WARNRC(rc);
+        VBOX_WARNRC_NOBP(rc);
     }
 
     if (pDev->vhwa.bEnabled)
@@ -242,13 +242,11 @@ HBITMAP APIENTRY VBoxDispDrvDeriveSurface(DD_DIRECTDRAW_GLOBAL *pDirectDraw, DD_
          * so the driver will be called on any operations on the surface
          * (required for VBVA and VRDP).
          */
-        DWORD dwrc;
         SURFOBJ *pso;
 
-        dwrc = EngAssociateSurface((HSURF)hBitmap, pDev->hDevGDI, pDev->flDrawingHooks);
-        if (dwrc!=NO_ERROR)
+        if (!EngAssociateSurface((HSURF)hBitmap, pDev->hDevGDI, pDev->flDrawingHooks))
         {
-            VBOX_WARN_WINERR(dwrc);
+            WARN(("EngAssociateSurface failed"));
             EngDeleteSurface((HSURF)hBitmap);
             return NULL;
         }

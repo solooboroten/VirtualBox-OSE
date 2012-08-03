@@ -1,4 +1,4 @@
-/* $Id: tstPDMAsyncCompletionStress.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: tstPDMAsyncCompletionStress.cpp 39084 2011-10-22 00:37:15Z vboxsync $ */
 /** @file
  * PDM Asynchronous Completion Stresstest.
  *
@@ -391,6 +391,7 @@ static void tstPDMACStressTestFileTaskCompleted(PVM pVM, void *pvUser, void *pvU
 {
     PPDMACTESTFILE pTestFile = (PPDMACTESTFILE)pvUser2;
     PPDMACTESTFILETASK pTestTask = (PPDMACTESTFILETASK)pvUser;
+    NOREF(pVM); NOREF(rcReq);
 
     if (pTestTask->fWrite)
     {
@@ -569,12 +570,11 @@ static void tstPDMACStressTestPatternDestroy(void)
 int main(int argc, char *argv[])
 {
     int rcRet = 0; /* error count */
-    int rc = VINF_SUCCESS;
 
-    RTR3InitAndSUPLib();
+    RTR3InitExe(argc, &argv, RTR3INIT_FLAGS_SUPLIB);
 
     PVM pVM;
-    rc = VMR3Create(1, NULL, NULL, NULL, NULL, NULL, &pVM);
+    int rc = VMR3Create(1, NULL, NULL, NULL, NULL, NULL, &pVM);
     if (RT_SUCCESS(rc))
     {
         /*

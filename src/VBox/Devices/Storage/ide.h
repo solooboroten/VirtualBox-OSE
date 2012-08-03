@@ -1,4 +1,4 @@
-/* $Id: ide.h 37264 2011-05-30 14:47:02Z vboxsync $ */
+/* $Id: ide.h 38894 2011-09-28 11:23:05Z vboxsync $ */
 /** @file
  * VBox storage devices: ATA/ATAPI declarations
  */
@@ -53,6 +53,7 @@ typedef enum ATACMD
 {
     ATA_NOP                                 = 0x00,
     ATA_CFA_REQUEST_EXTENDED_ERROR_CODE     = 0x03,
+    ATA_DATA_SET_MANAGEMENT                 = 0x06,
     ATA_DEVICE_RESET                        = 0x08,
     ATA_RECALIBRATE                         = 0x10,
     ATA_READ_SECTORS                        = 0x20,
@@ -174,6 +175,12 @@ typedef enum ATACMD
 #define ATA_FIRMWARE_REVISION_LENGTH     8
 #define ATA_MODEL_NUMBER_LENGTH         40
 
+/** Mask to get the LBA value from a LBA range. */
+#define ATA_RANGE_LBA_MASK    UINT64_C(0xffffffffffff)
+/** Mas to get the length value from a LBA range. */
+#define ATA_RANGE_LENGTH_MASK UINT64_C(0xffff000000000000)
+/** Returns the length of the range in sectors. */
+#define ATA_RANGE_LENGTH_GET(val) (((val) & ATA_RANGE_LENGTH_MASK) >> 48)
 
 /* ATAPI defines */
 

@@ -1,10 +1,10 @@
-/* $Id: VBoxGuest-solaris.c 36408 2011-03-24 16:25:47Z vboxsync $ */
+/* $Id: VBoxGuest-solaris.c 41722 2012-06-14 19:49:31Z vboxsync $ */
 /** @file
  * VirtualBox Guest Additions Driver for Solaris.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,6 +13,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 
@@ -28,6 +37,8 @@
 #include <sys/ddi_intr.h>
 #include <sys/sunddi.h>
 #include <sys/open.h>
+#include <sys/sunldi.h>
+#include <sys/file.h>
 #undef u /* /usr/include/sys/user.h:249:1 is where this is defined to (curproc->p_user). very cool. */
 
 #include "VBoxGuestInternal.h"
@@ -172,6 +183,12 @@ static size_t               g_cIntrAllocated;
 static pollhead_t           g_PollHead;
 /** The IRQ Mutex */
 static kmutex_t             g_IrqMtx;
+/** Layered device handle for kernel keep-attached opens */
+static ldi_handle_t         g_LdiHandle = NULL;
+/** Ref counting for IDCOpen calls */
+static uint64_t             g_cLdiOpens = 0;
+/** The Mutex protecting the LDI handle in IDC opens */
+static kmutex_t             g_LdiMtx;
 
 /**
  * Kernel entry points
@@ -193,6 +210,8 @@ int _init(void)
             RTLogRelSetDefaultInstance(pRelLogger);
         else
             cmn_err(CE_NOTE, "failed to initialize driver logging rc=%d!\n", rc);
+
+        mutex_init(&g_LdiMtx, NULL, MUTEX_DRIVER, NULL);
 
         /*
          * Prevent module autounloading.
@@ -230,6 +249,8 @@ int _fini(void)
 
     RTLogDestroy(RTLogRelSetDefaultInstance(NULL));
     RTLogDestroy(RTLogSetDefaultInstance(NULL));
+
+    mutex_destroy(&g_LdiMtx);
 
     RTR0Term();
     return rc;

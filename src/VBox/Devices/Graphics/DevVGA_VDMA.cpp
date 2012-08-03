@@ -82,6 +82,9 @@ typedef struct VBOXVDMAHOST
 {
     PHGSMIINSTANCE pHgsmi;
     PVGASTATE pVGAState;
+#ifdef VBOX_VDMA_WITH_WATCHDOG
+    PTMTIMERR3 WatchDogTimer;
+#endif
 #ifdef VBOX_VDMA_WITH_WORKERTHREAD
     VBOXVDMAPIPE Pipe;
     HGSMILIST PendingList;
@@ -156,14 +159,15 @@ static DECLCALLBACK(void) vboxVDMACrCtlCbReleaseCmd(PVGASTATE pVGAState, PVBOXVD
 }
 
 
-static int vboxVDMACrCtlPostAsync (PVGASTATE pVGAState, PVBOXVDMACMD_CHROMIUM_CTL pCmd, PFNVBOXVDMACRCTL_CALLBACK pfnCompletion, void *pvCompletion)
+static int vboxVDMACrCtlPostAsync (PVGASTATE pVGAState, PVBOXVDMACMD_CHROMIUM_CTL pCmd, uint32_t cbCmd, PFNVBOXVDMACRCTL_CALLBACK pfnCompletion, void *pvCompletion)
 {
-    if (pVGAState->pDrv->pfnCrHgsmiControlProcess)
+    if (   pVGAState->pDrv
+        && pVGAState->pDrv->pfnCrHgsmiControlProcess)
     {
         PVBOXVDMACMD_CHROMIUM_CTL_PRIVATE pHdr = VBOXVDMACMD_CHROMIUM_CTL_PRIVATE_FROM_CTL(pCmd);
         pHdr->pfnCompletion = pfnCompletion;
         pHdr->pvCompletion = pvCompletion;
-        pVGAState->pDrv->pfnCrHgsmiControlProcess(pVGAState->pDrv, pCmd);
+        pVGAState->pDrv->pfnCrHgsmiControlProcess(pVGAState->pDrv, pCmd, cbCmd);
         return VINF_SUCCESS;
     }
 #ifdef DEBUG_misha
@@ -172,14 +176,14 @@ static int vboxVDMACrCtlPostAsync (PVGASTATE pVGAState, PVBOXVDMACMD_CHROMIUM_CT
     return VERR_NOT_SUPPORTED;
 }
 
-static int vboxVDMACrCtlPost(PVGASTATE pVGAState, PVBOXVDMACMD_CHROMIUM_CTL pCmd)
+static int vboxVDMACrCtlPost(PVGASTATE pVGAState, PVBOXVDMACMD_CHROMIUM_CTL pCmd, uint32_t cbCmd)
 {
     RTSEMEVENT hComplEvent;
     int rc = RTSemEventCreate(&hComplEvent);
     AssertRC(rc);
     if(RT_SUCCESS(rc))
     {
-        rc = vboxVDMACrCtlPostAsync (pVGAState, pCmd, vboxVDMACrCtlCbSetEvent, (void*)hComplEvent);
+        rc = vboxVDMACrCtlPostAsync (pVGAState, pCmd, cbCmd, vboxVDMACrCtlCbSetEvent, (void*)hComplEvent);
 #ifdef DEBUG_misha
         AssertRC(rc);
 #endif
@@ -203,14 +207,16 @@ static int vboxVDMACrCtlPost(PVGASTATE pVGAState, PVBOXVDMACMD_CHROMIUM_CTL pCmd
 
 static int vboxVDMACrCtlHgsmiSetup(struct VBOXVDMAHOST *pVdma)
 {
-    PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP pCmd = (PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP)vboxVDMACrCtlCreate(
-            VBOXVDMACMD_CHROMIUM_CTL_TYPE_CRHGSMI_SETUP, sizeof (*pCmd));
+    PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP pCmd;
+    pCmd = (PVBOXVDMACMD_CHROMIUM_CTL_CRHGSMI_SETUP) vboxVDMACrCtlCreate (VBOXVDMACMD_CHROMIUM_CTL_TYPE_CRHGSMI_SETUP,
+                                                                          sizeof (*pCmd));
     if (pCmd)
     {
         PVGASTATE pVGAState = pVdma->pVGAState;
-        pCmd->pvRamBase = pVGAState->vram_ptrR3;
-        int rc = vboxVDMACrCtlPost(pVGAState, &pCmd->Hdr);
-        AssertRC(rc);
+        pCmd->pvVRamBase = pVGAState->vram_ptrR3;
+        pCmd->cbVRam = pVGAState->vram_size;
+        int rc = vboxVDMACrCtlPost(pVGAState, &pCmd->Hdr, sizeof (*pCmd));
+        Assert(RT_SUCCESS(rc) || rc == VERR_NOT_SUPPORTED);
         if (RT_SUCCESS(rc))
         {
             rc = vboxVDMACrCtlGetRc(&pCmd->Hdr);
@@ -224,73 +230,88 @@ static int vboxVDMACrCtlHgsmiSetup(struct VBOXVDMAHOST *pVdma)
 static int vboxVDMACmdExecBpbTransfer(PVBOXVDMAHOST pVdma, const PVBOXVDMACMD_DMA_BPB_TRANSFER pTransfer, uint32_t cbBuffer);
 
 /* check if this is external cmd to be passed to chromium backend */
-static bool vboxVDMACmdCheckCrCmd(struct VBOXVDMAHOST *pVdma, PVBOXVDMACBUF_DR pCmd)
+static int vboxVDMACmdCheckCrCmd(struct VBOXVDMAHOST *pVdma, PVBOXVDMACBUF_DR pCmdDr, uint32_t cbCmdDr)
 {
-    PVBOXVDMACMD pDmaCmd;
+    PVBOXVDMACMD pDmaCmd = NULL;
+    uint32_t cbDmaCmd = 0;
     uint8_t * pvRam = pVdma->pVGAState->vram_ptrR3;
-    bool bCompleted = false;
+    int rc = VINF_NOT_SUPPORTED;
 
-    if (pCmd->fFlags & VBOXVDMACBUF_FLAG_BUF_FOLLOWS_DR)
-        pDmaCmd = VBOXVDMACBUF_DR_TAIL(pCmd, VBOXVDMACMD);
-    else
-        pDmaCmd = NULL;
+    if (pCmdDr->fFlags & VBOXVDMACBUF_FLAG_BUF_FOLLOWS_DR)
+    {
+        if (cbCmdDr < sizeof (*pCmdDr) + VBOXVDMACMD_HEADER_SIZE())
+        {
+            AssertMsgFailed(("invalid buffer data!"));
+            return VERR_INVALID_PARAMETER;
+        }
+
+        cbDmaCmd = pCmdDr->cbBuf;
+        if (cbDmaCmd < cbCmdDr - sizeof (*pCmdDr) - VBOXVDMACMD_HEADER_SIZE())
+        {
+            AssertMsgFailed(("invalid command buffer data!"));
+            return VERR_INVALID_PARAMETER;
+        }
+
+        pDmaCmd = VBOXVDMACBUF_DR_TAIL(pCmdDr, VBOXVDMACMD);
+    }
 
     if (pDmaCmd)
     {
-        uint32_t cbCmd = pCmd->cbBuf;
-        Assert(cbCmd >= VBOXVDMACMD_HEADER_SIZE());
+        Assert(cbDmaCmd >= VBOXVDMACMD_HEADER_SIZE());
+        uint32_t cbBody = VBOXVDMACMD_BODY_SIZE(cbDmaCmd);
 
-        if (cbCmd >= VBOXVDMACMD_HEADER_SIZE())
+        switch (pDmaCmd->enmType)
         {
-            switch (pDmaCmd->enmType)
+            case VBOXVDMACMD_TYPE_CHROMIUM_CMD:
             {
-                case VBOXVDMACMD_TYPE_CHROMIUM_CMD:
+                PVBOXVDMACMD_CHROMIUM_CMD pCrCmd = VBOXVDMACMD_BODY(pDmaCmd, VBOXVDMACMD_CHROMIUM_CMD);
+                if (cbBody < sizeof (*pCrCmd))
                 {
-                    PVBOXVDMACMD_CHROMIUM_CMD pCrCmd = VBOXVDMACMD_BODY(pDmaCmd, VBOXVDMACMD_CHROMIUM_CMD);
-                    PVGASTATE pVGAState = pVdma->pVGAState;
-                    bCompleted = true;
-                    if (pVGAState->pDrv->pfnCrHgsmiCommandProcess)
-                    {
-                        VBoxSHGSMICommandMarkAsynchCompletion(pCmd);
-                        pVGAState->pDrv->pfnCrHgsmiCommandProcess(pVGAState->pDrv, pCrCmd);
-                        break;
-                    }
-                    else
-                    {
-                        Assert(0);
-                    }
+                    AssertMsgFailed(("invalid chromium command buffer size!"));
+                    return VERR_INVALID_PARAMETER;
+                }
+                PVGASTATE pVGAState = pVdma->pVGAState;
+                rc = VINF_SUCCESS;
+                if (pVGAState->pDrv->pfnCrHgsmiCommandProcess)
+                {
+                    VBoxSHGSMICommandMarkAsynchCompletion(pCmdDr);
+                    pVGAState->pDrv->pfnCrHgsmiCommandProcess(pVGAState->pDrv, pCrCmd, cbBody);
+                    break;
+                }
+                else
+                {
+                    Assert(0);
+                }
 
-                    int tmpRc = VBoxSHGSMICommandComplete (pVdma->pHgsmi, pCmd);
-                    AssertRC(tmpRc);
-//                uint32_t cBufs = pCrCmd->cBuffers;
-//                for (uint32_t i = 0; i < cBufs; ++i)
-//                {
-//                    PVBOXVDMACMD_CHROMIUM_BUFFER pBuf = &pCrCmd->aBuffers[i];
-//                    void *pvBuffer = pvRam + pBuf->offBuffer;
-//                    uint32_t cbBuffer = pBuf->cbBuffer;
-//                }
-                    break;
-                }
-                case VBOXVDMACMD_TYPE_DMA_BPB_TRANSFER:
-                {
-                    PVBOXVDMACMD_DMA_BPB_TRANSFER pTransfer = VBOXVDMACMD_BODY(pDmaCmd, VBOXVDMACMD_DMA_BPB_TRANSFER);
-                    int rc = vboxVDMACmdExecBpbTransfer(pVdma, pTransfer, sizeof (*pTransfer));
-                    AssertRC(rc);
-                    if (RT_SUCCESS(rc))
-                    {
-                        pCmd->rc = VINF_SUCCESS;
-                        rc = VBoxSHGSMICommandComplete (pVdma->pHgsmi, pCmd);
-                        AssertRC(rc);
-                        bCompleted = true;
-                    }
-                    break;
-                }
-                default:
-                    break;
+                int tmpRc = VBoxSHGSMICommandComplete (pVdma->pHgsmi, pCmdDr);
+                AssertRC(tmpRc);
+                break;
             }
+            case VBOXVDMACMD_TYPE_DMA_BPB_TRANSFER:
+            {
+                PVBOXVDMACMD_DMA_BPB_TRANSFER pTransfer = VBOXVDMACMD_BODY(pDmaCmd, VBOXVDMACMD_DMA_BPB_TRANSFER);
+                if (cbBody < sizeof (*pTransfer))
+                {
+                    AssertMsgFailed(("invalid bpb transfer buffer size!"));
+                    return VERR_INVALID_PARAMETER;
+                }
+
+                rc = vboxVDMACmdExecBpbTransfer(pVdma, pTransfer, sizeof (*pTransfer));
+                AssertRC(rc);
+                if (RT_SUCCESS(rc))
+                {
+                    pCmdDr->rc = VINF_SUCCESS;
+                    rc = VBoxSHGSMICommandComplete (pVdma->pHgsmi, pCmdDr);
+                    AssertRC(rc);
+                    rc = VINF_SUCCESS;
+                }
+                break;
+            }
+            default:
+                break;
         }
     }
-    return bCompleted;
+    return rc;
 }
 
 int vboxVDMACrHgsmiCommandCompleteAsync(PPDMIDISPLAYVBVACALLBACKS pInterface, PVBOXVDMACMD_CHROMIUM_CMD pCmd, int rc)
@@ -919,7 +940,7 @@ int vboxVDMAPipeDestruct(PVBOXVDMAPIPE pPipe)
 }
 #endif
 
-static void vboxVDMACommandProcess(PVBOXVDMAHOST pVdma, PVBOXVDMACBUF_DR pCmd)
+static void vboxVDMACommandProcess(PVBOXVDMAHOST pVdma, PVBOXVDMACBUF_DR pCmd, uint32_t cbCmd)
 {
     PHGSMIINSTANCE pHgsmi = pVdma->pHgsmi;
     const uint8_t * pvBuf;
@@ -1067,19 +1088,45 @@ static DECLCALLBACK(int) vboxVDMAWorkerThread(RTTHREAD ThreadSelf, void *pvUser)
 }
 #endif
 
+#ifdef VBOX_VDMA_WITH_WATCHDOG
+static DECLCALLBACK(void) vboxVDMAWatchDogTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, void *pvUser)
+{
+    VBOXVDMAHOST *pVdma = (VBOXVDMAHOST *)pvUser;
+    PVGASTATE pVGAState = pVdma->pVGAState;
+    VBVARaiseIrq(pVGAState, HGSMIHOSTFLAGS_WATCHDOG);
+}
+
+static int vboxVDMAWatchDogCtl(struct VBOXVDMAHOST *pVdma, uint32_t cMillis)
+{
+    PPDMDEVINS pDevIns = pVdma->pVGAState->pDevInsR3;
+    if (cMillis)
+        TMTimerSetMillies(pVdma->WatchDogTimer, cMillis);
+    else
+        TMTimerStop(pVdma->WatchDogTimer);
+    return VINF_SUCCESS;
+}
+#endif
+
 int vboxVDMAConstruct(PVGASTATE pVGAState, uint32_t cPipeElements)
 {
     int rc;
 #ifdef VBOX_VDMA_WITH_WORKERTHREAD
-    PVBOXVDMAHOST pVdma = (PVBOXVDMAHOST)RTMemAllocZ (RT_OFFSETOF(VBOXVDMAHOST, CmdPool.aCmds[cPipeElements]));
+    PVBOXVDMAHOST pVdma = (PVBOXVDMAHOST)RTMemAllocZ(RT_OFFSETOF(VBOXVDMAHOST, CmdPool.aCmds[cPipeElements]));
 #else
-    PVBOXVDMAHOST pVdma = (PVBOXVDMAHOST)RTMemAllocZ (sizeof (*pVdma));
+    PVBOXVDMAHOST pVdma = (PVBOXVDMAHOST)RTMemAllocZ(sizeof(*pVdma));
 #endif
     Assert(pVdma);
     if (pVdma)
     {
         pVdma->pHgsmi = pVGAState->pHGSMI;
         pVdma->pVGAState = pVGAState;
+
+#ifdef VBOX_VDMA_WITH_WATCHDOG
+        rc = PDMDevHlpTMTimerCreate(pVGAState->pDevInsR3, TMCLOCK_REAL, vboxVDMAWatchDogTimer,
+                                    pVdma, TMTIMER_FLAGS_NO_CRIT_SECT,
+                                    "VDMA WatchDog Timer", &pVdma->WatchDogTimer);
+        AssertRC(rc);
+#endif
 #ifdef VBOX_VDMA_WITH_WORKERTHREAD
         hgsmiListInit(&pVdma->PendingList);
         rc = vboxVDMAPipeConstruct(&pVdma->Pipe);
@@ -1102,7 +1149,7 @@ int vboxVDMAConstruct(PVGASTATE pVGAState, uint32_t cPipeElements)
 #endif
                 pVGAState->pVdma = pVdma;
 #ifdef VBOX_WITH_CRHGSMI
-                rc = vboxVDMACrCtlHgsmiSetup(pVdma);
+                int rcIgnored = vboxVDMACrCtlHgsmiSetup(pVdma); NOREF(rcIgnored); /** @todo is this ignoring intentional? */
 #endif
                 return VINF_SUCCESS;
 #ifdef VBOX_VDMA_WITH_WORKERTHREAD
@@ -1170,7 +1217,7 @@ int vboxVDMASaveStateExecPrep(struct VBOXVDMAHOST *pVdma, PSSMHANDLE pSSM)
     Assert(pCmd);
     if (pCmd)
     {
-        int rc = vboxVDMACrCtlPost(pVGAState, pCmd);
+        int rc = vboxVDMACrCtlPost(pVGAState, pCmd, sizeof (*pCmd));
         AssertRC(rc);
         if (RT_SUCCESS(rc))
         {
@@ -1194,7 +1241,7 @@ int vboxVDMASaveStateExecDone(struct VBOXVDMAHOST *pVdma, PSSMHANDLE pSSM)
     Assert(pCmd);
     if (pCmd)
     {
-        int rc = vboxVDMACrCtlPost(pVGAState, pCmd);
+        int rc = vboxVDMACrCtlPost(pVGAState, pCmd, sizeof (*pCmd));
         AssertRC(rc);
         if (RT_SUCCESS(rc))
         {
@@ -1209,8 +1256,7 @@ int vboxVDMASaveStateExecDone(struct VBOXVDMAHOST *pVdma, PSSMHANDLE pSSM)
 #endif
 }
 
-
-void vboxVDMAControl(struct VBOXVDMAHOST *pVdma, PVBOXVDMA_CTL pCmd)
+void vboxVDMAControl(struct VBOXVDMAHOST *pVdma, PVBOXVDMA_CTL pCmd, uint32_t cbCmd)
 {
 #if 1
     PHGSMIINSTANCE pIns = pVdma->pHgsmi;
@@ -1226,6 +1272,11 @@ void vboxVDMAControl(struct VBOXVDMAHOST *pVdma, PVBOXVDMA_CTL pCmd)
         case VBOXVDMA_CTL_TYPE_FLUSH:
             pCmd->i32Result = VINF_SUCCESS;
             break;
+#ifdef VBOX_VDMA_WITH_WATCHDOG
+        case VBOXVDMA_CTL_TYPE_WATCHDOG:
+            pCmd->i32Result = vboxVDMAWatchDogCtl(pVdma, pCmd->u32Offset);
+            break;
+#endif
         default:
             AssertBreakpoint();
             pCmd->i32Result = VERR_NOT_SUPPORTED;
@@ -1263,19 +1314,29 @@ void vboxVDMAControl(struct VBOXVDMAHOST *pVdma, PVBOXVDMA_CTL pCmd)
 #endif
 }
 
-void vboxVDMACommand(struct VBOXVDMAHOST *pVdma, PVBOXVDMACBUF_DR pCmd)
+void vboxVDMACommand(struct VBOXVDMAHOST *pVdma, PVBOXVDMACBUF_DR pCmd, uint32_t cbCmd)
 {
+    int rc = VERR_NOT_IMPLEMENTED;
+
 #ifdef VBOX_WITH_CRHGSMI
     /* chromium commands are processed by crhomium hgcm thread independently from our internal cmd processing pipeline
      * this is why we process them specially */
-    if (vboxVDMACmdCheckCrCmd(pVdma, pCmd))
+    rc = vboxVDMACmdCheckCrCmd(pVdma, pCmd, cbCmd);
+    if (rc == VINF_SUCCESS)
         return;
+
+    if (RT_FAILURE(rc))
+    {
+        pCmd->rc = rc;
+        rc = VBoxSHGSMICommandComplete (pVdma->pHgsmi, pCmd);
+        AssertRC(rc);
+        return;
+    }
 #endif
 
 #ifndef VBOX_VDMA_WITH_WORKERTHREAD
-    vboxVDMACommandProcess(pVdma, pCmd);
+    vboxVDMACommandProcess(pVdma, pCmd, cbCmd);
 #else
-    int rc = VERR_NOT_IMPLEMENTED;
 
 # ifdef DEBUG_misha
     Assert(0);

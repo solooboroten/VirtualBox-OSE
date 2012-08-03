@@ -1,4 +1,4 @@
-/* $Id: fileio2-posix.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: fileio2-posix.cpp 40553 2012-03-20 15:41:39Z vboxsync $ */
 /** @file
  * IPRT - File I/O, POSIX, Part 2.
  */
@@ -134,6 +134,8 @@ RTR3DECL(int) RTFileQueryInfo(RTFILE hFile, PRTFSOBJINFO pObjInfo, RTFSOBJATTRAD
 RTR3DECL(int) RTFileSetTimes(RTFILE hFile, PCRTTIMESPEC pAccessTime, PCRTTIMESPEC pModificationTime,
                              PCRTTIMESPEC pChangeTime, PCRTTIMESPEC pBirthTime)
 {
+    NOREF(pChangeTime); NOREF(pBirthTime);
+
     /*
      * We can only set AccessTime and ModificationTime, so if neither
      * are specified we can return immediately.
@@ -161,6 +163,8 @@ RTR3DECL(int) RTFileSetTimes(RTFILE hFile, PCRTTIMESPEC pAccessTime, PCRTTIMESPE
         RTTimeSpecGetTimeval(pModificationTime  ? pModificationTime : &ObjInfo.ModificationTime, &aTimevals[1]);
     }
 
+    /* XXX this falls back to utimes("/proc/self/fd/...",...) for older kernels/glibcs and this
+     * will not work for hardened builds where this directory is owned by root.root and mode 0500 */
     if (futimes(RTFileToNative(hFile), aTimevals))
     {
         int rc = RTErrConvertFromErrno(errno);

@@ -52,6 +52,8 @@ typedef enum RTLOGGROUP
 {
     /** Default logging group. */
     RTLOGGROUP_DEFAULT,
+    RTLOGGROUP_DBG,
+    RTLOGGROUP_DBG_DWARF,
     RTLOGGROUP_DIR,
     RTLOGGROUP_FILE,
     RTLOGGROUP_FS,
@@ -81,6 +83,8 @@ typedef enum RTLOGGROUP
  */
 #define RT_LOGGROUP_NAMES \
     "DEFAULT",      \
+    "RT_DBG",       \
+    "RT_DBG_DWARF", \
     "RT_DIR",       \
     "RT_FILE",      \
     "RT_FS",        \
@@ -91,8 +95,6 @@ typedef enum RTLOGGROUP
     "RT_THREAD",    \
     "RT_TIME",      \
     "RT_TIMER",     \
-    "RT_11", \
-    "RT_12", \
     "RT_13", \
     "RT_14", \
     "RT_15", \
@@ -779,6 +781,9 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 
 /** Shortcut to |LogFlowFunc ("LEAVE\n")|, marks the end of the function. */
 #define LogFlowFuncLeave()      LogFlowFunc(("LEAVE\n"))
+
+/** Shortcut to |LogFlowFunc ("LEAVE: %Rrc\n")|, marks the end of the function. */
+#define LogFlowFuncLeaveRC(rc)      LogFlowFunc(("LEAVE: %Rrc\n", (rc)))
 
 /** Shortcut to |LogFlowThisFunc ("ENTER\n")|, marks the beginnig of the function. */
 #define LogFlowThisFuncEnter()  LogFlowThisFunc(("ENTER\n"))

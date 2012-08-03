@@ -1,4 +1,4 @@
-/* $Id: pipe-posix.cpp 33104 2010-10-13 12:46:59Z vboxsync $ */
+/* $Id: pipe-posix.cpp 40102 2012-02-13 17:50:04Z vboxsync $ */
 /** @file
  * IPRT - Anonymous Pipes, POSIX Implementation.
  */
@@ -43,11 +43,15 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <signal.h>
 #ifdef RT_OS_LINUX
 # include <sys/syscall.h>
+#endif
+#ifdef RT_OS_SOLARIS
+# include <sys/filio.h>
 #endif
 
 
@@ -100,7 +104,7 @@ static int my_pipe_wrapper(int *paFds, int *piNewPipeSyscall)
 {
     if (*piNewPipeSyscall >= 0)
     {
-#if defined(RT_OS_LINUX) && defined(__NR_pipe2)
+#if defined(RT_OS_LINUX) && defined(__NR_pipe2) && defined(O_CLOEXEC)
         long rc = syscall(__NR_pipe2, paFds, O_CLOEXEC);
         if (rc >= 0)
         {
@@ -631,9 +635,35 @@ RTDECL(int) RTPipeSelectOne(RTPIPE hPipe, RTMSINTERVAL cMillies)
     else
         timeout = cMillies;
 
-    int rc = poll(&PollFd, 1, 0);
+    int rc = poll(&PollFd, 1, timeout);
     if (rc == -1)
         return RTErrConvertFromErrno(errno);
     return rc > 0 ? VINF_SUCCESS : VERR_TIMEOUT;
+}
+
+
+RTDECL(int) RTPipeQueryReadable(RTPIPE hPipe, size_t *pcbReadable)
+{
+    RTPIPEINTERNAL *pThis = hPipe;
+    AssertPtrReturn(pThis, VERR_INVALID_HANDLE);
+    AssertReturn(pThis->u32Magic == RTPIPE_MAGIC, VERR_INVALID_HANDLE);
+    AssertReturn(pThis->fRead, VERR_PIPE_NOT_READ);
+    AssertPtrReturn(pcbReadable, VERR_INVALID_POINTER);
+
+    int cb = 0;
+    int rc = ioctl(pThis->fd, FIONREAD, &cb);
+    if (rc != -1)
+    {
+        AssertStmt(cb >= 0, cb = 0);
+        *pcbReadable = cb;
+        return VINF_SUCCESS;
+    }
+
+    rc = errno;
+    if (rc == ENOTTY)
+        rc = VERR_NOT_SUPPORTED;
+    else
+        rc = RTErrConvertFromErrno(rc);
+    return rc;
 }
 

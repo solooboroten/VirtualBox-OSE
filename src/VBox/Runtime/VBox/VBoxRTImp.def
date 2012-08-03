@@ -1,4 +1,4 @@
-; $Id: VBoxRTImp.def 35185 2010-12-16 14:10:38Z vboxsync $
+; $Id: VBoxRTImp.def 40806 2012-04-06 21:05:19Z vboxsync $
 ;; @file
 ; VirtualBox Runtime DLL - Stable Interface Definition file.
 
@@ -637,6 +637,7 @@ EXPORTS
     RTLogSetBuffering
     RTLogSetCustomPrefixCallback
     RTLogSetDefaultInstance
+    RTLogSetGroupLimit
     RTLogWriteCom
     RTLogWriteDebugger
     RTLogWriteStdErr
@@ -857,11 +858,10 @@ EXPORTS
     RTProcTerminate
     RTProcWait
     RTProcWaitNoResume
-    RTR3Init
-    RTR3InitAndSUPLib
-    RTR3InitAndSUPLibWithProgramPath
+    RTR3InitDll
+    RTR3InitExe
+    RTR3InitExeNoArguments
     RTR3InitEx
-    RTR3InitWithProgramPath
     RTRandAdvBytes
     RTRandAdvCreateParkMiller
     RTRandAdvCreateSystemFaster
@@ -1035,11 +1035,9 @@ EXPORTS
     RTSocketWrite
     RTSocketWriteNB
     RTSpinlockAcquire
-    RTSpinlockAcquireNoInts
     RTSpinlockCreate
     RTSpinlockDestroy
     RTSpinlockRelease
-    RTSpinlockReleaseNoInts
     RTStrAAppendExNVTag
     RTStrAAppendNTag
     RTStrAAppendTag

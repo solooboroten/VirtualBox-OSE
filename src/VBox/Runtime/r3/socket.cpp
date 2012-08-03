@@ -1,4 +1,4 @@
-/* $Id: socket.cpp 37196 2011-05-24 14:50:05Z vboxsync $ */
+/* $Id: socket.cpp 39807 2012-01-19 10:43:42Z vboxsync $ */
 /** @file
  * IPRT - Network Sockets.
  */
@@ -54,6 +54,7 @@
 #include <iprt/alloca.h>
 #include <iprt/asm.h>
 #include <iprt/assert.h>
+#include <iprt/ctype.h>
 #include <iprt/err.h>
 #include <iprt/mempool.h>
 #include <iprt/poll.h>
@@ -156,9 +157,9 @@ typedef struct RTSOCKETINT
 typedef union RTSOCKADDRUNION
 {
     struct sockaddr     Addr;
-    struct sockaddr_in  Ipv4;
+    struct sockaddr_in  IPv4;
 #ifdef IPRT_WITH_TCPIP_V6
-    struct sockaddr_in6 Ipv6;
+    struct sockaddr_in6 IPv6;
 #endif
 } RTSOCKADDRUNION;
 
@@ -238,8 +239,8 @@ static int rtSocketNetAddrFromAddr(RTSOCKADDRUNION const *pSrc, size_t cbSrc, PR
     {
         RT_ZERO(*pAddr);
         pAddr->enmType      = RTNETADDRTYPE_IPV4;
-        pAddr->uPort        = RT_N2H_U16(pSrc->Ipv4.sin_port);
-        pAddr->uAddr.IPv4.u = pSrc->Ipv4.sin_addr.s_addr;
+        pAddr->uPort        = RT_N2H_U16(pSrc->IPv4.sin_port);
+        pAddr->uAddr.IPv4.u = pSrc->IPv4.sin_addr.s_addr;
     }
 #ifdef IPRT_WITH_TCPIP_V6
     else if (   cbSrc == sizeof(struct sockaddr_in6)
@@ -247,11 +248,11 @@ static int rtSocketNetAddrFromAddr(RTSOCKADDRUNION const *pSrc, size_t cbSrc, PR
     {
         RT_ZERO(*pAddr);
         pAddr->enmType            = RTNETADDRTYPE_IPV6;
-        pAddr->uPort              = RT_N2H_U16(pSrc->Ipv6.sin6_port);
-        pAddr->uAddr.IPv6.au32[0] = pSrc->Ipv6.sin6_addr.s6_addr32[0];
-        pAddr->uAddr.IPv6.au32[1] = pSrc->Ipv6.sin6_addr.s6_addr32[1];
-        pAddr->uAddr.IPv6.au32[2] = pSrc->Ipv6.sin6_addr.s6_addr32[2];
-        pAddr->uAddr.IPv6.au32[3] = pSrc->Ipv6.sin6_addr.s6_addr32[3];
+        pAddr->uPort              = RT_N2H_U16(pSrc->IPv6.sin6_port);
+        pAddr->uAddr.IPv6.au32[0] = pSrc->IPv6.sin6_addr.s6_addr32[0];
+        pAddr->uAddr.IPv6.au32[1] = pSrc->IPv6.sin6_addr.s6_addr32[1];
+        pAddr->uAddr.IPv6.au32[2] = pSrc->IPv6.sin6_addr.s6_addr32[2];
+        pAddr->uAddr.IPv6.au32[3] = pSrc->IPv6.sin6_addr.s6_addr32[3];
     }
 #endif
     else
@@ -267,27 +268,33 @@ static int rtSocketNetAddrFromAddr(RTSOCKADDRUNION const *pSrc, size_t cbSrc, PR
  * @param   pAddr               Pointer to the generic IPRT network address.
  * @param   pDst                The source address.
  * @param   cbSrc               The size of the source address.
+ * @param   pcbAddr             Where to store the size of the returned address.
+ *                              Optional
  */
-static int rtSocketAddrFromNetAddr(PCRTNETADDR pAddr, RTSOCKADDRUNION *pDst, size_t cbDst)
+static int rtSocketAddrFromNetAddr(PCRTNETADDR pAddr, RTSOCKADDRUNION *pDst, size_t cbDst, int *pcbAddr)
 {
     RT_BZERO(pDst, cbDst);
     if (   pAddr->enmType == RTNETADDRTYPE_IPV4
         && cbDst >= sizeof(struct sockaddr_in))
     {
         pDst->Addr.sa_family       = AF_INET;
-        pDst->Ipv4.sin_port        = RT_H2N_U16(pAddr->uPort);
-        pDst->Ipv4.sin_addr.s_addr = pAddr->uAddr.IPv4.u;
+        pDst->IPv4.sin_port        = RT_H2N_U16(pAddr->uPort);
+        pDst->IPv4.sin_addr.s_addr = pAddr->uAddr.IPv4.u;
+        if (pcbAddr)
+            *pcbAddr = sizeof(pDst->IPv4);
     }
 #ifdef IPRT_WITH_TCPIP_V6
     else if (   pAddr->enmType == RTNETADDRTYPE_IPV6
              && cbDst >= sizeof(struct sockaddr_in6))
     {
         pDst->Addr.sa_family              = AF_INET6;
-        pDst->Ipv6.sin6_port              = RT_H2N_U16(pAddr->uPort);
-        pSrc->Ipv6.sin6_addr.s6_addr32[0] = pAddr->uAddr.IPv6.au32[0];
-        pSrc->Ipv6.sin6_addr.s6_addr32[1] = pAddr->uAddr.IPv6.au32[1];
-        pSrc->Ipv6.sin6_addr.s6_addr32[2] = pAddr->uAddr.IPv6.au32[2];
-        pSrc->Ipv6.sin6_addr.s6_addr32[3] = pAddr->uAddr.IPv6.au32[3];
+        pDst->IPv6.sin6_port              = RT_H2N_U16(pAddr->uPort);
+        pSrc->IPv6.sin6_addr.s6_addr32[0] = pAddr->uAddr.IPv6.au32[0];
+        pSrc->IPv6.sin6_addr.s6_addr32[1] = pAddr->uAddr.IPv6.au32[1];
+        pSrc->IPv6.sin6_addr.s6_addr32[2] = pAddr->uAddr.IPv6.au32[2];
+        pSrc->IPv6.sin6_addr.s6_addr32[3] = pAddr->uAddr.IPv6.au32[3];
+        if (pcbAddr)
+            *pcbAddr = sizeof(pDst->IPv6);
     }
 #endif
     else
@@ -331,7 +338,6 @@ DECLINLINE(void) rtSocketUnlock(RTSOCKETINT *pThis)
  */
 static int rtSocketSwitchBlockingModeSlow(RTSOCKETINT *pThis, bool fBlocking)
 {
-    int     rc        = VINF_SUCCESS;
 #ifdef RT_OS_WINDOWS
     u_long  uBlocking = fBlocking ? 0 : 1;
     if (ioctlsocket(pThis->hNative, FIONBIO, &uBlocking))
@@ -580,6 +586,33 @@ RTDECL(int) RTSocketSetInheritance(RTSOCKET hSocket, bool fInheritable)
     return rc;
 }
 
+static bool rtSocketIsIPv4Numerical(const char *pszAddress, PRTNETADDRIPV4 pAddr)
+{
+
+    /* Empty address resolves to the INADDR_ANY address (good for bind). */
+    if (!pszAddress || !*pszAddress)
+    {
+        pAddr->u = INADDR_ANY;
+        return true;
+    }
+
+    /* Four quads? */
+    char *psz = (char *)pszAddress;
+    for (int i = 0; i < 4; i++)
+    {
+        uint8_t u8;
+        int rc = RTStrToUInt8Ex(psz, &psz, 0, &u8);
+        if (rc != VINF_SUCCESS && rc != VWRN_TRAILING_CHARS)
+            return false;
+        if (*psz != (i < 3 ? '.' : '\0'))
+            return false;
+        psz++;
+
+        pAddr->au8[i] = u8;             /* big endian */
+    }
+
+    return true;
+}
 
 RTDECL(int) RTSocketParseInetAddress(const char *pszAddress, unsigned uPort, PRTNETADDR pAddr)
 {
@@ -589,7 +622,7 @@ RTDECL(int) RTSocketParseInetAddress(const char *pszAddress, unsigned uPort, PRT
      * Validate input.
      */
     AssertReturn(uPort > 0, VERR_INVALID_PARAMETER);
-    AssertPtrReturn(pszAddress, VERR_INVALID_POINTER);
+    AssertPtrNullReturn(pszAddress, VERR_INVALID_POINTER);
 
 #ifdef RT_OS_WINDOWS
     /*
@@ -606,23 +639,30 @@ RTDECL(int) RTSocketParseInetAddress(const char *pszAddress, unsigned uPort, PRT
 #endif
 
     /*
-     * Resolve the address.
+     * Resolve the address. Pretty crude at the moment, but we have to make
+     * sure to not ask the NT 4 gethostbyname about an IPv4 address as it may
+     * give a wrong answer.
      */
     /** @todo this only supports IPv4, and IPv6 support needs to be added.
-     * It probably needs to be converted to getnameinfo(). */
-    struct hostent *pHostEnt = NULL;
+     * It probably needs to be converted to getaddrinfo(). */
+    RTNETADDRIPV4 IPv4Quad;
+    if (rtSocketIsIPv4Numerical(pszAddress, &IPv4Quad))
+    {
+        Log3(("rtSocketIsIPv4Numerical: %#x (%RTnaipv4)\n", pszAddress, IPv4Quad.u, IPv4Quad));
+        RT_ZERO(*pAddr);
+        pAddr->enmType      = RTNETADDRTYPE_IPV4;
+        pAddr->uPort        = uPort;
+        pAddr->uAddr.IPv4   = IPv4Quad;
+        return VINF_SUCCESS;
+    }
+
+    struct hostent *pHostEnt;
     pHostEnt = gethostbyname(pszAddress);
     if (!pHostEnt)
     {
-        struct in_addr InAddr;
-        InAddr.s_addr = inet_addr(pszAddress);
-        pHostEnt = gethostbyaddr((char *)&InAddr, 4, AF_INET);
-        if (!pHostEnt)
-        {
-            rc = rtSocketResolverError();
-            AssertMsgFailed(("Could not resolve '%s', rc=%Rrc\n", pszAddress, rc));
-            return rc;
-        }
+        rc = rtSocketResolverError();
+        AssertMsgFailed(("Could not resolve '%s', rc=%Rrc\n", pszAddress, rc));
+        return rc;
     }
 
     if (pHostEnt->h_addrtype == AF_INET)
@@ -631,6 +671,7 @@ RTDECL(int) RTSocketParseInetAddress(const char *pszAddress, unsigned uPort, PRT
         pAddr->enmType      = RTNETADDRTYPE_IPV4;
         pAddr->uPort        = uPort;
         pAddr->uAddr.IPv4.u = ((struct in_addr *)pHostEnt->h_addr)->s_addr;
+        Log3(("gethostbyname: %s -> %#x (%RTnaipv4)\n", pszAddress, pAddr->uAddr.IPv4.u, pAddr->uAddr.IPv4));
     }
     else
         return VERR_NET_ADDRESS_FAMILY_NOT_SUPPORTED;
@@ -857,7 +898,7 @@ RTDECL(int) RTSocketWriteTo(RTSOCKET hSocket, const void *pvBuffer, size_t cbBuf
     RTSOCKADDRUNION u;
     if (pAddr)
     {
-        rc = rtSocketAddrFromNetAddr(pAddr, &u, sizeof(u));
+        rc = rtSocketAddrFromNetAddr(pAddr, &u, sizeof(u), NULL);
         if (RT_FAILURE(rc))
             return rc;
         pSA = &u.Addr;
@@ -1393,11 +1434,9 @@ RTDECL(int) RTSocketGetPeerAddress(RTSOCKET hSocket, PRTNETADDR pAddr)
  *
  * @returns IPRT status code.
  * @param   hSocket             The socket handle.
- * @param   pAddr               The socket address to bind to.
- * @param   cbAddr              The size of the address structure @a pAddr
- *                              points to.
+ * @param   pAddr               The address to bind to.
  */
-int rtSocketBind(RTSOCKET hSocket, const struct sockaddr *pAddr, int cbAddr)
+int rtSocketBind(RTSOCKET hSocket, PCRTNETADDR pAddr)
 {
     /*
      * Validate input.
@@ -1407,9 +1446,14 @@ int rtSocketBind(RTSOCKET hSocket, const struct sockaddr *pAddr, int cbAddr)
     AssertReturn(pThis->u32Magic == RTSOCKET_MAGIC, VERR_INVALID_HANDLE);
     AssertReturn(rtSocketTryLock(pThis), VERR_CONCURRENT_ACCESS);
 
-    int rc = VINF_SUCCESS;
-    if (bind(pThis->hNative, pAddr, cbAddr) != 0)
-        rc = rtSocketError();
+    RTSOCKADDRUNION u;
+    int             cbAddr;
+    int rc = rtSocketAddrFromNetAddr(pAddr, &u, sizeof(u), &cbAddr);
+    if (RT_SUCCESS(rc))
+    {
+        if (bind(pThis->hNative, &u.Addr, cbAddr) != 0)
+            rc = rtSocketError();
+    }
 
     rtSocketUnlock(pThis);
     return rc;
@@ -1508,10 +1552,8 @@ int rtSocketAccept(RTSOCKET hSocket, PRTSOCKET phClient, struct sockaddr *pAddr,
  * @returns IPRT status code.
  * @param   hSocket             The socket handle.
  * @param   pAddr               The socket address to connect to.
- * @param   cbAddr              The size of the address structure @a pAddr
- *                              points to.
  */
-int rtSocketConnect(RTSOCKET hSocket, const struct sockaddr *pAddr, int cbAddr)
+int rtSocketConnect(RTSOCKET hSocket, PCRTNETADDR pAddr)
 {
     /*
      * Validate input.
@@ -1521,9 +1563,14 @@ int rtSocketConnect(RTSOCKET hSocket, const struct sockaddr *pAddr, int cbAddr)
     AssertReturn(pThis->u32Magic == RTSOCKET_MAGIC, VERR_INVALID_HANDLE);
     AssertReturn(rtSocketTryLock(pThis), VERR_CONCURRENT_ACCESS);
 
-    int rc = VINF_SUCCESS;
-    if (connect(pThis->hNative, pAddr, cbAddr) != 0)
-        rc = rtSocketError();
+    RTSOCKADDRUNION u;
+    int             cbAddr;
+    int rc = rtSocketAddrFromNetAddr(pAddr, &u, sizeof(u), &cbAddr);
+    if (RT_SUCCESS(rc))
+    {
+        if (connect(pThis->hNative, &u.Addr, cbAddr) != 0)
+            rc = rtSocketError();
+    }
 
     rtSocketUnlock(pThis);
     return rc;

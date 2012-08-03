@@ -1,10 +1,10 @@
-/* $Id: the-linux-kernel.h 36233 2011-03-09 17:05:12Z vboxsync $ */
+/* $Id: the-linux-kernel.h 41660 2012-06-12 08:08:17Z vboxsync $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -64,6 +64,9 @@
 #  define KBUILD_STR(s) #s
 # endif
 #endif
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0)
+#  include <linux/kconfig.h> /* for macro IS_ENABLED */
+# endif
 #include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
@@ -117,6 +120,13 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 #include <asm/div64.h>
+
+/* for workqueue / task queues. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 41)
+# include <linux/workqueue.h>
+#else
+# include <linux/tqueue.h>
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
 # include <linux/kthread.h>
@@ -232,7 +242,7 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 /* accounting. */
 # if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0)
 #  ifdef VM_ACCOUNT
-#   define MY_DO_MUNMAP(a,b,c) do_munmap(a, b, c, 0) /* should it be 1 or 0? */
+#   define USE_RHEL4_MUNMAP
 #  endif
 # endif
 
@@ -258,10 +268,6 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
     } while (0)
 # endif  /* !RT_ARCH_AMD64 */
 #endif /* !NO_REDHAT_HACKS */
-
-#ifndef MY_DO_MUNMAP
-# define MY_DO_MUNMAP(a,b,c) do_munmap(a, b, c)
-#endif
 
 #ifndef MY_CHANGE_PAGE_ATTR
 # ifdef RT_ARCH_AMD64 /** @todo This is a cheap hack, but it'll get around that 'else BUG();' in __change_page_attr().  */
@@ -366,5 +372,17 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 28)
 # define IPRT_LINUX_HAS_HRTIMER
 #endif
+
+/*
+ * Workqueue stuff, see initterm-r0drv-linux.c.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 41)
+typedef struct work_struct  RTR0LNXWORKQUEUEITEM;
+#else
+typedef struct tq_struct    RTR0LNXWORKQUEUEITEM;
+#endif
+DECLHIDDEN(void) rtR0LnxWorkqueuePush(RTR0LNXWORKQUEUEITEM *pWork, void (*pfnWorker)(RTR0LNXWORKQUEUEITEM *));
+DECLHIDDEN(void) rtR0LnxWorkqueueFlush(void);
+
 
 #endif

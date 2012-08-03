@@ -1,10 +1,10 @@
-; $Id: $
-;; @file
+; $Id$
+; @file
 ; VBoxGuestAdditionsVista.nsh - Guest Additions installation for Windows Vista/7.
 ;
 
 ;
-; Copyright (C) 2006-2011 Oracle Corporation
+; Copyright (C) 2006-2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -14,6 +14,55 @@
 ; VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 ; hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 ;
+
+Function Vista_CheckForRequirements
+
+  Push $0
+
+  DetailPrint "Checking for installation requirements for Vista / Windows 7 / Windows 8 ..."
+
+  ${If} $g_bForceInstall == "true"
+    DetailPrint "Forcing installatoin, checking requirements skipped"
+    goto success
+  ${EndIf}
+
+  ; Validate D3D files, regardless whether D3D support is selected or not
+  Call ValidateD3DFiles
+  Pop $0
+  ${If} $0 == "1" ; D3D files are invalid, notify user
+    MessageBox MB_ICONSTOP|MB_OKCANCEL $(VBOX_COMPONENT_D3D_INVALID) /SD IDOK IDCANCEL failure
+    ; Offer to open up the VBox online manual on how to fix missing/corrupted D3D files
+    MessageBox MB_ICONQUESTION|MB_YESNO $(VBOX_COMPONENT_D3D_INVALID_MANUAL) /SD IDNO IDYES open_handbook_d3d_invalid    
+  ${EndIf}
+  Goto success
+
+open_handbook_d3d_invalid:
+
+  ; @todo Add a language GET parameter (e.g. ?lang=enUS) here as soon as we got the
+  ;       handbook online in different languages
+  ; Don't use https here (even if we offer it) -- we only want to display the handbook
+  Call SetAppMode64 ; For shell execution we need to switch to 64-bit mode first
+  ExecShell open "http://www.virtualbox.org/manual/ch12.html#ts_d3d8-d3d9-restore"
+  IfErrors 0 +2
+    MessageBox MB_ICONSTOP|MB_OK $(VBOX_ERROR_OPEN_LINK) /SD IDOK
+  Call SetAppMode32
+  Goto failure
+
+failure:
+
+  Abort "ERROR: Requirements not met! Installation aborted."
+  goto exit
+
+success:
+
+  ; Nothing to do here right now
+  Goto exit
+
+exit:
+
+  Pop $0
+
+FunctionEnd
 
 Function Vista_CopyFiles
 
@@ -26,19 +75,29 @@ Function Vista_CopyFiles
   ;FILE "$%PATH_OUT%\bin\additions\VBoxNET.inf"
   ;FILE "$%PATH_OUT%\bin\additions\VBoxNET.sys"
 
+!ifdef VBOX_WITH_MMR
+  FILE "$%PATH_OUT%\bin\additions\VBoxMMRHook.dll"
+!endif
 
 FunctionEnd
 
 Function Vista_InstallFiles
 
-  DetailPrint "Installing drivers for Vista / Windows 7 ..."
+  DetailPrint "Installing drivers for Vista / Windows 7 / Windows 8 ..."
 
   SetOutPath "$INSTDIR"
   ; Nothing here yet
+
+!ifdef VBOX_WITH_MMR
+  !insertmacro ReplaceDLL "$%PATH_OUT%\bin\additions\VBoxMMRHook.dll" "$g_strSystemDir\VBoxMMRHook.dll" "$INSTDIR"
+  AccessControl::GrantOnFile "$g_strSystemDir\VBoxMMRHook.dll" "(BU)" "GenericRead"
+!endif
+
   Goto done
 
 error:
-  Abort "ERROR: Could not install files for Vista / Windows 7! Installation aborted."
+
+  Abort "ERROR: Could not install files! Installation aborted."
 
 done:
 
@@ -73,6 +132,11 @@ Function ${un}Vista_Uninstall
    DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}"
    DeleteRegKey HKCR "CLSID\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}"
    Delete /REBOOTOK "$g_strSystemDir\VBoxCredProv.dll"
+
+!ifdef VBOX_WITH_MMR
+   Delete /REBOOTOK "$g_strSystemDir\VBoxMMRHook.dll"
+   Delete /REBOOTOK "$INSTDIR\VBoxMMRHook.dll"
+!endif
 
 FunctionEnd
 !macroend

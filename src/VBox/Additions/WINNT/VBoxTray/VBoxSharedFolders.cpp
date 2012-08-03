@@ -1,4 +1,4 @@
-/* $Id: VBoxSharedFolders.cpp 34613 2010-12-02 14:08:02Z vboxsync $ */
+/* $Id: VBoxSharedFolders.cpp 41443 2012-05-25 07:52:59Z vboxsync $ */
 /** @file
  * VBoxSharedFolders - Handling for shared folders
  */
@@ -121,7 +121,7 @@ int VBoxSharedFoldersAutoMount(void)
 #if 0
             }
 #endif
-            RTMemFree(paMappings);
+            VbglR3SharedFolderFreeMappings(paMappings);
         }
         else
             Log(("VBoxTray: Error while getting the shared folder mappings, rc = %Rrc\n", rc));
@@ -189,7 +189,7 @@ int VBoxSharedFoldersAutoUnmount(void)
                     Log(("VBoxTray: Error while getting the shared folder name for root node = %u, rc = %Rrc\n",
                          paMappings[i].u32Root, rc));
             }
-            RTMemFree(paMappings);
+            VbglR3SharedFolderFreeMappings(paMappings);
         }
         else
             Log(("VBoxTray: Error while getting the shared folder mappings, rc = %Rrc\n", rc));

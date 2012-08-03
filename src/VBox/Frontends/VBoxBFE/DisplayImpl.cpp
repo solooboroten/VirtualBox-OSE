@@ -1,4 +1,4 @@
-/* $Id: DisplayImpl.cpp 36590 2011-04-06 15:35:26Z vboxsync $ */
+/* $Id: DisplayImpl.cpp 42248 2012-07-20 08:39:45Z vboxsync $ */
 /** @file
  * VBox frontends: Basic Frontend (BFE):
  * Implementation of Display class
@@ -826,9 +826,15 @@ static void vbvaFetchBytes (VBVAMEMORY *pVbvaMemory, uint8_t *pu8Dst, uint32_t c
     return;
 }
 
-void Display::SetVideoModeHint(ULONG aWidth, ULONG aHeight, ULONG aBitsPerPixel, ULONG aDisplay)
+void Display::SetVideoModeHint(ULONG aDisplay, BOOL aEnabled,
+                               BOOL aChangeOrigin, LONG aOriginX, LONG aOriginY,
+                               ULONG aWidth, ULONG aHeight, ULONG aBitsPerPixel)
 {
     PPDMIVMMDEVPORT pVMMDevPort = gVMMDev->getVMMDevPort ();
+    NOREF(aEnabled);
+    NOREF(aChangeOrigin);
+    NOREF(aOriginX);
+    NOREF(aOriginY);
 
     if (pVMMDevPort)
         pVMMDevPort->pfnRequestDisplayChange(pVMMDevPort, aWidth, aHeight, aBitsPerPixel, aDisplay);
@@ -1261,7 +1267,7 @@ const PDMDRVREG Display::DrvReg =
     /* fClass. */
     PDM_DRVREG_CLASS_DISPLAY,
     /* cMaxInstances */
-    ~0,
+    ~0U,
     /* cbInstance */
     sizeof(DRVMAINDISPLAY),
     /* pfnConstruct */

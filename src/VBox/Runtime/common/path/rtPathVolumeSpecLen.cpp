@@ -1,4 +1,4 @@
-/* $Id: rtPathVolumeSpecLen.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: rtPathVolumeSpecLen.cpp 40686 2012-03-28 14:49:47Z vboxsync $ */
 /** @file
  * IPRT - rtPathVolumeSpecLen
  */
@@ -44,7 +44,7 @@ DECLHIDDEN(size_t) rtPathVolumeSpecLen(const char *pszPath)
 #if defined (RT_OS_OS2) || defined (RT_OS_WINDOWS)
     if (pszPath && *pszPath)
     {
-        /* UTC path. */
+        /* UNC path. */
         /** @todo r=bird: it's UNC and we have to check that the next char isn't a
          *        slash, then skip both the server and the share name. */
         if (    (pszPath[0] == '\\' || pszPath[0] == '/')
@@ -62,6 +62,7 @@ DECLHIDDEN(size_t) rtPathVolumeSpecLen(const char *pszPath)
     /* This isn't quite right when looking at the above stuff, but it works assuming that '//' does not mean UNC. */
     /// @todo (dmik) well, it's better to consider there's no volume name
     //  at all on *nix systems
+    NOREF(pszPath);
     return 0;
 //    return pszPath && pszPath[0] == '/';
 #endif

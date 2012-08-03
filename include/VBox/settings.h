@@ -17,7 +17,7 @@
  */
 
 /*
- * Copyright (C) 2007-2011 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -99,6 +99,7 @@ struct USBDeviceFilter
 };
 
 typedef std::map<com::Utf8Str, com::Utf8Str> StringsMap;
+typedef std::list<com::Utf8Str> StringsList;
 
 // ExtraDataItem (used by both VirtualBox.xml and machines XML)
 struct USBDeviceFilter;
@@ -114,6 +115,11 @@ typedef std::list<Medium> MediaList;
  */
 struct Medium
 {
+    Medium()
+        : fAutoReset(false),
+          hdType(MediumType_Normal)
+    {}
+
     com::Guid       uuid;
     com::Utf8Str    strLocation;
     com::Utf8Str    strDescription;
@@ -225,6 +231,7 @@ struct SystemProperties
     com::Utf8Str            strVRDEAuthLibrary;
     com::Utf8Str            strWebServiceAuthLibrary;
     com::Utf8Str            strDefaultVRDEExtPack;
+    com::Utf8Str            strAutostartDatabasePath;
     uint32_t                ulLogHistoryCount;
 };
 
@@ -237,6 +244,10 @@ typedef std::list<MachineRegistryEntry> MachinesRegistry;
 
 struct DHCPServer
 {
+    DHCPServer()
+        : fEnabled(false)
+    {}
+
     com::Utf8Str    strNetworkName,
                     strIPAddress,
                     strIPNetworkMask,
@@ -349,59 +360,47 @@ struct USBController
 
  struct NATRule
  {
-     NATRule(): proto(NATProtocol_TCP),
-             u16HostPort(0),
-             u16GuestPort(0){}
+     NATRule()
+         : proto(NATProtocol_TCP),
+           u16HostPort(0),
+           u16GuestPort(0)
+     {}
+
+     bool operator==(const NATRule &r) const
+     {
+         return strName == r.strName
+             && proto == r.proto
+             && u16HostPort == r.u16HostPort
+             && strHostIP == r.strHostIP
+             && u16GuestPort == r.u16GuestPort
+             && strGuestIP == r.strGuestIP;
+     }
+
      com::Utf8Str            strName;
      NATProtocol_T           proto;
      uint16_t                u16HostPort;
      com::Utf8Str            strHostIP;
      uint16_t                u16GuestPort;
      com::Utf8Str            strGuestIP;
-    bool operator==(const NATRule &r) const
-    {
-        return    strName == r.strName
-               && proto == r.proto
-               && u16HostPort == r.u16HostPort
-               && strHostIP == r.strHostIP
-               && u16GuestPort == r.u16GuestPort
-               && strGuestIP == r.strGuestIP;
-    }
  };
  typedef std::list<NATRule> NATRuleList;
 
  struct NAT
  {
-     NAT() : u32Mtu(0),
-             u32SockRcv(0),
-             u32SockSnd(0),
-             u32TcpRcv(0),
-             u32TcpSnd(0),
-             fDnsPassDomain(true), /* historically this value is true */
-             fDnsProxy(false),
-             fDnsUseHostResolver(false),
-             fAliasLog(false),
-             fAliasProxyOnly(false),
-             fAliasUseSamePorts(false)
-    {}
+     NAT()
+         : u32Mtu(0),
+           u32SockRcv(0),
+           u32SockSnd(0),
+           u32TcpRcv(0),
+           u32TcpSnd(0),
+           fDNSPassDomain(true), /* historically this value is true */
+           fDNSProxy(false),
+           fDNSUseHostResolver(false),
+           fAliasLog(false),
+           fAliasProxyOnly(false),
+           fAliasUseSamePorts(false)
+     {}
 
-     com::Utf8Str            strNetwork;
-     com::Utf8Str            strBindIP;
-     uint32_t                u32Mtu;
-     uint32_t                u32SockRcv;
-     uint32_t                u32SockSnd;
-     uint32_t                u32TcpRcv;
-     uint32_t                u32TcpSnd;
-     com::Utf8Str            strTftpPrefix;
-     com::Utf8Str            strTftpBootFile;
-     com::Utf8Str            strTftpNextServer;
-     bool                    fDnsPassDomain;
-     bool                    fDnsProxy;
-     bool                    fDnsUseHostResolver;
-     bool                    fAliasLog;
-     bool                    fAliasProxyOnly;
-     bool                    fAliasUseSamePorts;
-     NATRuleList             llRules;
      bool operator==(const NAT &n) const
      {
         return strNetwork           == n.strNetwork
@@ -411,17 +410,35 @@ struct USBController
              && u32SockSnd          == n.u32SockSnd
              && u32TcpSnd           == n.u32TcpSnd
              && u32TcpRcv           == n.u32TcpRcv
-             && strTftpPrefix       == n.strTftpPrefix
-             && strTftpBootFile     == n.strTftpBootFile
-             && strTftpNextServer   == n.strTftpNextServer
-             && fDnsPassDomain      == n.fDnsPassDomain
-             && fDnsProxy           == n.fDnsProxy
-             && fDnsUseHostResolver == n.fDnsUseHostResolver
+             && strTFTPPrefix       == n.strTFTPPrefix
+             && strTFTPBootFile     == n.strTFTPBootFile
+             && strTFTPNextServer   == n.strTFTPNextServer
+             && fDNSPassDomain      == n.fDNSPassDomain
+             && fDNSProxy           == n.fDNSProxy
+             && fDNSUseHostResolver == n.fDNSUseHostResolver
              && fAliasLog           == n.fAliasLog
              && fAliasProxyOnly     == n.fAliasProxyOnly
              && fAliasUseSamePorts  == n.fAliasUseSamePorts
              && llRules             == n.llRules;
      }
+
+     com::Utf8Str            strNetwork;
+     com::Utf8Str            strBindIP;
+     uint32_t                u32Mtu;
+     uint32_t                u32SockRcv;
+     uint32_t                u32SockSnd;
+     uint32_t                u32TcpRcv;
+     uint32_t                u32TcpSnd;
+     com::Utf8Str            strTFTPPrefix;
+     com::Utf8Str            strTFTPBootFile;
+     com::Utf8Str            strTFTPNextServer;
+     bool                    fDNSPassDomain;
+     bool                    fDNSProxy;
+     bool                    fDNSUseHostResolver;
+     bool                    fAliasLog;
+     bool                    fAliasProxyOnly;
+     bool                    fAliasUseSamePorts;
+     NATRuleList             llRules;
  };
 /**
  * NOTE: If you add any fields in here, you must update a) the constructor and b)
@@ -507,7 +524,7 @@ struct ParallelPort
         : ulSlot(0),
           fEnabled(false),
           ulIOBase(0x378),
-          ulIRQ(4)
+          ulIRQ(7)
     {}
 
     bool operator==(const ParallelPort &d) const;
@@ -654,19 +671,19 @@ typedef std::list<Cpu> CpuList;
 struct BandwidthGroup
 {
     BandwidthGroup()
-        : cMaxMbPerSec(0),
+        : cMaxBytesPerSec(0),
           enmType(BandwidthGroupType_Null)
     {}
 
     bool operator==(const BandwidthGroup &i) const
     {
         return (   (strName      == i.strName)
-                && (cMaxMbPerSec == i.cMaxMbPerSec)
+                && (cMaxBytesPerSec == i.cMaxBytesPerSec)
                 && (enmType      == i.enmType));
     }
 
     com::Utf8Str         strName;
-    uint32_t             cMaxMbPerSec;
+    uint64_t             cMaxBytesPerSec;
     BandwidthGroupType_T enmType;
 };
 typedef std::list<BandwidthGroup> BandwidthGroupList;
@@ -676,19 +693,19 @@ typedef std::list<BandwidthGroup> BandwidthGroupList;
  * the operator== which is used by MachineConfigFile::operator==(), or otherwise
  * your settings might never get saved.
  */
-struct IoSettings
+struct IOSettings
 {
-    IoSettings();
+    IOSettings();
 
-    bool operator==(const IoSettings &i) const
+    bool operator==(const IOSettings &i) const
     {
-        return (   (fIoCacheEnabled   == i.fIoCacheEnabled)
-                && (ulIoCacheSize     == i.ulIoCacheSize)
+        return (   (fIOCacheEnabled   == i.fIOCacheEnabled)
+                && (ulIOCacheSize     == i.ulIOCacheSize)
                 && (llBandwidthGroups == i.llBandwidthGroups));
     }
 
-    bool               fIoCacheEnabled;
-    uint32_t           ulIoCacheSize;
+    bool               fIOCacheEnabled;
+    uint32_t           ulIOCacheSize;
     BandwidthGroupList llBandwidthGroups;
 };
 
@@ -697,14 +714,14 @@ struct IoSettings
  * the operator== which is used by MachineConfigFile::operator==(), or otherwise
  * your settings might never get saved.
  */
-struct HostPciDeviceAttachment
+struct HostPCIDeviceAttachment
 {
-    HostPciDeviceAttachment()
+    HostPCIDeviceAttachment()
         : uHostAddress(0),
           uGuestAddress(0)
     {}
 
-    bool operator==(const HostPciDeviceAttachment &a) const
+    bool operator==(const HostPCIDeviceAttachment &a) const
     {
         return (   (uHostAddress   == a.uHostAddress)
                 && (uGuestAddress  == a.uGuestAddress)
@@ -716,7 +733,7 @@ struct HostPciDeviceAttachment
     uint32_t        uHostAddress;
     uint32_t        uGuestAddress;
 };
-typedef std::list<HostPciDeviceAttachment> HostPciDeviceAttachmentList;
+typedef std::list<HostPCIDeviceAttachment> HostPCIDeviceAttachmentList;
 
 /**
  * Representation of Machine hardware; this is used in the MachineConfigFile.hardwareMachine
@@ -746,7 +763,7 @@ struct Hardware
     uint32_t            cCPUs;
     bool                fCpuHotPlug;            // requires settings version 1.10 (VirtualBox 3.2)
     CpuList             llCpus;                 // requires settings version 1.10 (VirtualBox 3.2)
-    bool                fHpetEnabled;           // requires settings version 1.10 (VirtualBox 3.2)
+    bool                fHPETEnabled;           // requires settings version 1.10 (VirtualBox 3.2)
     uint32_t            ulCpuExecutionCap;      // requires settings version 1.11 (VirtualBox 3.3)
 
     CpuIdLeafsList      llCpuIdLeafs;
@@ -761,10 +778,12 @@ struct Hardware
                         fAccelerate2DVideo;     // requires settings version 1.8 (VirtualBox 3.1)
     FirmwareType_T      firmwareType;           // requires settings version 1.9 (VirtualBox 3.1)
 
-    PointingHidType_T   pointingHidType;        // requires settings version 1.10 (VirtualBox 3.2)
-    KeyboardHidType_T   keyboardHidType;        // requires settings version 1.10 (VirtualBox 3.2)
+    PointingHIDType_T   pointingHIDType;        // requires settings version 1.10 (VirtualBox 3.2)
+    KeyboardHIDType_T   keyboardHIDType;        // requires settings version 1.10 (VirtualBox 3.2)
 
     ChipsetType_T       chipsetType;            // requires settings version 1.11 (VirtualBox 4.0)
+
+    bool                fEmulatedUSBCardReader; // 1.12 (VirtualBox 4.1)
 
     VRDESettings        vrdeSettings;
 
@@ -779,6 +798,7 @@ struct Hardware
     // clever reason <Hardware> is where they are in the XML....
     SharedFoldersList   llSharedFolders;
     ClipboardMode_T     clipboardMode;
+    DragAndDropMode_T   dragAndDropMode;
 
     uint32_t            ulMemoryBalloonSize;
     bool                fPageFusionEnabled;
@@ -786,8 +806,8 @@ struct Hardware
     GuestPropertiesList llGuestProperties;
     com::Utf8Str        strNotificationPatterns;
 
-    IoSettings          ioSettings;             // requires settings version 1.10 (VirtualBox 3.2)
-    HostPciDeviceAttachmentList pciAttachments; // requires settings version 1.12 (VirtualBox 4.1)
+    IOSettings          ioSettings;             // requires settings version 1.10 (VirtualBox 3.2)
+    HostPCIDeviceAttachmentList pciAttachments; // requires settings version 1.12 (VirtualBox 4.1)
 };
 
 /**
@@ -824,6 +844,9 @@ struct AttachedDevice
 
     // Whether the medium is non-rotational:
     bool                fNonRotational;
+
+    // Whether the medium supports discarding unused blocks:
+    bool                fDiscard;
 
     int32_t             lPort;
     int32_t             lDevice;
@@ -896,6 +919,66 @@ struct Storage
     StorageControllersList  llStorageControllers;
 };
 
+/**
+ * Settings that has to do with debugging.
+ */
+struct Debugging
+{
+    Debugging()
+        : fTracingEnabled(false),
+          fAllowTracingToAccessVM(false),
+          strTracingConfig()
+    { }
+
+    bool operator==(const Debugging &rOther) const
+    {
+        return fTracingEnabled          == rOther.fTracingEnabled
+            && fAllowTracingToAccessVM  == rOther.fAllowTracingToAccessVM
+            && strTracingConfig         == rOther.strTracingConfig;
+    }
+
+    bool areDefaultSettings() const
+    {
+        return !fTracingEnabled
+            && !fAllowTracingToAccessVM
+            && strTracingConfig.isEmpty();
+    }
+
+    bool                    fTracingEnabled;
+    bool                    fAllowTracingToAccessVM;
+    com::Utf8Str            strTracingConfig;
+};
+
+/**
+ * Settings that has to do with autostart.
+ */
+struct Autostart
+{
+    Autostart()
+        : fAutostartEnabled(false),
+          uAutostartDelay(0),
+          enmAutostopType(AutostopType_Disabled)
+    { }
+
+    bool operator==(const Autostart &rOther) const
+    {
+        return fAutostartEnabled == rOther.fAutostartEnabled
+            && uAutostartDelay   == rOther.uAutostartDelay
+            && enmAutostopType   == rOther.enmAutostopType;
+    }
+
+    bool areDefaultSettings() const
+    {
+        return !fAutostartEnabled
+            && !uAutostartDelay
+            && enmAutostopType == AutostopType_Disabled;
+    }
+
+    bool                    fAutostartEnabled;
+    uint32_t                uAutostartDelay;
+    AutostopType_T          enmAutostopType;
+};
+
 struct Snapshot;
 typedef std::list<Snapshot> SnapshotsList;
 
@@ -918,6 +1001,9 @@ struct Snapshot
     Hardware        hardware;
     Storage         storage;
 
+    Debugging       debugging;
+    Autostart       autostart;
+
     SnapshotsList   llChildSnapshots;
 };
 
@@ -931,13 +1017,16 @@ struct MachineUserData
           uFaultTolerancePort(0),
           uFaultToleranceInterval(0),
           fRTCUseUTC(false)
-    { }
+    {
+        llGroups.push_back("/");
+    }
 
     bool operator==(const MachineUserData &c) const
     {
         return    (strName                    == c.strName)
                && (fNameSync                  == c.fNameSync)
                && (strDescription             == c.strDescription)
+               && (llGroups                   == c.llGroups)
                && (strOsType                  == c.strOsType)
                && (strSnapshotFolder          == c.strSnapshotFolder)
                && (fTeleporterEnabled         == c.fTeleporterEnabled)
@@ -955,6 +1044,7 @@ struct MachineUserData
     com::Utf8Str            strName;
     bool                    fNameSync;
     com::Utf8Str            strDescription;
+    StringsList             llGroups;
     com::Utf8Str            strOsType;
     com::Utf8Str            strSnapshotFolder;
     bool                    fTeleporterEnabled;
@@ -994,6 +1084,8 @@ public:
     Hardware                hardwareMachine;
     Storage                 storageMachine;
     MediaRegistry           mediaRegistry;
+    Debugging               debugging;
+    Autostart               autostart;
 
     StringsMap              mapExtraDataItems;
 
@@ -1038,6 +1130,10 @@ private:
     void readHardDiskAttachments_pre1_7(const xml::ElementNode &elmHardDiskAttachments, Storage &strg);
     void readStorageControllers(const xml::ElementNode &elmStorageControllers, Storage &strg);
     void readDVDAndFloppies_pre1_9(const xml::ElementNode &elmHardware, Storage &strg);
+    void readTeleporter(const xml::ElementNode *pElmTeleporter, MachineUserData *pUserData);
+    void readDebugging(const xml::ElementNode *pElmDbg, Debugging *pDbg);
+    void readAutostart(const xml::ElementNode *pElmAutostart, Autostart *pAutostart);
+    void readGroups(const xml::ElementNode *elmGroups, StringsList *pllGroups);
     void readSnapshot(const xml::ElementNode &elmSnapshot, Snapshot &snap);
     void convertOldOSType_pre1_5(com::Utf8Str &str);
     void readMachine(const xml::ElementNode &elmMachine);
@@ -1048,6 +1144,9 @@ private:
                                     const Storage &st,
                                     bool fSkipRemovableMedia,
                                     std::list<xml::ElementNode*> *pllElementsWithUuidAttributes);
+    void buildDebuggingXML(xml::ElementNode *pElmParent, const Debugging *pDbg);
+    void buildAutostartXML(xml::ElementNode *pElmParent, const Autostart *pAutostart);
+    void buildGroupsXML(xml::ElementNode *pElmParent, const StringsList *pllGroups);
     void buildSnapshotXML(xml::ElementNode &elmParent, const Snapshot &snap);
 
     void bumpSettingsVersionIfNeeded();

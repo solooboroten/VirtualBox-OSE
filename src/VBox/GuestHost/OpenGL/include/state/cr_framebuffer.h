@@ -1,4 +1,4 @@
-/* $Id: cr_framebuffer.h 34107 2010-11-16 11:37:51Z vboxsync $ */
+/* $Id: cr_framebuffer.h 41160 2012-05-04 09:55:53Z vboxsync $ */
 
 /** @file
  * VBox crOpenGL: FBO related state info
@@ -48,6 +48,9 @@ typedef struct {
     GLenum                  drawbuffer[1];
 #ifdef IN_GUEST
     GLenum                  status;
+#else
+    /* bitfield representing the object usage. 1 means the object is used by the context with the given bitid */
+    CRbitvalue             ctxUsage[CR_MAX_BITARRAY];
 #endif
 } CRFramebufferObject;
 
@@ -56,6 +59,10 @@ typedef struct {
     GLsizei  width, height;
     GLenum   internalformat;
     GLuint   redBits, greenBits, blueBits, alphaBits, depthBits, stencilBits;
+#ifndef IN_GUEST
+    /* bitfield representing the object usage. 1 means the object is used by the context with the given bitid */
+    CRbitvalue             ctxUsage[CR_MAX_BITARRAY];
+#endif
 } CRRenderbufferObject;
 
 typedef struct {
@@ -66,6 +73,10 @@ typedef struct {
 DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectInit(CRContext *ctx);
 DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectDestroy(CRContext *ctx);
 DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectSwitch(CRContext *from, CRContext *to);
+
+DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectDisableHW(CRContext *ctx, GLuint idFBO);
+DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectReenableHW(CRContext *fromCtx, CRContext *toCtx, GLuint idFBO);
+
 DECLEXPORT(GLuint) STATE_APIENTRY crStateGetFramebufferHWID(GLuint id);
 DECLEXPORT(GLuint) STATE_APIENTRY crStateGetRenderbufferHWID(GLuint id);
 

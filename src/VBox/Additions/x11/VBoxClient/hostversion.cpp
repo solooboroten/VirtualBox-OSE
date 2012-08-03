@@ -21,10 +21,13 @@
 #include <iprt/thread.h>
 
 #ifdef VBOX_WITH_DBUS
- #include <VBox/dbus.h>
+# include <VBox/dbus.h>
 #endif
 #include <VBox/log.h>
 #include <VBox/VBoxGuestLib.h>
+#ifdef VBOX_OSE
+# include <VBox/version.h>
+#endif
 
 #include "VBoxClient.h"
 
@@ -43,7 +46,7 @@ public:
         int rc;
 # ifdef VBOX_WITH_DBUS
         DBusConnection *conn;
-        DBusMessage* msg;
+        DBusMessage* msg = NULL;
         conn = dbus_bus_get (DBUS_BUS_SESSON, NULL);
         if (conn == NULL)
         {
@@ -61,8 +64,8 @@ public:
                 LogRel(("Could not create D-BUS message!\n"));
                 rc = VERR_INVALID_HANDLE;
             }
-        else
-        rc = VINF_SUCCESS;
+            else
+                rc = VINF_SUCCESS;
         }
         if (RT_SUCCESS(rc))
         {
@@ -112,7 +115,7 @@ public:
                 dbus_message_unref(reply);
             }
             if (dbus_error_is_set(&err))
-            dbus_error_free(&err);
+                dbus_error_free(&err);
         }
         if (msg != NULL)
             dbus_message_unref(msg);
@@ -163,14 +166,20 @@ public:
             {
                 if (bUpdate)
                 {
-                    char szMsg[256];
+                    char szMsg[1024];
                     char szTitle[64];
 
                     /** @todo add some translation macros here */
                     RTStrPrintf(szTitle, sizeof(szTitle), "VirtualBox Guest Additions update available!");
+#ifndef VBOX_OSE
                     RTStrPrintf(szMsg, sizeof(szMsg), "Your guest is currently running the Guest Additions version %s. "
                                                       "We recommend updating to the latest version (%s) by choosing the "
                                                       "install option from the Devices menu.", pszGuestVersion, pszHostVersion);
+#else
+/* This is the message which appears for non-Oracle builds of the
+ * Guest Additions.  Distributors are encouraged to customise this. */
+                    RTStrPrintf(szMsg, sizeof(szMsg), "Your virtual machine is currently running the Guest Additions version %s. Since you are running a version of the Guest Additions provided by the operating system you installed in the virtual machine we recommend that you update it to at least version %s using that system's update features, or alternatively that you remove this version and then install the " VBOX_VENDOR_SHORT " Guest Additions package using the install option from the Devices menu. Please consult the documentation for the operating system you are running to find out how to update or remove the current Guest Additions package.", pszGuestVersion, pszHostVersion);
+#endif
                     rc = showNotify(szTitle, szMsg);
                     LogRel(("VBoxClient: VirtualBox Guest Additions update available!"));
                     if (RT_FAILURE(rc))

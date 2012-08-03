@@ -1,4 +1,4 @@
-/* $Id: ministring.cpp 36561 2011-04-05 13:42:59Z vboxsync $ */
+/* $Id: ministring.cpp 40417 2012-03-09 21:55:31Z vboxsync $ */
 /** @file
  * IPRT - Mini C++ string class.
  *
@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2007-2011 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -201,26 +201,59 @@ RTCString &RTCString::appendCodePoint(RTUNICP uc)
 
 size_t RTCString::find(const char *pcszFind, size_t pos /*= 0*/) const
 {
-    const char *pszThis, *p;
-
-    if (    ((pszThis = c_str()))
-         && (pos < length())
-         && ((p = strstr(pszThis + pos, pcszFind)))
-       )
-        return p - pszThis;
+    if (pos < length())
+    {
+        const char *pszThis = c_str();
+        if (pszThis)
+        {
+            const char *pszHit = strstr(pszThis + pos, pcszFind);
+            if (pszHit)
+                return pszHit - pszThis;
+        }
+    }
 
     return npos;
 }
 
-void RTCString::findReplace(char cFind, char cReplace)
+void RTCString::findReplace(char chFind, char chReplace)
 {
+    Assert((unsigned int)chFind    < 128U);
+    Assert((unsigned int)chReplace < 128U);
+
     for (size_t i = 0; i < length(); ++i)
     {
         char *p = &m_psz[i];
-        if (*p == cFind)
-            *p = cReplace;
+        if (*p == chFind)
+            *p = chReplace;
     }
 }
+
+size_t RTCString::count(char ch) const
+{
+    Assert((unsigned int)ch < 128U);
+
+    size_t      c   = 0;
+    const char *psz = m_psz;
+    if (psz)
+    {
+        char    chCur;
+        while ((chCur = *psz++) != '\0')
+            if (chCur == ch)
+                c++;
+    }
+    return c;
+}
+
+#if 0  /** @todo implement these when needed. */
+size_t RTCString::count(const char *psz, CaseSensitivity cs = CaseSensitive) const
+{
+}
+
+size_t RTCString::count(const RTCString *pStr, CaseSensitivity cs = CaseSensitive) const
+{
+
+}
+#endif
 
 RTCString RTCString::substrCP(size_t pos /*= 0*/, size_t n /*= npos*/) const
 {
@@ -327,7 +360,7 @@ int RTCString::toInt(uint32_t &i) const
 }
 
 RTCList<RTCString, RTCString *>
-RTCString::split(const RTCString &a_rstrSep, SplitMode mode /* = RemoveEmptyParts */)
+RTCString::split(const RTCString &a_rstrSep, SplitMode mode /* = RemoveEmptyParts */) const
 {
     RTCList<RTCString> strRet;
     if (!m_psz)

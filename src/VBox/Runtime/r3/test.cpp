@@ -1,4 +1,4 @@
-/* $Id: test.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: test.cpp 40105 2012-02-13 18:45:32Z vboxsync $ */
 /** @file
  * IPRT - Testcase Framework.
  */
@@ -370,10 +370,10 @@ RTR3DECL(int) RTTestCreate(const char *pszTest, PRTTEST phTest)
 
 RTR3DECL(RTEXITCODE) RTTestInitAndCreate(const char *pszTest, PRTTEST phTest)
 {
-    int rc = RTR3Init();
+    int rc = RTR3InitExeNoArguments(0);
     if (RT_FAILURE(rc))
     {
-        RTStrmPrintf(g_pStdErr, "%s: fatal error: RTR3Init failed with rc=%Rrc\n", pszTest, rc);
+        RTStrmPrintf(g_pStdErr, "%s: fatal error: RTR3InitExeNoArguments failed with rc=%Rrc\n", pszTest, rc);
         return RTEXITCODE_INIT;
     }
     rc = RTTestCreate(pszTest, phTest);
@@ -625,7 +625,7 @@ RTR3DECL(int) RTTestGuardedFree(RTTEST hTest, void *pv)
     }
     RTCritSectLeave(&pTest->Lock);
 
-    return VINF_SUCCESS;
+    return rc;
 }
 
 

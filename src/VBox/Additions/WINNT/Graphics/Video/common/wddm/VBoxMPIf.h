@@ -1,4 +1,4 @@
-/* $Id: VBoxMPIf.h 38112 2011-07-22 13:26:19Z vboxsync $ */
+/* $Id: VBoxMPIf.h 41058 2012-04-25 21:42:29Z vboxsync $ */
 
 /** @file
  * VBox WDDM Miniport driver
@@ -29,10 +29,12 @@
 
 #include <VBox/VBoxVideo.h>
 #include "../../../../include/VBoxDisplay.h"
+#include "../VBoxVideoTools.h"
 #include <VBox/VBoxUhgsmi.h>
+#include <VBox/VBoxGuest2.h>
 
 /* One would increase this whenever definitions in this file are changed */
-#define VBOXVIDEOIF_VERSION 10
+#define VBOXVIDEOIF_VERSION 13
 
 #define VBOXWDDM_NODE_ID_SYSTEM           0
 #define VBOXWDDM_NODE_ID_3D               (VBOXWDDM_NODE_ID_SYSTEM)
@@ -110,15 +112,10 @@ typedef struct VBOXWDDM_ALLOCINFO
         {
             uint32_t cbBuffer;
             uint64_t hSynch;
-            VBOXUHGSMI_SYNCHOBJECT_TYPE enmSynchType;
+            VBOXUHGSMI_BUFFER_TYPE_FLAGS fUhgsmiType;
         };
     };
 } VBOXWDDM_ALLOCINFO, *PVBOXWDDM_ALLOCINFO;
-
-/* this resource is OpenResource'd rather than CreateResource'd */
-#define VBOXWDDM_RESOURCE_F_OPENNED      0x00000001
-/* identifies this is a resource created with CreateResource, the VBOXWDDMDISP_RESOURCE::fRcFlags is valid */
-#define VBOXWDDM_RESOURCE_F_TYPE_GENERIC 0x00000002
 
 typedef struct VBOXWDDM_RC_DESC
 {
@@ -134,9 +131,24 @@ typedef struct VBOXWDDM_RC_DESC
     D3DDDI_ROTATION enmRotation;
 } VBOXWDDM_RC_DESC, *PVBOXWDDM_RC_DESC;
 
+typedef struct VBOXWDDMDISP_RESOURCE_FLAGS
+{
+    union
+    {
+        struct
+        {
+            UINT Opened     : 1; /* this resource is OpenResource'd rather than CreateResource'd */
+            UINT Generic    : 1; /* identifies this is a resource created with CreateResource, the VBOXWDDMDISP_RESOURCE::fRcFlags is valid */
+            UINT KmResource : 1; /* this resource has underlying km resource */
+            UINT Reserved   : 29; /* reserved */
+        };
+        UINT        Value;
+    };
+} VBOXWDDMDISP_RESOURCE_FLAGS, *PVBOXWDDMDISP_RESOURCE_FLAGS;
+
 typedef struct VBOXWDDM_RCINFO
 {
-    uint32_t fFlags;
+    VBOXWDDMDISP_RESOURCE_FLAGS fFlags;
     VBOXWDDM_RC_DESC RcDesc;
     uint32_t cAllocInfos;
 //    VBOXWDDM_ALLOCINFO aAllocInfos[1];
@@ -167,7 +179,7 @@ typedef struct VBOXWDDM_DMA_PRIVATEDATA_BASEHDR
 
 typedef struct VBOXWDDM_UHGSMI_BUFFER_UI_SUBMIT_INFO
 {
-    VBOXUHGSMI_BUFFER_SUBMIT_FLAGS fSubFlags;
+    uint32_t bDoNotSignalCompletion;
     uint32_t offData;
     uint32_t cbData;
 } VBOXWDDM_UHGSMI_BUFFER_UI_SUBMIT_INFO, *PVBOXWDDM_UHGSMI_BUFFER_UI_SUBMIT_INFO;
@@ -211,16 +223,6 @@ typedef struct VBOXWDDM_OVERLAY_DESC
     UINT SrcColorKeyHigh;
 } VBOXWDDM_OVERLAY_DESC, *PVBOXWDDM_OVERLAY_DESC;
 
-/* the dirty rect info is valid */
-#define VBOXWDDM_DIRTYREGION_F_VALID      0x00000001
-#define VBOXWDDM_DIRTYREGION_F_RECT_VALID 0x00000002
-
-typedef struct VBOXWDDM_DIRTYREGION
-{
-    uint32_t fFlags; /* <-- see VBOXWDDM_DIRTYREGION_F_xxx flags above */
-    RECT Rect;
-} VBOXWDDM_DIRTYREGION, *PVBOXWDDM_DIRTYREGION;
-
 typedef struct VBOXWDDM_OVERLAY_INFO
 {
     VBOXWDDM_OVERLAY_DESC OverlayDesc;
@@ -236,11 +238,16 @@ typedef struct VBOXWDDM_OVERLAYFLIP_INFO
 typedef enum
 {
     VBOXWDDM_CONTEXT_TYPE_UNDEFINED = 0,
+    /* system-created context (for GDI rendering) */
     VBOXWDDM_CONTEXT_TYPE_SYSTEM,
+    /* context created by the D3D User-mode driver when crogl IS available */
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_3D,
+    /* context created by the D3D User-mode driver when crogl is NOT available or for ddraw overlay acceleration */
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_2D,
+    /* contexts created by the cromium HGSMI transport for HGSMI commands submission */
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_UHGSMI_3D,
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_UHGSMI_GL,
+    /* context created by the kernel->user communication mechanism for visible rects reporting, etc.  */
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_SESSION
 } VBOXWDDM_CONTEXT_TYPE;
 
@@ -250,6 +257,8 @@ typedef struct VBOXWDDM_CREATECONTEXT_INFO
     uint32_t u32IfVersion;
     /* true if d3d false if ddraw */
     VBOXWDDM_CONTEXT_TYPE enmType;
+    uint32_t crVersionMajor;
+    uint32_t crVersionMinor;
     /* we use uint64_t instead of HANDLE to ensure structure def is the same for both 32-bit and 64-bit
      * since x64 kernel driver can be called by 32-bit UMD */
     uint64_t hUmEvent;
@@ -269,8 +278,8 @@ typedef struct VBOXWDDM_RECTS_FLAFS
             /* used only in conjunction with bSetVisibleRects.
              * if set - VBOXWDDM_RECTS_INFO::aRects[0] contains view rectangle */
             UINT bSetViewRect : 1;
-            /* sets visible regions */
-            UINT bSetVisibleRects : 1;
+            /* adds visible regions */
+            UINT bAddVisibleRects : 1;
             /* adds hidden regions */
             UINT bAddHiddenRects : 1;
             /* hide entire window */
@@ -320,10 +329,17 @@ typedef struct VBOXVIDEOCM_CMD_RECTS_INTERNAL
     union
     {
         VBOXDISP_UMHANDLE hSwapchainUm;
-        uint64_t u64Alignment;
+        uint64_t hWnd;
+        uint64_t u64Value;
     };
     VBOXVIDEOCM_CMD_RECTS Cmd;
 } VBOXVIDEOCM_CMD_RECTS_INTERNAL, *PVBOXVIDEOCM_CMD_RECTS_INTERNAL;
+
+typedef struct VBOXVIDEOCM_CMD_RECTS_HDR
+{
+    VBOXVIDEOCM_CMD_HDR Hdr;
+    VBOXVIDEOCM_CMD_RECTS_INTERNAL Data;
+} VBOXVIDEOCM_CMD_RECTS_HDR, *PVBOXVIDEOCM_CMD_RECTS_HDR;
 
 #define VBOXVIDEOCM_CMD_RECTS_INTERNAL_SIZE4CRECTS(_cRects) (RT_OFFSETOF(VBOXVIDEOCM_CMD_RECTS_INTERNAL, Cmd.RectsInfo.aRects[(_cRects)]))
 #define VBOXVIDEOCM_CMD_RECTS_INTERNAL_SIZE(_pCmd) (VBOXVIDEOCM_CMD_RECTS_INTERNAL_SIZE4CRECTS((_pCmd)->cRects))
@@ -352,6 +368,35 @@ typedef struct VBOXDISPIFESCAPE_DBGPRINT
     char aStringBuf[1];
 } VBOXDISPIFESCAPE_DBGPRINT, *PVBOXDISPIFESCAPE_DBGPRINT;
 AssertCompile(RT_OFFSETOF(VBOXDISPIFESCAPE_DBGPRINT, EscapeHdr) == 0);
+
+typedef enum
+{
+    VBOXDISPIFESCAPE_DBGDUMPBUF_TYPE_UNDEFINED = 0,
+    VBOXDISPIFESCAPE_DBGDUMPBUF_TYPE_D3DCAPS9 = 1,
+    VBOXDISPIFESCAPE_DBGDUMPBUF_TYPE_DUMMY32BIT = 0x7fffffff
+} VBOXDISPIFESCAPE_DBGDUMPBUF_TYPE;
+
+typedef struct VBOXDISPIFESCAPE_DBGDUMPBUF_FLAGS
+{
+    union
+    {
+        struct
+        {
+            UINT WoW64      : 1;
+            UINT Reserved   : 31; /* reserved */
+        };
+        UINT  Value;
+    };
+} VBOXDISPIFESCAPE_DBGDUMPBUF_FLAGS, *PVBOXDISPIFESCAPE_DBGDUMPBUF_FLAGS;
+
+typedef struct VBOXDISPIFESCAPE_DBGDUMPBUF
+{
+    VBOXDISPIFESCAPE EscapeHdr;
+    VBOXDISPIFESCAPE_DBGDUMPBUF_TYPE enmType;
+    VBOXDISPIFESCAPE_DBGDUMPBUF_FLAGS Flags;
+    char aBuf[1];
+} VBOXDISPIFESCAPE_DBGDUMPBUF, *PVBOXDISPIFESCAPE_DBGDUMPBUF;
+AssertCompile(RT_OFFSETOF(VBOXDISPIFESCAPE_DBGDUMPBUF, EscapeHdr) == 0);
 
 typedef struct VBOXSCREENLAYOUT_ELEMENT
 {
@@ -392,7 +437,7 @@ typedef struct VBOXVIDEOCM_UM_ALLOC
     uint32_t cbData;
     uint64_t pvData;
     uint64_t hSynch;
-    VBOXUHGSMI_SYNCHOBJECT_TYPE enmSynchType;
+    VBOXUHGSMI_BUFFER_TYPE_FLAGS fUhgsmiType;
 } VBOXVIDEOCM_UM_ALLOC, *PVBOXVIDEOCM_UM_ALLOC;
 
 typedef struct VBOXDISPIFESCAPE_UHGSMI_ALLOCATE
@@ -419,6 +464,18 @@ typedef struct VBOXDISPIFESCAPE_UHGSMI_SUBMIT
     VBOXWDDM_UHGSMI_BUFFER_UI_INFO_ESCAPE aBuffers[1];
 } VBOXDISPIFESCAPE_UHGSMI_SUBMIT, *PVBOXDISPIFESCAPE_UHGSMI_SUBMIT;
 
+typedef struct VBOXDISPIFESCAPE_SHRC_REF
+{
+    VBOXDISPIFESCAPE EscapeHdr;
+    uint64_t hAlloc;
+} VBOXDISPIFESCAPE_SHRC_REF, *PVBOXDISPIFESCAPE_SHRC_REF;
+
+typedef struct VBOXDISPIFESCAPE_CRHGSMICTLCON_CALL
+{
+    VBOXDISPIFESCAPE EscapeHdr;
+    VBoxGuestHGCMCallInfo CallInfo;
+} VBOXDISPIFESCAPE_CRHGSMICTLCON_CALL, *PVBOXDISPIFESCAPE_CRHGSMICTLCON_CALL;
+
 /* query info func */
 typedef struct VBOXWDDM_QI
 {
@@ -428,11 +485,27 @@ typedef struct VBOXWDDM_QI
 } VBOXWDDM_QI;
 
 /* submit cmd func */
+DECLINLINE(D3DDDIFORMAT) vboxWddmFmtNoAlphaFormat(D3DDDIFORMAT enmFormat)
+{
+    switch (enmFormat)
+    {
+        case D3DDDIFMT_A8R8G8B8:
+            return D3DDDIFMT_X8R8G8B8;
+        case D3DDDIFMT_A1R5G5B5:
+            return D3DDDIFMT_X1R5G5B5;
+        case D3DDDIFMT_A4R4G4B4:
+            return D3DDDIFMT_X4R4G4B4;
+        case D3DDDIFMT_A8B8G8R8:
+            return D3DDDIFMT_X8B8G8R8;
+        default:
+            return enmFormat;
+    }
+}
 
 /* tooling */
-DECLINLINE(UINT) vboxWddmCalcBitsPerPixel(D3DDDIFORMAT format)
+DECLINLINE(UINT) vboxWddmCalcBitsPerPixel(D3DDDIFORMAT enmFormat)
 {
-    switch (format)
+    switch (enmFormat)
     {
         case D3DDDIFMT_R8G8B8:
             return 24;
@@ -496,6 +569,13 @@ DECLINLINE(UINT) vboxWddmCalcBitsPerPixel(D3DDDIFORMAT format)
         case D3DDDIFMT_DXT3:
         case D3DDDIFMT_DXT4:
         case D3DDDIFMT_DXT5:
+        case D3DDDIFMT_VERTEXDATA:
+        case D3DDDIFMT_INDEX16: /* <- yes, dx runtime treats it as such */
+            return 8;
+        case D3DDDIFMT_INDEX32:
+#ifdef DEBUG_misha
+            Assert(0); /* <- test correctness */
+#endif
             return 8;
         default:
             AssertBreakpoint();
@@ -503,14 +583,14 @@ DECLINLINE(UINT) vboxWddmCalcBitsPerPixel(D3DDDIFORMAT format)
     }
 }
 
-DECLINLINE(uint32_t) vboxWddmFormatToFourcc(D3DDDIFORMAT format)
+DECLINLINE(uint32_t) vboxWddmFormatToFourcc(D3DDDIFORMAT enmFormat)
 {
-    uint32_t uFormat = (uint32_t)format;
+    uint32_t uFormat = (uint32_t)enmFormat;
     /* assume that in case both four bytes are non-zero, this is a fourcc */
-    if ((format & 0xff000000)
-            && (format & 0x00ff0000)
-            && (format & 0x0000ff00)
-            && (format & 0x000000ff)
+    if ((uFormat & 0xff000000)
+            && (uFormat & 0x00ff0000)
+            && (uFormat & 0x0000ff00)
+            && (uFormat & 0x000000ff)
             )
         return uFormat;
     return 0;
@@ -518,148 +598,168 @@ DECLINLINE(uint32_t) vboxWddmFormatToFourcc(D3DDDIFORMAT format)
 
 #define VBOXWDDM_ROUNDBOUND(_v, _b) (((_v) + ((_b) - 1)) & ~((_b) - 1))
 
-DECLINLINE(UINT) vboxWddmCalcPitch(UINT w, UINT bitsPerPixel)
+DECLINLINE(UINT) vboxWddmCalcOffXru(UINT w, D3DDDIFORMAT enmFormat)
 {
-    UINT Pitch = bitsPerPixel * w;
-    /* pitch is now in bits, translate in bytes */
-    return VBOXWDDM_ROUNDBOUND(Pitch, 8) >> 3;
-}
-
-DECLINLINE(void) vboxWddmRectUnite(RECT *pR, const RECT *pR2Unite)
-{
-    pR->left = RT_MIN(pR->left, pR2Unite->left);
-    pR->top = RT_MIN(pR->top, pR2Unite->top);
-    pR->right = RT_MAX(pR->right, pR2Unite->right);
-    pR->bottom = RT_MAX(pR->bottom, pR2Unite->bottom);
-}
-
-DECLINLINE(bool) vboxWddmRectIntersection(const RECT *a, const RECT *b, RECT *rect)
-{
-    Assert(a);
-    Assert(b);
-    Assert(rect);
-    rect->left = RT_MAX(a->left, b->left);
-    rect->right = RT_MIN(a->right, b->right);
-    rect->top = RT_MAX(a->top, b->top);
-    rect->bottom = RT_MIN(a->bottom, b->bottom);
-    return (rect->right>rect->left) && (rect->bottom>rect->top);
-}
-
-DECLINLINE(bool) vboxWddmRectIsEqual(const RECT *pRect1, const RECT *pRect2)
-{
-    Assert(pRect1);
-    Assert(pRect2);
-    if (pRect1->left != pRect2->left)
-        return false;
-    if (pRect1->top != pRect2->top)
-        return false;
-    if (pRect1->right != pRect2->right)
-        return false;
-    if (pRect1->bottom != pRect2->bottom)
-        return false;
-    return true;
-}
-
-DECLINLINE(bool) vboxWddmRectIsCoveres(const RECT *pRect, const RECT *pCovered)
-{
-    Assert(pRect);
-    Assert(pCovered);
-    if (pRect->left > pCovered->left)
-        return false;
-    if (pRect->top > pCovered->top)
-        return false;
-    if (pRect->right < pCovered->right)
-        return false;
-    if (pRect->bottom < pCovered->bottom)
-        return false;
-    return true;
-}
-
-DECLINLINE(bool) vboxWddmRectIsEmpty(const RECT * pRect)
-{
-    return pRect->left == pRect->right-1 && pRect->top == pRect->bottom-1;
-}
-
-DECLINLINE(bool) vboxWddmRectIsIntersect(const RECT * pRect1, const RECT * pRect2)
-{
-    return !((pRect1->left < pRect2->left && pRect1->right < pRect2->left)
-            || (pRect2->left < pRect1->left && pRect2->right < pRect1->left)
-            || (pRect1->top < pRect2->top && pRect1->bottom < pRect2->top)
-            || (pRect2->top < pRect1->top && pRect2->bottom < pRect1->top));
-}
-
-DECLINLINE(void) vboxWddmRectUnited(RECT * pDst, const RECT * pRect1, const RECT * pRect2)
-{
-    pDst->left = RT_MIN(pRect1->left, pRect2->left);
-    pDst->top = RT_MIN(pRect1->top, pRect2->top);
-    pDst->right = RT_MAX(pRect1->right, pRect2->right);
-    pDst->bottom = RT_MAX(pRect1->bottom, pRect2->bottom);
-}
-
-DECLINLINE(void) vboxWddmRectTranslate(RECT * pRect, int x, int y)
-{
-    pRect->left   += x;
-    pRect->top    += y;
-    pRect->right  += x;
-    pRect->bottom += y;
-}
-
-DECLINLINE(void) vboxWddmRectMove(RECT * pRect, int x, int y)
-{
-    LONG w = pRect->right - pRect->left;
-    LONG h = pRect->bottom - pRect->top;
-    pRect->left   = x;
-    pRect->top    = y;
-    pRect->right  = w + x;
-    pRect->bottom = h + y;
-}
-
-DECLINLINE(void) vboxWddmRectTranslated(RECT *pDst, const RECT * pRect, int x, int y)
-{
-    *pDst = *pRect;
-    vboxWddmRectTranslate(pDst, x, y);
-}
-
-DECLINLINE(void) vboxWddmRectMoved(RECT *pDst, const RECT * pRect, int x, int y)
-{
-    *pDst = *pRect;
-    vboxWddmRectMove(pDst, x, y);
-}
-
-DECLINLINE(void) vboxWddmDirtyRegionAddRect(PVBOXWDDM_DIRTYREGION pInfo, const RECT *pRect)
-{
-    if (!(pInfo->fFlags & VBOXWDDM_DIRTYREGION_F_VALID))
+    switch (enmFormat)
     {
-        pInfo->fFlags = VBOXWDDM_DIRTYREGION_F_VALID;
-        if (pRect)
+        /* pitch for the DXT* (aka compressed) formats is the size in bytes of blocks that fill in an image width
+         * i.e. each block decompressed into 4 x 4 pixels, so we have ((Width + 3) / 4) blocks for Width.
+         * then each block has 64 bits (8 bytes) for DXT1 and 64+64 bits (16 bytes) for DXT2-DXT5, so.. : */
+        case D3DDDIFMT_DXT1:
         {
-            pInfo->fFlags |= VBOXWDDM_DIRTYREGION_F_RECT_VALID;
-            pInfo->Rect = *pRect;
+            UINT Pitch = (w + 3) / 4; /* <- pitch size in blocks */
+            Pitch *= 8;               /* <- pitch size in bytes */
+            return Pitch;
+        }
+        case D3DDDIFMT_DXT2:
+        case D3DDDIFMT_DXT3:
+        case D3DDDIFMT_DXT4:
+        case D3DDDIFMT_DXT5:
+        {
+            UINT Pitch = (w + 3) / 4; /* <- pitch size in blocks */
+            Pitch *= 8;               /* <- pitch size in bytes */
+            return Pitch;
+        }
+        default:
+        {
+            /* the default is just to calculate the pitch from bpp */
+            UINT bpp = vboxWddmCalcBitsPerPixel(enmFormat);
+            UINT Pitch = bpp * w;
+            /* pitch is now in bits, translate in bytes */
+            return VBOXWDDM_ROUNDBOUND(Pitch, 8) >> 3;
         }
     }
-    else if (!!(pInfo->fFlags & VBOXWDDM_DIRTYREGION_F_RECT_VALID))
+}
+
+DECLINLINE(UINT) vboxWddmCalcOffXrd(UINT w, D3DDDIFORMAT enmFormat)
+{
+    switch (enmFormat)
     {
-        if (pRect)
-            vboxWddmRectUnite(&pInfo->Rect, pRect);
-        else
-            pInfo->fFlags &= ~VBOXWDDM_DIRTYREGION_F_RECT_VALID;
+        /* pitch for the DXT* (aka compressed) formats is the size in bytes of blocks that fill in an image width
+         * i.e. each block decompressed into 4 x 4 pixels, so we have ((Width + 3) / 4) blocks for Width.
+         * then each block has 64 bits (8 bytes) for DXT1 and 64+64 bits (16 bytes) for DXT2-DXT5, so.. : */
+        case D3DDDIFMT_DXT1:
+        {
+            UINT Pitch = w / 4; /* <- pitch size in blocks */
+            Pitch *= 8;         /* <- pitch size in bytes */
+            return Pitch;
+        }
+        case D3DDDIFMT_DXT2:
+        case D3DDDIFMT_DXT3:
+        case D3DDDIFMT_DXT4:
+        case D3DDDIFMT_DXT5:
+        {
+            UINT Pitch = w / 4; /* <- pitch size in blocks */
+            Pitch *= 16;               /* <- pitch size in bytes */
+            return Pitch;
+        }
+        default:
+        {
+            /* the default is just to calculate the pitch from bpp */
+            UINT bpp = vboxWddmCalcBitsPerPixel(enmFormat);
+            UINT Pitch = bpp * w;
+            /* pitch is now in bits, translate in bytes */
+            return Pitch >> 3;
+        }
     }
 }
 
-DECLINLINE(void) vboxWddmDirtyRegionUnite(PVBOXWDDM_DIRTYREGION pInfo, const PVBOXWDDM_DIRTYREGION pInfo2)
+DECLINLINE(UINT) vboxWddmCalcHightPacking(D3DDDIFORMAT enmFormat)
 {
-    if (pInfo2->fFlags & VBOXWDDM_DIRTYREGION_F_VALID)
+    switch (enmFormat)
     {
-        if (pInfo2->fFlags & VBOXWDDM_DIRTYREGION_F_RECT_VALID)
-            vboxWddmDirtyRegionAddRect(pInfo, &pInfo2->Rect);
-        else
-            vboxWddmDirtyRegionAddRect(pInfo, NULL);
+        /* for the DXT* (aka compressed) formats each block is decompressed into 4 x 4 pixels,
+         * so packing is 4
+         */
+        case D3DDDIFMT_DXT1:
+        case D3DDDIFMT_DXT2:
+        case D3DDDIFMT_DXT3:
+        case D3DDDIFMT_DXT4:
+        case D3DDDIFMT_DXT5:
+            return 4;
+        default:
+            return 1;
     }
 }
 
-DECLINLINE(void) vboxWddmDirtyRegionClear(PVBOXWDDM_DIRTYREGION pInfo)
+DECLINLINE(UINT) vboxWddmCalcOffYru(UINT height, D3DDDIFORMAT enmFormat)
 {
-    pInfo->fFlags = 0;
+    UINT packing = vboxWddmCalcHightPacking(enmFormat);
+    /* round it up */
+    return (height + packing - 1) / packing;
 }
+
+DECLINLINE(UINT) vboxWddmCalcOffYrd(UINT height, D3DDDIFORMAT enmFormat)
+{
+    UINT packing = vboxWddmCalcHightPacking(enmFormat);
+    /* round it up */
+    return height / packing;
+}
+
+DECLINLINE(UINT) vboxWddmCalcPitch(UINT w, D3DDDIFORMAT enmFormat)
+{
+    return vboxWddmCalcOffXru(w, enmFormat);
+}
+
+DECLINLINE(UINT) vboxWddmCalcWidthForPitch(UINT Pitch, D3DDDIFORMAT enmFormat)
+{
+    switch (enmFormat)
+    {
+        /* pitch for the DXT* (aka compressed) formats is the size in bytes of blocks that fill in an image width
+         * i.e. each block decompressed into 4 x 4 pixels, so we have ((Width + 3) / 4) blocks for Width.
+         * then each block has 64 bits (8 bytes) for DXT1 and 64+64 bits (16 bytes) for DXT2-DXT5, so.. : */
+        case D3DDDIFMT_DXT1:
+        {
+            return (Pitch / 8) * 4;
+        }
+        case D3DDDIFMT_DXT2:
+        case D3DDDIFMT_DXT3:
+        case D3DDDIFMT_DXT4:
+        case D3DDDIFMT_DXT5:
+        {
+            return (Pitch / 16) * 4;;
+        }
+        default:
+        {
+            /* the default is just to calculate it from bpp */
+            UINT bpp = vboxWddmCalcBitsPerPixel(enmFormat);
+            return (Pitch << 3) / bpp;
+        }
+    }
+}
+
+DECLINLINE(UINT) vboxWddmCalcNumRows(UINT top, UINT bottom, D3DDDIFORMAT enmFormat)
+{
+    Assert(bottom > top);
+    top = top ? vboxWddmCalcOffYrd(top, enmFormat) : 0; /* <- just to optimize it a bit */
+    bottom = vboxWddmCalcOffYru(bottom, enmFormat);
+    return bottom - top;
+}
+
+DECLINLINE(UINT) vboxWddmCalcRowSize(UINT left, UINT right, D3DDDIFORMAT enmFormat)
+{
+    Assert(right > left);
+    left = left ? vboxWddmCalcOffXrd(left, enmFormat) : 0; /* <- just to optimize it a bit */
+    right = vboxWddmCalcOffXru(right, enmFormat);
+    return right - left;
+}
+
+DECLINLINE(UINT) vboxWddmCalcSize(UINT pitch, UINT height, D3DDDIFORMAT enmFormat)
+{
+    UINT cRows = vboxWddmCalcNumRows(0, height, enmFormat);
+    return pitch * cRows;
+}
+
+DECLINLINE(UINT) vboxWddmCalcOffXYrd(UINT x, UINT y, UINT pitch, D3DDDIFORMAT enmFormat)
+{
+    UINT offY = 0;
+    if (y)
+        offY = vboxWddmCalcSize(pitch, y, enmFormat);
+
+    return offY + vboxWddmCalcOffXrd(x, enmFormat);
+}
+
+#define VBOXWDDM_ARRAY_MAXELEMENTSU32(_t) ((uint32_t)((UINT32_MAX) / sizeof (_t)))
+#define VBOXWDDM_TRAILARRAY_MAXELEMENTSU32(_t, _af) ((uint32_t)(((~(0UL)) - (uint32_t)RT_OFFSETOF(_t, _af[0])) / RT_SIZEOFMEMB(_t, _af[0])))
 
 #endif /* #ifndef ___VBoxMPIf_h___ */

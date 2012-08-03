@@ -10,6 +10,7 @@
 #include "cr_spu.h"
 
 #ifdef CHROMIUM_THREADSAFE
+static bool __isContextTLSInited = false;
 CRtsd __contextTSD;
 #else
 CRContext *__currentContext = NULL;
@@ -22,6 +23,7 @@ static CRSharedState *gSharedState=NULL;
 
 static CRContext *defaultContext = NULL;
 
+static GLboolean g_bVBoxEnableDiffOnMakeCurrent = GL_TRUE;
 
 
 /**
@@ -49,8 +51,8 @@ crStateAllocShared(void)
 /**
  * Callback used for crFreeHashtable().
  */
-static void
-DeleteTextureCallback(void *texObj)
+DECLEXPORT(void)
+crStateDeleteTextureCallback(void *texObj)
 {
 #ifndef IN_GUEST
     diff_api.DeleteTextures(1, &((CRTextureObj *)texObj)->hwid);
@@ -58,11 +60,54 @@ DeleteTextureCallback(void *texObj)
     crStateDeleteTextureObject((CRTextureObj *) texObj);
 }
 
+#ifndef IN_GUEST
+typedef struct CR_STATE_RELEASEOBJ
+{
+    CRContext *pCtx;
+    CRSharedState *s;
+} CR_STATE_RELEASEOBJ, *PCR_STATE_RELEASEOBJ;
+
+static void ReleaseTextureCallback(unsigned long key, void *data1, void *data2)
+{
+    PCR_STATE_RELEASEOBJ pData = (PCR_STATE_RELEASEOBJ)data2;
+    CRTextureObj *pObj = (CRTextureObj *)data1;
+    CR_STATE_SHAREDOBJ_USAGE_CLEAR(pObj, pData->pCtx);
+    if (!CR_STATE_SHAREDOBJ_USAGE_IS_USED(pObj))
+        crHashtableDelete(pData->s->textureTable, key, crStateDeleteTextureCallback);
+}
+
+static void ReleaseBufferObjectCallback(unsigned long key, void *data1, void *data2)
+{
+    PCR_STATE_RELEASEOBJ pData = (PCR_STATE_RELEASEOBJ)data2;
+    CRBufferObject *pObj = (CRBufferObject *)data1;
+    CR_STATE_SHAREDOBJ_USAGE_CLEAR(pObj, pData->pCtx);
+    if (!CR_STATE_SHAREDOBJ_USAGE_IS_USED(pObj))
+        crHashtableDelete(pData->s->buffersTable, key, crStateFreeBufferObject);
+}
+
+static void ReleaseFBOCallback(unsigned long key, void *data1, void *data2)
+{
+    PCR_STATE_RELEASEOBJ pData = (PCR_STATE_RELEASEOBJ)data2;
+    CRFramebufferObject *pObj = (CRFramebufferObject *)data1;
+    CR_STATE_SHAREDOBJ_USAGE_CLEAR(pObj, pData->pCtx);
+    if (!CR_STATE_SHAREDOBJ_USAGE_IS_USED(pObj))
+        crHashtableDelete(pData->s->fbTable, key, crStateFreeFBO);
+}
+
+static void ReleaseRBOCallback(unsigned long key, void *data1, void *data2)
+{
+    PCR_STATE_RELEASEOBJ pData = (PCR_STATE_RELEASEOBJ)data2;
+    CRRenderbufferObject *pObj = (CRRenderbufferObject *)data1;
+    CR_STATE_SHAREDOBJ_USAGE_CLEAR(pObj, pData->pCtx);
+    if (!CR_STATE_SHAREDOBJ_USAGE_IS_USED(pObj))
+        crHashtableDelete(pData->s->rbTable, key, crStateFreeRBO);
+}
+#endif
 /**
  * Decrement shared state's refcount and delete when it hits zero.
  */
 DECLEXPORT(void)
-crStateFreeShared(CRSharedState *s)
+crStateFreeShared(CRContext *pContext, CRSharedState *s)
 {
     s->refCount--;
     if (s->refCount <= 0) {
@@ -70,13 +115,26 @@ crStateFreeShared(CRSharedState *s)
         {
             gSharedState = NULL;
         }
-        crFreeHashtable(s->textureTable, DeleteTextureCallback);
+        crFreeHashtable(s->textureTable, crStateDeleteTextureCallback);
         crFreeHashtable(s->dlistTable, crFree); /* call crFree for each entry */
         crFreeHashtable(s->buffersTable, crStateFreeBufferObject);
         crFreeHashtable(s->fbTable, crStateFreeFBO);
         crFreeHashtable(s->rbTable, crStateFreeRBO);
         crFree(s);
     }
+#ifndef IN_GUEST
+    else
+    {
+        /* evaluate usage bits*/
+        CR_STATE_RELEASEOBJ CbData;
+        CbData.pCtx = pContext;
+        CbData.s = s;
+        crHashtableWalk(s->textureTable, ReleaseTextureCallback, &CbData);
+        crHashtableWalk(s->buffersTable, ReleaseBufferObjectCallback , &CbData);
+        crHashtableWalk(s->fbTable, ReleaseFBOCallback, &CbData);
+        crHashtableWalk(s->rbTable, ReleaseRBOCallback, &CbData);
+    }
+#endif
 }
 
 DECLEXPORT(void) STATE_APIENTRY
@@ -100,7 +158,7 @@ crStateShareContext(GLboolean value)
         }
         else
         {
-            crStateFreeShared(pCtx->shared);
+            crStateFreeShared(pCtx, pCtx->shared);
             pCtx->shared = gSharedState;
             gSharedState->refCount++;
         }
@@ -122,7 +180,7 @@ crStateShareContext(GLboolean value)
         {
             pCtx->shared = crStateAllocShared();
             pCtx->shared->id = pCtx->id;
-            crStateFreeShared(gSharedState);
+            crStateFreeShared(pCtx, gSharedState);
         }
     }
 }
@@ -144,6 +202,15 @@ crStateSetSharedContext(CRContext *pCtx)
     gSharedState = pCtx->shared;
 }
 
+#ifdef CHROMIUM_THREADSAFE
+static void
+crStateFreeContext(CRContext *ctx);
+static DECLCALLBACK(void) crStateContextDtor(void *pvCtx)
+{
+    crStateFreeContext((CRContext*)pvCtx);
+}
+#endif
+
 /*
  * Helper for crStateCreateContext, below.
  */
@@ -157,6 +224,9 @@ crStateCreateContextId(int i, const CRLimitsState *limits,
     int node = i & 0x1f;
 
     ctx->id = i;
+#ifdef CHROMIUM_THREADSAFE
+    VBoxTlsRefInit(ctx, crStateContextDtor);
+#endif
     ctx->flush_func = NULL;
     for (j=0;j<CR_MAX_BITARRAY;j++){
         if (j == node32) {
@@ -270,7 +340,7 @@ crStateFreeContext(CRContext *ctx)
     crStateProgramDestroy( ctx );
     crStateTextureDestroy( ctx );
     crStateTransformDestroy( ctx );
-    crStateFreeShared(ctx->shared);
+    crStateFreeShared(ctx, ctx->shared);
     crStateFramebufferObjectDestroy(ctx);
     crStateGLSLDestroy(ctx);
     if (ctx->buffer.pFrontImg) crFree(ctx->buffer.pFrontImg);
@@ -278,6 +348,15 @@ crStateFreeContext(CRContext *ctx)
     crFree( ctx );
 }
 
+#ifdef CHROMIUM_THREADSAFE
+# ifndef RT_OS_WINDOWS
+static DECLCALLBACK(void) crStateThreadTlsDtor(void *pvValue)
+{
+    CRContext *pCtx = (CRContext*)pvValue;
+    VBoxTlsRefRelease(pCtx);
+}
+# endif
+#endif
 
 /*
  * Allocate the state (dirty) bits data structures.
@@ -303,13 +382,28 @@ void crStateInit(void)
     for (i=0;i<CR_MAX_CONTEXTS;i++)
         g_availableContexts[i] = 0;
 
+#ifdef CHROMIUM_THREADSAFE
+    if (!__isContextTLSInited)
+    {
+# ifndef RT_OS_WINDOWS
+        /* tls destructor is implemented for all platforms except windows*/
+        crInitTSDF(&__contextTSD, crStateThreadTlsDtor);
+# else
+        /* windows should do cleanup via DllMain THREAD_DETACH notification */
+        crInitTSD(&__contextTSD);
+# endif
+        __isContextTLSInited = 1;
+    }
+#endif
+
     if (defaultContext) {
         /* Free the default/NULL context.
          * Ensures context bits are reset */
-        crStateFreeContext(defaultContext);
 #ifdef CHROMIUM_THREADSAFE
-        crSetTSD(&__contextTSD, NULL);
+        SetCurrentContext(NULL);
+        VBoxTlsRefRelease(defaultContext);
 #else
+        crStateFreeContext(defaultContext);
         __currentContext = NULL;
 #endif
     }
@@ -323,7 +417,7 @@ void crStateInit(void)
     g_availableContexts[0] = 1; /* in use forever */
 
 #ifdef CHROMIUM_THREADSAFE
-    crSetTSD(&__contextTSD, defaultContext);
+    SetCurrentContext(defaultContext);
 #else
     __currentContext = defaultContext;
 #endif
@@ -341,6 +435,7 @@ void crStateDestroy(void)
 
 #ifdef CHROMIUM_THREADSAFE
     crFreeTSD(&__contextTSD);
+    __isContextTLSInited = 0;
 #endif
 }
 
@@ -433,7 +528,7 @@ void crStateDestroyContext( CRContext *ctx )
         if (diff_api.AlphaFunc)
             crStateSwitchContext(current, defaultContext);
 #ifdef CHROMIUM_THREADSAFE
-        crSetTSD(&__contextTSD, defaultContext);
+        SetCurrentContext(defaultContext);
 #else
         __currentContext = defaultContext;
 #endif
@@ -442,9 +537,19 @@ void crStateDestroyContext( CRContext *ctx )
     }
     g_availableContexts[ctx->id] = 0;
 
+#ifdef CHROMIUM_THREADSAFE
+    VBoxTlsRefRelease(ctx);
+#else
     crStateFreeContext(ctx);
+#endif
 }
 
+GLboolean crStateEnableDiffOnMakeCurrent(GLboolean fEnable)
+{
+    GLboolean bOld = g_bVBoxEnableDiffOnMakeCurrent;
+    g_bVBoxEnableDiffOnMakeCurrent = fEnable;
+    return bOld;
+}
 
 void crStateMakeCurrent( CRContext *ctx )
 {
@@ -458,7 +563,7 @@ void crStateMakeCurrent( CRContext *ctx )
 
     CRASSERT(ctx);
 
-    if (current) {
+    if (g_bVBoxEnableDiffOnMakeCurrent && current) {
         /* Check to see if the differencer exists first,
            we may not have one, aka the packspu */
         if (diff_api.AlphaFunc)
@@ -466,7 +571,7 @@ void crStateMakeCurrent( CRContext *ctx )
     }
 
 #ifdef CHROMIUM_THREADSAFE
-    crSetTSD(&__contextTSD, ctx);
+    SetCurrentContext(ctx);
 #else
     __currentContext = ctx;
 #endif
@@ -492,7 +597,7 @@ void crStateSetCurrent( CRContext *ctx )
     CRASSERT(ctx);
 
 #ifdef CHROMIUM_THREADSAFE
-    crSetTSD(&__contextTSD, ctx);
+    SetCurrentContext(ctx);
 #else
     __currentContext = ctx;
 #endif
@@ -548,3 +653,40 @@ crStateReadPixels( GLint x, GLint y, GLsizei width, GLsizei height,
     /* This no-op function helps smooth code-gen */
 }
 
+void crStateVBoxDetachThread()
+{
+    /* release the context ref so that it can be freed */
+    SetCurrentContext(NULL);
+}
+
+
+void crStateVBoxAttachThread()
+{
+}
+
+GLint crStateVBoxCreateContext( GLint con, const char * dpyName, GLint visual, GLint shareCtx )
+{
+    return 0;
+}
+
+GLint crStateVBoxWindowCreate( GLint con, const char *dpyName, GLint visBits  )
+{
+    return 0;
+}
+
+void crStateVBoxWindowDestroy( GLint con, GLint window )
+{
+}
+
+GLint crStateVBoxConCreate(struct VBOXUHGSMI *pHgsmi)
+{
+    return 0;
+}
+
+void crStateVBoxConDestroy(GLint con)
+{
+}
+
+void crStateVBoxConFlush(GLint con)
+{
+}

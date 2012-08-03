@@ -1,4 +1,4 @@
-/* $Id: UIBootTable.cpp 34614 2010-12-02 14:09:47Z vboxsync $ */
+/* $Id: UIBootTable.cpp 41819 2012-06-18 17:59:30Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -22,7 +22,7 @@
 
 /* Local includes */
 #include "UIBootTable.h"
-#include "VBoxGlobal.h"
+#include "UIConverter.h"
 
 UIBootTableItem::UIBootTableItem(KDeviceType type)
   : m_type(type)
@@ -61,7 +61,7 @@ KDeviceType UIBootTableItem::type() const
 
 void UIBootTableItem::retranslateUi()
 {
-    setText(vboxGlobal().toString(m_type));
+    setText(gpConverter->toString(m_type));
 }
 
 UIBootTable::UIBootTable(QWidget *pParent /* = 0 */)

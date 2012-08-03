@@ -1,10 +1,10 @@
-/* $Id: VBoxGuestInternal.h 33750 2010-11-03 21:00:26Z vboxsync $ */
+/* $Id: VBoxGuestInternal.h 41722 2012-06-14 19:49:31Z vboxsync $ */
 /** @file
  * VBoxGuest - Guest Additions Driver.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,6 +13,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #ifndef ___VBoxGuestInternal_h
@@ -112,7 +121,6 @@ typedef struct VBOXGUESTDEVEXT
     uint32_t                    fFixedEvents;
     /** The memory object reserving space for the guest mappings. */
     RTR0MEMOBJ                  hGuestMappings;
-
     /** Spinlock protecting the signaling and resetting of the wait-for-event
      * semaphores as well as the event acking in the ISR. */
     RTSPINLOCK                  EventSpinlock;
@@ -120,22 +128,28 @@ typedef struct VBOXGUESTDEVEXT
     VMMDevEvents               *pIrqAckEvents;
     /** The physical address of pIrqAckEvents. */
     RTCCPHYS                    PhysIrqAckEvents;
-    /** Wait-for-event list for threads waiting for multiple events. */
-    RTLISTNODE                  WaitList;
+    /** Wait-for-event list for threads waiting for multiple events
+     * (VBOXGUESTWAIT). */
+    RTLISTANCHOR                WaitList;
 #ifdef VBOX_WITH_HGCM
-    /** Wait-for-event list for threads waiting on HGCM async completion.
+    /** Wait-for-event list for threads waiting on HGCM async completion
+     * (VBOXGUESTWAIT).
+     *
      * The entire list is evaluated upon the arrival of an HGCM event, unlike
-     * the other lists which are only evaluated till the first thread has been woken up. */
-    RTLISTNODE                  HGCMWaitList;
+     * the other lists which are only evaluated till the first thread has
+     * been woken up. */
+    RTLISTANCHOR                HGCMWaitList;
 #endif
 #ifdef VBOXGUEST_USE_DEFERRED_WAKE_UP
-    /** List of wait-for-event entries that needs waking up. */
-    RTLISTNODE                  WakeUpList;
+    /** List of wait-for-event entries that needs waking up
+     * (VBOXGUESTWAIT). */
+    RTLISTANCHOR                WakeUpList;
 #endif
-    /** List of wait-for-event entries that has been woken up. */
-    RTLISTNODE                  WokenUpList;
-    /** List of free wait-for-event entries. */
-    RTLISTNODE                  FreeList;
+    /** List of wait-for-event entries that has been woken up
+     * (VBOXGUESTWAIT). */
+    RTLISTANCHOR                WokenUpList;
+    /** List of free wait-for-event entries (VBOXGUESTWAIT). */
+    RTLISTANCHOR                FreeList;
     /** Mask of pending events. */
     uint32_t volatile           f32PendingEvents;
     /** Current VMMDEV_EVENT_MOUSE_POSITION_CHANGED sequence number.
@@ -144,32 +158,37 @@ typedef struct VBOXGUESTDEVEXT
 
     /** Spinlock various items in the VBOXGUESTSESSION. */
     RTSPINLOCK                  SessionSpinlock;
-
-    /** The current clipboard client ID, 0 if no client.
-     * For implementing the VBOXGUEST_IOCTL_CLIPBOARD_CONNECT interface. */
-    uint32_t                    u32ClipboardClientId;
 #ifdef VBOX_WITH_VRDP_SESSION_HANDLING
-    BOOL                        fVRDPEnabled;
+    bool                        fVRDPEnabled;
 #endif
+    /** Flag indicating whether logging to the release log
+     *  is enabled. */
+    bool                        fLoggingEnabled;
     /** Memory balloon information for RTR0MemObjAllocPhysNC(). */
     VBOXGUESTMEMBALLOON         MemBalloon;
-    /** Align the next bit on a 64-byte boundary and make sure it starts at the same
-     *  offset in both 64-bit and 32-bit builds.
-     *
-     * @remarks The alignments of the members that are larger than 48 bytes should be
-     *          64-byte for cache line reasons. structs containing small amounts of
-     *          data could be lumped together at the end with a < 64 byte padding
-     *          following it (to grow into and align the struct size).
-     */
-    uint8_t abAlignment1[HC_ARCH_BITS == 32 ? 24 : 4];
+    /** For each mouse status feature the number of sessions which have
+     * enabled it.  A feature is enabled globally if at least one session has
+     * requested it. */
+    /** @todo can we programmatically determine the size of the array and
+     * still get the following alignment right? */
+    uint32_t volatile           acMouseFeatureUsage[32];
+    /** The mouse feature status matching the counts above.  These are updated
+     * together inside the session spinlock. */
+    uint32_t volatile           fMouseStatus;
+    /** Counter of number of active ISRs.  Currently used for safely removing
+     * the mouse handler callback. */
+    uint32_t volatile           cISR;
+    /** Callback and user data for a kernel mouse handler. */
+    VBoxGuestMouseSetNotifyCallback MouseNotifyCallback;
 
     /** Windows part. */
     union
     {
 #ifdef ___VBoxGuest_win_h
         VBOXGUESTDEVEXTWIN          s;
+#else
+        uint32_t                    dummy;
 #endif
-        uint8_t                     padding[256];      /* Multiple of 64; fix me! */
     } win;
 
 } VBOXGUESTDEVEXT;
@@ -212,6 +231,9 @@ typedef struct VBOXGUESTSESSION
     /** The last consumed VMMDEV_EVENT_MOUSE_POSITION_CHANGED sequence number.
      * Used to implement polling.  */
     uint32_t volatile           u32MousePosChangedSeq;
+    /** Mouse features supported.  A feature enabled in any guest session will
+     * be enabled for the host. */
+    uint32_t volatile           fMouseStatus;
 
 } VBOXGUESTSESSION;
 
