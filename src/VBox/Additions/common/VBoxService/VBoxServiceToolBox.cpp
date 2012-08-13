@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceToolBox.cpp 42534 2012-08-02 13:01:10Z vboxsync $ */
+/* $Id: VBoxServiceToolBox.cpp 42764 2012-08-10 19:57:32Z vboxsync $ */
 /** @file
  * VBoxServiceToolbox - Internal (BusyBox-like) toolbox.
  */
@@ -125,19 +125,22 @@ static void VBoxServiceToolboxShowUsageHeader(void)
 static void VBoxServiceToolboxShowUsage(void)
 {
     VBoxServiceToolboxShowUsageHeader();
-    RTPrintf("  VBoxService [--use-toolbox] vbox_<command> <general options> <parameters>\n\n"
+    RTPrintf("  VBoxService [--use-toolbox] vbox_<command> [<general options>] <parameters>\n\n"
              "General options:\n\n"
              "  --machinereadable          produce all output in machine-readable form\n"
              "  -V                         print version number and exit\n"
              "\n"
              "Commands:\n\n"
-             "  cat <general options>      <file>...\n"
-             "  ls <general options>       [--dereference|-L] [-l] [-R]\n"
+             "  cat    [<general options>] <file>...\n"
+             "  ls     [<general options>] [--dereference|-L] [-l] [-R]\n"
              "                             [--verbose|-v] [<file>...]\n"
-             "  rm <general options>       [-r|-R] <file>...\n"
-             "  mkdir <general options>    [--mode|-m] [--parents|-p]\n"
+             "  rm     [<general options>] [-r|-R] <file>...\n"
+             "  mktemp [<general options>] [--directory|-d] [--mode|-m <mode>]\n"
+             "                             [--secure|-s] [--tmpdir|-t <path>]\n"
+             "                             <template>\n"
+             "  mkdir  [<general options>] [--mode|-m <mode>] [--parents|-p]\n"
              "                             [--verbose|-v] <directory>...\n"
-             "  stat <general options>     [--file-system|-f]\n"
+             "  stat   [<general options>] [--file-system|-f]\n"
              "                             [--dereference|-L] [--terse|-t]\n"
              "                             [--verbose|-v] <file>...\n"
              "\n");
@@ -193,6 +196,20 @@ static void VBoxServiceToolboxPrintStrmHeader(const char *pszToolName, uint32_t 
 static void VBoxServiceToolboxPrintStrmTermination()
 {
     RTPrintf("%c%c%c%c", 0, 0, 0, 0);
+}
+
+
+/**
+ * Parse a file mode string from the command line (currently octal only)
+ * and print an error message and return an error if necessary.
+ */
+static int vboxServiceToolboxParseMode(const char *pcszMode, RTFMODE *pfMode)
+{
+    int rc = RTStrToUInt32Ex(pcszMode, NULL, 8 /* Base */, pfMode);
+    if (RT_FAILURE(rc)) /* Only octet based values supported right now! */
+        RTMsgError("Mode flag strings not implemented yet! Use octal numbers instead. (%s)\n",
+                   pcszMode);
+    return rc;
 }
 
 
@@ -306,7 +323,7 @@ static int VBoxServiceToolboxCatOutput(RTFILE hInput, RTFILE hOutput)
 
 /** @todo Document options! */
 static char g_paszCatHelp[] =
-    "  VBoxService [--use-toolbox] vbox_cat <general options> <file>...\n\n"
+    "  VBoxService [--use-toolbox] vbox_cat [<general options>] <file>...\n\n"
     "Concatenate files, or standard input, to standard output.\n"
     "\n";
 
@@ -524,6 +541,8 @@ static int VBoxServiceToolboxPrintFsInfo(const char *pszName, uint16_t cbName,
         if (uOutputFlags & VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE)
         {
             RTPrintf("ftype=%c%c", chFileType, 0);
+            /** @todo Skip node_id if not present/available! */
+            RTPrintf("cnode_id=%RU64%c", (uint64_t)pObjInfo->Attr.u.Unix.INodeId, 0);
             RTPrintf("owner_mask=%c%c%c%c",
                      fMode & RTFS_UNIX_IRUSR ? 'r' : '-',
                      fMode & RTFS_UNIX_IWUSR ? 'w' : '-',
@@ -767,7 +786,7 @@ static int VBoxServiceToolboxLsHandleDir(const char *pszDir,
 
 /** @todo Document options! */
 static char g_paszLsHelp[] =
-    "  VBoxService [--use-toolbox] vbox_ls <general options> [option]...\n"
+    "  VBoxService [--use-toolbox] vbox_ls [<general options>] [option]...\n"
     "                                      [<file>...]\n\n"
     "List information about files (the current directory by default).\n\n"
     "Options:\n\n"
@@ -939,7 +958,7 @@ static RTEXITCODE VBoxServiceToolboxLs(int argc, char **argv)
 
 
 static char g_paszRmHelp[] =
-    "  VBoxService [--use-toolbox] vbox_rm <general options> <file>...\n\n"
+    "  VBoxService [--use-toolbox] vbox_rm [<general options>] [<options>] <file>...\n\n"
     "Delete files and optionally directories if the '-R' or '-r' option is specified.\n"
     "If a file or directory cannot be deleted, an error message is printed if the\n"
     "'--machine-readable' option is not specified and the next file will be\n"
@@ -958,11 +977,16 @@ static char g_paszRmHelp[] =
  * readable mode.  Sets prc if rc is a non-success code.
  */
 static void toolboxRmReport(const char *pcszMessage, const char *pcszFile,
-                            int rc, uint32_t fOutputFlags, int *prc)
+                            bool fActive, int rc, uint32_t fOutputFlags,
+                            int *prc)
 {
+    if (!fActive)
+        return;
     if (!(fOutputFlags & VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE))
     {
-        if (RT_FAILURE(rc))
+        if (RT_SUCCESS(rc))
+            RTPrintf(pcszMessage, pcszFile, rc);
+        else
             RTMsgError(pcszMessage, pcszFile, rc);
     }
     else
@@ -1044,13 +1068,6 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
                 return RTGetOptPrintError(ch, &ValueUnion);
         }
     }
-    /* We need at least one file. */
-    if (RT_SUCCESS(rc) && cNonOptions == 0)
-    {
-        RTMsgError("No files or directories specified.");
-        return RTEXITCODE_FAILURE;
-    }
-
     if (RT_SUCCESS(rc))
     {
         /* Print magic/version. */
@@ -1063,6 +1080,13 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
         }
     }
 
+    /* We need at least one file. */
+    if (RT_SUCCESS(rc) && cNonOptions == 0)
+    {
+        toolboxRmReport("No files or directories specified.\n", NULL, true, 0,
+                        fOutputFlags, NULL);
+        return RTEXITCODE_FAILURE;
+    }
     if (RT_SUCCESS(rc))
     {
         for (int i = argc - cNonOptions; i < argc; ++i)
@@ -1073,25 +1097,31 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
             {
                 if (!(fFlags & VBOXSERVICETOOLBOXRMFLAG_RECURSIVE))
                     toolboxRmReport("Cannot remove directory '%s' as the '-R' option was not specified.\n",
-                                    argv[i], VERR_INVALID_PARAMETER,
+                                    argv[i], true, VERR_INVALID_PARAMETER,
                                     fOutputFlags, &rc);
                 else
                 {
                     rc2 = RTDirRemoveRecursive(argv[i],
                                                RTDIRRMREC_F_CONTENT_AND_DIR);
+                    toolboxRmReport("", argv[i], RT_SUCCESS(rc2), rc2,
+                                    fOutputFlags, NULL);
                     toolboxRmReport("The following error occurred while removing directory '%s': %Rrc.\n",
-                                    argv[i], rc2, fOutputFlags, &rc);
+                                    argv[i], RT_FAILURE(rc2), rc2,
+                                    fOutputFlags, &rc);
                 }
             }
             else if (RTPathExists(argv[i]) || RTSymlinkExists(argv[i]))
             {
                 rc2 = RTFileDelete(argv[i]);
+                toolboxRmReport("", argv[i], RT_SUCCESS(rc2), rc2,
+                                fOutputFlags, NULL);
                 toolboxRmReport("The following error occurred while removing file '%s': %Rrc.\n",
-                                argv[i], rc2, fOutputFlags, &rc);
+                                argv[i], RT_FAILURE(rc2), rc2, fOutputFlags,
+                                &rc);
             }
             else
                 toolboxRmReport("File '%s' does not exist.\n", argv[i],
-                                VERR_FILE_NOT_FOUND, fOutputFlags, &rc);
+                                true, VERR_FILE_NOT_FOUND, fOutputFlags, &rc);
         }
 
         if (fOutputFlags & VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE) /* Output termination. */
@@ -1101,12 +1131,254 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
 }
 
 
+static char g_paszMkTempHelp[] =
+    "  VBoxService [--use-toolbox] vbox_mktemp [<general options>] [<options>]\n"
+    "                                          <template>\n\n"
+    "Create a temporary directory based on the template supplied. The first string\n"
+    "of consecutive 'X' characters in the template will be replaced to form a unique\n"
+    "name for the directory.  The template may not contain a path.  The default\n"
+    "creation mode is 0600 for files and 0700 for directories.  If no path is\n"
+    "specified the default temporary directory will be used.\n"
+    "Options:\n\n"
+    "  [--directory|-d]           Create a directory instead of a file.\n"
+    "  [--mode|-m <mode>]         Create the object with mode <mode>.\n"
+    "  [--secure|-s]              Fail if the object cannot be created securely.\n"
+    "  [--tmpdir|-t <path>]       Create the object with the absolute path <path>.\n"
+    "\n";
+
+
+/**
+ * Report the result of a vbox_mktemp operation - either errors to stderr (not
+ * machine-readable) or everything to stdout as <name>\0<rc>\0 (machine-
+ * readable format).  The message may optionally contain a '%s' for the file
+ * name and an %Rrc for the result code in that order.  In future a "verbose"
+ * flag may be added, without which nothing will be output in non-machine-
+ * readable mode.  Sets prc if rc is a non-success code.
+ */
+static void toolboxMkTempReport(const char *pcszMessage, const char *pcszFile,
+                                bool fActive, int rc, uint32_t fOutputFlags,
+                                int *prc)
+{
+    if (!fActive)
+        return;
+    if (!(fOutputFlags & VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE))
+        if (RT_SUCCESS(rc))
+            RTPrintf(pcszMessage, pcszFile, rc);
+        else
+            RTMsgError(pcszMessage, pcszFile, rc);
+    else
+        RTPrintf("name=%s%crc=%d%c", pcszFile, 0, rc, 0);
+    if (prc && RT_FAILURE(rc))
+        *prc = rc;
+}
+
+
+/**
+ * Main function for tool "vbox_mktemp".
+ *
+ * @return  RTEXITCODE.
+ * @param   argc                    Number of arguments.
+ * @param   argv                    Pointer to argument array.
+ */
+static RTEXITCODE VBoxServiceToolboxMkTemp(int argc, char **argv)
+{
+    static const RTGETOPTDEF s_aOptions[] =
+    {
+        { "--machinereadable", VBOXSERVICETOOLBOXOPT_MACHINE_READABLE,
+          RTGETOPT_REQ_NOTHING },
+        { "--directory", 'd', RTGETOPT_REQ_NOTHING },
+        { "--mode",      'm', RTGETOPT_REQ_STRING },
+        { "--secure",    's', RTGETOPT_REQ_NOTHING },
+        { "--tmpdir",    't', RTGETOPT_REQ_STRING },
+    };
+
+    enum
+    {
+        /* Isn't that a bit long?  s/VBOXSERVICETOOLBOX/VSTB/ ? */
+        /** Create a temporary directory instead of a temporary file. */
+        VBOXSERVICETOOLBOXMKTEMPFLAG_DIRECTORY = RT_BIT_32(0),
+        /** Only create the temporary object if the operation is expected
+         * to be secure.  Not guaranteed to be supported on a particular
+         * set-up. */
+        VBOXSERVICETOOLBOXMKTEMPFLAG_SECURE    = RT_BIT_32(1)
+    };
+
+    int ch, rc, rc2;
+    RTGETOPTUNION ValueUnion;
+    RTGETOPTSTATE GetState;
+    rc = RTGetOptInit(&GetState, argc, argv, s_aOptions,
+                      RT_ELEMENTS(s_aOptions), 1 /*iFirst*/,
+                      RTGETOPTINIT_FLAGS_OPTS_FIRST);
+    AssertRCReturn(rc, RTEXITCODE_INIT);
+
+    bool        fVerbose     = false;
+    uint32_t    fFlags       = 0;
+    uint32_t    fOutputFlags = 0;
+    int         cNonOptions  = 0;
+    RTFMODE     fMode        = 0700;
+    bool        fModeSet     = false;
+    const char *pcszPath     = NULL;
+    const char *pcszTemplate;
+    char        szTemplateWithPath[RTPATH_MAX] = "";
+
+    while (   (ch = RTGetOpt(&GetState, &ValueUnion))
+              && RT_SUCCESS(rc))
+    {
+        /* For options that require an argument, ValueUnion has received the value. */
+        switch (ch)
+        {
+            case 'h':
+                VBoxServiceToolboxShowUsageHeader();
+                RTPrintf("%s", g_paszMkTempHelp);
+                return RTEXITCODE_SUCCESS;
+
+            case 'V':
+                VBoxServiceToolboxShowVersion();
+                return RTEXITCODE_SUCCESS;
+
+            case VBOXSERVICETOOLBOXOPT_MACHINE_READABLE:
+                fOutputFlags |= VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE;
+                break;
+
+            case 'd':
+                fFlags |= VBOXSERVICETOOLBOXMKTEMPFLAG_DIRECTORY;
+                break;
+
+            case 'm':
+                rc = vboxServiceToolboxParseMode(ValueUnion.psz, &fMode);
+                if (RT_FAILURE(rc))
+                    return RTEXITCODE_SYNTAX;
+                fModeSet = true;
+#ifndef RT_OS_WINDOWS
+                umask(0); /* RTDirCreate workaround */
+#endif
+                break;
+            case 's':
+                fFlags |= VBOXSERVICETOOLBOXMKTEMPFLAG_SECURE;
+                break;
+
+            case 't':
+                pcszPath = ValueUnion.psz;
+                break;
+
+            case VINF_GETOPT_NOT_OPTION:
+                /* RTGetOpt will sort these to the end of the argv vector so
+                 * that we will deal with them afterwards. */
+                ++cNonOptions;
+                break;
+
+            default:
+                return RTGetOptPrintError(ch, &ValueUnion);
+        }
+    }
+    /* Print magic/version. */
+    if (fOutputFlags & VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE)
+    {
+        rc = VBoxServiceToolboxStrmInit();
+        if (RT_FAILURE(rc))
+            RTMsgError("Error while initializing parseable streams, rc=%Rrc\n", rc);
+        VBoxServiceToolboxPrintStrmHeader("vbt_mktemp", 1 /* Stream version */);
+    }
+
+    if (fFlags & VBOXSERVICETOOLBOXMKTEMPFLAG_SECURE && fModeSet)
+    {
+        toolboxMkTempReport("'-s' and '-m' parameters cannot be used together.\n", "",
+                            true, VERR_INVALID_PARAMETER, fOutputFlags, &rc);
+        return RTEXITCODE_SYNTAX;
+    }
+    /* We need exactly one template, containing at least one 'X'. */
+    if (cNonOptions != 1)
+    {
+        toolboxMkTempReport("Please specify exactly one template.\n", "",
+                            true, VERR_INVALID_PARAMETER, fOutputFlags, &rc);
+        return RTEXITCODE_SYNTAX;
+    }
+    pcszTemplate = argv[argc - 1];
+    /* Validate that the template is as IPRT requires (asserted by IPRT). */
+    if (RTPathHasPath(pcszTemplate) || !strchr(pcszTemplate, 'X'))
+    {
+        toolboxMkTempReport("Template '%s' should contain a file name with no path and at least one 'X' character.\n",
+                            pcszTemplate, true, VERR_INVALID_PARAMETER,
+                            fOutputFlags, &rc);
+        return RTEXITCODE_FAILURE;
+    }
+    if (pcszPath && !RTPathStartsWithRoot(pcszPath))
+    {
+        toolboxMkTempReport("Path '%s' should be absolute.\n",
+                            pcszPath, true, VERR_INVALID_PARAMETER,
+                            fOutputFlags, &rc);
+        return RTEXITCODE_FAILURE;
+    }
+    if (pcszPath)
+    {
+        rc = RTStrCopy(szTemplateWithPath, sizeof(szTemplateWithPath),
+                       pcszPath);
+        if (RT_FAILURE(rc))
+        {
+            toolboxMkTempReport("Path '%s' too long.\n", pcszPath, true,
+                                VERR_INVALID_PARAMETER, fOutputFlags, &rc);
+            return RTEXITCODE_FAILURE;
+        }
+    }
+    else
+    {
+        rc = RTPathTemp(szTemplateWithPath, sizeof(szTemplateWithPath));
+        if (RT_FAILURE(rc))
+        {
+            toolboxMkTempReport("Failed to get the temporary directory.\n",
+                                "", true, VERR_INVALID_PARAMETER,
+                                fOutputFlags, &rc);
+            return RTEXITCODE_FAILURE;
+        }
+    }
+    rc = RTPathAppend(szTemplateWithPath, sizeof(szTemplateWithPath),
+                      pcszTemplate);
+    if (RT_FAILURE(rc))
+    {
+        toolboxMkTempReport("Template '%s' too long for path.\n",
+                            pcszTemplate, true, VERR_INVALID_PARAMETER,
+                            fOutputFlags, &rc);
+        return RTEXITCODE_FAILURE;
+    }
+
+    if (fFlags & VBOXSERVICETOOLBOXMKTEMPFLAG_DIRECTORY)
+    {
+        rc =   fFlags & VBOXSERVICETOOLBOXMKTEMPFLAG_SECURE
+             ? RTDirCreateTempSecure(szTemplateWithPath)
+             : RTDirCreateTemp(szTemplateWithPath, fMode);
+        toolboxMkTempReport("Created temporary directory '%s'.\n",
+                            szTemplateWithPath, RT_SUCCESS(rc), rc,
+                            fOutputFlags, NULL);
+        /* RTDirCreateTemp[Secure] sets the template to "" on failure. */
+        toolboxMkTempReport("The following error occurred while creating a temporary directory from template '%s': %Rrc.\n",
+                            pcszTemplate, RT_FAILURE(rc), rc, fOutputFlags,
+                            NULL);
+    }
+    else
+    {
+        rc =   fFlags & VBOXSERVICETOOLBOXMKTEMPFLAG_SECURE
+             ? RTFileCreateTempSecure(szTemplateWithPath)
+             : RTFileCreateTemp(szTemplateWithPath, fMode);
+        toolboxMkTempReport("Created temporary file '%s'.\n",
+                            szTemplateWithPath, RT_SUCCESS(rc), rc,
+                            fOutputFlags, NULL);
+        /* RTFileCreateTemp[Secure] sets the template to "" on failure. */
+        toolboxMkTempReport("The following error occurred while creating a temporary file from template '%s': %Rrc.\n",
+                            pcszTemplate, RT_FAILURE(rc), rc, fOutputFlags,
+                            NULL);
+    }
+    if (fOutputFlags & VBOXSERVICETOOLBOXOUTPUTFLAG_PARSEABLE) /* Output termination. */
+        VBoxServiceToolboxPrintStrmTermination();
+    return RT_SUCCESS(rc) ? RTEXITCODE_SUCCESS : RTEXITCODE_FAILURE;
+}
+
+
 /** @todo Document options! */
 static char g_paszMkDirHelp[] =
-    "  VBoxService [--use-toolbox] vbox_mkdir <general options> [options]\n"
+    "  VBoxService [--use-toolbox] vbox_mkdir [<general options>] [<options>]\n"
     "                                         <directory>...\n\n"
     "Options:\n\n"
-    "  [--mode=<mode>|-m <mode>]  The file mode to set (chmod) on the created\n"
+    "  [--mode|-m <mode>]         The file mode to set (chmod) on the created\n"
     "                             directories.  Default: a=rwx & umask.\n"
     "  [--parents|-p]             Create parent directories as needed, no\n"
     "                             error if the directory already exists.\n"
@@ -1150,17 +1422,12 @@ static RTEXITCODE VBoxServiceToolboxMkDir(int argc, char **argv)
         {
             case 'p':
                 fMakeParentDirs = true;
-#ifndef RT_OS_WINDOWS
-                umask(0); /* RTDirCreate workaround */
-#endif
                 break;
 
             case 'm':
-                rc = RTStrToUInt32Ex(ValueUnion.psz, NULL, 8 /* Base */, &fDirMode);
-                if (RT_FAILURE(rc)) /* Only octet based values supported right now! */
-                    return RTMsgErrorExit(RTEXITCODE_SYNTAX,
-                                          "Mode flag strings not implemented yet! Use octal numbers instead. (%s)\n",
-                                          ValueUnion.psz);
+                rc = vboxServiceToolboxParseMode(ValueUnion.psz, &fDirMode);
+                if (RT_FAILURE(rc))
+                    return RTEXITCODE_SYNTAX;
 #ifndef RT_OS_WINDOWS
                 umask(0); /* RTDirCreate workaround */
 #endif
@@ -1212,7 +1479,8 @@ static RTEXITCODE VBoxServiceToolboxMkDir(int argc, char **argv)
 
 /** @todo Document options! */
 static char g_paszStatHelp[] =
-    "  VBoxService [--use-toolbox] vbox_stat <general options> [options] <file>...\n\n"
+    "  VBoxService [--use-toolbox] vbox_stat [<general options>] [<options>]\n"
+    "                                        <file>...\n\n"
     "Display file or file system status.\n\n"
     "Options:\n\n"
     "  [--file-system|-f]\n"
@@ -1369,11 +1637,12 @@ static PFNHANDLER vboxServiceToolboxLookUpHandler(const char *pszTool)
     }
     const s_aTools[] =
     {
-        { "cat",    VBoxServiceToolboxCat   },
-        { "ls",     VBoxServiceToolboxLs    },
-        { "rm",     VBoxServiceToolboxRm    },
-        { "mkdir",  VBoxServiceToolboxMkDir },
-        { "stat",   VBoxServiceToolboxStat  },
+        { "cat",    VBoxServiceToolboxCat    },
+        { "ls",     VBoxServiceToolboxLs     },
+        { "rm",     VBoxServiceToolboxRm     },
+        { "mktemp", VBoxServiceToolboxMkTemp },
+        { "mkdir",  VBoxServiceToolboxMkDir  },
+        { "stat",   VBoxServiceToolboxStat   },
     };
 
     /* Skip optional 'vbox_' prefix. */

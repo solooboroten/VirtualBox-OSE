@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: MachineImpl.cpp 42789 2012-08-13 10:03:00Z vboxsync $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -5943,12 +5943,13 @@ STDMETHODIMP Machine::RemoveStorageController(IN_BSTR aName)
     if (FAILED(rc)) return rc;
 
     {
-        /* find all attached devices to the appropriate storage controller and detach them all*/
-        MediaData::AttachmentList::const_iterator endList = mMediaData->mAttachments.end();
-        MediaData::AttachmentList::const_iterator it = mMediaData->mAttachments.begin();
-        for (;it != endList; it++)
+        /* find all attached devices to the appropriate storage controller and detach them all */
+        size_t howManyAttach = mMediaData->mAttachments.size();
+
+        for (size_t i = 0; i < howManyAttach; ++i)
         {
-            MediumAttachment *pAttachTemp = *it;
+            MediumAttachment *pAttachTemp = mMediaData->mAttachments.front();
+
             AutoCaller localAutoCaller(pAttachTemp);
             if (FAILED(localAutoCaller.rc())) return localAutoCaller.rc();
 
@@ -5958,7 +5959,9 @@ STDMETHODIMP Machine::RemoveStorageController(IN_BSTR aName)
             {
                 LONG port = pAttachTemp->getPort();
                 LONG device = pAttachTemp->getDevice();
-                rc = DetachDevice(aName, port, device);
+
+                //rc = DetachDevice(aName, port, device);
+                rc = detachDevice(pAttachTemp, alock, NULL);
                 if (FAILED(rc)) return rc;
             }
         }
@@ -9092,7 +9095,7 @@ HRESULT Machine::prepareSaveSettings(bool *pfNeedsGlobalSaveSettings)
             configDir.stripFilename();
             newConfigDir = configDir;
             if (   configDir.length() >= groupPlusName.length()
-                && configDir.substr(configDir.length() - groupPlusName.length(), groupPlusName.length()).equals(groupPlusName.c_str()))
+                && !RTPathCompare(configDir.substr(configDir.length() - groupPlusName.length(), groupPlusName.length()).c_str(), groupPlusName.c_str()))
             {
                 newConfigDir = newConfigDir.substr(0, configDir.length() - groupPlusName.length());
                 Utf8Str newConfigBaseDir(newConfigDir);

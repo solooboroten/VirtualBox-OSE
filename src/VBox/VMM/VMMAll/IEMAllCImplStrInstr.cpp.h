@@ -1,4 +1,4 @@
-/* $Id: IEMAllCImplStrInstr.cpp.h 42453 2012-07-30 15:23:18Z vboxsync $ */
+/* $Id: IEMAllCImplStrInstr.cpp.h 42761 2012-08-10 18:23:20Z vboxsync $ */
 /** @file
  * IEM - String Instruction Implementation Code Template.
  */
@@ -450,7 +450,7 @@ IEM_CIMPL_DEF_0(RT_CONCAT4(iemCImpl_repe_scas_,OP_rAX,_m,ADDR_SIZE))
                 pCtx->ADDR_rCX = uCounterReg -= i;
                 pCtx->ADDR_rDI = uAddrReg    += i * cbIncr;
                 pCtx->eflags.u = uEFlags;
-                Assert(!(uEFlags & X86_EFL_ZF) == (i < cLeftPage));
+                Assert(!(uEFlags & X86_EFL_ZF) == fQuit);
                 iemMemPageUnmap(pIemCpu, GCPhysMem, IEM_ACCESS_DATA_R, puMem, &PgLockMem);
                 if (fQuit)
                     break;
@@ -575,7 +575,7 @@ IEM_CIMPL_DEF_0(RT_CONCAT4(iemCImpl_repne_scas_,OP_rAX,_m,ADDR_SIZE))
                 pCtx->ADDR_rCX = uCounterReg -= i;
                 pCtx->ADDR_rDI = uAddrReg    += i * cbIncr;
                 pCtx->eflags.u = uEFlags;
-                Assert((!(uEFlags & X86_EFL_ZF) != (i < cLeftPage)) || (i == cLeftPage));
+                Assert(!!(uEFlags & X86_EFL_ZF) == fQuit);
                 iemMemPageUnmap(pIemCpu, GCPhysMem, IEM_ACCESS_DATA_R, puMem, &PgLockMem);
                 if (fQuit)
                     break;
@@ -603,7 +603,6 @@ IEM_CIMPL_DEF_0(RT_CONCAT4(iemCImpl_repne_scas_,OP_rAX,_m,ADDR_SIZE))
             if (rcStrict != VINF_SUCCESS)
                 return rcStrict;
             RT_CONCAT(iemAImpl_cmp_u,OP_SIZE)((OP_TYPE *)&uValueReg, uTmpValue, &uEFlags);
-
             pCtx->ADDR_rDI = uAddrReg += cbIncr;
             pCtx->ADDR_rCX = --uCounterReg;
             pCtx->eflags.u = uEFlags;
@@ -652,6 +651,30 @@ IEM_CIMPL_DEF_1(RT_CONCAT4(iemCImpl_rep_movs_op,OP_SIZE,_addr,ADDR_SIZE), uint8_
     int8_t const    cbIncr      = pCtx->eflags.Bits.u1DF ? -(OP_SIZE / 8) : (OP_SIZE / 8);
     ADDR_TYPE       uSrcAddrReg = pCtx->ADDR_rSI;
     ADDR_TYPE       uDstAddrReg = pCtx->ADDR_rDI;
+
+    /*
+     * Be careful with handle bypassing.
+     */
+    if (pIemCpu->fBypassHandlers)
+    {
+        Log(("%s: declining because we're bypassing handlers\n", __FUNCTION__));
+        return VERR_IEM_ASPECT_NOT_IMPLEMENTED;
+    }
+
+    /*
+     * If we're reading back what we write, we have to let the verfication code
+     * to prevent a false positive.
+     * Note! This doesn't take aliasing or wrapping into account - lazy bird.
+     */
+#ifdef IEM_VERIFICATION_MODE_FULL
+    if (   IEM_VERIFICATION_ENABLED(pIemCpu)
+        && (cbIncr > 0
+            ?    uSrcAddrReg <= uDstAddrReg
+              && uSrcAddrReg + cbIncr * uCounterReg > uDstAddrReg
+            :    uDstAddrReg <= uSrcAddrReg
+              && uDstAddrReg + cbIncr * uCounterReg > uSrcAddrReg))
+        pIemCpu->fOverlappingMovs = true;
+#endif
 
     /*
      * The loop.
@@ -708,8 +731,17 @@ IEM_CIMPL_DEF_1(RT_CONCAT4(iemCImpl_rep_movs_op,OP_SIZE,_addr,ADDR_SIZE), uint8_
                 rcStrict = iemMemPageMap(pIemCpu, GCPhysSrcMem, IEM_ACCESS_DATA_R, (void **)&puSrcMem, &PgLockSrcMem);
                 if (rcStrict == VINF_SUCCESS)
                 {
-                    /* Perform the operation. */
-                    memcpy(puDstMem, puSrcMem, cLeftPage * (OP_SIZE / 8));
+                    Assert(   (GCPhysSrcMem         >> PAGE_SHIFT) != (GCPhysDstMem         >> PAGE_SHIFT)
+                           || ((uintptr_t)puSrcMem  >> PAGE_SHIFT) == ((uintptr_t)puDstMem  >> PAGE_SHIFT));
+
+                    /* Perform the operation exactly (don't use memcpy to avoid
+                       having to consider how its implementation would affect
+                       any overlapping source and destination area). */
+                    OP_TYPE const  *puSrcCur = puSrcMem;
+                    OP_TYPE        *puDstCur = puDstMem;
+                    uint32_t        cTodo    = cLeftPage;
+                    while (cTodo-- > 0)
+                        *puDstCur++ = *puSrcCur++;
 
                     /* Update the registers. */
                     pCtx->ADDR_rSI = uSrcAddrReg += cLeftPage * cbIncr;
@@ -778,6 +810,16 @@ IEM_CIMPL_DEF_0(RT_CONCAT4(iemCImpl_stos_,OP_rAX,_m,ADDR_SIZE))
     int8_t const    cbIncr      = pCtx->eflags.Bits.u1DF ? -(OP_SIZE / 8) : (OP_SIZE / 8);
     OP_TYPE const   uValue      = pCtx->OP_rAX;
     ADDR_TYPE       uAddrReg    = pCtx->ADDR_rDI;
+
+    /*
+     * Be careful with handle bypassing.
+     */
+    /** @todo Permit doing a page if correctly aligned. */
+    if (pIemCpu->fBypassHandlers)
+    {
+        Log(("%s: declining because we're bypassing handlers\n", __FUNCTION__));
+        return VERR_IEM_ASPECT_NOT_IMPLEMENTED;
+    }
 
     /*
      * The loop.
@@ -994,6 +1036,15 @@ IEM_CIMPL_DEF_0(RT_CONCAT4(iemCImpl_ins_op,OP_SIZE,_addr,ADDR_SIZE))
     VBOXSTRICTRC    rcStrict;
 
     /*
+     * Be careful with handle bypassing.
+     */
+    if (pIemCpu->fBypassHandlers)
+    {
+        Log(("%s: declining because we're bypassing handlers\n", __FUNCTION__));
+        return VERR_IEM_ASPECT_NOT_IMPLEMENTED;
+    }
+
+    /*
      * ASSUMES the #GP for I/O permission is taken first, then any #GP for
      * segmentation and finally any #PF due to virtual address translation.
      * ASSUMES nothing is read from the I/O port before traps are taken.
@@ -1063,6 +1114,15 @@ IEM_CIMPL_DEF_0(RT_CONCAT4(iemCImpl_rep_ins_op,OP_SIZE,_addr,ADDR_SIZE))
 
     int8_t const    cbIncr      = pCtx->eflags.Bits.u1DF ? -(OP_SIZE / 8) : (OP_SIZE / 8);
     ADDR_TYPE       uAddrReg    = pCtx->ADDR_rDI;
+
+    /*
+     * Be careful with handle bypassing.
+     */
+    if (pIemCpu->fBypassHandlers)
+    {
+        Log(("%s: declining because we're bypassing handlers\n", __FUNCTION__));
+        return VERR_IEM_ASPECT_NOT_IMPLEMENTED;
+    }
 
     /*
      * The loop.

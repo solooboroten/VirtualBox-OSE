@@ -1,5 +1,5 @@
 
-/* $Id: GuestSessionImpl.h 42566 2012-08-03 08:57:23Z vboxsync $ */
+/* $Id: GuestSessionImpl.h 42783 2012-08-12 20:25:38Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */
@@ -27,6 +27,8 @@
 #include "GuestFileImpl.h"
 #include "GuestFsObjInfoImpl.h"
 
+#include <iprt/isofs.h> /* For UpdateAdditions. */
+
 class Guest;
 
 /**
@@ -37,23 +39,25 @@ class GuestSessionTask
 {
 public:
 
-    GuestSessionTask(GuestSession *pSession, Progress *pProgress);
+    GuestSessionTask(GuestSession *pSession);
 
     virtual ~GuestSessionTask(void);
 
 public:
 
     virtual int Run(void) = 0;
-    virtual int RunAsync(const Utf8Str &strDesc) = 0;
+    virtual int RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress) = 0;
 
-    int setProgress(unsigned uPercent);
+    int setProgress(ULONG uPercent);
     int setProgressSuccess(void);
-    int setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg);
+    HRESULT setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg);
 
 protected:
 
     Utf8Str                 mDesc;
-    ComObjPtr<GuestSession> mSession;
+    GuestSession           *mSession;
+    /** Progress object for getting updated when running
+     *  asynchronously. Optional. */
     ComObjPtr<Progress>     mProgress;
 };
 
@@ -64,15 +68,47 @@ class SessionTaskCopyTo : public GuestSessionTask
 {
 public:
 
-    SessionTaskCopyTo(GuestSession *pSession, Progress *pProgress,
+    SessionTaskCopyTo(GuestSession *pSession,
                       const Utf8Str &strSource, const Utf8Str &strDest, uint32_t uFlags);
+
+    SessionTaskCopyTo(GuestSession *pSession,
+                      PRTFILE pSourceFile, size_t cbSourceOffset, uint64_t cbSourceSize,
+                      const Utf8Str &strDest, uint32_t uFlags);
 
     virtual ~SessionTaskCopyTo(void);
 
 public:
 
     int Run(void);
-    int RunAsync(const Utf8Str &strDesc);
+    int RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress);
+    static int taskThread(RTTHREAD Thread, void *pvUser);
+
+protected:
+
+    Utf8Str  mSource;
+    PRTFILE  mSourceFile;
+    size_t   mSourceOffset;
+    uint64_t mSourceSize;
+    Utf8Str  mDest;
+    uint32_t mCopyFileFlags;
+};
+
+/**
+ * Task for copying files from guest to the host.
+ */
+class SessionTaskCopyFrom : public GuestSessionTask
+{
+public:
+
+    SessionTaskCopyFrom(GuestSession *pSession,
+                        const Utf8Str &strSource, const Utf8Str &strDest, uint32_t uFlags);
+
+    virtual ~SessionTaskCopyFrom(void);
+
+public:
+
+    int Run(void);
+    int RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress);
     static int taskThread(RTTHREAD Thread, void *pvUser);
 
 protected:
@@ -83,27 +119,34 @@ protected:
 };
 
 /**
- * Task for copying files from guest to the host.
+ * Task for automatically updating the Guest Additions on the guest.
  */
-class SessionTaskCopyFrom : public GuestSessionTask
+class SessionTaskUpdateAdditions : public GuestSessionTask
 {
 public:
 
-    SessionTaskCopyFrom(GuestSession *pSession, Progress *pProgress,
-                        const Utf8Str &strSource, const Utf8Str &strDest, uint32_t uFlags);
+    SessionTaskUpdateAdditions(GuestSession *pSession,
+                               const Utf8Str &strSource, uint32_t uFlags);
 
-    virtual ~SessionTaskCopyFrom(void);
+    virtual ~SessionTaskUpdateAdditions(void);
 
 public:
 
     int Run(void);
-    int RunAsync(const Utf8Str &strDesc);
+    int RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress);
     static int taskThread(RTTHREAD Thread, void *pvUser);
 
 protected:
 
+    int copyFileToGuest(GuestSession *pSession, PRTISOFSFILE pISO,
+                        Utf8Str const &strFileSource, const Utf8Str &strFileDest,
+                        bool fOptional, uint32_t *pcbSize);
+    int runFile(GuestSession *pSession, GuestProcessStartupInfo &procInfo);
+
+    /** The (optionally) specified Guest Additions .ISO on the host
+     *  which will be used for the updating process. */
     Utf8Str  mSource;
-    Utf8Str  mDest;
+    /** Update flags. */
     uint32_t mFlags;
 };
 
@@ -152,9 +195,9 @@ public:
     STDMETHOD(CopyFrom)(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn(CopyFileFlag_T, aFlags), IProgress **aProgress);
     STDMETHOD(CopyTo)(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn(CopyFileFlag_T, aFlags), IProgress **aProgress);
     STDMETHOD(DirectoryCreate)(IN_BSTR aPath, ULONG aMode, ComSafeArrayIn(DirectoryCreateFlag_T, aFlags), IGuestDirectory **aDirectory);
-    STDMETHOD(DirectoryCreateTemp)(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aName, IGuestDirectory **aDirectory);
+    STDMETHOD(DirectoryCreateTemp)(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aPath, BOOL aSecure, BSTR *aDirectory);
     STDMETHOD(DirectoryExists)(IN_BSTR aPath, BOOL *aExists);
-    STDMETHOD(DirectoryOpen)(IN_BSTR aPath, IN_BSTR aFilter, IN_BSTR aFlags, IGuestDirectory **aDirectory);
+    STDMETHOD(DirectoryOpen)(IN_BSTR aPath, IN_BSTR aFilter, ComSafeArrayIn(DirectoryOpenFlag_T, aFlags), IGuestDirectory **aDirectory);
     STDMETHOD(DirectoryQueryInfo)(IN_BSTR aPath, IGuestFsObjInfo **aInfo);
     STDMETHOD(DirectoryRemove)(IN_BSTR aPath);
     STDMETHOD(DirectoryRemoveRecursive)(IN_BSTR aPath, ComSafeArrayIn(DirectoryRemoveRecFlag_T, aFlags), IProgress **aProgress);
@@ -164,12 +207,12 @@ public:
     STDMETHOD(EnvironmentGet)(IN_BSTR aName, BSTR *aValue);
     STDMETHOD(EnvironmentSet)(IN_BSTR aName, IN_BSTR aValue);
     STDMETHOD(EnvironmentUnset)(IN_BSTR aName);
-    STDMETHOD(FileCreateTemp)(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aName, IGuestFile **aFile);
+    STDMETHOD(FileCreateTemp)(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aPath, BOOL aSecure, IGuestFile **aFile);
     STDMETHOD(FileExists)(IN_BSTR aPath, BOOL *aExists);
+    STDMETHOD(FileRemove)(IN_BSTR aPath);
     STDMETHOD(FileOpen)(IN_BSTR aPath, IN_BSTR aOpenMode, IN_BSTR aDisposition, ULONG aCreationMode, LONG64 aOffset, IGuestFile **aFile);
     STDMETHOD(FileQueryInfo)(IN_BSTR aPath, IGuestFsObjInfo **aInfo);
     STDMETHOD(FileQuerySize)(IN_BSTR aPath, LONG64 *aSize);
-    STDMETHOD(FileRemove)(IN_BSTR aPath);
     STDMETHOD(FileRename)(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn(PathRenameFlag_T, aFlags));
     STDMETHOD(FileSetACL)(IN_BSTR aPath, IN_BSTR aACL);
     STDMETHOD(ProcessCreate)(IN_BSTR aCommand, ComSafeArrayIn(IN_BSTR, aArguments), ComSafeArrayIn(IN_BSTR, aEnvironment),
@@ -202,16 +245,26 @@ public:
      * @{ */
     int                     directoryClose(ComObjPtr<GuestDirectory> pDirectory);
     int                     directoryCreateInternal(const Utf8Str &strPath, uint32_t uMode, uint32_t uFlags, ComObjPtr<GuestDirectory> &pDirectory);
+    int                     objectCreateTempInternal(Utf8Str strTemplate,
+                                                     Utf8Str strPath,
+                                                     bool fDirectory,
+                                                     Utf8Str &strName,
+                                                     int *prc);
+    int                     directoryOpenInternal(const Utf8Str &strPath, const Utf8Str &strFilter, uint32_t uFlags, ComObjPtr<GuestDirectory> &pDirectory);
     int                     dispatchToProcess(uint32_t uContextID, uint32_t uFunction, void *pvData, size_t cbData);
     int                     fileClose(ComObjPtr<GuestFile> pFile);
+    int                     fileRemoveInternal(Utf8Str strPath, int *prc);
+    int                     fileOpenInternal(const Utf8Str &strPath, const Utf8Str &strOpenMode, const Utf8Str &strDisposition,
+                                             uint32_t uCreationMode, int64_t iOffset, ComObjPtr<GuestFile> &pFile);
     int                     fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &objData);
     int                     fileQuerySizeInternal(const Utf8Str &strPath, int64_t *pllSize);
     const GuestCredentials &getCredentials(void);
     const GuestEnvironment &getEnvironment(void);
     Utf8Str                 getName(void);
+    Guest                  *getParent(void) { return mData.mParent; }
     uint32_t                getProtocolVersion(void) { return mData.mProtocolVersion; }
     int                     processClose(ComObjPtr<GuestProcess> pProcess);
-    int                     processCreateExInteral(GuestProcessInfo &procInfo, ComObjPtr<GuestProcess> &pProgress);
+    int                     processCreateExInteral(GuestProcessStartupInfo &procInfo, ComObjPtr<GuestProcess> &pProgress);
     inline bool             processExists(uint32_t uProcessID, ComObjPtr<GuestProcess> *pProcess);
     inline int              processGetByPID(ULONG uPID, ComObjPtr<GuestProcess> *pProcess);
     int                     startTaskAsync(const Utf8Str &strTaskDesc, GuestSessionTask *pTask, ComObjPtr<Progress> &pProgress);
@@ -239,8 +292,6 @@ private:
         ULONG                mId;
         /** The session timeout. Default is 30s. */
         ULONG                mTimeout;
-        /** The next process ID for assignment. */
-        ULONG                mNextProcessID;
         /** The session's environment block. Can be
          *  overwritten/extended by ProcessCreate(Ex). */
         GuestEnvironment     mEnvironment;

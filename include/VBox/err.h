@@ -478,6 +478,8 @@
 #define VERR_PGM_PHYS_TLB_CATCH_ALL             (-1634)
 /** Catch write access and route it thru PGM. */
 #define VINF_PGM_PHYS_TLB_CATCH_WRITE           1635
+/** Catch write access and route it thru PGM. */
+#define VERR_PGM_PHYS_TLB_CATCH_WRITE           (-1635)
 /** No CR3 root shadow page table.. */
 #define VERR_PGM_NO_CR3_SHADOW_ROOT             (-1636)
 /** Trying to free a page with an invalid Page ID. */
@@ -2123,6 +2125,8 @@
 #define VERR_IEM_IPE_2                              (-5393)
 /** Internal processing error \#3 in the IEM code.. */
 #define VERR_IEM_IPE_3                              (-5394)
+/** Restart the current instruction. For testing only. */
+#define VERR_IEM_RESTART_INSTRUCTION                (-5395)
 /** @} */
 
 

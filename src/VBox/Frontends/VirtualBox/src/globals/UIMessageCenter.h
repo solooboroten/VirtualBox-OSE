@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -256,7 +256,7 @@ public:
 
     int confirmMachineItemRemoval(const QStringList &names);
     int confirmMachineDeletion(const QList<CMachine> &machines);
-    bool confirmDiscardSavedState(const CMachine &machine);
+    bool confirmDiscardSavedState(const QString &strNames);
 
     void cannotChangeMediumType(QWidget *pParent, const CMedium &medium, KMediumType oldMediumType, KMediumType newMediumType);
 
@@ -307,7 +307,7 @@ public:
                                const CVirtualBoxErrorInfo &error);
 
     void remindAboutGuestAdditionsAreNotActive(QWidget *pParent);
-    bool cannotFindGuestAdditions(const QString &strSrc1, const QString &strSrc2);
+    bool cannotFindGuestAdditions();
     void cannotMountGuestAdditions(const QString &strMachineName);
     bool confirmDownloadAdditions(const QString &strUrl, qulonglong uSize);
     bool confirmMountAdditions(const QString &strUrl, const QString &strSrc);
@@ -351,9 +351,9 @@ public:
     bool remindAboutGuruMeditation(const CConsole &console,
                                    const QString &strLogFolder);
 
-    bool confirmVMReset(QWidget *pParent = 0);
-    bool confirmVMACPIShutdown(QWidget *pParent = 0);
-    bool confirmVMPowerOff(QWidget *pParent = 0);
+    bool confirmVMReset(const QString &strNames);
+    bool confirmVMACPIShutdown(const QString &strNames);
+    bool confirmVMPowerOff(const QString &strNames);
 
     void warnAboutCannotRemoveMachineFolder(QWidget *pParent, const QString &strFolderName);
     void warnAboutCannotRewriteMachineFolder(QWidget *pParent, const QString &strFolderName);

@@ -83,7 +83,6 @@ private slots:
     void sltPerformExit();
 
     /* Handlers: Machine-menu slots: */
-    void sltShowCreateMachineWizard();
     void sltShowAddMachineDialog(const QString &strFileName = QString());
     void sltShowMachineSettingsDialog(const QString &strCategory = QString(),
                                       const QString &strControl = QString(),
@@ -93,18 +92,22 @@ private slots:
     void sltPerformDiscardAction();
     void sltPerformPauseResumeAction(bool fPause);
     void sltPerformResetAction();
+    void sltPerformSaveAction();
     void sltPerformACPIShutdownAction();
     void sltPerformPowerOffAction();
     void sltPerformRefreshAction();
     void sltShowLogDialog();
     void sltShowMachineInFileManager();
     void sltPerformCreateShortcutAction();
-    void sltMachineMenuAboutToShow();
+    void sltGroupCloseMenuAboutToShow();
     void sltMachineCloseMenuAboutToShow();
 
     /* VM list slots: */
     void sltCurrentVMItemChanged(bool fRefreshDetails = true, bool fRefreshSnapshots = true, bool fRefreshDescription = true);
     void sltOpenUrls(QList<QUrl> list = QList<QUrl>());
+
+    /* Handlers: Group saving stuff: */
+    void sltGroupSavingUpdate();
 
 private:
 
@@ -122,8 +125,12 @@ private:
     void prepareIcon();
     void prepareMenuBar();
     void prepareMenuFile(QMenu *pMenu);
+    void prepareCommonActions();
+    void prepareGroupActions();
+    void prepareMachineActions();
     void prepareMenuGroup(QMenu *pMenu);
     void prepareMenuMachine(QMenu *pMenu);
+    void prepareMenuGroupClose(QMenu *pMenu);
     void prepareMenuMachineClose(QMenu *pMenu);
     void prepareMenuHelp(QMenu *pMenu);
     void prepareStatusBar();
@@ -140,12 +147,24 @@ private:
     void updateActionsAppearance();
 
     /* Helpers: Action stuff: */
-    static bool isActionEnabled(int iActionIndex, const QList<UIVMItem*> &items);
-    static bool isItemsAccessible(const QList<UIVMItem*> &items);
-    static bool isItemsInaccessible(const QList<UIVMItem*> &items);
-    static bool isItemsHasUnlockedSession(const QList<UIVMItem*> &items);
-    static bool isItemsSupportsShortcuts(const QList<UIVMItem*> &items);
+    bool isActionEnabled(int iActionIndex, const QList<UIVMItem*> &items);
     static bool isItemsPoweredOff(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemAbleToShutdown(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemSupportsShortcuts(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemAccessible(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemInaccessible(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemRemovable(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemCanBeStartedOrShowed(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemDiscardable(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemStarted(const QList<UIVMItem*> &items);
+    static bool isAtLeastOneItemRunning(const QList<UIVMItem*> &items);
+    static bool isItemEditable(UIVMItem *pItem);
+    static bool isItemSaved(UIVMItem *pItem);
+    static bool isItemPoweredOff(UIVMItem *pItem);
+    static bool isItemStarted(UIVMItem *pItem);
+    static bool isItemRunning(UIVMItem *pItem);
+    static bool isItemPaused(UIVMItem *pItem);
+    static bool isItemStuck(UIVMItem *pItem);
 
     /* Central splitter window: */
     QISplitter *m_pSplitter;
@@ -174,49 +193,47 @@ private:
     UIAction *m_pPreferencesDialogAction;
     UIAction *m_pExitAction;
 
+    /* Common Group/Machine actions: */
+    UIAction *m_pAction_Common_New;
+    UIAction *m_pAction_Common_Add;
+    UIAction *m_pAction_Common_StartOrShow;
+    UIAction *m_pAction_Common_PauseAndResume;
+    UIAction *m_pAction_Common_Reset;
+    UIAction *m_pAction_Common_Discard;
+    UIAction *m_pAction_Common_LogDialog;
+    UIAction *m_pAction_Common_Refresh;
+    UIAction *m_pAction_Common_ShowInFileManager;
+    UIAction *m_pAction_Common_CreateShortcut;
+    UIAction *m_pAction_Common_SortParent;
+
     /* 'Group' menu action pointers: */
     QList<UIAction*> m_groupActions;
     QAction *m_pGroupMenuAction;
     QMenu *m_pGroupMenu;
-    UIAction *m_pActionGroupNewWizard;
-    UIAction *m_pActionGroupAddDialog;
-    UIAction *m_pActionGroupRenameDialog;
-    UIAction *m_pActionGroupRemoveDialog;
-    UIAction *m_pActionGroupStartOrShow;
-    UIAction *m_pActionGroupPauseAndResume;
-    UIAction *m_pActionGroupReset;
-    UIAction *m_pActionGroupRefresh;
-    UIAction *m_pActionGroupLogDialog;
-    UIAction *m_pActionGroupShowInFileManager;
-    UIAction *m_pActionGroupCreateShortcut;
-    UIAction *m_pActionGroupSortParent;
-    UIAction *m_pActionGroupSort;
+    UIAction *m_pAction_Group_Rename;
+    UIAction *m_pAction_Group_Remove;
+    UIAction *m_pAction_Group_Sort;
+    /* 'Group / Close' menu action pointers: */
+    UIAction *m_pGroupCloseMenuAction;
+    QMenu *m_pGroupCloseMenu;
+    UIAction *m_pGroupSaveAction;
+    UIAction *m_pGroupACPIShutdownAction;
+    UIAction *m_pGroupPowerOffAction;
 
     /* 'Machine' menu action pointers: */
     QList<UIAction*> m_machineActions;
     QAction *m_pMachineMenuAction;
     QMenu *m_pMachineMenu;
-    UIAction *m_pActionMachineNewWizard;
-    UIAction *m_pActionMachineAddDialog;
-    UIAction *m_pActionMachineSettingsDialog;
-    UIAction *m_pActionMachineCloneWizard;
-    UIAction *m_pActionMachineAddGroupDialog;
-    UIAction *m_pActionMachineRemoveDialog;
-    UIAction *m_pActionMachineStartOrShow;
-    UIAction *m_pActionMachineDiscard;
-    UIAction *m_pActionMachinePauseAndResume;
-    UIAction *m_pActionMachineReset;
-    UIAction *m_pActionMachineRefresh;
-    UIAction *m_pActionMachineLogDialog;
-    UIAction *m_pActionMachineShowInFileManager;
-    UIAction *m_pActionMachineCreateShortcut;
-    UIAction *m_pActionMachineSortParent;
-
+    UIAction *m_pAction_Machine_Settings;
+    UIAction *m_pAction_Machine_Clone;
+    UIAction *m_pAction_Machine_Remove;
+    UIAction *m_pAction_Machine_AddGroup;
     /* 'Machine / Close' menu action pointers: */
     UIAction *m_pMachineCloseMenuAction;
     QMenu *m_pMachineCloseMenu;
-    UIAction *m_pACPIShutdownAction;
-    UIAction *m_pPowerOffAction;
+    UIAction *m_pMachineSaveAction;
+    UIAction *m_pMachineACPIShutdownAction;
+    UIAction *m_pMachinePowerOffAction;
 
     /* 'Help' menu action pointers: */
     QMenu *m_pHelpMenu;

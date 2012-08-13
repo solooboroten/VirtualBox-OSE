@@ -171,8 +171,13 @@ typedef std::map < uint32_t, GuestCtrlCallback* > GuestCtrlCallbacks;
 
 struct GuestProcessWaitResult
 {
+    GuestProcessWaitResult(void)
+        : mResult(ProcessWaitResult_None),
+          mRC(VINF_SUCCESS) { }
+
     /** The wait result when returning from the wait call. */
     ProcessWaitResult_T         mResult;
+    /** Optional rc to this result. */
     int                         mRC;
 };
 
@@ -274,8 +279,9 @@ protected:
 struct GuestFsObjData
 {
     /** Helper function to extract the data from
-     *  a guest stream block. */
-    int From(const GuestProcessStreamBlock &strmBlk);
+     *  a certin VBoxService tool's guest stream block. */
+    int FromLs(const GuestProcessStreamBlock &strmBlk);
+    int FromStat(const GuestProcessStreamBlock &strmBlk);
 
     int64_t              mAccessTime;
     int64_t              mAllocatedSize;
@@ -304,8 +310,15 @@ struct GuestFsObjData
  * Structure for keeping all the relevant process
  * starting parameters around.
  */
-struct GuestProcessInfo
+class GuestProcessStartupInfo
 {
+public:
+
+    GuestProcessStartupInfo(void)
+        : mFlags(ProcessCreateFlag_None),
+          mTimeoutMS(30 * 1000 /* 30s timeout by default */),
+          mPriority(ProcessPriority_Default) { }
+
     /** The process' friendly name. */
     Utf8Str                     mName;
     /** The actual command to execute. */
@@ -316,7 +329,6 @@ struct GuestProcessInfo
     ULONG                       mTimeoutMS;
     ProcessPriority_T           mPriority;
     ProcessAffinity             mAffinity;
-
 };
 
 
@@ -327,12 +339,12 @@ class GuestProcessStreamValue
 {
 public:
 
-    GuestProcessStreamValue() { }
+    GuestProcessStreamValue(void) { }
     GuestProcessStreamValue(const char *pszValue)
         : mValue(pszValue) {}
 
     GuestProcessStreamValue(const GuestProcessStreamValue& aThat)
-           : mValue(aThat.mValue) {}
+           : mValue(aThat.mValue) { }
 
     Utf8Str mValue;
 };
@@ -358,10 +370,10 @@ public:
 
 public:
 
-    void Clear();
+    void Clear(void);
 
 #ifdef DEBUG
-    void Dump();
+    void DumpToLog(void) const;
 #endif
 
     int GetInt64Ex(const char *pszKey, int64_t *piVal) const;
@@ -375,6 +387,8 @@ public:
     int GetUInt32Ex(const char *pszKey, uint32_t *puVal) const;
 
     uint32_t GetUInt32(const char *pszKey) const;
+
+    bool IsEmpty(void) { return m_mapPairs.empty(); }
 
     int SetValue(const char *pszKey, const char *pszValue);
 

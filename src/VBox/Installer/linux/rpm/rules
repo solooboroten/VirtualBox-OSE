@@ -52,7 +52,7 @@ ifeq ($(shell if grep -q '^%disttag' /usr/lib/rpm/macros.d/mandriva 2>/dev/null;
 $(error Fix /usr/lib/rpm/macros.d/mandriva)
 endif
 
-verpkg   := VirtualBox-4.1
+verpkg   := VirtualBox-4.2
 current  := $(shell pwd)
 vboxroot := $(shell cd ../../../..; pwd)
 pkgdir   := $(if $(PKGDIR),$(PKGDIR),$(shell cd ../../../../..; pwd))
@@ -232,6 +232,11 @@ binary: rpm/build-stamp
 	    -e 's|%DEBIAN%||g' \
 	    -e 's|%PACKAGE%|virtualbox|g' \
 	    vboxballoonctrl-service.sh.in > $(archdir)/vboxballoonctrl-service.init
+	sed \
+	    -e 's|%NOLSB%|yes|g' \
+	    -e 's|%DEBIAN%||g' \
+	    -e 's|%PACKAGE%|virtualbox|g' \
+	    vboxautostart-service.sh.in > $(archdir)/vboxautostart-service.init
 	sed \
 	    -e 's|%NOLSB%|yes|g' \
 	    -e 's|%DEBIAN%||g' \

@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsModel.cpp 42547 2012-08-02 14:49:58Z vboxsync $ */
+/* $Id: UIGDetailsModel.cpp 42734 2012-08-09 23:51:30Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -78,8 +78,6 @@ void UIGDetailsModel::updateLayout()
     QSize viewportSize = scene()->views()[0]->viewport()->size();
     int iViewportWidth = viewportSize.width() - 2 * iSceneMargin;
     int iViewportHeight = viewportSize.height() - 2 * iSceneMargin;
-    /* Update all the size-hints recursively: */
-    m_pRoot->updateSizeHint();
     /* Set root item position: */
     m_pRoot->setPos(iSceneMargin, iSceneMargin);
     /* Set root item size: */
@@ -154,12 +152,22 @@ void UIGDetailsModel::sltElementTypeToggled()
         detailsSettings.append(strElementTypeClosed);
     }
     vboxGlobal().virtualBox().SetExtraDataStringList(GUI_DetailsPageBoxes, detailsSettings);
-    m_pRoot->rebuildItems();
+    m_pRoot->updateItems();
 }
 
 void UIGDetailsModel::sltHandleSlidingStarted()
 {
-    m_pRoot->setItems(QList<UIVMItem*>());
+    m_pRoot->stopPopulatingItems();
+}
+
+void UIGDetailsModel::sltHandleToggleStarted()
+{
+    m_pRoot->stopPopulatingItems();
+}
+
+void UIGDetailsModel::sltHandleToggleFinished()
+{
+    m_pRoot->updateItems();
 }
 
 QVariant UIGDetailsModel::data(int iKey) const

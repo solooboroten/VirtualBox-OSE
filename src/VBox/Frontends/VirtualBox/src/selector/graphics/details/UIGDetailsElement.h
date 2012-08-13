@@ -30,6 +30,9 @@
 class UIGDetailsSet;
 class CMachine;
 class UIGraphicsRotatorButton;
+class QTextLayout;
+class QStateMachine;
+class QPropertyAnimation;
 
 /* Typedefs: */
 typedef QPair<QString, QString> UITextTableLine;
@@ -41,9 +44,14 @@ Q_DECLARE_METATYPE(UITextTable);
 class UIGDetailsElement : public UIGDetailsItem
 {
     Q_OBJECT;
+    Q_PROPERTY(int gradient READ gradient WRITE setGradient);
     Q_PROPERTY(int additionalHeight READ additionalHeight WRITE setAdditionalHeight);
 
 signals:
+
+    /* Notifiers: Hover stuff: */
+    void sigHoverEnter();
+    void sigHoverLeave();
 
     /* Notifier: Toggle stuff: */
     void sigToggleElement(DetailsElementType type, bool fToggled);
@@ -74,10 +82,9 @@ public:
     virtual int minimumWidthHint() const;
     virtual int minimumHeightHint() const;
 
-public slots:
-
     /* API: Update stuff: */
-    virtual void sltUpdateAppearance() = 0;
+    void updateHoverAccessibility();
+    virtual void updateAppearance() = 0;
 
 protected:
 
@@ -98,7 +105,9 @@ protected:
         ElementData_NameSize,
         ElementData_ButtonSize,
         ElementData_HeaderSize,
-        ElementData_TextSize
+        ElementData_TextWidth,
+        ElementData_TextHeight,
+        ElementData_MinimumTextColumnWidth
     };
 
     /* Data provider: */
@@ -111,14 +120,18 @@ protected:
     void setName(const QString &strName);
 
     /* API: Text stuff: */
+    UITextTable text() const;
     void setText(const UITextTable &text);
 
     /* API: Machine stuff: */
     const CMachine& machine();
 
     /* Helpers: Layout stuff: */
-    void updateSizeHint();
     void updateLayout();
+
+    /* Helpers: Hover stuff: */
+    int gradient() const { return m_iGradient; }
+    void setGradient(int iGradient) { m_iGradient = iGradient; update(); }
 
     /* Helpers: Animation stuff: */
     void setAdditionalHeight(int iAdditionalHeight);
@@ -130,10 +143,6 @@ private slots:
     /* Handlers: Collapse/expand stuff: */
     void sltElementToggleStart();
     void sltElementToggleFinish(bool fToggled);
-
-    /* Handlers: Global event stuff: */
-    void sltMachineStateChange(QString strId);
-    void sltShouldWeUpdateAppearance(QString strId);
 
 private:
 
@@ -156,7 +165,8 @@ private:
     void paint(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption, QWidget *pWidget = 0);
     void paintDecorations(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption);
     void paintElementInfo(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption);
-    static void paintBackground(QPainter *pPainter, const QRect &rect, int iRadius, int iHeaderHeight);
+    static void paintBackground(QPainter *pPainter, const QRect &rect,
+                                int iRadius, int iHeaderHeight, int iGradient);
 
     /* Handlers: Mouse stuff: */
     void hoverMoveEvent(QGraphicsSceneHoverEvent *pEvent);
@@ -166,8 +176,10 @@ private:
 
     /* Helpers: Mouse stuff: */
     void updateButtonVisibility();
-    void updateHoverAccessibility();
     void updateNameHoverRepresentation(QGraphicsSceneHoverEvent *pEvent);
+
+    /* Helper: Layout stuff: */
+    static QTextLayout* prepareTextLayout(const QFont &font, const QString &strText, int iWidth, int &iHeight);
 
     /* Helper: Animation stuff: */
     void updateAnimationParameters();
@@ -183,9 +195,18 @@ private:
     UITextTable m_text;
     int m_iAdditionalHeight;
     int m_iCornerRadius;
+
+    /* Variables: Hover stuff: */
     bool m_fHovered;
     bool m_fNameHoveringAccessible;
     bool m_fNameHovered;
+    QStateMachine *m_pHighlightMachine;
+    QPropertyAnimation *m_pForwardAnimation;
+    QPropertyAnimation *m_pBackwardAnimation;
+    int m_iAnimationDuration;
+    int m_iDefaultDarkness;
+    int m_iHighlightDarkness;
+    int m_iGradient;
 };
 
 #endif /* __UIGDetailsElement_h__ */

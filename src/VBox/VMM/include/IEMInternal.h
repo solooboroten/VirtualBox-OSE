@@ -1,4 +1,4 @@
-/* $Id: IEMInternal.h 42453 2012-07-30 15:23:18Z vboxsync $ */
+/* $Id: IEMInternal.h 42778 2012-08-11 22:47:03Z vboxsync $ */
 /** @file
  * IEM - Internal header file.
  */
@@ -31,6 +31,14 @@ RT_C_DECLS_BEGIN
  * @internal
  * @{
  */
+
+/** @def IEM_VERIFICATION_MODE_FULL
+ * Shorthand for:
+ *    defined(IEM_VERIFICATION_MODE) && !defined(IEM_VERIFICATION_MODE_MINIMAL)
+ */
+#if defined(IEM_VERIFICATION_MODE) && !defined(IEM_VERIFICATION_MODE_MINIMAL) && !defined(IEM_VERIFICATION_MODE_FULL)
+# define IEM_VERIFICATION_MODE_FULL
+#endif
 
 
 /** Finish and move to types.h */
@@ -120,7 +128,7 @@ typedef IEMFPURESULTTWO *PIEMFPURESULTTWO;
 typedef IEMFPURESULTTWO const *PCIEMFPURESULTTWO;
 
 
-#ifdef IEM_VERIFICATION_MODE
+#ifdef IEM_VERIFICATION_MODE_FULL
 
 /**
  * Verification event type.
@@ -183,7 +191,7 @@ typedef struct IEMVERIFYEVTREC
 /** Pointer to an IEM event verification records. */
 typedef IEMVERIFYEVTREC *PIEMVERIFYEVTREC;
 
-#endif /* IEM_VERIFICATION_MODE */
+#endif /* IEM_VERIFICATION_MODE_FULL */
 
 
 /**
@@ -204,7 +212,7 @@ typedef struct IEMCPU
     int32_t                 offVM;
 
     /** Whether to bypass access handlers or not. */
-    bool                    fByPassHandlers;
+    bool                    fBypassHandlers;
     /** Explicit alignment padding. */
     bool                    afAlignment0[3];
 
@@ -246,7 +254,7 @@ typedef struct IEMCPU
     uint32_t                cRetErrStatuses;
     /** Number of times rcPassUp has been used. */
     uint32_t                cRetPassUpStatus;
-#ifdef IEM_VERIFICATION_MODE
+#ifdef IEM_VERIFICATION_MODE_FULL
     /** The Number of I/O port reads that has been performed. */
     uint32_t                cIOReads;
     /** The Number of I/O port writes that has been performed. */
@@ -257,10 +265,20 @@ typedef struct IEMCPU
     /** Indicates that RAX and RDX differences should be ignored since RDTSC
      *  and RDTSCP are timing sensitive.  */
     bool                    fIgnoreRaxRdx;
-    bool                    afAlignment2[2];
+    /** Indicates that a MOVS instruction with overlapping source and destination
+     *  was executed, causing the memory write records to be incorrrect. */
+    bool                    fOverlappingMovs;
+    /** This is used to communicate a CPL changed caused by IEMInjectTrap that
+     * CPUM doesn't yet reflect. */
+    uint8_t                 uInjectCpl;
+    bool                    afAlignment2[4];
     /** Mask of undefined eflags.
      * The verifier will any difference in these flags. */
     uint32_t                fUndefinedEFlags;
+    /** The CS of the instruction being interpreted. */
+    RTSEL                   uOldCs;
+    /** The RIP of the instruction being interpreted. */
+    uint64_t                uOldRip;
     /** The physical address corresponding to abOpcodes[0]. */
     RTGCPHYS                GCPhysOpcodes;
 #endif
@@ -358,7 +376,7 @@ typedef struct IEMCPU
         uint8_t             ab[512];
     } aBounceBuffers[3];
 
-#ifdef IEM_VERIFICATION_MODE
+#ifdef IEM_VERIFICATION_MODE_FULL
     /** The event verification records for what IEM did (LIFO). */
     R3PTRTYPE(PIEMVERIFYEVTREC)     pIemEvtRecHead;
     /** Insertion point for pIemEvtRecHead. */
@@ -453,10 +471,31 @@ typedef IEMCPU *PIEMCPU;
  * This expands to @c false when IEM_VERIFICATION_MODE is not defined and
  * should therefore cause the compiler to eliminate the verification branch
  * of an if statement.  */
-#ifdef IEM_VERIFICATION_MODE
+#ifdef IEM_VERIFICATION_MODE_FULL
 # define IEM_VERIFICATION_ENABLED(a_pIemCpu)    (!(a_pIemCpu)->fNoRem)
+#elif defined(IEM_VERIFICATION_MODE_MINIMAL)
+# define IEM_VERIFICATION_ENABLED(a_pIemCpu)    (true)
 #else
 # define IEM_VERIFICATION_ENABLED(a_pIemCpu)    (false)
+#endif
+
+/**
+ * Tests if full verification mode is enabled.
+ *
+ * This expands to @c false when IEM_VERIFICATION_MODE is not defined and
+ * should therefore cause the compiler to eliminate the verification branch
+ * of an if statement.  */
+#ifdef IEM_VERIFICATION_MODE_FULL
+# define IEM_FULL_VERIFICATION_ENABLED(a_pIemCpu) (!(a_pIemCpu)->fNoRem)
+#else
+# define IEM_FULL_VERIFICATION_ENABLED(a_pIemCpu) (false)
+#endif
+
+/** @def IEM_VERIFICATION_MODE
+ * Indicates that one of the verfication modes are enabled.
+ */
+#if (defined(IEM_VERIFICATION_MODE_FULL) || defined(IEM_VERIFICATION_MODE_MINIMAL)) && !defined(IEM_VERIFICATION_MODE)
+# define IEM_VERIFICATION_MODE
 #endif
 
 /**
@@ -466,7 +505,7 @@ typedef IEMCPU *PIEMCPU;
  *
  * This is a NOOP if the verifier isn't compiled in.
  */
-#ifdef IEM_VERIFICATION_MODE
+#ifdef IEM_VERIFICATION_MODE_FULL
 # define IEMOP_VERIFICATION_UNDEFINED_EFLAGS(a_fEfl) do { pIemCpu->fUndefinedEFlags |= (a_fEfl); } while (0)
 #else
 # define IEMOP_VERIFICATION_UNDEFINED_EFLAGS(a_fEfl) do { } while (0)
@@ -612,6 +651,31 @@ IEM_DECL_IMPL_DEF(void, iemAImpl_xadd_u16_locked,(uint16_t *pu16Dst, uint16_t *p
 IEM_DECL_IMPL_DEF(void, iemAImpl_xadd_u32_locked,(uint32_t *pu32Dst, uint32_t *pu32Reg, uint32_t *pEFlags));
 IEM_DECL_IMPL_DEF(void, iemAImpl_xadd_u64_locked,(uint64_t *pu64Dst, uint64_t *pu64Reg, uint32_t *pEFlags));
 /** @}  */
+
+/** @name Compare and exchange.
+ * @{ */
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u8,        (uint8_t  *pu8Dst,  uint8_t  *puAl,  uint8_t  uSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u8_locked, (uint8_t  *pu8Dst,  uint8_t  *puAl,  uint8_t  uSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u16,       (uint16_t *pu16Dst, uint16_t *puAx,  uint16_t uSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u16_locked,(uint16_t *pu16Dst, uint16_t *puAx,  uint16_t uSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u32,       (uint32_t *pu32Dst, uint32_t *puEax, uint32_t uSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u32_locked,(uint32_t *pu32Dst, uint32_t *puEax, uint32_t uSrcReg, uint32_t *pEFlags));
+#ifdef RT_ARCH_X86
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u64,       (uint64_t *pu64Dst, uint64_t *puRax, uint64_t *puSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u64_locked,(uint64_t *pu64Dst, uint64_t *puRax, uint64_t *puSrcReg, uint32_t *pEFlags));
+#else
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u64,       (uint64_t *pu64Dst, uint64_t *puRax, uint64_t uSrcReg, uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg_u64_locked,(uint64_t *pu64Dst, uint64_t *puRax, uint64_t uSrcReg, uint32_t *pEFlags));
+#endif
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg8b,(uint64_t *pu64Dst, PRTUINT64U pu64EaxEdx, PRTUINT64U pu64EbxEcx,
+                                            uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg8b_locked,(uint64_t *pu64Dst, PRTUINT64U pu64EaxEdx, PRTUINT64U pu64EbxEcx,
+                                                   uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg16b,(PRTUINT128U *pu128Dst, PRTUINT128U pu64RaxRdx, PRTUINT128U pu64RbxRcx,
+                                             uint32_t *pEFlags));
+IEM_DECL_IMPL_DEF(void, iemAImpl_cmpxchg16b_locked,(PRTUINT128U *pu128Dst, PRTUINT128U pu64RaxRdx, PRTUINT128U pu64RbxRcx,
+                                                    uint32_t *pEFlags));
+/** @} */
 
 /** @name Double precision shifts
  * @{ */

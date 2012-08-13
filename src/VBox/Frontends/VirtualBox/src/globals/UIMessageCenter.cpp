@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 42526 2012-08-02 10:31:28Z vboxsync $ */
+/* $Id: UIMessageCenter.cpp 42766 2012-08-10 20:54:11Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -1347,15 +1347,14 @@ int UIMessageCenter::confirmMachineDeletion(const QList<CMachine> &machines)
                    tr("Remove only"));
 }
 
-bool UIMessageCenter::confirmDiscardSavedState(const CMachine &machine)
+bool UIMessageCenter::confirmDiscardSavedState(const QString &strNames)
 {
     return messageOkCancel(&vboxGlobal().selectorWnd(), Question,
         tr("<p>Are you sure you want to discard the saved state of "
-            "the virtual machine <b>%1</b>?</p>"
-            "<p>This operation is equivalent to resetting or powering off "
-            "the machine without doing a proper shutdown of the "
-            "guest OS.</p>")
-            .arg(machine.GetName()),
+           "the following virtual machines?</p><p><b>%1</b></p>"
+           "<p>This operation is equivalent to resetting or powering off "
+           "the machine without doing a proper shutdown of the guest OS.</p>")
+           .arg(strNames),
         0 /* pcszAutoConfirmId */,
         tr("Discard", "saved state"));
 }
@@ -1767,14 +1766,12 @@ void UIMessageCenter::remindAboutGuestAdditionsAreNotActive(QWidget *pParent)
              "remindAboutGuestAdditionsAreNotActive");
 }
 
-bool UIMessageCenter::cannotFindGuestAdditions(const QString &strSrc1, const QString &strSrc2)
+bool UIMessageCenter::cannotFindGuestAdditions()
 {
     return messageYesNo(mainMachineWindowShown(), Question,
                     tr("<p>Could not find the VirtualBox Guest Additions "
-                       "CD image file <nobr><b>%1</b></nobr> or "
-                       "<nobr><b>%2</b>.</nobr></p><p>Do you wish to "
-                       "download this CD image from the Internet?</p>")
-                       .arg(strSrc1).arg(strSrc2));
+                       "CD image file.</nobr></p><p>Do you wish to "
+                       "download this CD image from the Internet?</p>"));
 }
 
 void UIMessageCenter::cannotMountGuestAdditions(const QString &strMachineName)
@@ -2289,30 +2286,34 @@ bool UIMessageCenter::remindAboutGuruMeditation(const CConsole &console,
 /**
  *  @return @c true if the user has selected to reset the machine.
  */
-bool UIMessageCenter::confirmVMReset(QWidget *pParent /* = 0 */)
+bool UIMessageCenter::confirmVMReset(const QString &strNames)
 {
-    return messageOkCancel(pParent ? pParent : mainMachineWindowShown(), Question,
-        tr("<p>Do you really want to reset the virtual machine?</p>"
-           "<p>This will cause any unsaved data in applications running inside "
-           "it to be lost.</p>"),
+    return messageOkCancel(mainMachineWindowShown(), Question,
+        tr("<p>Do you really want to reset the following virtual machines?</p>"
+           "<p><b>%1</b></p><p>This will cause any unsaved data "
+           "in applications running inside it to be lost.</p>")
+           .arg(strNames),
         "confirmVMReset" /* pcszAutoConfirmId */,
         tr("Reset", "machine"));
 }
 
-bool UIMessageCenter::confirmVMACPIShutdown(QWidget *pParent /* = 0 */)
+bool UIMessageCenter::confirmVMACPIShutdown(const QString &strNames)
 {
-    return messageOkCancel(pParent ? pParent : mainMachineWindowShown(), Question,
-        tr("<p>Do you really want to send an ACPI shutdown signal to the virtual machine?</p>"),
+    return messageOkCancel(mainMachineWindowShown(), Question,
+        tr("<p>Do you really want to send an ACPI shutdown signal "
+           "to the following virtual machines?</p><p><b>%1</b></p>")
+           .arg(strNames),
         "confirmVMACPIShutdown" /* pcszAutoConfirmId */,
         tr("ACPI Shutdown", "machine"));
 }
 
-bool UIMessageCenter::confirmVMPowerOff(QWidget *pParent /* = 0 */)
+bool UIMessageCenter::confirmVMPowerOff(const QString &strNames)
 {
-    return messageOkCancel(pParent ? pParent : mainMachineWindowShown(), Question,
-        tr("<p>Do you really want to power off the virtual machine?</p>"
-           "<p>This will cause any unsaved data in applications running inside "
-           "it to be lost.</p>"),
+    return messageOkCancel(mainMachineWindowShown(), Question,
+        tr("<p>Do you really want to power off the following virtual machines?</p>"
+           "<p><b>%1</b></p><p>This will cause any unsaved data in applications "
+           "running inside it to be lost.</p>")
+           .arg(strNames),
         "confirmVMPowerOff" /* pcszAutoConfirmId */,
         tr("Power Off", "machine"));
 }

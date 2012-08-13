@@ -1,4 +1,4 @@
-/* $Id: tstIEMCheckMc.cpp 42487 2012-07-31 16:23:27Z vboxsync $ */
+/* $Id: tstIEMCheckMc.cpp 42676 2012-08-08 09:23:50Z vboxsync $ */
 /** @file
  * IEM Testcase - Check the "Microcode".
  */
@@ -94,8 +94,10 @@ typedef VBOXSTRICTRC (* PFNIEMOP)(PIEMCPU pIemCpu);
 #define IEM_OPCODE_GET_NEXT_S32(a_pi32)                     do { *(a_pi32) = g_bRandom; CHK_PTYPE(int32_t  *, a_pi32); } while (0)
 #define IEM_OPCODE_GET_NEXT_S32_SX_U64(a_pu64)              do { *(a_pu64) = g_bRandom; CHK_PTYPE(uint64_t *, a_pu64); } while (0)
 #define IEM_OPCODE_GET_NEXT_U64(a_pu64)                     do { *(a_pu64) = g_bRandom; CHK_PTYPE(uint64_t *, a_pu64); } while (0)
+#define IEMOP_HLP_NO_REAL_OR_V86_MODE()                     do { } while (0)
 #define IEMOP_HLP_NO_LOCK_PREFIX()                          do { } while (0)
 #define IEMOP_HLP_NO_64BIT()                                do { } while (0)
+#define IEMOP_HLP_64BIT_OP_SIZE()                           do { } while (0)
 #define IEMOP_HLP_DEFAULT_64BIT_OP_SIZE()                   do { } while (0)
 #define IEMOP_HLP_DONE_DECODING()                           do { } while (0)
 #define IEMOP_HLP_DONE_DECODING_NO_LOCK_PREFIX()            do { } while (0)
@@ -353,9 +355,16 @@ IEMOPSHIFTDBLSIZES g_iemAImpl_shrd;
 #define IEM_MC_FETCH_CR0_U16(a_u16Dst)                  do { (a_u16Dst) = 0; CHK_TYPE(uint16_t, a_u16Dst); } while (0)
 #define IEM_MC_FETCH_CR0_U32(a_u32Dst)                  do { (a_u32Dst) = 0; CHK_TYPE(uint32_t, a_u32Dst); } while (0)
 #define IEM_MC_FETCH_CR0_U64(a_u64Dst)                  do { (a_u64Dst) = 0; CHK_TYPE(uint64_t, a_u64Dst); } while (0)
+#define IEM_MC_FETCH_LDTR_U16(a_u16Dst)                 do { (a_u16Dst) = 0; CHK_TYPE(uint16_t, a_u16Dst); } while (0)
+#define IEM_MC_FETCH_LDTR_U32(a_u32Dst)                 do { (a_u32Dst) = 0; CHK_TYPE(uint32_t, a_u32Dst); } while (0)
+#define IEM_MC_FETCH_LDTR_U64(a_u64Dst)                 do { (a_u64Dst) = 0; CHK_TYPE(uint64_t, a_u64Dst); } while (0)
+#define IEM_MC_FETCH_TR_U16(a_u16Dst)                   do { (a_u16Dst) = 0; CHK_TYPE(uint16_t, a_u16Dst); } while (0)
+#define IEM_MC_FETCH_TR_U32(a_u32Dst)                   do { (a_u32Dst) = 0; CHK_TYPE(uint32_t, a_u32Dst); } while (0)
+#define IEM_MC_FETCH_TR_U64(a_u64Dst)                   do { (a_u64Dst) = 0; CHK_TYPE(uint64_t, a_u64Dst); } while (0)
 #define IEM_MC_FETCH_EFLAGS(a_EFlags)                   do { (a_EFlags) = 0; CHK_TYPE(uint32_t, a_EFlags); } while (0)
 #define IEM_MC_FETCH_EFLAGS_U8(a_EFlags)                do { (a_EFlags) = 0; CHK_TYPE(uint8_t,  a_EFlags); } while (0)
 #define IEM_MC_FETCH_FSW(a_u16Fsw)                      do { (a_u16Fsw) = 0; CHK_TYPE(uint16_t, a_u16Fsw); } while (0)
+#define IEM_MC_FETCH_FCW(a_u16Fcw)                      do { (a_u16Fcw) = 0; CHK_TYPE(uint16_t, a_u16Fcw); } while (0)
 #define IEM_MC_STORE_GREG_U8(a_iGReg, a_u8Value)        do { CHK_TYPE(uint8_t, a_u8Value); } while (0)
 #define IEM_MC_STORE_GREG_U16(a_iGReg, a_u16Value)      do { CHK_TYPE(uint16_t, a_u16Value); } while (0)
 #define IEM_MC_STORE_GREG_U32(a_iGReg, a_u32Value)      do {  } while (0)
@@ -519,7 +528,7 @@ IEMOPSHIFTDBLSIZES g_iemAImpl_shrd;
 #define IEM_MC_FPU_STACK_UNDERFLOW_MEM_OP(a_iStReg, a_iEffSeg, a_GCPtrEff)                      do { } while (0)
 #define IEM_MC_FPU_STACK_UNDERFLOW_THEN_POP(a_iStReg)                                           do { } while (0)
 #define IEM_MC_FPU_STACK_UNDERFLOW_MEM_OP_THEN_POP(a_iStReg, a_iEffSeg, a_GCPtrEff)             do { } while (0)
-#define IEM_MC_FPU_STACK_UNDERFLOW_THEN_POP_POP(a_iStReg)                                       do { } while (0)
+#define IEM_MC_FPU_STACK_UNDERFLOW_THEN_POP_POP()                                               do { } while (0)
 #define IEM_MC_FPU_STACK_PUSH_UNDERFLOW()                                                       do { } while (0)
 #define IEM_MC_FPU_STACK_PUSH_UNDERFLOW_TWO()                                                   do { } while (0)
 #define IEM_MC_FPU_STACK_PUSH_OVERFLOW()                                                        do { } while (0)
@@ -534,6 +543,7 @@ IEMOPSHIFTDBLSIZES g_iemAImpl_shrd;
 #define IEM_MC_UPDATE_FSW_THEN_POP(a_u16FSW)                                                    do { } while (0)
 #define IEM_MC_UPDATE_FSW_WITH_MEM_OP_THEN_POP(a_u16FSW, a_iEffSeg, a_GCPtrEff)                 do { } while (0)
 #define IEM_MC_UPDATE_FSW_THEN_POP_POP(a_u16FSW)                                                do { } while (0)
+#define IEM_MC_USED_FPU()                                                                       do { } while (0)
 
 #define IEM_MC_IF_EFL_BIT_SET(a_fBit)                                   if (g_fRandom) {
 #define IEM_MC_IF_EFL_BIT_NOT_SET(a_fBit)                               if (g_fRandom) {

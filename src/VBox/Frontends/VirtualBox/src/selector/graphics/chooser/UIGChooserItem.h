@@ -62,7 +62,7 @@ signals:
 public:
 
     /* Constructor: */
-    UIGChooserItem(UIGChooserItem *pParent);
+    UIGChooserItem(UIGChooserItem *pParent, bool fTemporary);
 
     /* API: Cast stuff: */
     UIGChooserItemGroup* toGroupItem();
@@ -81,6 +81,8 @@ public:
     virtual QString name() const = 0;
     void setRoot(bool fRoot);
     bool isRoot() const;
+    bool isHovered() const;
+    void setHovered(bool fHovered);
 
     /* API: Children stuff: */
     virtual void addItem(UIGChooserItem *pItem, int iPosition) = 0;
@@ -107,10 +109,13 @@ public:
     void setDragTokenPlace(DragToken where);
     DragToken dragTokenPlace() const;
 
+    /* API: Toggle stuff: */
+    bool isTemporary() const;
+
 protected:
 
     /* Hover-enter event: */
-    void hoverEnterEvent(QGraphicsSceneHoverEvent *pEvent);
+    void hoverMoveEvent(QGraphicsSceneHoverEvent *pEvent);
     /* Hover-leave event: */
     void hoverLeaveEvent(QGraphicsSceneHoverEvent *pEvent);
     /* Mouse-press event: */
@@ -134,7 +139,6 @@ protected:
     virtual QMimeData* createMimeData() = 0;
 
     /* Hover stuff: */
-    bool isHovered() const { return m_fHovered; }
     int gradient() const { return m_iGradient; }
     void setGradient(int iGradient) { m_iGradient = iGradient; update(); }
 
@@ -146,6 +150,7 @@ private:
 
     /* Variables: */
     bool m_fRoot;
+    bool m_fTemporary;
     UIGChooserItem *m_pParent;
     DragToken m_dragTokenPlace;
 

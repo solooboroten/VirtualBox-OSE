@@ -1,4 +1,4 @@
-/* $Id: UIGChooserItem.cpp 42558 2012-08-02 20:55:58Z vboxsync $ */
+/* $Id: UIGChooserItem.cpp 42734 2012-08-09 23:51:30Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -34,16 +34,17 @@
 #include "UIGChooserItemGroup.h"
 #include "UIGChooserItemMachine.h"
 
-UIGChooserItem::UIGChooserItem(UIGChooserItem *pParent)
+UIGChooserItem::UIGChooserItem(UIGChooserItem *pParent, bool fTemporary)
     : m_fRoot(!pParent)
+    , m_fTemporary(fTemporary)
     , m_pParent(pParent)
     , m_dragTokenPlace(DragToken_Off)
     , m_fHovered(false)
     , m_pHighlightMachine(0)
     , m_pForwardAnimation(0)
     , m_pBackwardAnimation(0)
-    , m_iAnimationDuration(300)
-    , m_iDefaultDarkness(115)
+    , m_iAnimationDuration(400)
+    , m_iDefaultDarkness(103)
     , m_iHighlightDarkness(90)
     , m_iGradient(m_iDefaultDarkness)
 {
@@ -52,13 +53,11 @@ UIGChooserItem::UIGChooserItem(UIGChooserItem *pParent)
     setAcceptDrops(true);
     setFocusPolicy(Qt::NoFocus);
     setFlag(QGraphicsItem::ItemIsSelectable, false);
+    setAcceptHoverEvents(!isRoot());
 
     /* Non-root item? */
     if (!isRoot())
     {
-        /* Non-root item setup: */
-        setAcceptHoverEvents(true);
-
         /* Create state machine: */
         m_pHighlightMachine = new QStateMachine(this);
         /* Create 'default' state: */
@@ -132,12 +131,25 @@ void UIGChooserItem::hide()
 void UIGChooserItem::setRoot(bool fRoot)
 {
     m_fRoot = fRoot;
-    setAcceptHoverEvents(!m_fRoot);
 }
 
 bool UIGChooserItem::isRoot() const
 {
     return m_fRoot;
+}
+
+bool UIGChooserItem::isHovered() const
+{
+    return m_fHovered;
+}
+
+void UIGChooserItem::setHovered(bool fHovered)
+{
+    m_fHovered = fHovered;
+    if (m_fHovered)
+        emit sigHoverEnter();
+    else
+        emit sigHoverLeave();
 }
 
 void UIGChooserItem::makeSureItsVisible()
@@ -172,9 +184,15 @@ DragToken UIGChooserItem::dragTokenPlace() const
     return m_dragTokenPlace;
 }
 
-void UIGChooserItem::hoverEnterEvent(QGraphicsSceneHoverEvent*)
+
+bool UIGChooserItem::isTemporary() const
 {
-    if (m_fHovered != true)
+    return m_fTemporary;
+}
+
+void UIGChooserItem::hoverMoveEvent(QGraphicsSceneHoverEvent*)
+{
+    if (!m_fHovered)
     {
         m_fHovered = true;
         emit sigHoverEnter();
@@ -183,7 +201,7 @@ void UIGChooserItem::hoverEnterEvent(QGraphicsSceneHoverEvent*)
 
 void UIGChooserItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*)
 {
-    if (m_fHovered != false)
+    if (m_fHovered)
     {
         m_fHovered = false;
         emit sigHoverLeave();
@@ -281,7 +299,6 @@ void UIGChooserItem::configurePainterShape(QPainter *pPainter,
         /* Setup clipping: */
         QPainterPath roundedPath;
         roundedPath.addRoundedRect(pOption->rect, iRadius, iRadius);
-        pPainter->setRenderHint(QPainter::Antialiasing);
         pPainter->setClipPath(roundedPath);
     }
 }
@@ -328,6 +345,10 @@ int UIGChooserItem::textWidth(const QFont &font, int iCount)
 /* static */
 QString UIGChooserItem::compressText(const QFont &font, QString strText, int iWidth)
 {
+    /* Check if passed text is empty: */
+    if (strText.isEmpty())
+        return strText;
+
     /* Check if passed text feats maximum width: */
     QFontMetrics fm(font);
     if (fm.width(strText) <= iWidth)

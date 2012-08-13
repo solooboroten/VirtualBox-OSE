@@ -1,4 +1,4 @@
-/* $Id: UIActionPool.cpp 42560 2012-08-02 22:16:05Z vboxsync $ */
+/* $Id: UIActionPool.cpp 42760 2012-08-10 16:53:11Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -245,8 +245,8 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionPool", "Show &log..."));
-        setStatusTip(QApplication::translate("UIActionPool", "Show the log files of the selected virtual machine"));
+        setText(QApplication::translate("UIActionPool", "Show &Log..."));
+        setStatusTip(QApplication::translate("UIActionPool", "Show the log files of the selected virtual machines"));
     }
 };
 
@@ -325,7 +325,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(vboxGlobal().insertKeyToActionText(menuText(QApplication::translate("UIActionPool", "&VirtualBox web site...")), gMS->shortcut(UIMachineShortcuts::WebShortcut)));
+        setText(vboxGlobal().insertKeyToActionText(menuText(QApplication::translate("UIActionPool", "&VirtualBox Web Site...")), gMS->shortcut(UIMachineShortcuts::WebShortcut)));
         setStatusTip(QApplication::translate("UIActionPool", "Open the browser and go to the VirtualBox product web site"));
     }
 };
@@ -355,7 +355,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(vboxGlobal().insertKeyToActionText(menuText(QApplication::translate("UIActionPool", "&Reset all warnings")), gMS->shortcut(UIMachineShortcuts::ResetWarningsShortcut)));
+        setText(vboxGlobal().insertKeyToActionText(menuText(QApplication::translate("UIActionPool", "&Reset All Warnings")), gMS->shortcut(UIMachineShortcuts::ResetWarningsShortcut)));
         setStatusTip(QApplication::translate("UIActionPool", "Go back to showing all suppressed warnings and messages"));
     }
 };
@@ -416,7 +416,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(vboxGlobal().insertKeyToActionText(menuText(QApplication::translate("UIActionPool", "C&heck for updates...")), gMS->shortcut(UIMachineShortcuts::UpdateShortcut)));
+        setText(vboxGlobal().insertKeyToActionText(menuText(QApplication::translate("UIActionPool", "C&heck for Updates...")), gMS->shortcut(UIMachineShortcuts::UpdateShortcut)));
         setStatusTip(QApplication::translate("UIActionPool", "Check for a new VirtualBox version"));
     }
 };

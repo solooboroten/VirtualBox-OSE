@@ -1,5 +1,5 @@
 
-/* $Id: GuestSessionImpl.cpp 42573 2012-08-03 10:59:11Z vboxsync $ */
+/* $Id: GuestSessionImpl.cpp 42787 2012-08-13 09:49:28Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */
@@ -37,6 +37,8 @@
 #include <VBox/version.h>
 
 
+#define VBOX_SERVICE_ENVARG_BUG
+
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
 
@@ -59,29 +61,40 @@ void GuestSession::FinalRelease(void)
 // session task classes
 /////////////////////////////////////////////////////////////////////////////
 
-GuestSessionTask::GuestSessionTask(GuestSession *pSession, Progress *pProgress)
+GuestSessionTask::GuestSessionTask(GuestSession *pSession)
 {
     mSession = pSession;
-    mProgress = pProgress;
 }
 
 GuestSessionTask::~GuestSessionTask(void)
 {
 }
 
-int GuestSessionTask::setProgress(unsigned uPercent)
+int GuestSessionTask::setProgress(ULONG uPercent)
 {
+    if (mProgress.isNull()) /* Progress is optional. */
+        return VINF_SUCCESS;
+
     BOOL fCanceled;
-    mProgress->COMGETTER(Canceled)(&fCanceled);
-    if (fCanceled)
+    if (   SUCCEEDED(mProgress->COMGETTER(Canceled(&fCanceled)))
+        && fCanceled)
         return VERR_CANCELLED;
-    mProgress->SetCurrentOperationProgress(uPercent);
+    BOOL fCompleted;
+    if (   SUCCEEDED(mProgress->COMGETTER(Completed(&fCompleted)))
+        && !fCompleted)
+        return VINF_SUCCESS;
+    HRESULT hr = mProgress->SetCurrentOperationProgress(uPercent);
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
 
     return VINF_SUCCESS;
 }
 
 int GuestSessionTask::setProgressSuccess(void)
 {
+    if (mProgress.isNull()) /* Progress is optional. */
+        return VINF_SUCCESS;
+
     BOOL fCanceled;
     BOOL fCompleted;
     if (   SUCCEEDED(mProgress->COMGETTER(Canceled(&fCanceled)))
@@ -97,8 +110,11 @@ int GuestSessionTask::setProgressSuccess(void)
     return VINF_SUCCESS;
 }
 
-int GuestSessionTask::setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg)
+HRESULT GuestSessionTask::setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg)
 {
+    if (mProgress.isNull()) /* Progress is optional. */
+        return hr; /* Return original rc. */
+
     BOOL fCanceled;
     BOOL fCompleted;
     if (   SUCCEEDED(mProgress->COMGETTER(Canceled(&fCanceled)))
@@ -111,18 +127,35 @@ int GuestSessionTask::setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg)
                                                GuestSession::getStaticComponentName(),
                                                strMsg.c_str());
         if (FAILED(hr2))
-            return VERR_COM_UNEXPECTED;
+            return hr2;
     }
-    return VINF_SUCCESS;
+    return hr; /* Return original rc. */
 }
 
-SessionTaskCopyTo::SessionTaskCopyTo(GuestSession *pSession, Progress *pProgress,
+SessionTaskCopyTo::SessionTaskCopyTo(GuestSession *pSession,
                                      const Utf8Str &strSource, const Utf8Str &strDest, uint32_t uFlags)
-                                     : GuestSessionTask(pSession, pProgress)
+                                     : mSource(strSource),
+                                       mDest(strDest),
+                                       mSourceFile(NULL),
+                                       mSourceOffset(0),
+                                       mSourceSize(0),
+                                       GuestSessionTask(pSession)
 {
-    mSource = strSource;
-    mDest   = mDest;
-    mFlags  = uFlags;
+    mCopyFileFlags = uFlags;
+}
+
+/** @todo Merge this and the above call and let the above call do the open/close file handling so that the
+ *        inner code only has to deal with file handles. No time now ... */
+SessionTaskCopyTo::SessionTaskCopyTo(GuestSession *pSession,
+                                     PRTFILE pSourceFile, size_t cbSourceOffset, uint64_t cbSourceSize,
+                                     const Utf8Str &strDest, uint32_t uFlags)
+                                     : GuestSessionTask(pSession)
+{
+    mSourceFile    = pSourceFile;
+    mSourceOffset  = cbSourceOffset;
+    mSourceSize    = cbSourceSize;
+    mDest          = strDest;
+    mCopyFileFlags = uFlags;
 }
 
 SessionTaskCopyTo::~SessionTaskCopyTo(void)
@@ -140,210 +173,260 @@ int SessionTaskCopyTo::Run(void)
     AutoCaller autoCaller(pSession);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
+    if (mCopyFileFlags)
+    {
+        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                            Utf8StrFmt(GuestSession::tr("Copy flags (%#x) not implemented yet"),
+                            mCopyFileFlags));
+        return VERR_INVALID_PARAMETER;
+    }
+
     int rc;
 
-    /** @todo Make use of exception (+ finally block) here! */
+    RTFILE fileLocal;
+    PRTFILE pFile = &fileLocal;
 
-    try
+    if (!mSourceFile)
     {
         /* Does our source file exist? */
         if (!RTFileExists(mSource.c_str()))
         {
             rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
                                      Utf8StrFmt(GuestSession::tr("Source file \"%s\" does not exist or is not a file"),
-                                     mSource.c_str()));
+                                                mSource.c_str()));
         }
         else
         {
-            RTFILE fileSource;
-            rc = RTFileOpen(&fileSource, mSource.c_str(),
+            rc = RTFileOpen(pFile, mSource.c_str(),
                             RTFILE_O_OPEN | RTFILE_O_READ | RTFILE_O_DENY_WRITE);
             if (RT_FAILURE(rc))
             {
                 rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                         Utf8StrFmt(GuestSession::tr("Could not open source file \"%s\" for reading (%Rrc)"),
-                                         mSource.c_str(), rc));
+                                         Utf8StrFmt(GuestSession::tr("Could not open source file \"%s\" for reading: %Rrc"),
+                                                    mSource.c_str(), rc));
             }
             else
             {
-                uint64_t cbFileSize;
-                rc = RTFileGetSize(fileSource, &cbFileSize);
+                rc = RTFileGetSize(*pFile, &mSourceSize);
                 if (RT_FAILURE(rc))
                 {
                     setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                        Utf8StrFmt(GuestSession::tr("Could not query file size of \"%s\" (%Rrc)"),
-                                        mSource.c_str(), rc));
+                                        Utf8StrFmt(GuestSession::tr("Could not query file size of \"%s\": %Rrc"),
+                                                   mSource.c_str(), rc));
+                }
+            }
+        }
+    }
+    else
+    {
+        pFile = mSourceFile;
+        /* Size + offset are optional. */
+    }
+
+    GuestProcessStartupInfo procInfo;
+    procInfo.mName    = Utf8StrFmt(GuestSession::tr("Copying file \"%s\" to the guest to \"%s\" (%RU64 bytes)"),
+                                   mSource.c_str(), mDest.c_str(), mSourceSize);
+    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_CAT);
+    procInfo.mFlags   = ProcessCreateFlag_Hidden;
+
+    /* Set arguments.*/
+    procInfo.mArguments.push_back(Utf8StrFmt("--output=%s", mDest.c_str())); /** @todo Do we need path conversion? */
+
+    /* Startup process. */
+    ComObjPtr<GuestProcess> pProcess;
+    rc = pSession->processCreateExInteral(procInfo, pProcess);
+    if (RT_SUCCESS(rc))
+        rc = pProcess->startProcess();
+    if (RT_FAILURE(rc))
+    {
+        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                            Utf8StrFmt(GuestSession::tr("Unable to start guest process: %Rrc"), rc));
+    }
+    else
+    {
+        GuestProcessWaitResult waitRes;
+        BYTE byBuf[_64K];
+
+        BOOL fCanceled = FALSE;
+        uint64_t cbWrittenTotal = 0;
+        uint64_t cbToRead = mSourceSize;
+
+        for (;;)
+        {
+            rc = pProcess->waitFor(ProcessWaitForFlag_StdIn,
+                                   30 * 1000 /* Timeout */, waitRes);
+            if (   RT_FAILURE(rc)
+                || (   waitRes.mResult != ProcessWaitResult_StdIn
+                    && waitRes.mResult != ProcessWaitResult_Any))
+            {
+                break;
+            }
+
+            size_t cbRead = 0;
+            if (mSourceSize) /* If we have nothing to write, take a shortcut. */
+            {
+                /** @todo Not very efficient, but works for now. */
+                rc = RTFileSeek(*pFile, mSourceOffset + cbWrittenTotal,
+                                RTFILE_SEEK_BEGIN, NULL /* poffActual */);
+                if (RT_SUCCESS(rc))
+                {
+                    rc = RTFileRead(*pFile, (uint8_t*)byBuf,
+                                    RT_MIN(cbToRead, sizeof(byBuf)), &cbRead);
+                    /*
+                     * Some other error occured? There might be a chance that RTFileRead
+                     * could not resolve/map the native error code to an IPRT code, so just
+                     * print a generic error.
+                     */
+                    if (RT_FAILURE(rc))
+                    {
+                        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                            Utf8StrFmt(GuestSession::tr("Could not read from file \"%s\" (%Rrc)"),
+                                                       mSource.c_str(), rc));
+                        break;
+                    }
                 }
                 else
                 {
-                    GuestProcessInfo procInfo;
-                    procInfo.mName    = Utf8StrFmt(GuestSession::tr("Copying file \"%s\" to the guest to \"%s\" (%RU64 bytes)"),
-                                                                    mSource.c_str(), mDest.c_str(), cbFileSize);
-                    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_CAT);
-                    procInfo.mFlags   = ProcessCreateFlag_None;
+                    setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                        Utf8StrFmt(GuestSession::tr("Seeking file \"%s\" offset %RU64 failed: %Rrc"),
+                                                   mSource.c_str(), cbWrittenTotal, rc));
+                    break;
+                }
+            }
 
-                    /* Set arguments.*/
-                    procInfo.mArguments.push_back(Utf8StrFmt("--output=%s", mDest.c_str())); /** @todo Do we need path conversion? */
+            uint32_t fFlags = ProcessInputFlag_None;
 
-                    /* Startup process. */
-                    ComObjPtr<GuestProcess> pProcess;
-                    int rc = pSession->processCreateExInteral(procInfo, pProcess);
-                    if (RT_SUCCESS(rc))
-                    {
-                        GuestProcessWaitResult waitRes;
-                        BYTE byBuf[_64K];
+            /* Did we reach the end of the content we want to transfer (last chunk)? */
+            if (   (cbRead < sizeof(byBuf))
+                /* Did we reach the last block which is exactly _64K? */
+                || (cbToRead - cbRead == 0)
+                /* ... or does the user want to cancel? */
+                || (   SUCCEEDED(mProgress->COMGETTER(Canceled(&fCanceled)))
+                    && fCanceled)
+               )
+            {
+                fFlags |= ProcessInputFlag_EndOfFile;
+            }
 
-                        BOOL fCanceled = FALSE;
-                        uint64_t cbWrittenTotal = 0;
-                        uint64_t cbToRead = cbFileSize;
+            uint32_t cbWritten;
+            Assert(sizeof(byBuf) >= cbRead);
+            rc = pProcess->writeData(0 /* StdIn */, fFlags,
+                                     byBuf, cbRead,
+                                     30 * 1000 /* Timeout */, &cbWritten);
+            if (RT_FAILURE(rc))
+            {
+                setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                    Utf8StrFmt(GuestSession::tr("Writing to file \"%s\" (offset %RU64) failed: %Rrc"),
+                                               mDest.c_str(), cbWrittenTotal, rc));
+                break;
+            }
 
-                        for (;;)
-                        {
-                            rc = pProcess->waitFor(ProcessWaitForFlag_StdIn,
-                                                   30 * 1000 /* Timeout */, waitRes);
-                            if (   RT_FAILURE(rc)
-                                || waitRes.mResult != ProcessWaitResult_StdIn)
-                            {
-                                break;
-                            }
+            LogFlowThisFunc(("cbWritten=%RU32, cbToRead=%RU64, cbWrittenTotal=%RU64, cbFileSize=%RU64\n",
+                             cbWritten, cbToRead - cbWritten, cbWrittenTotal + cbWritten, mSourceSize));
 
-                            size_t cbRead = 0;
-                            if (cbFileSize) /* If we have nothing to write, take a shortcut. */
-                            {
-                                /** @todo Not very efficient, but works for now. */
-                                rc = RTFileSeek(fileSource, cbWrittenTotal,
-                                                RTFILE_SEEK_BEGIN, NULL /* poffActual */);
-                                if (RT_SUCCESS(rc))
-                                {
-                                    rc = RTFileRead(fileSource, (uint8_t*)byBuf,
-                                                    RT_MIN(cbToRead, sizeof(byBuf)), &cbRead);
-                                    /*
-                                     * Some other error occured? There might be a chance that RTFileRead
-                                     * could not resolve/map the native error code to an IPRT code, so just
-                                     * print a generic error.
-                                     */
-                                    if (RT_FAILURE(rc))
-                                    {
-                                        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                            Utf8StrFmt(GuestSession::tr("Could not read from file \"%s\" (%Rrc)"),
+            /* Only subtract bytes reported written by the guest. */
+            Assert(cbToRead >= cbWritten);
+            cbToRead -= cbWritten;
+
+            /* Update total bytes written to the guest. */
+            cbWrittenTotal += cbWritten;
+            Assert(cbWrittenTotal <= mSourceSize);
+
+            /* Did the user cancel the operation above? */
+            if (fCanceled)
+                break;
+
+            /* Update the progress.
+             * Watch out for division by zero. */
+            mSourceSize > 0
+                ? rc = setProgress((ULONG)(cbWrittenTotal * 100 / mSourceSize))
+                : rc = setProgress(100);
+            if (RT_FAILURE(rc))
+                break;
+
+            /* End of file reached? */
+            if (!cbToRead)
+                break;
+        } /* for */
+
+        if (   !fCanceled
+            || RT_SUCCESS(rc))
+        {
+            /*
+             * Even if we succeeded until here make sure to check whether we really transfered
+             * everything.
+             */
+            if (   mSourceSize > 0
+                && cbWrittenTotal == 0)
+            {
+                /* If nothing was transfered but the file size was > 0 then "vbox_cat" wasn't able to write
+                 * to the destination -> access denied. */
+                rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                         Utf8StrFmt(GuestSession::tr("Access denied when copying file \"%s\" to \"%s\""),
+                                                    mSource.c_str(), mDest.c_str()));
+            }
+            else if (cbWrittenTotal < mSourceSize)
+            {
+                /* If we did not copy all let the user know. */
+                rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                         Utf8StrFmt(GuestSession::tr("Copying file \"%s\" failed (%RU64/%RU64 bytes transfered)"),
+                                                    mSource.c_str(), cbWrittenTotal, mSourceSize));
+            }
+            else
+            {
+                rc = pProcess->waitFor(ProcessWaitForFlag_Terminate,
+                                       30 * 1000 /* Timeout */, waitRes);
+                if (   RT_FAILURE(rc)
+                    || waitRes.mResult != ProcessWaitResult_Terminate)
+                {
+                    if (RT_FAILURE(rc))
+                        rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                 Utf8StrFmt(GuestSession::tr("Waiting on termination for copying file \"%s\" failed: %Rrc"),
                                                             mSource.c_str(), rc));
-                                        break;
-                                    }
-                                }
-                                else
-                                {
-                                    setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                        Utf8StrFmt(GuestSession::tr("Seeking file \"%s\" offset %RU64 failed: %Rrc"),
-                                                        mSource.c_str(), cbWrittenTotal, rc));
-                                    break;
-                                }
-                            }
+                    else
+                        rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                 Utf8StrFmt(GuestSession::tr("Waiting on termination for copying file \"%s\" failed with wait result %ld"),
+                                                            mSource.c_str(), waitRes.mResult));
+                }
 
-                            uint32_t fFlags = ProcessInputFlag_None;
+                if (RT_SUCCESS(rc))
+                {
+                    ProcessStatus_T procStatus;
+                    LONG exitCode;
+                    if (   (   SUCCEEDED(pProcess->COMGETTER(Status(&procStatus)))
+                            && procStatus != ProcessStatus_TerminatedNormally)
+                        || (   SUCCEEDED(pProcess->COMGETTER(ExitCode(&exitCode)))
+                            && exitCode != 0)
+                       )
+                    {
+                        rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                 Utf8StrFmt(GuestSession::tr("Copying file \"%s\" failed with status %ld, exit code %ld"),
+                                                            mSource.c_str(), procStatus, exitCode)); /**@todo Add stringify methods! */
+                    }
+                }
 
-                            /* Did we reach the end of the content we want to transfer (last chunk)? */
-                            if (   (cbRead < sizeof(byBuf))
-                                /* Did we reach the last block which is exactly _64K? */
-                                || (cbToRead - cbRead == 0)
-                                /* ... or does the user want to cancel? */
-                                || (   SUCCEEDED(mProgress->COMGETTER(Canceled(&fCanceled)))
-                                    && fCanceled)
-                               )
-                            {
-                                fFlags |= ProcessInputFlag_EndOfFile;
-                            }
+                if (RT_SUCCESS(rc))
+                    rc = setProgressSuccess();
+            }
+        }
 
-                            uint32_t cbWritten;
-                            rc = pProcess->writeData(0 /* StdIn */, fFlags,
-                                                     byBuf, sizeof(byBuf),
-                                                     30 * 1000 /* Timeout */, &cbWritten);
-                            if (RT_FAILURE(rc))
-                            {
-                                setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                    Utf8StrFmt(GuestSession::tr("Writing to file \"%s\" (offset %RU64) failed: %Rrc"),
-                                                    mSource.c_str(), cbWrittenTotal, rc));
-                                break;
-                            }
+        pProcess->close();
+    } /* processCreateExInteral */
 
-                            /* Safety first. */
-                            Assert(cbRead <= cbToRead);
-                            Assert(cbToRead >= cbRead);
-
-                            /* Only subtract bytes reported written by the guest. */
-                            cbToRead -= cbWritten;
-
-                            /* Update total bytes written to the guest. */
-                            cbWrittenTotal += cbWritten;
-                            Assert(cbWrittenTotal <= cbFileSize);
-
-                            /* Did the user cancel the operation above? */
-                            if (fCanceled)
-                                break;
-
-                            /* Update the progress. */
-                            HRESULT hr = mProgress->SetCurrentOperationProgress((ULONG)(cbWrittenTotal * 100 / cbFileSize));
-                            if (FAILED(hr))
-                            {
-                                rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                         Utf8StrFmt(GuestSession::tr("Error updating the progress of copying files \"%s\" to \"%s\""),
-                                                         mSource.c_str(), mDest.c_str()));
-                                break;
-                            }
-
-                            /* End of file reached? */
-                            if (cbToRead == 0)
-                                break;
-                        } /* for */
-
-                        if (   !fCanceled
-                            || RT_SUCCESS(rc))
-                        {
-                            /*
-                             * Even if we succeeded until here make sure to check whether we really transfered
-                             * everything.
-                             */
-                            if (   cbFileSize > 0
-                                && cbWrittenTotal == 0)
-                            {
-                                /* If nothing was transfered but the file size was > 0 then "vbox_cat" wasn't able to write
-                                 * to the destination -> access denied. */
-                                rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                         Utf8StrFmt(GuestSession::tr("Access denied when copying file \"%s\" to \"%s\""),
-                                                         mSource.c_str(), mDest.c_str()));
-                            }
-                            else if (cbWrittenTotal < cbFileSize)
-                            {
-                                /* If we did not copy all let the user know. */
-                                rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                         Utf8StrFmt(GuestSession::tr("Copying file \"%s\" failed (%RU64/%RU64 bytes transfered)"),
-                                                         mSource.c_str(), cbWrittenTotal, cbFileSize));
-                            }
-                            else /* Yay, all went fine! */
-                                rc = setProgressSuccess();
-                        }
-                    } /* processCreateExInteral */
-                } /* RTFileGetSize */
-
-                RTFileClose(fileSource);
-
-            } /* RTFileOpen */
-        } /* RTFileExists */
-    }
-    catch (int rc2)
-    {
-        rc = rc2;
-    }
+    if (!mSourceFile) /* Only close locally opened files. */
+        RTFileClose(*pFile);
 
     LogFlowFuncLeaveRC(rc);
     return rc;
 }
 
-int SessionTaskCopyTo::RunAsync(const Utf8Str &strDesc)
+int SessionTaskCopyTo::RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress)
 {
-    LogFlowThisFunc(("strDesc=%s, strSource=%s, strDest=%s, uFlags=%x\n",
-                     strDesc.c_str(), mSource.c_str(), mDest.c_str(), mFlags));
+    LogFlowThisFunc(("strDesc=%s, strSource=%s, strDest=%s, mCopyFileFlags=%x\n",
+                     strDesc.c_str(), mSource.c_str(), mDest.c_str(), mCopyFileFlags));
 
     mDesc = strDesc;
+    mProgress = pProgress;
 
     int rc = RTThreadCreate(NULL, SessionTaskCopyTo::taskThread, this,
                             0, RTTHREADTYPE_MAIN_HEAVY_WORKER, 0,
@@ -362,12 +445,12 @@ int SessionTaskCopyTo::taskThread(RTTHREAD Thread, void *pvUser)
     return task->Run();
 }
 
-SessionTaskCopyFrom::SessionTaskCopyFrom(GuestSession *pSession, Progress *pProgress,
+SessionTaskCopyFrom::SessionTaskCopyFrom(GuestSession *pSession,
                                          const Utf8Str &strSource, const Utf8Str &strDest, uint32_t uFlags)
-                                         : GuestSessionTask(pSession, pProgress)
+                                         : GuestSessionTask(pSession)
 {
     mSource = strSource;
-    mDest   = mDest;
+    mDest   = strDest;
     mFlags  = uFlags;
 }
 
@@ -378,15 +461,200 @@ SessionTaskCopyFrom::~SessionTaskCopyFrom(void)
 
 int SessionTaskCopyFrom::Run(void)
 {
-    return 0;
+    LogFlowThisFuncEnter();
+
+    ComObjPtr<GuestSession> pSession = mSession;
+    Assert(!pSession.isNull());
+
+    AutoCaller autoCaller(pSession);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    /*
+     * Note: There will be races between querying file size + reading the guest file's
+     *       content because we currently *do not* lock down the guest file when doing the
+     *       actual operations.
+     ** @todo Implement guest file locking!
+     */
+    GuestFsObjData objData;
+    int rc = pSession->fileQueryInfoInternal(Utf8Str(mSource), objData);
+    if (RT_FAILURE(rc))
+    {
+        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                            Utf8StrFmt(GuestSession::tr("Querying guest file information for \"%s\" failed: %Rrc"),
+                            mSource.c_str(), rc));
+    }
+    else if (objData.mType != FsObjType_File) /* Only single files are supported at the moment. */
+    {
+        rc = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                 Utf8StrFmt(GuestSession::tr("Object \"%s\" on the guest is not a file"), mSource.c_str()));
+    }
+
+    if (RT_SUCCESS(rc))
+    {
+        RTFILE fileDest;
+        rc = RTFileOpen(&fileDest, mDest.c_str(),
+                        RTFILE_O_WRITE | RTFILE_O_OPEN_CREATE | RTFILE_O_DENY_WRITE); /** @todo Use the correct open modes! */
+        if (RT_FAILURE(rc))
+        {
+            setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                Utf8StrFmt(GuestSession::tr("Error opening destination file \"%s\": %Rrc"),
+                                           mDest.c_str(), rc));
+        }
+        else
+        {
+            GuestProcessStartupInfo procInfo;
+            procInfo.mName    = Utf8StrFmt(GuestSession::tr("Copying file \"%s\" from guest to the host to \"%s\" (%RI64 bytes)"),
+                                                            mSource.c_str(), mDest.c_str(), objData.mObjectSize);
+            procInfo.mCommand   = Utf8Str(VBOXSERVICE_TOOL_CAT);
+            procInfo.mFlags     = ProcessCreateFlag_Hidden | ProcessCreateFlag_WaitForStdOut;
+
+            /* Set arguments.*/
+            procInfo.mArguments.push_back(mSource); /* Which file to output? */
+
+            /* Startup process. */
+            ComObjPtr<GuestProcess> pProcess;
+            rc = pSession->processCreateExInteral(procInfo, pProcess);
+            if (RT_SUCCESS(rc))
+                rc = pProcess->startProcess();
+            if (RT_FAILURE(rc))
+            {
+                setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                    Utf8StrFmt(GuestSession::tr("Unable to start guest process for copying data from guest to host: %Rrc"), rc));
+            }
+            else
+            {
+                GuestProcessWaitResult waitRes;
+                BYTE byBuf[_64K];
+
+                BOOL fCanceled = FALSE;
+                uint64_t cbWrittenTotal = 0;
+                uint64_t cbToRead = objData.mObjectSize;
+
+                for (;;)
+                {
+                    rc = pProcess->waitFor(ProcessWaitForFlag_StdOut,
+                                           30 * 1000 /* Timeout */, waitRes);
+                    if (   waitRes.mResult == ProcessWaitResult_StdOut
+                        || waitRes.mResult == ProcessWaitResult_Any)
+                    {
+                        size_t cbRead;
+                        rc = pProcess->readData(OUTPUT_HANDLE_ID_STDOUT, sizeof(byBuf),
+                                                30 * 1000 /* Timeout */, byBuf, sizeof(byBuf),
+                                                &cbRead);
+                        if (RT_FAILURE(rc))
+                        {
+                            setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                Utf8StrFmt(GuestSession::tr("Reading from file \"%s\" (offset %RU64) failed: %Rrc"),
+                                                mSource.c_str(), cbWrittenTotal, rc));
+                            break;
+                        }
+
+                        if (cbRead)
+                        {
+                            rc = RTFileWrite(fileDest, byBuf, cbRead, NULL /* No partial writes */);
+                            if (RT_FAILURE(rc))
+                            {
+                                setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                    Utf8StrFmt(GuestSession::tr("Error writing to file \"%s\" (%RU64 bytes left): %Rrc"),
+                                                    mDest.c_str(), cbToRead, rc));
+                                break;
+                            }
+
+                            /* Only subtract bytes reported written by the guest. */
+                            Assert(cbToRead >= cbRead);
+                            cbToRead -= cbRead;
+
+                            /* Update total bytes written to the guest. */
+                            cbWrittenTotal += cbRead;
+                            Assert(cbWrittenTotal <= (uint64_t)objData.mObjectSize);
+
+                            /* Did the user cancel the operation above? */
+                            if (   SUCCEEDED(mProgress->COMGETTER(Canceled(&fCanceled)))
+                                && fCanceled)
+                                break;
+
+                            rc = setProgress((ULONG)(cbWrittenTotal / ((uint64_t)objData.mObjectSize / 100.0)));
+                            if (RT_FAILURE(rc))
+                                break;
+                        }
+                    }
+                    else if (   RT_FAILURE(rc)
+                             || waitRes.mResult == ProcessWaitResult_Terminate
+                             || waitRes.mResult == ProcessWaitResult_Error
+                             || waitRes.mResult == ProcessWaitResult_Timeout)
+                    {
+                        if (RT_FAILURE(waitRes.mRC))
+                            rc = waitRes.mRC;
+                        break;
+                    }
+                } /* for */
+
+                LogFlowThisFunc(("rc=%Rrc, cbWrittenTotal=%RU64, cbSize=%RI64, cbToRead=%RU64\n",
+                                 rc, cbWrittenTotal, objData.mObjectSize, cbToRead));
+
+                if (   !fCanceled
+                    || RT_SUCCESS(rc))
+                {
+                    /*
+                     * Even if we succeeded until here make sure to check whether we really transfered
+                     * everything.
+                     */
+                    if (   objData.mObjectSize > 0
+                        && cbWrittenTotal == 0)
+                    {
+                        /* If nothing was transfered but the file size was > 0 then "vbox_cat" wasn't able to write
+                         * to the destination -> access denied. */
+                        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                            Utf8StrFmt(GuestSession::tr("Access denied when copying file \"%s\" to \"%s\""),
+                                            mSource.c_str(), mDest.c_str()));
+                        rc = VERR_GENERAL_FAILURE; /* Fudge. */
+                    }
+                    else if (cbWrittenTotal < (uint64_t)objData.mObjectSize)
+                    {
+                        /* If we did not copy all let the user know. */
+                        setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                            Utf8StrFmt(GuestSession::tr("Copying file \"%s\" failed (%RU64/%RI64 bytes transfered)"),
+                                            mSource.c_str(), cbWrittenTotal, objData.mObjectSize));
+                        rc = VERR_GENERAL_FAILURE; /* Fudge. */
+                    }
+                    else
+                    {
+                        ProcessStatus_T procStatus;
+                        LONG exitCode;
+                        if (   (   SUCCEEDED(pProcess->COMGETTER(Status(&procStatus)))
+                                && procStatus != ProcessStatus_TerminatedNormally)
+                            || (   SUCCEEDED(pProcess->COMGETTER(ExitCode(&exitCode)))
+                                && exitCode != 0)
+                           )
+                        {
+                            setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                Utf8StrFmt(GuestSession::tr("Copying file \"%s\" failed with status %ld, exit code %d"),
+                                                mSource.c_str(), procStatus, exitCode)); /**@todo Add stringify methods! */
+                            rc = VERR_GENERAL_FAILURE; /* Fudge. */
+                        }
+                        else /* Yay, success! */
+                            rc = setProgressSuccess();
+                    }
+                }
+
+                pProcess->close();
+            }
+
+            RTFileClose(fileDest);
+        }
+    }
+
+    LogFlowFuncLeaveRC(rc);
+    return rc;
 }
 
-int SessionTaskCopyFrom::RunAsync(const Utf8Str &strDesc)
+int SessionTaskCopyFrom::RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress)
 {
     LogFlowThisFunc(("strDesc=%s, strSource=%s, strDest=%s, uFlags=%x\n",
                      strDesc.c_str(), mSource.c_str(), mDest.c_str(), mFlags));
 
     mDesc = strDesc;
+    mProgress = pProgress;
 
     int rc = RTThreadCreate(NULL, SessionTaskCopyFrom::taskThread, this,
                             0, RTTHREADTYPE_MAIN_HEAVY_WORKER, 0,
@@ -399,6 +667,403 @@ int SessionTaskCopyFrom::RunAsync(const Utf8Str &strDesc)
 int SessionTaskCopyFrom::taskThread(RTTHREAD Thread, void *pvUser)
 {
     std::auto_ptr<SessionTaskCopyFrom> task(static_cast<SessionTaskCopyFrom*>(pvUser));
+    AssertReturn(task.get(), VERR_GENERAL_FAILURE);
+
+    LogFlowFunc(("pTask=%p\n", task.get()));
+    return task->Run();
+}
+
+SessionTaskUpdateAdditions::SessionTaskUpdateAdditions(GuestSession *pSession,
+                                                       const Utf8Str &strSource, uint32_t uFlags)
+                                                       : GuestSessionTask(pSession)
+{
+    mSource = strSource;
+    mFlags  = uFlags;
+}
+
+SessionTaskUpdateAdditions::~SessionTaskUpdateAdditions(void)
+{
+
+}
+
+int SessionTaskUpdateAdditions::copyFileToGuest(GuestSession *pSession, PRTISOFSFILE pISO,
+                                                Utf8Str const &strFileSource, const Utf8Str &strFileDest,
+                                                bool fOptional, uint32_t *pcbSize)
+{
+    AssertPtrReturn(pSession, VERR_INVALID_POINTER);
+    AssertPtrReturn(pISO, VERR_INVALID_POINTER);
+    /* pcbSize is optional. */
+
+    uint32_t cbOffset;
+    size_t cbSize;
+
+    int rc = RTIsoFsGetFileInfo(pISO, strFileSource.c_str(), &cbOffset, &cbSize);
+    if (RT_FAILURE(rc))
+    {
+        if (fOptional)
+            return VINF_SUCCESS;
+
+        return rc;
+    }
+
+    Assert(cbOffset);
+    Assert(cbSize);
+    rc = RTFileSeek(pISO->file, cbOffset, RTFILE_SEEK_BEGIN, NULL);
+
+    /* Copy over the Guest Additions file to the guest. */
+    if (RT_SUCCESS(rc))
+    {
+        LogRel(("Copying Guest Additions installer file \"%s\" to \"%s\" on guest ...\n",
+                strFileSource.c_str(), strFileDest.c_str()));
+
+        if (RT_SUCCESS(rc))
+        {
+            SessionTaskCopyTo *pTask = new SessionTaskCopyTo(pSession /* GuestSession */,
+                                                             &pISO->file, cbOffset, cbSize,
+                                                             strFileDest, CopyFileFlag_None);
+            AssertPtrReturn(pTask, VERR_NO_MEMORY);
+
+            ComObjPtr<Progress> pProgressCopyTo;
+            rc = pSession->startTaskAsync(Utf8StrFmt(GuestSession::tr("Copying Guest Additions installer file \"%s\" to \"%s\" on guest"),
+                                                     mSource.c_str(), strFileDest.c_str()),
+                                          pTask, pProgressCopyTo);
+            if (RT_SUCCESS(rc))
+            {
+                BOOL fCanceled = FALSE;
+                HRESULT hr = pProgressCopyTo->WaitForCompletion(-1);
+                if (   SUCCEEDED(pProgressCopyTo->COMGETTER(Canceled)(&fCanceled))
+                    && fCanceled)
+                {
+                    rc = VERR_GENERAL_FAILURE; /* Fudge. */
+                }
+                else if (FAILED(hr))
+                {
+                    Assert(FAILED(hr));
+                    rc = VERR_GENERAL_FAILURE; /* Fudge. */
+                }
+            }
+        }
+    }
+
+    /** @todo Note: Since there is no file locking involved at the moment, there can be modifications
+     *              between finished copying, the verification and the actual execution. */
+
+    /* Determine where the installer image ended up and if it has the correct size. */
+    if (RT_SUCCESS(rc))
+    {
+        LogRel(("Verifying Guest Additions installer file \"%s\" ...\n", strFileDest.c_str()));
+
+        GuestFsObjData objData;
+        int64_t cbSizeOnGuest;
+        rc = pSession->fileQuerySizeInternal(strFileDest, &cbSizeOnGuest);
+#ifdef VBOX_SERVICE_ENVARG_BUG
+        if (RT_FAILURE(rc))
+        {
+            /* Ugly hack: Because older Guest Additions have problems with environment variable
+                          expansion in parameters we have to check an alternative location on Windows.
+                          So check for "%TEMP%\" being "C:\\Windows\\system32\\EMP" actually. */
+            if (strFileDest.startsWith("%TEMP%\\", RTCString::CaseSensitive))
+            {
+                Utf8Str strFileDestBug = "C:\\Windows\\system32\\EMP" + strFileDest.substr(sizeof("%TEMP%\\") - sizeof(char));
+                rc = pSession->fileQuerySizeInternal(strFileDestBug, &cbSizeOnGuest);
+            }
+        }
+#endif
+        if (   RT_SUCCESS(rc)
+            && cbSize == (uint64_t)cbSizeOnGuest)
+        {
+            LogRel(("Guest Additions installer file \"%s\" successfully verified\n",
+                    strFileDest.c_str()));
+        }
+        else
+        {
+            if (RT_SUCCESS(rc)) /* Size does not match. */
+                rc = VERR_BROKEN_PIPE; /** @todo FInd a better error. */
+        }
+
+        if (RT_SUCCESS(rc))
+        {
+            if (pcbSize)
+                *pcbSize = cbSizeOnGuest;
+        }
+    }
+
+    return rc;
+}
+
+int SessionTaskUpdateAdditions::runFile(GuestSession *pSession, GuestProcessStartupInfo &procInfo)
+{
+    AssertPtrReturn(pSession, VERR_INVALID_POINTER);
+
+#ifdef VBOX_SERVICE_ENVARG_BUG
+    GuestFsObjData objData;
+    int rc = pSession->fileQueryInfoInternal(procInfo.mCommand, objData);
+    if (RT_FAILURE(rc))
+        procInfo.mCommand = "C:\\Windows\\system32\\EMP" + procInfo.mCommand.substr(sizeof("%TEMP%\\") - sizeof(char));
+#endif
+
+    ComObjPtr<GuestProcess> pProcess;
+    rc = pSession->processCreateExInteral(procInfo, pProcess);
+    if (RT_SUCCESS(rc))
+        rc = pProcess->startProcess();
+
+    if (RT_SUCCESS(rc))
+    {
+        LogRel(("Running %s ...\n", procInfo.mName.c_str()));
+
+        GuestProcessWaitResult waitRes;
+        rc = pProcess->waitFor(ProcessWaitForFlag_Terminate,
+                               10 * 60 * 1000 /* 10 mins Timeout */, waitRes);
+        if (waitRes.mResult == ProcessWaitResult_Terminate)
+        {
+            ProcessStatus_T procStatus;
+            LONG exitCode;
+            if (   (   SUCCEEDED(pProcess->COMGETTER(Status(&procStatus)))
+                    && procStatus != ProcessStatus_TerminatedNormally)
+                || (   SUCCEEDED(pProcess->COMGETTER(ExitCode(&exitCode)))
+                    && exitCode != 0)
+               )
+            {
+                setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                    Utf8StrFmt(GuestSession::tr("Running %s failed with status %ld, exit code %ld"),
+                                               procInfo.mName.c_str(), procStatus, exitCode));
+                rc = VERR_GENERAL_FAILURE; /* Fudge. */
+            }
+            else /* Yay, success! */
+            {
+                LogRel(("%s successfully completed\n", procInfo.mName.c_str()));
+            }
+        }
+        else
+        {
+            if (RT_FAILURE(rc))
+                setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                    Utf8StrFmt(GuestSession::tr("Error while waiting running %s: %Rrc"),
+                                               procInfo.mName.c_str(), rc));
+            else
+            {
+                setProgressErrorMsg(VBOX_E_IPRT_ERROR, pProcess->errorMsg());
+                rc = VERR_GENERAL_FAILURE; /* Fudge. */
+            }
+        }
+    }
+
+    if (!pProcess.isNull())
+        pProcess->close();
+
+    return rc;
+}
+
+int SessionTaskUpdateAdditions::Run(void)
+{
+    LogFlowThisFuncEnter();
+
+    ComObjPtr<GuestSession> pSession = mSession;
+    Assert(!pSession.isNull());
+
+    AutoCaller autoCaller(pSession);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    int rc = setProgress(10);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    HRESULT hr = S_OK;
+
+    LogRel(("Automatic update of Guest Additions started, using \"%s\"\n", mSource.c_str()));
+
+    /*
+     * Determine guest OS type and the required installer image.
+     * At the moment only Windows guests are supported.
+     */
+    Utf8Str strInstallerImage;
+
+    ComObjPtr<Guest> pGuest(mSession->getParent());
+    Bstr osTypeId;
+    if (   SUCCEEDED(pGuest->COMGETTER(OSTypeId(osTypeId.asOutParam())))
+        && !osTypeId.isEmpty())
+    {
+        Utf8Str osTypeIdUtf8(osTypeId); /* Needed for .contains(). */
+        if (   osTypeIdUtf8.contains("Microsoft", Utf8Str::CaseInsensitive)
+            || osTypeIdUtf8.contains("Windows", Utf8Str::CaseInsensitive))
+        {
+            if (osTypeIdUtf8.contains("64", Utf8Str::CaseInsensitive))
+                strInstallerImage = "VBOXWINDOWSADDITIONS_AMD64.EXE";
+            else
+                strInstallerImage = "VBOXWINDOWSADDITIONS_X86.EXE";
+            /* Since the installers are located in the root directory,
+             * no further path processing needs to be done (yet). */
+        }
+        else /* Everything else is not supported (yet). */
+        {
+            hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                     Utf8StrFmt(GuestSession::tr("Detected guest OS (%s) does not support automatic Guest Additions updating, please update manually"),
+                                     osTypeIdUtf8.c_str()));
+            rc = VERR_GENERAL_FAILURE; /* Fudge. */
+        }
+    }
+    else
+    {
+        hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                 Utf8StrFmt(GuestSession::tr("Could not detected guest OS type/version, please update manually")));
+        rc = VERR_GENERAL_FAILURE; /* Fudge. */
+    }
+
+    RTISOFSFILE iso;
+    if (RT_SUCCESS(rc))
+    {
+        Assert(!strInstallerImage.isEmpty());
+
+        /*
+         * Try to open the .ISO file and locate the specified installer.
+         */
+        rc = RTIsoFsOpen(&iso, mSource.c_str());
+        if (RT_FAILURE(rc))
+        {
+            hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                     Utf8StrFmt(GuestSession::tr("Unable to open Guest Additions .ISO file \"%s\": %Rrc"),
+                                     mSource.c_str(), rc));
+        }
+        else
+        {
+            rc = setProgress(5);
+
+            /** @todo Add support for non-Windows as well! */
+            Utf8Str strInstallerDest = "%TEMP%\\VBoxWindowsAdditions.exe";
+            bool fInstallCertificates = false;
+
+            if (RT_SUCCESS(rc))
+            {
+                /*
+                 * Copy over main installer to the guest.
+                 */
+                rc = copyFileToGuest(pSession, &iso, strInstallerImage, strInstallerDest,
+                                     false /* File is not optional */, NULL /* cbSize */);
+                if (RT_SUCCESS(rc))
+                    rc = setProgress(20);
+
+                /*
+                 * Install needed certificates for the WHQL crap.
+                 ** @todo Only for Windows!
+                 */
+                if (RT_SUCCESS(rc))
+                {
+                    rc = copyFileToGuest(pSession, &iso, "CERT/ORACLE_VBOX.CER", "%TEMP%\\oracle-vbox.cer",
+                                         true /* File is optional */, NULL /* cbSize */);
+                    if (RT_SUCCESS(rc))
+                    {
+                        rc = setProgress(30);
+                        if (RT_SUCCESS(rc))
+                        {
+                            rc = copyFileToGuest(pSession, &iso, "CERT/VBOXCERTUTIL.EXE", "%TEMP%\\VBoxCertUtil.exe",
+                                                 true /* File is optional */, NULL /* cbSize */);
+                            if (RT_SUCCESS(rc))
+                            {
+                                fInstallCertificates = true;
+                                rc = setProgress(40);
+                            }
+                            else
+                                hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                         Utf8StrFmt(GuestSession::tr("Error while copying certificate installation tool to the guest: %Rrc"), rc));
+                        }
+                    }
+                    else
+                        hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                 Utf8StrFmt(GuestSession::tr("Error while copying certificate to the guest: %Rrc"), rc));
+                }
+            }
+
+            /*
+             * Run VBoxCertUtil.exe to install the Oracle certificate.
+             */
+            if (   RT_SUCCESS(rc)
+                && fInstallCertificates)
+            {
+                LogRel(("Installing certificates on the guest ...\n"));
+
+                GuestProcessStartupInfo procInfo;
+                procInfo.mName    = Utf8StrFmt(GuestSession::tr("VirtualBox Guest Additions Certificate Utility"));
+                procInfo.mCommand = Utf8Str("%TEMP%\\VBoxCertUtil.exe");
+                procInfo.mFlags   = ProcessCreateFlag_Hidden;
+
+                /* Construct arguments. */
+                /** @todo Remove hardcoded paths. */
+                procInfo.mArguments.push_back(Utf8Str("add-trusted-publisher"));
+                /* Ugly hack: Because older Guest Additions have problems with environment variable
+                          expansion in parameters we have to check an alternative location on Windows.
+                          So check for "%TEMP%\VBoxWindowsAdditions.exe" in a screwed up way. */
+#ifdef VBOX_SERVICE_ENVARG_BUG
+                GuestFsObjData objData;
+                rc = pSession->fileQueryInfoInternal("%TEMP%\\oracle-vbox.cer", objData);
+                if (RT_SUCCESS(rc))
+#endif
+                    procInfo.mArguments.push_back(Utf8Str("%TEMP%\\oracle-vbox.cer"));
+#ifdef VBOX_SERVICE_ENVARG_BUG
+                else
+                    procInfo.mArguments.push_back(Utf8Str("C:\\Windows\\system32\\EMPoracle-vbox.cer"));
+#endif
+                /* Overwrite rc in any case. */
+                rc = runFile(pSession, procInfo);
+            }
+
+            if (RT_SUCCESS(rc))
+                rc = setProgress(60);
+
+            if (RT_SUCCESS(rc))
+            {
+                LogRel(("Updating Guest Additions ...\n"));
+
+                GuestProcessStartupInfo procInfo;
+                procInfo.mName    = Utf8StrFmt(GuestSession::tr("VirtualBox Guest Additions Setup"));
+                procInfo.mCommand = Utf8Str(strInstallerDest);
+                procInfo.mFlags   = ProcessCreateFlag_Hidden;
+                /* If the caller does not want to wait for out guest update process to end,
+                 * complete the progress object now so that the caller can do other work. */
+                if (mFlags & AdditionsUpdateFlag_WaitForUpdateStartOnly)
+                    procInfo.mFlags |= ProcessCreateFlag_WaitForProcessStartOnly;
+
+                /* Construct arguments. */
+                procInfo.mArguments.push_back(Utf8Str("/S")); /* We want to install in silent mode. */
+                procInfo.mArguments.push_back(Utf8Str("/l")); /* ... and logging enabled. */
+                /* Don't quit VBoxService during upgrade because it still is used for this
+                 * piece of code we're in right now (that is, here!) ... */
+                procInfo.mArguments.push_back(Utf8Str("/no_vboxservice_exit"));
+                /* Tell the installer to report its current installation status
+                 * using a running VBoxTray instance via balloon messages in the
+                 * Windows taskbar. */
+                procInfo.mArguments.push_back(Utf8Str("/post_installstatus"));
+
+                rc = runFile(pSession, procInfo);
+                if (RT_SUCCESS(rc))
+                    hr = setProgressSuccess();
+            }
+            RTIsoFsClose(&iso);
+        }
+    }
+
+    LogFlowFuncLeaveRC(rc);
+    return rc;
+}
+
+int SessionTaskUpdateAdditions::RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress)
+{
+    LogFlowThisFunc(("strDesc=%s, strSource=%s, uFlags=%x\n",
+                     strDesc.c_str(), mSource.c_str(), mFlags));
+
+    mDesc = strDesc;
+    mProgress = pProgress;
+
+    int rc = RTThreadCreate(NULL, SessionTaskUpdateAdditions::taskThread, this,
+                            0, RTTHREADTYPE_MAIN_HEAVY_WORKER, 0,
+                            "gctlUpGA");
+    LogFlowFuncLeaveRC(rc);
+    return rc;
+}
+
+/* static */
+int SessionTaskUpdateAdditions::taskThread(RTTHREAD Thread, void *pvUser)
+{
+    std::auto_ptr<SessionTaskUpdateAdditions> task(static_cast<SessionTaskUpdateAdditions*>(pvUser));
     AssertReturn(task.get(), VERR_GENERAL_FAILURE);
 
     LogFlowFunc(("pTask=%p\n", task.get()));
@@ -427,8 +1092,6 @@ int GuestSession::init(Guest *aGuest, ULONG aSessionID,
     mData.mCredentials.mPassword = aPassword;
     mData.mCredentials.mDomain = aDomain;
     mData.mName = aName;
-
-    mData.mNextProcessID = 0;
 
     /* Confirm a successful initialization when it's the case. */
     autoInitSpan.setSucceeded();
@@ -763,9 +1426,10 @@ int GuestSession::directoryCreateInternal(const Utf8Str &strPath, uint32_t uMode
     LogFlowThisFunc(("strPath=%s, uMode=%x, uFlags=%x\n",
                      strPath.c_str(), uMode, uFlags));
 
-    GuestProcessInfo procInfo;
-    procInfo.mName    = Utf8StrFmt(tr("Creating directory \"%s\"", strPath.c_str()));
-    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_MKDIR);
+    GuestProcessStartupInfo procInfo;
+    procInfo.mName      = Utf8StrFmt(tr("Creating directory \"%s\"", strPath.c_str()));
+    procInfo.mCommand   = Utf8Str(VBOXSERVICE_TOOL_MKDIR);
+    procInfo.mFlags     = ProcessCreateFlag_Hidden;
 
     int rc = VINF_SUCCESS;
 
@@ -788,6 +1452,8 @@ int GuestSession::directoryCreateInternal(const Utf8Str &strPath, uint32_t uMode
 
     ComObjPtr<GuestProcess> pProcess;
     rc = processCreateExInteral(procInfo, pProcess);
+    if (RT_SUCCESS(rc))
+        rc = pProcess->startProcess();
     if (RT_SUCCESS(rc))
     {
         GuestProcessWaitResult waitRes;
@@ -812,27 +1478,158 @@ int GuestSession::directoryCreateInternal(const Utf8Str &strPath, uint32_t uMode
     if (RT_FAILURE(rc))
         return rc;
 
-    try
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    /* Create the directory object. */
+    HRESULT hr = pDirectory.createObject();
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
+
+    /* Note: There will be a race between creating and getting/initing the directory
+             object here. */
+    rc = pDirectory->init(this /* Parent */, strPath);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    /* Add the created directory to our vector. */
+    mData.mDirectories.push_back(pDirectory);
+
+    LogFlowFunc(("Added new directory \"%s\" (Session: %RU32)\n",
+                 strPath.c_str(), mData.mId));
+
+    LogFlowFuncLeaveRC(rc);
+    return rc;
+}
+
+int GuestSession::objectCreateTempInternal(Utf8Str strTemplate,
+                                           Utf8Str strPath,
+                                           bool fDirectory,
+                                           Utf8Str &strName, int *prc)
+{
+    GuestProcessStartupInfo procInfo;
+    GuestProcessStream      streamOut;
+    ComObjPtr<GuestProcess> pProcess;
+    int rc = VINF_SUCCESS;
+
+    if (fDirectory)
+        procInfo.mName    = Utf8StrFmt(tr("Creating temporary directory from template \"%s\"",
+                                   strTemplate.c_str()));
+    else
+        procInfo.mName    = Utf8StrFmt(tr("Creating temporary file from template \"%s\"",
+                                   strTemplate.c_str()));
+    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_MKTEMP);
+    procInfo.mFlags   =   ProcessCreateFlag_Hidden
+                        | ProcessCreateFlag_WaitForStdOut;
+    /* Construct arguments. */
+    procInfo.mArguments.push_back(Utf8Str("--machinereadable"));
+    if (fDirectory)
+        procInfo.mArguments.push_back(Utf8Str("-d"));
+    if (strPath.length())  /* Otherwise use /tmp or equivalent. */
     {
-        /* Create the directory object. */
-        HRESULT hr = pDirectory.createObject();
-        if (FAILED(hr)) throw VERR_COM_UNEXPECTED;
-
-        /* Note: There will be a race between creating and getting/initing the directory
-                 object here. */
-        rc = pDirectory->init(this /* Parent */, strPath);
-        if (RT_FAILURE(rc)) throw rc;
-
-        /* Add the created directory to our vector. */
-        mData.mDirectories.push_back(pDirectory);
-
-        LogFlowFunc(("Added new directory (Session: %RU32) with process ID=%RU32\n",
-                     mData.mId, mData.mNextProcessID));
+        procInfo.mArguments.push_back(Utf8Str("-t"));
+        procInfo.mArguments.push_back(strPath);
     }
-    catch (int rc2)
+    procInfo.mArguments.push_back(strTemplate);
+
+    rc = processCreateExInteral(procInfo, pProcess);
+    if (RT_SUCCESS(rc))
     {
-        rc = rc2;
+        GuestProcessWaitResult waitRes;
+        BYTE byBuf[_64K];
+        size_t cbRead;
+
+        for (;;)
+        {
+            rc = pProcess->waitFor(ProcessWaitForFlag_StdOut,
+                                   30 * 1000 /* Timeout */, waitRes);
+            if (   RT_FAILURE(rc)
+                || waitRes.mResult == ProcessWaitResult_Terminate
+                || waitRes.mResult == ProcessWaitResult_Error
+                || waitRes.mResult == ProcessWaitResult_Timeout)
+            {
+                break;
+            }
+
+            rc = pProcess->readData(OUTPUT_HANDLE_ID_STDOUT, sizeof(byBuf),
+                                    30 * 1000 /* Timeout */, byBuf, sizeof(byBuf),
+                                    &cbRead);
+            if (RT_FAILURE(rc))
+                break;
+
+            if (cbRead)
+            {
+                rc = streamOut.AddData(byBuf, cbRead);
+                if (RT_FAILURE(rc))
+                    break;
+            }
+        }
+
+        LogFlowThisFunc(("rc=%Rrc, cbRead=%RU32, cbStreamOut=%RU32\n",
+                         rc, cbRead, streamOut.GetSize()));
     }
+    else
+        LogThisFunc(("Error while starting temporary object creation tool on guest: %Rrc\n", rc));
+    if (RT_FAILURE(rc))
+        LogThisFunc(("Error while running temporary object creation tool: %Rrc\n", rc));
+    else if (!streamOut.GetSize())
+    {
+        LogThisFunc(("No return code after creating temporary object\n"));
+        rc = VERR_NO_DATA;
+    }
+    if (RT_SUCCESS(rc))
+    {
+        const char *pcszName;
+        int64_t i64rc;
+        GuestProcessStreamBlock streamBlock;
+        rc = streamOut.ParseBlock(streamBlock);
+        if (RT_SUCCESS(rc))
+        {
+            pcszName = streamBlock.GetString("name");
+            if (pcszName)
+                strName = pcszName;
+            else
+            {
+                LogThisFunc(("No name returned after creating temporary object\n"));
+                rc = VERR_NO_DATA;
+            }
+            if (RT_FAILURE(rc = streamBlock.GetInt64Ex("rc", &i64rc)))
+                LogThisFunc(("No return code after creating temporary object\n"));
+        }
+        if (   RT_SUCCESS(rc)
+            && (   i64rc == VERR_INVALID_PARAMETER
+                || i64rc == VERR_NOT_SUPPORTED))
+            rc = (int)i64rc;
+        if (RT_SUCCESS(rc))
+            *prc = (int)i64rc;
+    }
+    else
+        LogThisFunc(("Error while getting return code from creating temporary object: %Rrc\n", rc));
+    return rc;
+}
+
+int GuestSession::directoryOpenInternal(const Utf8Str &strPath, const Utf8Str &strFilter,
+                                        uint32_t uFlags, ComObjPtr<GuestDirectory> &pDirectory)
+{
+    LogFlowThisFunc(("strPath=%s, strPath=%s, uFlags=%x\n",
+                     strPath.c_str(), strFilter.c_str(), uFlags));
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    /* Create the directory object. */
+    HRESULT hr = pDirectory.createObject();
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
+
+    int rc = pDirectory->init(this /* Parent */,
+                              strPath, strFilter, uFlags);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    /* Add the created directory to our vector. */
+    mData.mDirectories.push_back(pDirectory);
+
+    LogFlowFunc(("Added new directory \"%s\" (Session: %RU32)\n",
+                 strPath.c_str(), mData.mId));
 
     LogFlowFuncLeaveRC(rc);
     return rc;
@@ -884,24 +1681,32 @@ int GuestSession::fileClose(ComObjPtr<GuestFile> pFile)
     return VERR_NOT_FOUND;
 }
 
-/* Note: Will work on directories and others, too. */
-int GuestSession::fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &objData)
+/**
+ * Implementation of FileRemove().  Can throw an exception due to the use of
+ * Utf8Str, Utf8StrFmt and std::vector near the beginning (and others?).  The
+ * caller should catch this.  On success, *prc will be set to the return code
+ * of the delete operation to distinguish between API and command failure.
+ */
+int GuestSession::fileRemoveInternal(Utf8Str strPath, int *prc)
 {
-    LogFlowThisFunc(("strPath=%s\n", strPath.c_str()));
+    GuestProcessStartupInfo procInfo;
+    GuestProcessStream      streamOut;
+    int rc = VINF_SUCCESS;
 
-    GuestProcessInfo procInfo;
-    procInfo.mName    = Utf8StrFmt(tr("Querying info for \"%s\"", strPath.c_str()));
-    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_STAT);
-    procInfo.mFlags   = ProcessCreateFlag_WaitForStdOut;
-
+    AssertPtrReturn(prc, VERR_INVALID_POINTER);
+    procInfo.mName    = Utf8StrFmt(tr("Removing file \"%s\"",
+                                   strPath.c_str()));
+    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_RM);
+    procInfo.mFlags   =   ProcessCreateFlag_Hidden
+                        | ProcessCreateFlag_WaitForStdOut;
     /* Construct arguments. */
     procInfo.mArguments.push_back(Utf8Str("--machinereadable"));
-    procInfo.mArguments.push_back(strPath);
-
-    GuestProcessStream streamOut;
+    procInfo.mArguments.push_back(strPath); /* The directory we want to create. */
 
     ComObjPtr<GuestProcess> pProcess;
-    int rc = processCreateExInteral(procInfo, pProcess);
+    rc = processCreateExInteral(procInfo, pProcess);
+    if (RT_SUCCESS(rc))
+        rc = pProcess->startProcess();
     if (RT_SUCCESS(rc))
     {
         GuestProcessWaitResult waitRes;
@@ -913,7 +1718,9 @@ int GuestSession::fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &
             rc = pProcess->waitFor(ProcessWaitForFlag_StdOut,
                                    30 * 1000 /* Timeout */, waitRes);
             if (   RT_FAILURE(rc)
-                || waitRes.mResult != ProcessWaitResult_StdOut)
+                || waitRes.mResult == ProcessWaitResult_Terminate
+                || waitRes.mResult == ProcessWaitResult_Error
+                || waitRes.mResult == ProcessWaitResult_Timeout)
             {
                 break;
             }
@@ -924,12 +1731,123 @@ int GuestSession::fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &
             if (RT_FAILURE(rc))
                 break;
 
-            rc = streamOut.AddData(byBuf, cbRead);
-            if (RT_FAILURE(rc))
-                break;
+            if (cbRead)
+            {
+                rc = streamOut.AddData(byBuf, cbRead);
+                if (RT_FAILURE(rc))
+                    break;
+            }
         }
 
         LogFlowThisFunc(("rc=%Rrc, cbRead=%RU32, cbStreamOut=%RU32\n",
+                         rc, cbRead, streamOut.GetSize()));
+    }
+    else
+        LogThisFunc(("Error starting delete tool on guest: %Rrc\n", rc));
+    if (RT_FAILURE(rc))
+        LogThisFunc(("Error running delete tool on guest: %Rrc\n", rc));
+    else if (!streamOut.GetSize())
+    {
+        LogThisFunc(("No return code after deleting file"));
+        rc = VERR_NO_DATA;
+    }
+    if (RT_SUCCESS(rc))
+    {
+        GuestProcessStreamBlock streamBlock;
+        int64_t i64rc;
+        rc = streamOut.ParseBlock(streamBlock);
+        streamBlock.GetString("fname");
+        rc = streamBlock.GetInt64Ex("rc", &i64rc);
+        if (RT_SUCCESS(rc))
+            *prc = (int)i64rc;
+    }
+    else
+        Log(("Error getting return code from deleting file: %Rrc\n", rc));
+    return rc;
+}
+
+int GuestSession::fileOpenInternal(const Utf8Str &strPath, const Utf8Str &strOpenMode, const Utf8Str &strDisposition,
+                                   uint32_t uCreationMode, int64_t iOffset, ComObjPtr<GuestFile> &pFile)
+{
+    LogFlowThisFunc(("strPath=%s, strOpenMode=%s, strDisposition=%s, uCreationMode=%x, iOffset=%RI64\n",
+                     strPath.c_str(), strOpenMode.c_str(), strDisposition.c_str(), uCreationMode, iOffset));
+
+    /* Create the directory object. */
+    HRESULT hr = pFile.createObject();
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
+
+    /* Note: There will be a race between creating and getting/initing the directory
+             object here. */
+    int rc = pFile->init(this /* Parent */,
+                         strPath, strOpenMode, strDisposition, uCreationMode, iOffset);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    /* Add the created directory to our vector. */
+    mData.mFiles.push_back(pFile);
+
+    LogFlowFunc(("Added new file \"%s\" (Session: %RU32\n",
+                 strPath.c_str(), mData.mId));
+
+    LogFlowFuncLeaveRC(rc);
+    return rc;
+}
+
+/* Note: Will work on directories and others, too. */
+int GuestSession::fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &objData)
+{
+    LogFlowThisFunc(("strPath=%s\n", strPath.c_str()));
+
+    GuestProcessStartupInfo procInfo;
+    procInfo.mName    = Utf8StrFmt(tr("Querying info for \"%s\""), strPath.c_str());
+    procInfo.mCommand = Utf8Str(VBOXSERVICE_TOOL_STAT);
+    procInfo.mFlags   = ProcessCreateFlag_Hidden | ProcessCreateFlag_WaitForStdOut;
+
+    /* Construct arguments. */
+    procInfo.mArguments.push_back(Utf8Str("--machinereadable"));
+    procInfo.mArguments.push_back(strPath);
+
+    GuestProcessStream streamOut;
+
+    ComObjPtr<GuestProcess> pProcess;
+    int rc = processCreateExInteral(procInfo, pProcess);
+    if (RT_SUCCESS(rc))
+        rc = pProcess->startProcess();
+    if (RT_SUCCESS(rc))
+    {
+        GuestProcessWaitResult waitRes;
+        BYTE byBuf[_64K];
+        size_t cbRead = 0;
+
+        /** @todo Merge with GuestDirectory::read. */
+        for (;;)
+        {
+            rc = pProcess->waitFor(ProcessWaitForFlag_StdOut,
+                                   30 * 1000 /* Timeout */, waitRes);
+            if (   RT_FAILURE(rc)
+                || waitRes.mResult == ProcessWaitResult_Terminate
+                || waitRes.mResult == ProcessWaitResult_Error
+                || waitRes.mResult == ProcessWaitResult_Timeout)
+            {
+                break;
+            }
+
+            rc = pProcess->readData(OUTPUT_HANDLE_ID_STDOUT, sizeof(byBuf),
+                                    30 * 1000 /* Timeout */, byBuf, sizeof(byBuf),
+                                    &cbRead);
+            if (RT_FAILURE(rc))
+                break;
+
+            if (cbRead)
+            {
+                rc = streamOut.AddData(byBuf, cbRead);
+                if (RT_FAILURE(rc))
+                    break;
+            }
+        }
+
+        LogFlowThisFunc(("rc=%Rrc, cbRead=%RU64, cbStreamOut=%RU32\n",
                          rc, cbRead, streamOut.GetSize()));
     }
 
@@ -939,7 +1857,7 @@ int GuestSession::fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &
         rc = streamOut.ParseBlock(streamBlock);
         if (RT_SUCCESS(rc))
         {
-            rc = objData.From(streamBlock);
+            rc = objData.FromStat(streamBlock);
         }
         else
             AssertMsgFailed(("Parsing stream block failed: %Rrc\n", rc));
@@ -990,6 +1908,9 @@ int GuestSession::processClose(ComObjPtr<GuestProcess> pProcess)
     {
         if (pProcess == itProcs->second)
         {
+            LogFlowFunc(("Removing process (Session: %RU32) with process ID=%RU32, guest PID=%RU32 (now total %ld processes)\n",
+                         mData.mId, itProcs->second->getProcessID(), itProcs->second->getPID(), mData.mProcesses.size() - 1));
+
             mData.mProcesses.erase(itProcs);
             return VINF_SUCCESS;
         }
@@ -998,10 +1919,31 @@ int GuestSession::processClose(ComObjPtr<GuestProcess> pProcess)
     return VERR_NOT_FOUND;
 }
 
-int GuestSession::processCreateExInteral(GuestProcessInfo &procInfo, ComObjPtr<GuestProcess> &pProcess)
+/**
+ * Creates but does *not* start the process yet. See GuestProcess::startProcess() or
+ * GuestProcess::startProcessAsync() for that.
+ *
+ * @return  IPRT status code.
+ * @param   procInfo
+ * @param   pProcess
+ */
+int GuestSession::processCreateExInteral(GuestProcessStartupInfo &procInfo, ComObjPtr<GuestProcess> &pProcess)
 {
     LogFlowFunc(("mCmd=%s, mFlags=%x, mTimeoutMS=%RU32\n",
                  procInfo.mCommand.c_str(), procInfo.mFlags, procInfo.mTimeoutMS));
+#ifdef DEBUG
+    if (procInfo.mArguments.size())
+    {
+        LogFlowFunc(("Arguments:"));
+        ProcessArguments::const_iterator it = procInfo.mArguments.begin();
+        while (it != procInfo.mArguments.end())
+        {
+            LogFlow((" %s", (*it).c_str()));
+            it++;
+        }
+        LogFlow(("\n"));
+    }
+#endif
 
     /* Validate flags. */
     if (procInfo.mFlags)
@@ -1031,12 +1973,13 @@ int GuestSession::processCreateExInteral(GuestProcessInfo &procInfo, ComObjPtr<G
         return rc;
 
     /* Create a new (host-based) process ID and assign it. */
+    uint32_t uNewProcessID = 0;
     ULONG uTries = 0;
 
     for (;;)
     {
         /* Is the context ID already used? */
-        if (!processExists(mData.mNextProcessID, NULL /* pProgress */))
+        if (!processExists(uNewProcessID, NULL /* pProgress */))
         {
             /* Callback with context ID was not found. This means
              * we can use this context ID for our new callback we want
@@ -1044,35 +1987,32 @@ int GuestSession::processCreateExInteral(GuestProcessInfo &procInfo, ComObjPtr<G
             rc = VINF_SUCCESS;
             break;
         }
-        mData.mNextProcessID++;
-        if (mData.mNextProcessID == UINT32_MAX)
-            mData.mNextProcessID = 0;
+        uNewProcessID++;
+        if (uNewProcessID == VBOX_GUESTCTRL_MAX_PROCESSES)
+            uNewProcessID = 0;
 
         if (++uTries == UINT32_MAX)
             break; /* Don't try too hard. */
     }
-    if (RT_FAILURE(rc)) return rc;
 
-    try
-    {
-        /* Create the process object. */
-        HRESULT hr = pProcess.createObject();
-        if (FAILED(hr)) throw VERR_COM_UNEXPECTED;
+    if (RT_FAILURE(rc))
+        return rc;
 
-        rc = pProcess->init(mData.mParent->getConsole() /* Console */, this /* Session */,
-                            mData.mNextProcessID, procInfo);
-        if (RT_FAILURE(rc)) throw rc;
+    /* Create the process object. */
+    HRESULT hr = pProcess.createObject();
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
 
-        /* Add the created process to our map. */
-        mData.mProcesses[mData.mNextProcessID] = pProcess;
+    rc = pProcess->init(mData.mParent->getConsole() /* Console */, this /* Session */,
+                        uNewProcessID, procInfo);
+    if (RT_FAILURE(rc))
+        return rc;
 
-        LogFlowFunc(("Added new process (Session: %RU32) with process ID=%RU32\n",
-                     mData.mId, mData.mNextProcessID));
-    }
-    catch (int rc2)
-    {
-        rc = rc2;
-    }
+    /* Add the created process to our map. */
+    mData.mProcesses[uNewProcessID] = pProcess;
+
+    LogFlowFunc(("Added new process (Session: %RU32) with process ID=%RU32 (now total %ld processes)\n",
+                 mData.mId, uNewProcessID, mData.mProcesses.size()));
 
     return rc;
 }
@@ -1120,32 +2060,26 @@ int GuestSession::startTaskAsync(const Utf8Str &strTaskDesc,
 
     AssertPtrReturn(pTask, VERR_INVALID_POINTER);
 
-    int rc;
+    /* Create the progress object. */
+    HRESULT hr = pProgress.createObject();
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
 
-    try
-    {
-        /* Create the progress object. */
-        HRESULT hr = pProgress.createObject();
-        if (FAILED(hr)) throw VERR_COM_UNEXPECTED;
+    hr = pProgress->init(static_cast<IGuestSession*>(this),
+                         Bstr(strTaskDesc).raw(),
+                         TRUE /* aCancelable */);
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
 
-        hr = pProgress->init(static_cast<IGuestSession*>(this),
-                             Bstr(strTaskDesc).raw(),
-                             TRUE /* aCancelable */);
-        if (FAILED(hr)) throw VERR_COM_UNEXPECTED;
+    /* Initialize our worker task. */
+    std::auto_ptr<GuestSessionTask> task(pTask);
 
-        /* Initialize our worker task. */
-        std::auto_ptr<GuestSessionTask> task(pTask);
+    int rc = task->RunAsync(strTaskDesc, pProgress);
+    if (RT_FAILURE(rc))
+        return rc;
 
-        rc = task->RunAsync(strTaskDesc);
-        if (FAILED(rc)) throw rc;
-
-        /* Don't destruct on success. */
-        task.release();
-    }
-    catch (int rc2)
-    {
-        rc = rc2;
-    }
+    /* Don't destruct on success. */
+    task.release();
 
     LogFlowFuncLeaveRC(rc);
     return rc;
@@ -1236,7 +2170,7 @@ STDMETHODIMP GuestSession::CopyFrom(IN_BSTR aSource, IN_BSTR aDest, ComSafeArray
     HRESULT hr = S_OK;
 
     ComObjPtr<Progress> pProgress;
-    SessionTaskCopyFrom *pTask = new SessionTaskCopyFrom(this, pProgress,
+    SessionTaskCopyFrom *pTask = new SessionTaskCopyFrom(this /* GuestSession */,
                                                          Utf8Str(aSource), Utf8Str(aDest), fFlags);
     AssertPtrReturn(pTask, VERR_NO_MEMORY);
     int rc = startTaskAsync(Utf8StrFmt(tr("Copying \"%ls\" from guest to \"%ls\" on the host"), aSource, aDest),
@@ -1246,8 +2180,9 @@ STDMETHODIMP GuestSession::CopyFrom(IN_BSTR aSource, IN_BSTR aDest, ComSafeArray
         /* Return progress to the caller. */
         hr = pProgress.queryInterfaceTo(aProgress);
     }
-
-    /** @todo rc -> hr error lookup. */
+    else
+        hr = setError(VBOX_E_IPRT_ERROR,
+                      tr("Starting task for copying file \"%ls\" from guest to \"%ls\" on the host failed: %Rrc"), rc);
     return hr;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
@@ -1284,7 +2219,7 @@ STDMETHODIMP GuestSession::CopyTo(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn
     HRESULT hr = S_OK;
 
     ComObjPtr<Progress> pProgress;
-    SessionTaskCopyTo *pTask = new SessionTaskCopyTo(this, pProgress,
+    SessionTaskCopyTo *pTask = new SessionTaskCopyTo(this /* GuestSession */,
                                                      Utf8Str(aSource), Utf8Str(aDest), fFlags);
     AssertPtrReturn(pTask, VERR_NO_MEMORY);
     int rc = startTaskAsync(Utf8StrFmt(tr("Copying \"%ls\" from host to \"%ls\" on the guest"), aSource, aDest),
@@ -1294,9 +2229,10 @@ STDMETHODIMP GuestSession::CopyTo(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn
         /* Return progress to the caller. */
         hr = pProgress.queryInterfaceTo(aProgress);
     }
-
-    /** @todo rc -> hr error lookup. */
-    return hr;
+    else
+        hr = setError(VBOX_E_IPRT_ERROR,
+                      tr("Starting task for copying file \"%ls\" from host to \"%ls\" on the guest failed: %Rrc"), rc);
+   return hr;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -1322,14 +2258,17 @@ STDMETHODIMP GuestSession::DirectoryCreate(IN_BSTR aPath, ULONG aMode,
         for (size_t i = 0; i < flags.size(); i++)
             fFlags |= flags[i];
 
-        if (!(fFlags & DirectoryCreateFlag_Parents))
-            return setError(E_INVALIDARG, tr("Unknown flags (%#x)"), fFlags);
+        if (fFlags)
+        {
+            if (!(fFlags & DirectoryCreateFlag_Parents))
+                return setError(E_INVALIDARG, tr("Unknown flags (%#x)"), fFlags);
+        }
     }
 
     HRESULT hr = S_OK;
 
     ComObjPtr <GuestDirectory> pDirectory;
-    int rc = directoryCreateInternal(Utf8Str(aPath), (uint32_t)aMode, (uint32_t)aFlags, pDirectory);
+    int rc = directoryCreateInternal(Utf8Str(aPath), (uint32_t)aMode, fFlags, pDirectory);
     if (RT_SUCCESS(rc))
     {
         if (aDirectory)
@@ -1370,17 +2309,42 @@ STDMETHODIMP GuestSession::DirectoryCreate(IN_BSTR aPath, ULONG aMode,
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestSession::DirectoryCreateTemp(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aName, IGuestDirectory **aDirectory)
+STDMETHODIMP GuestSession::DirectoryCreateTemp(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aPath, BOOL aSecure, BSTR *aDirectory)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
 #else
     LogFlowThisFuncEnter();
 
+    if (RT_UNLIKELY((aTemplate) == NULL || *(aTemplate) == '\0'))
+        return setError(E_INVALIDARG, tr("No file to remove specified"));
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    ReturnComNotImplemented();
+    int rc = VINF_SUCCESS;
+
+    try  /* Can this be done without exceptions? */
+    {
+        Utf8Str strName;
+        if (RT_FAILURE(objectCreateTempInternal(Utf8Str(aTemplate),
+                                                Utf8Str(aPath),
+                                                true, strName, &rc)))
+            return E_FAIL;
+        HRESULT hrc =   rc == VERR_INVALID_PARAMETER ? E_INVALIDARG
+                      : rc == VERR_NOT_SUPPORTED ? VBOX_E_NOT_SUPPORTED
+                      : RT_FAILURE(rc) ? VBOX_E_IPRT_ERROR
+                      : S_OK;
+        if (FAILED(hrc))
+            return setError(hrc, tr("Temporary directory creation failed: %Rrc"),
+                            rc);
+        strName.cloneTo(aDirectory);
+        return S_OK;
+    }
+    catch (...)
+    {
+        return E_OUTOFMEMORY;
+    }
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -1422,17 +2386,71 @@ STDMETHODIMP GuestSession::DirectoryExists(IN_BSTR aPath, BOOL *aExists)
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestSession::DirectoryOpen(IN_BSTR aPath, IN_BSTR aFilter, IN_BSTR aFlags, IGuestDirectory **aDirectory)
+STDMETHODIMP GuestSession::DirectoryOpen(IN_BSTR aPath, IN_BSTR aFilter, ComSafeArrayIn(DirectoryOpenFlag_T, aFlags), IGuestDirectory **aDirectory)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
 #else
     LogFlowThisFuncEnter();
 
+    if (RT_UNLIKELY((aPath) == NULL || *(aPath) == '\0'))
+        return setError(E_INVALIDARG, tr("No directory to open specified"));
+    if (RT_UNLIKELY((aFilter) != NULL && *(aFilter) != '\0'))
+        return setError(E_INVALIDARG, tr("Directory filters not implemented yet"));
+
+    CheckComArgOutPointerValid(aDirectory);
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    ReturnComNotImplemented();
+    uint32_t fFlags = DirectoryOpenFlag_None;
+    if (aFlags)
+    {
+        com::SafeArray<DirectoryOpenFlag_T> flags(ComSafeArrayInArg(aFlags));
+        for (size_t i = 0; i < flags.size(); i++)
+            fFlags |= flags[i];
+
+        if (fFlags)
+            return setError(E_INVALIDARG, tr("Open flags (%#x) not implemented yet"), fFlags);
+    }
+
+    HRESULT hr = S_OK;
+
+    ComObjPtr <GuestDirectory> pDirectory;
+    int rc = directoryOpenInternal(Utf8Str(aPath), Utf8Str(aFilter), fFlags, pDirectory);
+    if (RT_SUCCESS(rc))
+    {
+        if (aDirectory)
+        {
+            /* Return directory object to the caller. */
+            hr = pDirectory.queryInterfaceTo(aDirectory);
+        }
+        else
+        {
+            rc = directoryClose(pDirectory);
+            if (RT_FAILURE(rc))
+                hr = setError(VBOX_E_IPRT_ERROR, tr("Unable to close directory object, rc=%Rrc"), rc);
+        }
+    }
+    else
+    {
+        switch (rc)
+        {
+            case VERR_INVALID_PARAMETER:
+               hr = setError(VBOX_E_IPRT_ERROR, tr("Opening directory failed: Invalid parameters given"));
+               break;
+
+            case VERR_BROKEN_PIPE:
+               hr = setError(VBOX_E_IPRT_ERROR, tr("Opening directory failed: Unexpectedly aborted"));
+               break;
+
+            default:
+               hr = setError(VBOX_E_IPRT_ERROR, tr("Opening directory failed: %Rrc"), rc);
+               break;
+        }
+    }
+
+    return hr;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -1592,7 +2610,7 @@ STDMETHODIMP GuestSession::EnvironmentUnset(IN_BSTR aName)
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestSession::FileCreateTemp(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aName, IGuestFile **aFile)
+STDMETHODIMP GuestSession::FileCreateTemp(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aPath, BOOL aSecure, IGuestFile **aFile)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
@@ -1644,6 +2662,38 @@ STDMETHODIMP GuestSession::FileExists(IN_BSTR aPath, BOOL *aExists)
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
+STDMETHODIMP GuestSession::FileRemove(IN_BSTR aPath)
+{
+#ifndef VBOX_WITH_GUEST_CONTROL
+    ReturnComNotImplemented();
+#else
+    LogFlowThisFuncEnter();
+
+    if (RT_UNLIKELY((aPath) == NULL || *(aPath) == '\0'))
+        return setError(E_INVALIDARG, tr("No file to remove specified"));
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    try  /* Can this be done without exceptions? */
+    {
+        int rc2;
+        int rc = fileRemoveInternal(Utf8Str(aPath), &rc2);
+        if (RT_FAILURE((rc)))
+            return setError(E_FAIL,
+                            tr("Internal error deleting file: %Rrc"), rc);
+        else if (RT_FAILURE((rc2)))
+            return setError(VBOX_E_IPRT_ERROR,
+                            tr("File deletion on guest returned: %Rrc"), rc2);
+    }
+    catch (...)
+    {
+        return E_OUTOFMEMORY;
+    }
+    return S_OK;
+#endif /* VBOX_WITH_GUEST_CONTROL */
+}
+
 STDMETHODIMP GuestSession::FileOpen(IN_BSTR aPath, IN_BSTR aOpenMode, IN_BSTR aDisposition, ULONG aCreationMode, LONG64 aOffset, IGuestFile **aFile)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
@@ -1651,10 +2701,47 @@ STDMETHODIMP GuestSession::FileOpen(IN_BSTR aPath, IN_BSTR aOpenMode, IN_BSTR aD
 #else
     LogFlowThisFuncEnter();
 
+    if (RT_UNLIKELY((aPath) == NULL || *(aPath) == '\0'))
+        return setError(E_INVALIDARG, tr("No file to open specified"));
+    if (RT_UNLIKELY((aOpenMode) == NULL || *(aOpenMode) == '\0'))
+        return setError(E_INVALIDARG, tr("No open mode specified"));
+    if (RT_UNLIKELY((aDisposition) == NULL || *(aDisposition) == '\0'))
+        return setError(E_INVALIDARG, tr("No disposition mode specified"));
+
+    CheckComArgOutPointerValid(aFile);
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    ReturnComNotImplemented();
+    /** @todo Validate open mode. */
+    /** @todo Validate disposition mode. */
+
+    /** @todo Validate creation mode. */
+    uint32_t uCreationMode = 0;
+
+    HRESULT hr = S_OK;
+
+    ComObjPtr <GuestFile> pFile;
+    int rc = fileOpenInternal(Utf8Str(aPath), Utf8Str(aOpenMode), Utf8Str(aDisposition),
+                              aCreationMode, aOffset, pFile);
+    if (RT_SUCCESS(rc))
+    {
+        /* Return directory object to the caller. */
+        hr = pFile.queryInterfaceTo(aFile);
+    }
+    else
+    {
+        switch (rc)
+        {
+            /** @todo Add more error info! */
+
+            default:
+               hr = setError(VBOX_E_IPRT_ERROR, tr("Directory creation failed: %Rrc"), rc);
+               break;
+        }
+    }
+
+    return hr;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -1707,20 +2794,6 @@ STDMETHODIMP GuestSession::FileQuerySize(IN_BSTR aPath, LONG64 *aSize)
     }
 
     return hr;
-#endif /* VBOX_WITH_GUEST_CONTROL */
-}
-
-STDMETHODIMP GuestSession::FileRemove(IN_BSTR aPath)
-{
-#ifndef VBOX_WITH_GUEST_CONTROL
-    ReturnComNotImplemented();
-#else
-    LogFlowThisFuncEnter();
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    ReturnComNotImplemented();
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -1785,10 +2858,8 @@ STDMETHODIMP GuestSession::ProcessCreateEx(IN_BSTR aCommand, ComSafeArrayIn(IN_B
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    GuestProcessInfo procInfo;
-
+    GuestProcessStartupInfo procInfo;
     procInfo.mCommand = Utf8Str(aCommand);
-    procInfo.mFlags = ProcessCreateFlag_None;
 
     if (aArguments)
     {

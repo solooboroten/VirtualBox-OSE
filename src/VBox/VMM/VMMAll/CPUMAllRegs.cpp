@@ -1,4 +1,4 @@
-/* $Id: CPUMAllRegs.cpp 42452 2012-07-30 15:16:36Z vboxsync $ */
+/* $Id: CPUMAllRegs.cpp 42705 2012-08-09 08:04:22Z vboxsync $ */
 /** @file
  * CPUM - CPU Monitor(/Manager) - Getters and Setters.
  */
@@ -542,6 +542,12 @@ VMMDECL(PCPUMCTX) CPUMQueryGuestCtxPtr(PVMCPU pVCpu)
 
 VMMDECL(int) CPUMSetGuestGDTR(PVMCPU pVCpu, uint64_t GCPtrBase, uint16_t cbLimit)
 {
+#ifdef VBOX_WITH_IEM
+# ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (!HWACCMIsEnabled(pVCpu->CTX_SUFF(pVM)))
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
+# endif
+#endif
     pVCpu->cpum.s.Guest.gdtr.cbGdt = cbLimit;
     pVCpu->cpum.s.Guest.gdtr.pGdt  = GCPtrBase;
     pVCpu->cpum.s.fChanged |= CPUM_CHANGED_GDTR;
@@ -550,6 +556,12 @@ VMMDECL(int) CPUMSetGuestGDTR(PVMCPU pVCpu, uint64_t GCPtrBase, uint16_t cbLimit
 
 VMMDECL(int) CPUMSetGuestIDTR(PVMCPU pVCpu, uint64_t GCPtrBase, uint16_t cbLimit)
 {
+#ifdef VBOX_WITH_IEM
+# ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (!HWACCMIsEnabled(pVCpu->CTX_SUFF(pVM)))
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_TRPM_SYNC_IDT);
+# endif
+#endif
     pVCpu->cpum.s.Guest.idtr.cbIdt = cbLimit;
     pVCpu->cpum.s.Guest.idtr.pIdt  = GCPtrBase;
     pVCpu->cpum.s.fChanged |= CPUM_CHANGED_IDTR;
@@ -558,6 +570,12 @@ VMMDECL(int) CPUMSetGuestIDTR(PVMCPU pVCpu, uint64_t GCPtrBase, uint16_t cbLimit
 
 VMMDECL(int) CPUMSetGuestTR(PVMCPU pVCpu, uint16_t tr)
 {
+#ifdef VBOX_WITH_IEM
+# ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (!HWACCMIsEnabled(pVCpu->CTX_SUFF(pVM)))
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
+# endif
+#endif
     pVCpu->cpum.s.Guest.tr.Sel  = tr;
     pVCpu->cpum.s.fChanged |= CPUM_CHANGED_TR;
     return VINF_SUCCESS; /* formality, consider it void. */
@@ -565,6 +583,14 @@ VMMDECL(int) CPUMSetGuestTR(PVMCPU pVCpu, uint16_t tr)
 
 VMMDECL(int) CPUMSetGuestLDTR(PVMCPU pVCpu, uint16_t ldtr)
 {
+#ifdef VBOX_WITH_IEM
+# ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (   (   ldtr != 0
+            || pVCpu->cpum.s.Guest.ldtr.Sel != 0)
+        && !HWACCMIsEnabled(pVCpu->CTX_SUFF(pVM)))
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
+# endif
+#endif
     pVCpu->cpum.s.Guest.ldtr.Sel      = ldtr;
     /* The caller will set more hidden bits if it has them. */
     pVCpu->cpum.s.Guest.ldtr.ValidSel = 0;
@@ -1009,8 +1035,29 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
             /* no break */
 #endif
 
+        /*
+         * Intel specifics MSRs:
+         */
+        case MSR_IA32_PLATFORM_ID:          /* fam/mod >= 6_01 */
+        case MSR_IA32_BIOS_SIGN_ID:         /* fam/mod >= 6_01 */
+        /*case MSR_IA32_BIOS_UPDT_TRIG: - write-only? */
+        case MSR_IA32_MCP_CAP:              /* fam/mod >= 6_01 */
+        /*case MSR_IA32_MCP_STATUS:     - indicated as not present in CAP */
+        /*case MSR_IA32_MCP_CTRL:       - indicated as not present in CAP */
+        case MSR_IA32_MC0_CTL:
+        case MSR_IA32_MC0_STATUS:
+            *puValue = 0;
+            if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_INTEL)
+            {
+                Log(("MSR %#x is Intel, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
+                rc = VERR_CPUM_RAISE_GP_0;
+            }
+            break;
+
         default:
-            /* In X2APIC specification this range is reserved for APIC control. */
+            /*
+             * Hand the X2APIC range to PDM and the APIC.
+             */
             if (    idMsr >= MSR_IA32_APIC_START
                 &&  idMsr <  MSR_IA32_APIC_END)
             {
@@ -1146,6 +1193,9 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
             pVCpu->cpum.s.GuestMsrs.msr.MtrrFix4K_F8000 = uValue;
             break;
 
+        /*
+         * AMD64 MSRs.
+         */
         case MSR_K6_EFER:
         {
             PVM             pVM          = pVCpu->CTX_SUFF(pVM);
@@ -1227,8 +1277,29 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
             pVCpu->cpum.s.GuestMsrs.msr.TscAux  = uValue;
             break;
 
+        /*
+         * Intel specifics MSRs:
+         */
+        /*case MSR_IA32_PLATFORM_ID: - read-only */
+        case MSR_IA32_BIOS_SIGN_ID:         /* fam/mod >= 6_01 */
+        case MSR_IA32_BIOS_UPDT_TRIG:       /* fam/mod >= 6_01 */
+        /*case MSR_IA32_MCP_CAP:     - read-only */
+        /*case MSR_IA32_MCP_STATUS:  - read-only */
+        /*case MSR_IA32_MCP_CTRL:    - indicated as not present in CAP */
+        /*case MSR_IA32_MC0_CTL:     - read-only? */
+        /*case MSR_IA32_MC0_STATUS:  - read-only? */
+            if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_INTEL)
+            {
+                Log(("MSR %#x is Intel, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
+                return VERR_CPUM_RAISE_GP_0;
+            }
+            /* ignored */
+            break;
+
         default:
-            /* In X2APIC specification this range is reserved for APIC control. */
+            /*
+             * Hand the X2APIC range to PDM and the APIC.
+             */
             if (    idMsr >= MSR_IA32_APIC_START
                 &&  idMsr <  MSR_IA32_APIC_END)
             {
@@ -2373,7 +2444,7 @@ VMM_INT_DECL(bool) CPUMIsGuestInRawMode(PVMCPU pVCpu)
 }
 #endif
 
-#ifdef VBOX_WITH_RAW_MODE_NOT_R0
+
 /**
  * Updates the EFLAGS while we're in raw-mode.
  *
@@ -2382,12 +2453,13 @@ VMM_INT_DECL(bool) CPUMIsGuestInRawMode(PVMCPU pVCpu)
  */
 VMMDECL(void) CPUMRawSetEFlags(PVMCPU pVCpu, uint32_t fEfl)
 {
-    if (!pVCpu->cpum.s.fRawEntered)
-        pVCpu->cpum.s.Guest.eflags.u32 = fEfl;
-    else
+#ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (pVCpu->cpum.s.fRawEntered)
         PATMRawSetEFlags(pVCpu->CTX_SUFF(pVM), CPUMCTX2CORE(&pVCpu->cpum.s.Guest), fEfl);
+    else
+#endif
+        pVCpu->cpum.s.Guest.eflags.u32 = fEfl;
 }
-#endif /* VBOX_WITH_RAW_MODE_NOT_R0 */
 
 
 /**
@@ -2398,14 +2470,11 @@ VMMDECL(void) CPUMRawSetEFlags(PVMCPU pVCpu, uint32_t fEfl)
  */
 VMMDECL(uint32_t) CPUMRawGetEFlags(PVMCPU pVCpu)
 {
-#ifdef IN_RING0
-    return pVCpu->cpum.s.Guest.eflags.u32;
-#else
-
-    if (!pVCpu->cpum.s.fRawEntered)
-        return pVCpu->cpum.s.Guest.eflags.u32;
-    return PATMRawGetEFlags(pVCpu->CTX_SUFF(pVM), CPUMCTX2CORE(&pVCpu->cpum.s.Guest));
+#ifdef VBOX_WITH_RAW_MODE_NOT_R0
+    if (pVCpu->cpum.s.fRawEntered)
+        return PATMRawGetEFlags(pVCpu->CTX_SUFF(pVM), CPUMCTX2CORE(&pVCpu->cpum.s.Guest));
 #endif
+    return pVCpu->cpum.s.Guest.eflags.u32;
 }
 
 

@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsElement.cpp 42544 2012-08-02 14:24:29Z vboxsync $ */
+/* $Id: UIGDetailsElement.cpp 42722 2012-08-09 18:26:14Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -18,18 +18,20 @@
  */
 
 /* Qt includes: */
+#include <QApplication>
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
 #include <QTextLayout>
 #include <QGraphicsSceneMouseEvent>
+#include <QStateMachine>
+#include <QPropertyAnimation>
+#include <QSignalTransition>
 
 /* GUI includes: */
 #include "UIGDetailsElement.h"
 #include "UIGDetailsSet.h"
 #include "UIGDetailsModel.h"
 #include "UIGraphicsRotatorButton.h"
-#include "VBoxGlobal.h"
-#include "UIVirtualBoxEventHandler.h"
 #include "UIIconPool.h"
 #include "UIConverter.h"
 
@@ -40,10 +42,17 @@ UIGDetailsElement::UIGDetailsElement(UIGDetailsSet *pParent, DetailsElementType 
     , m_fClosed(!fOpened)
     , m_pButton(0)
     , m_iAdditionalHeight(0)
-    , m_iCornerRadius(6)
+    , m_iCornerRadius(10)
     , m_fHovered(false)
     , m_fNameHoveringAccessible(false)
     , m_fNameHovered(false)
+    , m_pHighlightMachine(0)
+    , m_pForwardAnimation(0)
+    , m_pBackwardAnimation(0)
+    , m_iAnimationDuration(400)
+    , m_iDefaultDarkness(103)
+    , m_iHighlightDarkness(90)
+    , m_iGradient(m_iDefaultDarkness)
 {
     /* Prepare element: */
     prepareElement();
@@ -93,10 +102,10 @@ void UIGDetailsElement::open()
 
 int UIGDetailsElement::minimumWidthHint() const
 {
-    /* First of all, we have to prepare few variables: */
+    /* Prepare variables: */
     int iMargin = data(ElementData_Margin).toInt();
     int iHeaderWidth = data(ElementData_HeaderSize).toSize().width();
-    int iTextWidth = data(ElementData_TextSize).toSize().width();
+    int iTextWidth = data(ElementData_TextWidth).toInt();
 
     /* Calculating proposed width: */
     int iProposedWidth = 0;
@@ -114,6 +123,13 @@ int UIGDetailsElement::minimumWidthHint() const
 int UIGDetailsElement::minimumHeightHint() const
 {
     return minimumHeightHint(m_fClosed);
+}
+
+void UIGDetailsElement::updateHoverAccessibility()
+{
+    /* Check if name-hovering should be available: */
+    m_fNameHoveringAccessible = machine().isNull() || !machine().GetAccessible() ? false :
+                                machine().GetState() != KMachineState_Stuck;
 }
 
 void UIGDetailsElement::sltElementToggleStart()
@@ -142,22 +158,6 @@ void UIGDetailsElement::sltElementToggleFinish(bool fToggled)
     /* Relayout model: */
     model()->updateLayout();
     update();
-}
-
-void UIGDetailsElement::sltMachineStateChange(QString strId)
-{
-    /* Is this our VM changed? */
-    if (machine().GetId() == strId)
-        updateHoverAccessibility();
-
-    /* Finally, update appearance: */
-    sltShouldWeUpdateAppearance(strId);
-}
-
-void UIGDetailsElement::sltShouldWeUpdateAppearance(QString strId)
-{
-    if (machine().GetId() == strId)
-        sltUpdateAppearance();
 }
 
 QVariant UIGDetailsElement::data(int iKey) const
@@ -209,21 +209,91 @@ QVariant UIGDetailsElement::data(int iKey) const
             /* Return value: */
             return QSize(iHeaderWidth, iHeaderHeight);
         }
-        case ElementData_TextSize:
+        case ElementData_TextWidth:
         {
+            /* Prepare variables: */
             int iSpacing = data(ElementData_Spacing).toInt();
+            int iMinimumTextColumnWidth = data(ElementData_MinimumTextColumnWidth).toInt();
             QFontMetrics fm(data(ElementData_TextFont).value<QFont>());
-            int iLongestFirst = 0;
-            int iLongestSecond = 0;
-            foreach (const UITextTableLine &line, m_text)
+
+            /* Search for the maximum line widths: */
+            int iMaximumFirstLineWidth = 0;
+            int iMaximumSecondLineWidth = 0;
+            foreach (const UITextTableLine line, m_text)
             {
-                iLongestFirst = qMax(iLongestFirst, fm.width(line.first));
-                iLongestSecond = qMax(iLongestSecond, fm.width(line.second));
+                bool fKeyValueRow = !line.second.isEmpty();
+                QString strFirstLine = fKeyValueRow ? line.first + ":" : line.first;
+                QString strSecondLine = line.second;
+                iMaximumFirstLineWidth = qMax(iMaximumFirstLineWidth, fm.width(strFirstLine));
+                iMaximumSecondLineWidth = qMax(iMaximumSecondLineWidth, fm.width(strSecondLine));
             }
-            int iLongestLine = iLongestFirst + iSpacing + iLongestSecond;
-            int iSummaryHeight = fm.height() * m_text.size();
-            return QSize(iLongestLine, iSummaryHeight);
+
+            /* Calculate minimum text width: */
+            int iMinimumSecondLineWidth = qMin(iMaximumSecondLineWidth, iMinimumTextColumnWidth);
+            int iMinimumTextWidth = iMaximumFirstLineWidth + iSpacing + iMinimumSecondLineWidth;
+
+            /* Return result: */
+            return iMinimumTextWidth;
         }
+        case ElementData_TextHeight:
+        {
+            /* Prepare variables: */
+            int iMargin = data(ElementData_Margin).toInt();
+            int iSpacing = data(ElementData_Spacing).toInt();
+            int iMaximumTextWidth = (int)geometry().width() - 3 * iMargin - iSpacing;
+            QFont textFont = data(ElementData_TextFont).value<QFont>();
+            QFontMetrics fm(textFont);
+
+            /* Search for maximum line widths: */
+            int iMaximumFirstLineWidth = 0;
+            int iMaximumSecondLineWidth = 0;
+            foreach (const UITextTableLine line, m_text)
+            {
+                bool fKeyValueRow = !line.second.isEmpty();
+                QString strFirstLine = fKeyValueRow ? line.first + ":" : line.first;
+                QString strSecondLine = line.second;
+                iMaximumFirstLineWidth = qMax(iMaximumFirstLineWidth, fm.width(strFirstLine));
+                iMaximumSecondLineWidth = qMax(iMaximumSecondLineWidth, fm.width(strSecondLine));
+            }
+            iMaximumFirstLineWidth += 1;
+            iMaximumSecondLineWidth += 1;
+
+            /* Calculate column widths: */
+            int iFirstColumnWidth = iMaximumFirstLineWidth;
+            int iSecondColumnWidth = iMaximumTextWidth - iFirstColumnWidth;
+
+            /* For each the line: */
+            int iSummaryTextHeight = 0;
+            foreach (const UITextTableLine line, m_text)
+            {
+                /* First layout: */
+                int iFirstColumnHeight = 0;
+                if (!line.first.isEmpty())
+                {
+                    bool fKeyValueRow = !line.second.isEmpty();
+                    QTextLayout *pTextLayout = prepareTextLayout(textFont,
+                                                                 fKeyValueRow ? line.first + ":" : line.first,
+                                                                 iFirstColumnWidth, iFirstColumnHeight);
+                    delete pTextLayout;
+                }
+
+                /* Second layout: */
+                int iSecondColumnHeight = 0;
+                if (!line.second.isEmpty())
+                {
+                    QTextLayout *pTextLayout = prepareTextLayout(textFont, line.second,
+                                                                 iSecondColumnWidth, iSecondColumnHeight);
+                    delete pTextLayout;
+                }
+
+                /* Append summary text height: */
+                iSummaryTextHeight += qMax(iFirstColumnHeight, iSecondColumnHeight);
+            }
+
+            /* Return result: */
+            return iSummaryTextHeight;
+        }
+        case ElementData_MinimumTextColumnWidth: return 100;
         /* Default: */
         default: break;
     }
@@ -238,6 +308,11 @@ void UIGDetailsElement::setIcon(const QIcon &icon)
 void UIGDetailsElement::setName(const QString &strName)
 {
     m_strName = strName;
+}
+
+UITextTable UIGDetailsElement::text() const
+{
+    return m_text;
 }
 
 void UIGDetailsElement::setText(const UITextTable &text)
@@ -279,12 +354,36 @@ void UIGDetailsElement::clearItems(UIGDetailsItemType)
 
 void UIGDetailsElement::prepareElement()
 {
-    connect(gVBoxEvents, SIGNAL(sigMachineStateChange(QString, KMachineState)), this, SLOT(sltMachineStateChange(QString)));
-    connect(gVBoxEvents, SIGNAL(sigMachineDataChange(QString)), this, SLOT(sltShouldWeUpdateAppearance(QString)));
-    connect(gVBoxEvents, SIGNAL(sigSessionStateChange(QString, KSessionState)), this, SLOT(sltShouldWeUpdateAppearance(QString)));
-    connect(gVBoxEvents, SIGNAL(sigSnapshotChange(QString, QString)), this, SLOT(sltShouldWeUpdateAppearance(QString)));
-    connect(&vboxGlobal(), SIGNAL(mediumEnumStarted()), this, SLOT(sltUpdateAppearance()));
-    connect(&vboxGlobal(), SIGNAL(mediumEnumFinished(const VBoxMediaList &)), this, SLOT(sltUpdateAppearance()));
+    /* Create highlight machine: */
+    m_pHighlightMachine = new QStateMachine(this);
+    /* Create 'default' state: */
+    QState *pStateDefault = new QState(m_pHighlightMachine);
+    /* Create 'highlighted' state: */
+    QState *pStateHighlighted = new QState(m_pHighlightMachine);
+
+    /* Forward animation: */
+    m_pForwardAnimation = new QPropertyAnimation(this, "gradient", this);
+    m_pForwardAnimation->setDuration(m_iAnimationDuration);
+    m_pForwardAnimation->setStartValue(m_iDefaultDarkness);
+    m_pForwardAnimation->setEndValue(m_iHighlightDarkness);
+
+    /* Backward animation: */
+    m_pBackwardAnimation = new QPropertyAnimation(this, "gradient", this);
+    m_pBackwardAnimation->setDuration(m_iAnimationDuration);
+    m_pBackwardAnimation->setStartValue(m_iHighlightDarkness);
+    m_pBackwardAnimation->setEndValue(m_iDefaultDarkness);
+
+    /* Add state transitions: */
+    QSignalTransition *pDefaultToHighlighted = pStateDefault->addTransition(this, SIGNAL(sigHoverEnter()), pStateHighlighted);
+    pDefaultToHighlighted->addAnimation(m_pForwardAnimation);
+    QSignalTransition *pHighlightedToDefault = pStateHighlighted->addTransition(this, SIGNAL(sigHoverLeave()), pStateDefault);
+    pHighlightedToDefault->addAnimation(m_pBackwardAnimation);
+
+    /* Initial state is 'default': */
+    m_pHighlightMachine->setInitialState(pStateDefault);
+    /* Start state-machine: */
+    m_pHighlightMachine->start();
+
     connect(this, SIGNAL(sigToggleElement(DetailsElementType, bool)), model(), SLOT(sltToggleElements(DetailsElementType, bool)));
     connect(this, SIGNAL(sigLinkClicked(const QString&, const QString&, const QString&)),
             model(), SIGNAL(sigLinkClicked(const QString&, const QString&, const QString&)));
@@ -300,13 +399,11 @@ void UIGDetailsElement::prepareButton()
     connect(m_pButton, SIGNAL(sigRotationFinish(bool)), this, SLOT(sltElementToggleFinish(bool)));
 }
 
-void UIGDetailsElement::updateSizeHint()
-{
-    updateGeometry();
-}
-
 void UIGDetailsElement::updateLayout()
 {
+    /* Update size-hint: */
+    updateSizeHint();
+
     /* Prepare variables: */
     QSize size = geometry().size().toSize();
     int iMargin = data(ElementData_Margin).toInt();
@@ -340,10 +437,10 @@ UIGraphicsRotatorButton* UIGDetailsElement::button() const
 
 int UIGDetailsElement::minimumHeightHint(bool fClosed) const
 {
-    /* First of all, we have to prepare few variables: */
+    /* Prepare variables: */
     int iMargin = data(ElementData_Margin).toInt();
     int iHeaderHeight = data(ElementData_HeaderSize).toSize().height();
-    int iTextHeight = data(ElementData_TextSize).toSize().height();
+    int iTextHeight = data(ElementData_TextHeight).toInt();
 
     /* Calculating proposed height: */
     int iProposedHeight = 0;
@@ -359,7 +456,7 @@ int UIGDetailsElement::minimumHeightHint(bool fClosed) const
     {
         /* Add text height: */
         if (!m_text.isEmpty())
-            iProposedHeight += iMargin + iTextHeight;
+            iProposedHeight += 2 * iMargin + iTextHeight;
     }
     else
     {
@@ -402,28 +499,18 @@ void UIGDetailsElement::paint(QPainter *pPainter, const QStyleOptionGraphicsItem
 
 void UIGDetailsElement::paintDecorations(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption)
 {
-    /* Prepare variables: */
-    QRect fullRect = pOption->rect;
-
     /* Paint background: */
     paintBackground(/* Painter: */
                     pPainter,
                     /* Rectangle to paint in: */
-                    fullRect,
+                    pOption->rect,
                     /* Rounded corners radius: */
                     m_iCornerRadius,
                     /* Header height: */
-                    data(ElementData_Margin).toInt() +
-                    data(ElementData_HeaderSize).toSize().height() +
-                    1);
-
-    /* Paint frame: */
-    paintFrameRect(/* Painter: */
-                   pPainter,
-                   /* Rectangle to paint in: */
-                   fullRect,
-                   /* Rounded corner radius: */
-                   m_iCornerRadius);
+                    2 * data(ElementData_Margin).toInt() +
+                    data(ElementData_HeaderSize).toSize().height(),
+                    /* Gradient color: */
+                    gradient());
 }
 
 void UIGDetailsElement::paintElementInfo(QPainter *pPainter, const QStyleOptionGraphicsItem*)
@@ -471,84 +558,110 @@ void UIGDetailsElement::paintElementInfo(QPainter *pPainter, const QStyleOptionG
     /* Paint text: */
     if (!m_fClosed && !m_text.isEmpty())
     {
+        /* Prepare variables: */
+        int iMaximumTextWidth = geometry().width() - 3 * iMargin - iSpacing;
+        QFont textFont = data(ElementData_TextFont).value<QFont>();
+        QFontMetrics fm(textFont);
+
+        /* Search for maximum line widths: */
+        int iMaximumFirstLineWidth = 0;
+        int iMaximumSecondLineWidth = 0;
+        foreach (const UITextTableLine line, m_text)
+        {
+            bool fKeyValueRow = !line.second.isEmpty();
+            QString strFirstLine = fKeyValueRow ? line.first + ":" : line.first;
+            QString strSecondLine = line.second;
+            iMaximumFirstLineWidth = qMax(iMaximumFirstLineWidth, fm.width(strFirstLine));
+            iMaximumSecondLineWidth = qMax(iMaximumSecondLineWidth, fm.width(strSecondLine));
+        }
+        iMaximumFirstLineWidth += 1;
+        iMaximumSecondLineWidth += 1;
+
+        /* Calculate column widths: */
+        int iFirstColumnWidth = iMaximumFirstLineWidth;
+        int iSecondColumnWidth = iMaximumTextWidth - iFirstColumnWidth;
+
         /* Where to paint? */
         int iMachineTextX = iMachinePixmapX;
-        int iMachineTextY = iMachinePixmapY + iHeaderHeight + iMargin;
-
-        /* Font metrics: */
-        QFontMetrics fm(data(ElementData_TextFont).value<QFont>());
-
-        /* For each the line, get longest 'first': */
-        int iLongestFirst = 0;
-        foreach (const UITextTableLine line, m_text)
-            iLongestFirst = qMax(iLongestFirst, fm.width(line.first));
+        int iMachineTextY = iMachinePixmapY + iHeaderHeight + 2 * iMargin;
 
         /* For each the line: */
         foreach (const UITextTableLine line, m_text)
         {
-            /* Do we have a key-value pair? */
-            bool fKeyValueRow = !line.second.isEmpty();
-
             /* First layout: */
-            QTextLayout keyLayout(fKeyValueRow ? line.first + ":" : line.first);
-            keyLayout.beginLayout();
-            keyLayout.createLine();
-            keyLayout.endLayout();
-            keyLayout.draw(pPainter, QPointF(iMachineTextX, iMachineTextY));
-
-            /* Second layout: */
-            if (!line.second.isEmpty())
+            int iFirstColumnHeight = 0;
+            if (!line.first.isEmpty())
             {
-                QTextLayout valueLayout(line.second);
-                valueLayout.beginLayout();
-                valueLayout.createLine();
-                valueLayout.endLayout();
-                valueLayout.draw(pPainter, QPointF(iMachineTextX + iLongestFirst + iSpacing, iMachineTextY));
+                bool fKeyValueRow = !line.second.isEmpty();
+                QTextLayout *pTextLayout = prepareTextLayout(textFont,
+                                                             fKeyValueRow ? line.first + ":" : line.first,
+                                                             iFirstColumnWidth, iFirstColumnHeight);
+                pTextLayout->draw(pPainter, QPointF(iMachineTextX, iMachineTextY));
+                delete pTextLayout;
             }
 
-            /* Append the Y: */
-            iMachineTextY += fm.height();
+            /* Second layout: */
+            int iSecondColumnHeight = 0;
+            if (!line.second.isEmpty())
+            {
+                QTextLayout *pTextLayout = prepareTextLayout(textFont, line.second,
+                                                             iSecondColumnWidth, iSecondColumnHeight);
+                pTextLayout->draw(pPainter, QPointF(iMachineTextX + iFirstColumnWidth + iSpacing, iMachineTextY));
+                delete pTextLayout;
+            }
+
+            /* Indent Y: */
+            iMachineTextY += qMax(iFirstColumnHeight, iSecondColumnHeight);
         }
     }
 }
 
 /* static */
-void UIGDetailsElement::paintBackground(QPainter *pPainter, const QRect &rect, int iRadius, int iHeaderHeight)
+void UIGDetailsElement::paintBackground(QPainter *pPainter, const QRect &rect,
+                                        int iRadius, int iHeaderHeight, int iGradient)
 {
     /* Save painter: */
     pPainter->save();
 
-    /* Fill rectangle with white color: */
-    QPalette pal = QApplication::palette();
-    pPainter->fillRect(rect, Qt::white);
+    /* Prepare variables: */
+    int iFullHeight = rect.height();
 
     /* Prepare color: */
+    QPalette pal = QApplication::palette();
     QColor windowColor = pal.color(QPalette::Active, QPalette::Window);
 
-    /* Make even less rectangle: */
-    QRect backGroundRect = rect;
-    backGroundRect.setTopLeft(backGroundRect.topLeft() + QPoint(2, 2));
-    backGroundRect.setBottomRight(backGroundRect.bottomRight() - QPoint(2, 2));
-    /* Add even more clipping: */
-    QPainterPath roundedPath;
-    roundedPath.addRoundedRect(backGroundRect, iRadius, iRadius);
-    pPainter->setClipPath(roundedPath);
+    /* Add clipping: */
+    QPainterPath path;
+    path.moveTo(iRadius, 0);
+    path.arcTo(QRectF(path.currentPosition(), QSizeF(2 * iRadius, 2 * iRadius)).translated(-iRadius, 0), 90, 90);
+    path.lineTo(path.currentPosition().x(), iFullHeight - iRadius);
+    path.arcTo(QRectF(path.currentPosition(), QSizeF(2 * iRadius, 2 * iRadius)).translated(0, -iRadius), 180, 90);
+    path.lineTo(rect.width() - iRadius, path.currentPosition().y());
+    path.arcTo(QRectF(path.currentPosition(), QSizeF(2 * iRadius, 2 * iRadius)).translated(-iRadius, -2 * iRadius), 270, 90);
+    path.lineTo(path.currentPosition().x(), iRadius);
+    path.arcTo(QRectF(path.currentPosition(), QSizeF(2 * iRadius, 2 * iRadius)).translated(-2 * iRadius, -iRadius), 0, 90);
+    path.closeSubpath();
+    pPainter->setClipPath(path);
 
     /* Calculate top rectangle: */
-    QRect tRect = backGroundRect;
+    QRect tRect = rect;
     tRect.setBottom(tRect.top() + iHeaderHeight);
     /* Calculate bottom rectangle: */
-    QRect bRect = backGroundRect;
+    QRect bRect = rect;
     bRect.setTop(tRect.bottom());
 
     /* Prepare top gradient: */
     QLinearGradient tGradient(tRect.bottomLeft(), tRect.topLeft());
-    tGradient.setColorAt(0, windowColor.darker(115));
-    tGradient.setColorAt(1, windowColor.darker(103));
+    tGradient.setColorAt(0, windowColor.darker(110));
+    tGradient.setColorAt(1, windowColor.darker(iGradient));
 
     /* Paint all the stuff: */
-    pPainter->fillRect(bRect, windowColor.darker(99));
     pPainter->fillRect(tRect, tGradient);
+    pPainter->fillRect(bRect, windowColor.darker(97));
+
+    /* Stroke path: */
+    pPainter->setClipping(false);
+    pPainter->strokePath(path, windowColor.darker(130));
 
     /* Restore painter: */
     pPainter->restore();
@@ -560,7 +673,7 @@ void UIGDetailsElement::hoverMoveEvent(QGraphicsSceneHoverEvent *pEvent)
     if (!m_fHovered)
     {
         m_fHovered = true;
-        update();
+        emit sigHoverEnter();
     }
 
     /* Update name-hover state: */
@@ -573,7 +686,7 @@ void UIGDetailsElement::hoverLeaveEvent(QGraphicsSceneHoverEvent *pEvent)
     if (m_fHovered)
     {
         m_fHovered = false;
-        update();
+        emit sigHoverLeave();
     }
 
     /* Update name-hover state: */
@@ -610,13 +723,6 @@ void UIGDetailsElement::updateButtonVisibility()
         m_pButton->hide();
 }
 
-void UIGDetailsElement::updateHoverAccessibility()
-{
-    /* Check if name-hovering should be available: */
-    m_fNameHoveringAccessible = machine().isNull() || !machine().GetAccessible() ? false :
-                                machine().GetState() != KMachineState_Stuck;
-}
-
 void UIGDetailsElement::updateNameHoverRepresentation(QGraphicsSceneHoverEvent *pEvent)
 {
     /* Not for 'preview' element type: */
@@ -646,6 +752,40 @@ void UIGDetailsElement::updateNameHoverRepresentation(QGraphicsSceneHoverEvent *
             unsetCursor();
         update();
     }
+}
+
+/* static  */
+QTextLayout* UIGDetailsElement::prepareTextLayout(const QFont &font, const QString &strText, int iWidth, int &iHeight)
+{
+    /* Prepare variables: */
+    QFontMetrics fm(font);
+    int iLeading = fm.leading();
+
+    /* Create layout; */
+    QTextLayout *pTextLayout = new QTextLayout(strText, font);
+
+    /* Configure layout: */
+    QTextOption textOption;
+    textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    pTextLayout->setTextOption(textOption);
+
+    /* Build layout: */
+    pTextLayout->beginLayout();
+    while (1)
+    {
+        QTextLine line = pTextLayout->createLine();
+        if (!line.isValid())
+            break;
+
+        line.setLineWidth(iWidth);
+        iHeight += iLeading;
+        line.setPosition(QPointF(0, iHeight));
+        iHeight += line.height();
+    }
+    pTextLayout->endLayout();
+
+    /* Return layout: */
+    return pTextLayout;
 }
 
 void UIGDetailsElement::updateAnimationParameters()

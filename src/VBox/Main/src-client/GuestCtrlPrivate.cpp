@@ -1,4 +1,4 @@
-/* $Id: GuestCtrlPrivate.cpp 42530 2012-08-02 12:11:44Z vboxsync $ */
+/* $Id: GuestCtrlPrivate.cpp 42716 2012-08-09 15:49:46Z vboxsync $ */
 /** @file
  *
  * Internal helpers/structures for guest control functionality.
@@ -46,8 +46,6 @@ GuestCtrlEvent::~GuestCtrlEvent(void)
 
 int GuestCtrlEvent::Cancel(void)
 {
-    LogFlowThisFuncEnter();
-
     int rc = VINF_SUCCESS;
     if (!ASMAtomicReadBool(&fCompleted))
     {
@@ -55,13 +53,12 @@ int GuestCtrlEvent::Cancel(void)
         {
             ASMAtomicXchgBool(&fCanceled, true);
 
-            LogFlowThisFunc(("Cancelling ...\n"));
+            LogFlowThisFunc(("Cancelling event ...\n"));
             rc = hEventSem != NIL_RTSEMEVENT
                ? RTSemEventSignal(hEventSem) : VINF_SUCCESS;
         }
     }
 
-    LogFlowFuncLeaveRC(rc);
     return rc;
 }
 
@@ -144,8 +141,6 @@ GuestCtrlCallback::~GuestCtrlCallback(void)
 
 int GuestCtrlCallback::Init(eVBoxGuestCtrlCallbackType enmType)
 {
-    LogFlowFuncEnter();
-
     AssertReturn(enmType > VBOXGUESTCTRLCALLBACKTYPE_UNKNOWN, VERR_INVALID_PARAMETER);
     Assert((pvData == NULL) && !cbData);
 
@@ -171,9 +166,9 @@ int GuestCtrlCallback::Init(eVBoxGuestCtrlCallbackType enmType)
 
         case VBOXGUESTCTRLCALLBACKTYPE_EXEC_INPUT_STATUS:
         {
-            PCALLBACKDATAEXECINSTATUS pData = (PCALLBACKDATAEXECINSTATUS)RTMemAlloc(sizeof(CALLBACKDATAEXECINSTATUS));
-            AssertPtrReturn(pData, VERR_NO_MEMORY);
-            RT_BZERO(pData, sizeof(CALLBACKDATAEXECINSTATUS));
+            pvData = (PCALLBACKDATAEXECINSTATUS)RTMemAlloc(sizeof(CALLBACKDATAEXECINSTATUS));
+            AssertPtrReturn(pvData, VERR_NO_MEMORY);
+            RT_BZERO(pvData, sizeof(CALLBACKDATAEXECINSTATUS));
             cbData = sizeof(CALLBACKDATAEXECINSTATUS);
             break;
         }
@@ -187,7 +182,6 @@ int GuestCtrlCallback::Init(eVBoxGuestCtrlCallbackType enmType)
     if (RT_SUCCESS(rc))
         mType  = enmType;
 
-    LogFlowFuncLeaveRC(rc);
     return rc;
 }
 
@@ -273,6 +267,7 @@ int GuestCtrlCallback::SetData(const void *pvCallback, size_t cbCallback)
             pThis->u32Flags    = pCB->u32Flags;
             pThis->u32PID      = pCB->u32PID;
             pThis->u32Status   = pCB->u32Status;
+            break;
         }
 
         default:
@@ -585,12 +580,21 @@ int GuestEnvironment::appendToEnvBlock(const char *pszEnv, void **ppvList, size_
     return rc;
 }
 
-int GuestFsObjData::From(const GuestProcessStreamBlock &strmBlk)
+int GuestFsObjData::FromLs(const GuestProcessStreamBlock &strmBlk)
 {
+    LogFlowFunc(("\n"));
+
     int rc = VINF_SUCCESS;
 
     try
     {
+#ifdef DEBUG
+        strmBlk.DumpToLog();
+#endif
+        /* Object name. */
+        mName = strmBlk.GetString("name");
+        if (mName.isEmpty()) throw VERR_NOT_FOUND;
+        /* Type. */
         Utf8Str strType(strmBlk.GetString("ftype"));
         if (strType.equalsIgnoreCase("-"))
             mType = FsObjType_File;
@@ -599,17 +603,57 @@ int GuestFsObjData::From(const GuestProcessStreamBlock &strmBlk)
         /** @todo Add more types! */
         else
             mType = FsObjType_Undefined;
-
+        /* Object size. */
         rc = strmBlk.GetInt64Ex("st_size", &mObjectSize);
         if (RT_FAILURE(rc)) throw rc;
-
-        /** @todo Add complete GuestFsObjData info! */
+        /** @todo Add complete ls info! */
     }
     catch (int rc2)
     {
         rc = rc2;
     }
 
+    LogFlowFuncLeaveRC(rc);
+    return rc;
+}
+
+int GuestFsObjData::FromStat(const GuestProcessStreamBlock &strmBlk)
+{
+    LogFlowFunc(("\n"));
+
+    int rc = VINF_SUCCESS;
+
+    try
+    {
+#ifdef DEBUG
+        strmBlk.DumpToLog();
+#endif
+        /* Node ID, optional because we don't include this
+         * in older VBoxService (< 4.2) versions. */
+        mNodeID = strmBlk.GetInt64("node_id");
+        /* Object name. */
+        mName = strmBlk.GetString("name");
+        if (mName.isEmpty()) throw VERR_NOT_FOUND;
+        /* Type. */
+        Utf8Str strType(strmBlk.GetString("ftype"));
+        if (strType.equalsIgnoreCase("-"))
+            mType = FsObjType_File;
+        else if (strType.equalsIgnoreCase("d"))
+            mType = FsObjType_Directory;
+        /** @todo Add more types! */
+        else
+            mType = FsObjType_Undefined;
+        /* Object size. */
+        rc = strmBlk.GetInt64Ex("st_size", &mObjectSize);
+        if (RT_FAILURE(rc)) throw rc;
+        /** @todo Add complete stat info! */
+    }
+    catch (int rc2)
+    {
+        rc = rc2;
+    }
+
+    LogFlowFuncLeaveRC(rc);
     return rc;
 }
 
@@ -654,7 +698,7 @@ void GuestProcessStreamBlock::Clear(void)
 }
 
 #ifdef DEBUG
-void GuestProcessStreamBlock::Dump(void)
+void GuestProcessStreamBlock::DumpToLog(void) const
 {
     LogFlowFunc(("Dumping contents of stream block=0x%p (%ld items):\n",
                  this, m_mapPairs.size()));

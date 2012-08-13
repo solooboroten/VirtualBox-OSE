@@ -1423,7 +1423,7 @@
 
   <interface
     name="IVirtualBox" extends="$unknown"
-    uuid="3b90eded-f061-432f-9e0f-4b53cc7b6fa0"
+    uuid="5c8814a1-2a35-402d-8680-68e5cb4e72aa"
     wsmap="managed"
     >
     <desc>
@@ -1451,6 +1451,14 @@
         in prerelease builds.  Non-Oracle builds may (/shall) also have a
         publisher tag, at the end.  The publisher tag starts with an underscore
         just like the prerelease build type tag.
+      </desc>
+    </attribute>
+
+    <attribute name="versionNormalized" type="wstring" readonly="yes">
+      <desc>
+        A string representing the version number of the product,
+        without the publisher information (but still with other tags).
+        See <link to="#version" />.
       </desc>
     </attribute>
 
@@ -8192,7 +8200,7 @@
   <interface
     name="ISystemProperties"
     extends="$unknown"
-    uuid="20fc263c-e1e9-4e86-b9b0-835950790d13"
+    uuid="1d7aca29-97f0-4287-9874-a60ec4f80ea6"
     wsmap="managed"
     >
     <desc>
@@ -8446,6 +8454,13 @@
       <desc>
         The path to the autostart database. Depending on the host this might
         be a filesystem path or something else.
+      </desc>
+    </attribute>
+
+    <attribute name="defaultAdditionsISO" type="wstring">
+      <desc>
+        The path to the default Guest Additions ISO image. Can be empty if
+        the location is not known in this installation.
       </desc>
     </attribute>
 
@@ -9137,7 +9152,7 @@
   
   <enum
     name="ProcessCreateFlag"
-    uuid="91c8aba8-2e62-4fe5-b744-fcbd607971e2"
+    uuid="35192799-bfde-405d-9bea-c735ab9998e4"
     >
     <desc>
       Guest process execution flags.
@@ -9164,6 +9179,9 @@
     </const>
     <const name="WaitForStdErr"           value="32">
       <desc>The guest process waits until all data from stderr is read out.</desc>
+    </const>
+    <const name="ExpandArguments"         value="64">
+      <desc>Expands environment variables in process arguments.</desc>
     </const>
   </enum>
   
@@ -9328,13 +9346,16 @@
 
   <enum
     name="DirectoryOpenFlag"
-    uuid="fc8f6203-0072-4f34-bd08-0b35e50bf071"
+    uuid="5138837a-8fd2-4194-a1b0-08f7bc3949d0"
     >
     <desc>
       Directory open flags.
     </desc>
     <const name="None"                    value="0">
       <desc>No flag set.</desc>
+    </const>
+    <const name="NoSymlinks"              value="1">
+      <desc>Don't allow symbolic links as part of the path.</desc>
     </const>
   </enum>
 
@@ -9380,7 +9401,7 @@
   
   <interface
     name="IGuestSession" extends="$unknown"
-    uuid="a8bbf136-3f0d-42cd-9fd3-c5816adb10a0"
+    uuid="45aca317-55d7-4b6c-bbec-d053289118b9"
     wsmap="managed"
     >
     
@@ -9531,23 +9552,46 @@
     
     <method name="directoryCreateTemp">
       <desc>
-        TODO
+        Create a temporary directory on the guest.
 
         <result name="VBOX_E_NOT_SUPPORTED">
-          TODO
+          The operation is not possible as requested on this particular
+          guest type.
+        </result>
+        <result name="E_INVALIDARG">
+          Invalid argument.  This includes an incorrectly formatted template,
+          or a non-absolute path.
+        </result>
+        <result name="VBOX_E_IPRT_ERROR">
+          The temporary directory could not be created.  Possible reasons
+          include a non-existing path or an insecure path when the secure
+          option was requested.
         </result>
       </desc>
       <param name="templateName" type="wstring" dir="in">
-        <desc>TODO</desc>
+        <desc>Template for the name of the directory to create.  This must
+          contain at least one 'X' character.  The first group of consecutive
+          'X' characters in the template will be replaced by a random
+          alphanumeric string to produce a unique name.</desc>
       </param>
       <param name="mode" type="unsigned long" dir="in">
-        <desc>TODO</desc>
+        <desc>The mode of the directory to create.  Use 0700 unless there are
+          reasons not to.  This parameter is ignored if "secure" is specified.
+          </desc>
       </param>
       <param name="path" type="wstring" dir="in">
-        <desc>TODO</desc>
+        <desc>The absolute path to create the temporary directory in.</desc>
       </param>
-      <param name="directory" type="IGuestDirectory" dir="return">
-        <desc>TODO</desc>
+      <param name="secure" type="boolean" dir="in">
+        <desc>Whether to fail if the directory can not be securely created.
+          Currently this means that another unprivileged user cannot
+          manipulate the path specified or remove the temporary directory
+          after it has been created.  Also causes the mode specified to be
+          ignored.  May not be supported on all guest types.</desc>
+      </param>
+      <param name="directory" type="wstring" dir="return">
+        <desc>On success this will contain the name of the directory created
+          with full path.</desc>
       </param>
     </method>
     
@@ -9581,7 +9625,7 @@
       <param name="filter" type="wstring" dir="in">
         <desc>TODO</desc>
       </param>
-      <param name="flags" type="wstring" dir="in">
+      <param name="flags" type="DirectoryOpenFlag" dir="in" safearray="yes">
         <desc>TODO</desc>
       </param>
       <param name="directory" type="IGuestDirectory" dir="return">
@@ -9729,23 +9773,48 @@
     
     <method name="fileCreateTemp">
       <desc>
-        TODO
+        Create a temporary file on the guest.
 
         <result name="VBOX_E_NOT_SUPPORTED">
-          TODO
+          The operation is not possible as requested on this particular
+          guest type.
+        </result>
+        <result name="E_INVALIDARG">
+          Invalid argument.  This includes an incorrectly formatted template,
+          or a non-absolute path.
+        </result>
+        <result name="VBOX_E_IPRT_ERROR">
+          The temporary file could not be created.  Possible reasons include
+          a non-existing path or an insecure path when the secure
+          option was requested.
         </result>
       </desc>
       <param name="templateName" type="wstring" dir="in">
-        <desc>TODO</desc>
+        <desc>Template for the name of the file to create.  This must contain
+          at least one 'X' character.  The first group of consecutive 'X'
+          characters in the template will be replaced by a random
+          alphanumeric string to produce a unique name.
+         </desc>
       </param>
       <param name="mode" type="unsigned long" dir="in">
-        <desc>TODO</desc>
+        <desc>The mode of the file to create.  Use 0700 unless there are
+          reasons not to.  This parameter is ignored if "secure" is specified.
+         </desc>
       </param>
       <param name="path" type="wstring" dir="in">
-        <desc>TODO</desc>
+        <desc>The absolute path to create the temporary file in.</desc>
+      </param>
+      <param name="secure" type="boolean" dir="in">
+        <desc>Whether to fail if the file can not be securely created.
+          Currently this means that another unprivileged user cannot
+          manipulate the path specified or remove the temporary file after
+          it has been created.  Also causes the mode specified to be ignored.
+          May not be supported on all guest types.</desc>
       </param>
       <param name="file" type="IGuestFile" dir="return">
-        <desc>Optional.</desc>
+        <desc>On success this will contain an open file object for the new
+          temporary file.
+        </desc>
       </param>
     </method>
     
@@ -9762,6 +9831,16 @@
       </param>
       <param name="exists" type="boolean" dir="return">
         <desc>TODO</desc>
+      </param>
+    </method>
+    
+    <method name="fileRemove">
+      <desc>
+        Remove a single file on the guest.
+
+      </desc>
+      <param name="path" type="wstring" dir="in">
+        <desc>Path to the file to remove.</desc>
       </param>
     </method>
     
@@ -10222,7 +10301,7 @@
   
   <interface
     name="IDirectory" extends="$unknown"
-    uuid="e55ab5e5-4feb-452b-86ed-59cff4c581a3"
+    uuid="1b70dd03-26d7-483a-8877-89bbb0f87b70"
     wsmap="managed"
     >
     <desc>
@@ -10238,12 +10317,31 @@
       </desc>
     </attribute>
     
-    <method name="read">
+    <attribute name="filter" type="wstring" readonly="yes">
+      <desc>
+        The open filter.
+        <note>
+          TODO
+        </note>
+      </desc>
+    </attribute>
+    
+    <method name="close">
       <desc>
         TODO
 
         <result name="VBOX_E_NOT_SUPPORTED">
           TODO
+        </result>
+      </desc>
+    </method>
+    
+    <method name="read">
+      <desc>
+        TODO
+
+        <result name="VBOX_E_OBJECT_NOT_FOUND">
+          End of directory listing reached.
         </result>
       </desc>
       <param name="objInfo" type="IFsObjInfo" dir="return">
@@ -10264,13 +10362,28 @@
     
   <interface
     name="IFile" extends="$unknown"
-    uuid="2615152d-35c0-4363-8325-ab7e1f2b8b34"
+    uuid="b3484293-b98b-4952-ae23-f18eca6a5ff9"
     wsmap="managed"
     >
     <desc>
       TODO
     </desc>
-    
+    <attribute name="creationMode" type="unsigned long" readonly="yes">
+      <desc>
+        TODO
+        <note>
+          TODO
+        </note>
+      </desc>
+    </attribute>
+    <attribute name="disposition" type="unsigned long" readonly="yes">
+      <desc>
+        TODO
+        <note>
+          TODO
+        </note>
+      </desc>
+    </attribute>
     <attribute name="fileName" type="wstring" readonly="yes">
       <desc>
         TODO
@@ -10446,7 +10559,7 @@
   
   <interface
     name="IFsObjInfo" extends="$unknown"
-    uuid="4925335b-9aa6-4870-bda3-8edb09fb602c"
+    uuid="4047ba30-7006-4966-ae86-94164e5e20eb"
     wsmap="managed"
     >
     <desc>
@@ -10493,7 +10606,7 @@
         </note>
       </desc>
     </attribute>
-    <attribute name="fileAtttributes" type="wstring" readonly="yes">
+    <attribute name="fileAttributes" type="wstring" readonly="yes">
       <desc>
         TODO
         <note>
@@ -10620,7 +10733,7 @@
   
   <interface
     name="IGuest" extends="$unknown"
-    uuid="9e0b07b1-490f-4413-8955-0a16515aac12"
+    uuid="19c32350-0618-4ede-b0c3-2b4311bf0d9b"
     wsmap="managed"
     >
     <desc>
@@ -11542,7 +11655,7 @@
           Path to the Guest Additions .ISO file to use for the upate.
         </desc>
       </param>
-      <param name="flags" type="unsigned long" dir="in">
+      <param name="flags" type="AdditionsUpdateFlag" dir="in" safearray="yes">
         <desc>
           <link to="AdditionsUpdateFlag"/> flags.
         </desc>

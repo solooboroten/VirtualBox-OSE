@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp 42526 2012-08-02 10:31:28Z vboxsync $ */
+/* $Id: VBoxGlobal.cpp 42748 2012-08-10 09:33:34Z vboxsync $ */
 /** @file
  * VBox Qt GUI - VBoxGlobal class implementation.
  */
@@ -128,7 +128,6 @@
 #include <iprt/stream.h>
 
 #include <VBox/vd.h>
-#include <VBox/version.h>
 #include <VBox/sup.h>
 #include <VBox/com/Guid.h>
 #include <VBox/VBoxOGLTest.h>
@@ -304,6 +303,7 @@ VBoxGlobal::VBoxGlobal()
     , mDisableCsam(false)
     , mRecompileSupervisor(false)
     , mRecompileUser(false)
+    , mWarpPct(100)
     , mVerString("1.0")
     , m3DAvailable(false)
     , mSettingsPwSet(false)
@@ -404,9 +404,7 @@ QString VBoxGlobal::vboxVersionString() const
 
 QString VBoxGlobal::vboxVersionStringNormalized() const
 {
-    /** @todo IVirtualBox should expose a publisher-free version string! This
-     *        doesn't work in any sane+portable manner.  */
-    return vboxVersionString().remove(VBOX_BUILD_PUBLISHER);
+    return mVBox.GetVersionNormalized();
 }
 
 bool VBoxGlobal::isBeta() const
@@ -4459,6 +4457,11 @@ void VBoxGlobal::init()
             mRecompileUser = true;
         else if (!::strcmp(arg, "--recompile-all"))
             mDisablePatm = mDisableCsam = mRecompileSupervisor = mRecompileUser = true;
+        else if (!::strcmp(arg, "--warp-pct"))
+        {
+            if (++i < argc)
+                mWarpPct = RTStrToUInt32(qApp->argv() [i]);
+        }
 #ifdef VBOX_WITH_DEBUGGER_GUI
         else if (!::strcmp (arg, "-dbg") || !::strcmp (arg, "--dbg"))
             setDebuggerVar(&mDbgEnabled, true);

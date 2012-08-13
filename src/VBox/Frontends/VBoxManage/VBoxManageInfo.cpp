@@ -1,4 +1,4 @@
-/* $Id: VBoxManageInfo.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: VBoxManageInfo.cpp 42672 2012-08-08 07:52:11Z vboxsync $ */
 /** @file
  * VBoxManage - The 'showvminfo' command and helper routines.
  */
@@ -1560,7 +1560,7 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
         {
             ComPtr<IDisplay> display;
             rc = console->COMGETTER(Display)(display.asOutParam());
-            if (rc == E_ACCESSDENIED)
+            if (rc == E_ACCESSDENIED || display.isNull())
                 break; /* VM not powered up */
             if (FAILED(rc))
             {
@@ -1633,16 +1633,19 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
             {
                 ComPtr<IVRDEServerInfo> vrdeServerInfo;
                 CHECK_ERROR_RET(console, COMGETTER(VRDEServerInfo)(vrdeServerInfo.asOutParam()), rc);
-                rc = vrdeServerInfo->COMGETTER(Port)(&currentPort);
-                if (rc == E_ACCESSDENIED)
+                if (!vrdeServerInfo.isNull())
                 {
-                    currentPort = -1; /* VM not powered up */
-                }
-                if (FAILED(rc))
-                {
-                    com::ErrorInfo info(vrdeServerInfo, COM_IIDOF(IVRDEServerInfo));
-                    GluePrintErrorInfo(info);
-                    return rc;
+                    rc = vrdeServerInfo->COMGETTER(Port)(&currentPort);
+                    if (rc == E_ACCESSDENIED)
+                    {
+                        currentPort = -1; /* VM not powered up */
+                    }
+                    if (FAILED(rc))
+                    {
+                        com::ErrorInfo info(vrdeServerInfo, COM_IIDOF(IVRDEServerInfo));
+                        GluePrintErrorInfo(info);
+                        return rc;
+                    }
                 }
             }
             if (details == VMINFO_MACHINEREADABLE)
@@ -2139,35 +2142,38 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
          */
         ComPtr<IVRDEServerInfo> vrdeServerInfo;
         CHECK_ERROR_RET(console, COMGETTER(VRDEServerInfo)(vrdeServerInfo.asOutParam()), rc);
-        BOOL    Active;
-        ULONG   NumberOfClients;
-        LONG64  BeginTime;
-        LONG64  EndTime;
-        LONG64  BytesSent;
-        LONG64  BytesSentTotal;
-        LONG64  BytesReceived;
-        LONG64  BytesReceivedTotal;
+        BOOL    Active = FALSE;
+        ULONG   NumberOfClients = 0;
+        LONG64  BeginTime = 0;
+        LONG64  EndTime = 0;
+        LONG64  BytesSent = 0;
+        LONG64  BytesSentTotal = 0;
+        LONG64  BytesReceived = 0;
+        LONG64  BytesReceivedTotal = 0;
         Bstr    User;
         Bstr    Domain;
         Bstr    ClientName;
         Bstr    ClientIP;
-        ULONG   ClientVersion;
-        ULONG   EncryptionStyle;
+        ULONG   ClientVersion = 0;
+        ULONG   EncryptionStyle = 0;
 
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(Active)(&Active), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(NumberOfClients)(&NumberOfClients), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BeginTime)(&BeginTime), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(EndTime)(&EndTime), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesSent)(&BytesSent), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesSentTotal)(&BytesSentTotal), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesReceived)(&BytesReceived), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesReceivedTotal)(&BytesReceivedTotal), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(User)(User.asOutParam()), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(Domain)(Domain.asOutParam()), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(ClientName)(ClientName.asOutParam()), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(ClientIP)(ClientIP.asOutParam()), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(ClientVersion)(&ClientVersion), rc);
-        CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(EncryptionStyle)(&EncryptionStyle), rc);
+        if (!vrdeServerInfo.isNull())
+        {
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(Active)(&Active), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(NumberOfClients)(&NumberOfClients), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BeginTime)(&BeginTime), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(EndTime)(&EndTime), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesSent)(&BytesSent), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesSentTotal)(&BytesSentTotal), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesReceived)(&BytesReceived), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(BytesReceivedTotal)(&BytesReceivedTotal), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(User)(User.asOutParam()), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(Domain)(Domain.asOutParam()), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(ClientName)(ClientName.asOutParam()), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(ClientIP)(ClientIP.asOutParam()), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(ClientVersion)(&ClientVersion), rc);
+            CHECK_ERROR_RET(vrdeServerInfo, COMGETTER(EncryptionStyle)(&EncryptionStyle), rc);
+        }
 
         if (details == VMINFO_MACHINEREADABLE)
             RTPrintf("VRDEActiveConnection=\"%s\"\n", Active ? "on": "off");
@@ -2294,7 +2300,7 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
     {
         ComPtr<IGuest> guest;
         rc = console->COMGETTER(Guest)(guest.asOutParam());
-        if (SUCCEEDED(rc))
+        if (SUCCEEDED(rc) && !guest.isNull())
         {
             Bstr guestString;
             rc = guest->COMGETTER(OSTypeId)(guestString.asOutParam());

@@ -70,17 +70,10 @@ public:
     virtual void clearItems(UIGDetailsItemType type = UIGDetailsItemType_Any) = 0;
 
     /* API: Layout stuff: */
-    virtual void updateSizeHint() = 0;
+    void updateSizeHint();
     virtual void updateLayout() = 0;
 
 protected:
-
-#if 0
-    /* Hover-enter event: */
-    void hoverEnterEvent(QGraphicsSceneHoverEvent *pEvent);
-    /* Hover-leave event: */
-    void hoverLeaveEvent(QGraphicsSceneHoverEvent *pEvent);
-#endif
 
     /* Helpers: Paint stuff: */
     static void configurePainterShape(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption, int iRadius);
@@ -101,18 +94,23 @@ class UIPrepareStep : public QObject
 
 signals:
 
-    /* Notifiers: Prepare stuff: */
-    void sigStepDone();
+    /* Notifier: Prepare stuff: */
+    void sigStepDone(QString strStepId);
 
 public:
 
     /* Constructor: */
-    UIPrepareStep(QObject *pParent);
+    UIPrepareStep(QObject *pParent, const QString &strStepId = QString());
 
 private slots:
 
     /* Handlers: Prepare stuff: */
     void sltStepDone();
+
+private:
+
+    /* Variables: */
+    QString m_strStepId;
 };
 
 #endif /* __UIGDetailsItem_h__ */

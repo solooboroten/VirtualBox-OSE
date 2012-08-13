@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsItem.cpp 42529 2012-08-02 11:53:21Z vboxsync $ */
+/* $Id: UIGDetailsItem.cpp 42689 2012-08-08 18:14:23Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -80,15 +80,10 @@ UIGDetailsItem* UIGDetailsItem::parentItem() const
     return m_pParent;
 }
 
-#if 0
-void UIGDetailsItem::hoverEnterEvent(QGraphicsSceneHoverEvent*)
+void UIGDetailsItem::updateSizeHint()
 {
+    updateGeometry();
 }
-
-void UIGDetailsItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*)
-{
-}
-#endif
 
 /* static */
 void UIGDetailsItem::configurePainterShape(QPainter *pPainter,
@@ -141,14 +136,14 @@ void UIGDetailsItem::paintText(QPainter *pPainter, const QRect &rect, const QFon
     pPainter->restore();
 }
 
-UIPrepareStep::UIPrepareStep(QObject *pParent)
+UIPrepareStep::UIPrepareStep(QObject *pParent, const QString &strStepId /* = QString() */)
     : QObject(pParent)
+    , m_strStepId(strStepId)
 {
-    connect(this, SIGNAL(sigStepDone()), pParent, SLOT(sltStepDone()), Qt::QueuedConnection);
 }
 
 void UIPrepareStep::sltStepDone()
 {
-    emit sigStepDone();
+    emit sigStepDone(m_strStepId);
 }
 
