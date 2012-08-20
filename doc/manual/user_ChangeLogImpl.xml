@@ -1,6 +1,105 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.1.20 (2012-08-20)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: fixed a crash under rare circumstances for VMs
+          running without hardware virtualization</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a code analysis bug for certain displacement
+          instructions for VMs running without hardware virtualization</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed an interpretion bug for <emphasis>TPR read</emphasis>
+          instructions under rare conditions (AMD-V only)</para>
+      </listitem>
+
+      <listitem>
+        <para>Snapshots: fixed a crash when restoring an old
+          snapshot when powering off a VM (bugs #9604, #10491)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxSVC: be more tolerant against environment variables with
+          strange encodings (bug #8780)</para>
+      </listitem>
+
+      <listitem>
+        <para>VGA: fixed wrong access check which might cause a crash
+          under certain conditions</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: final fix for crashes under rare conditions (bug #10513)</para>
+      </listitem>
+
+      <listitem>
+        <para>Virtio-net: fixed the problem with receiving of GSO packets in
+          Windows XP guests causing packet loss in host-to-VM transfers</para>
+      </listitem>
+
+      <listitem>
+        <para>HPET: several fixes (bugs #10170, #10306)</para>
+      </listitem>
+
+      <listitem>
+        <para>Clipboard: disable the clipboard by default for new VMs</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: the PCI BIOS was not properly detected with the chipset
+          type set to ICH9 (bugs #9301, #10327)</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X hosts: adaptions to Mountain Lion</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Installer: fixes for Gentoo Linux (bug #10642)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux guests: fixed mouse integration on Fedora 17 guests
+          (bug #2306)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: compile fixes for RHEL/CentOS 6.3 (bug #10756)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: compile fixes for Linux 3.5-rc1 and Linux 3.6-rc1
+          (bug #10709)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris host: fixed a guru meditation while allocating large pages
+          (bug #10600)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris host: fixed possible kernel panics while freeing memory</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris Installer: fixed missing icon for menu and desktop
+          shortcuts</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.1.18 (2012-06-06)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -12,6 +111,11 @@
         <para>VMM: fixed <emphasis>VERR_REM_VIRTUAL_CPU_ERROR</emphasis>
           under rare conditions after the guest has been reset (bug #5164
         and others)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed host freezes with 64-bit guests on 32-bit Linux
+          hosts (bug #10528)</para>
       </listitem>
 
       <listitem>
@@ -30,9 +134,18 @@
       </listitem>
 
       <listitem>
+        <para>Mac OS X hosts: addressed issues running Leopard / Snow Leopard
+          (bug #10631)</para>
+      </listitem>
+
+      <listitem>
         <para>Linux hosts / Bridged Networking: fixed the problem with device driver
           unloading on kernels 3.2.18 and newer due to an invalid reference counter
           (bug #10624)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: Linux 3.5-rc1 fixes</para>
       </listitem>
 
       <listitem>
@@ -40,10 +153,6 @@
           updated (bug #9887)</para>
       </listitem>
 
-      <listitem>
-        <para>Linux Additions: Linux 3.5-rc1 fix (not for 3.5-rc1 hosts yet!)</para>
-      </listitem>
-      
       <listitem>
         <para>Solaris Additions: installer fix for X.org Server 1.11 and 1.12</para>
       </listitem>
@@ -1111,7 +1220,7 @@
       </listitem>
 
       <listitem>
-        <para>GUI: when reverting to a snapshot, ask for taking a snapshot
+        <para>GUI: when restoring a snapshot, ask for taking a snapshot
           of the current state</para>
       </listitem>
 
@@ -8146,4 +8255,4 @@
     </itemizedlist>
 
   </sect1>
-
+ 

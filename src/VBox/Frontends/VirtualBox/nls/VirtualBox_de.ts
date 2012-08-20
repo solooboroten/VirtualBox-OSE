@@ -5605,7 +5605,7 @@
     <message>
         <source>Bidirectional</source>
         <comment>ClipboardType</comment>
-        <translation>Bidirektional</translation>
+        <translation>bidirektional</translation>
     </message>
     <message>
         <source>Port %1</source>

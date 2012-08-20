@@ -756,6 +756,8 @@ RT_C_DECLS_END
 #define VWRN_NEGATIVE_UNSIGNED              57
 /** Error while characters translation (unicode and so). */
 #define VERR_NO_TRANSLATION                 (-58)
+/** Error while characters translation (unicode and so). */
+#define VWRN_NO_TRANSLATION                 58
 /** Encountered unicode code point which is reserved for use as endian indicator (0xffff or 0xfffe). */
 #define VERR_CODE_POINT_ENDIAN_INDICATOR    (-59)
 /** Encountered unicode code point in the surrogate range (0xd800 to 0xdfff). */
@@ -1475,6 +1477,9 @@ RT_C_DECLS_END
 #define VERR_ENV_VAR_NOT_FOUND                  (-750)
 /** The specified environment variable was not found. (RTEnvUnsetEx) */
 #define VINF_ENV_VAR_NOT_FOUND                  (750)
+/** Unable to translate all the variables in the default environment due to
+ * codeset issues (LANG / LC_ALL / LC_CTYPE). */
+#define VWRN_ENV_NOT_FULLY_TRANSLATED           (751)
 /** @} */
 
 /** @name Multiprocessor Status Codes.

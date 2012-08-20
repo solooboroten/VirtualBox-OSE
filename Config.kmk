@@ -192,7 +192,7 @@ VBOX_VERSION_MINOR = 1
 # This is the current build number. It should be increased every time we publish a
 # new build. The define is available in every source file. Only even build numbers
 # will be published, odd numbers are set during development.
-VBOX_VERSION_BUILD = 18
+VBOX_VERSION_BUILD = 20
 # The raw version string. This *must not* contain any other information/fields than
 # major, minor and build revision (as it is now) -- also will be used for host/guest version
 # comparison.
@@ -1438,7 +1438,7 @@ endif
 # Compiler optimization flags.
 #
 VBOX_GCC_WARN     ?= -Wall $(VBOX_GCC_Wextra) $(VBOX_GCC_Wno-missing-field-initializers) -Wno-unused -Wno-trigraphs $(VBOX_GCC_fdiagnostics-show-option)
-VBOX_GCC_PEDANTIC_CXX ?= -pedantic -Wshadow $(VBOX_GCC_WARN) -Wno-long-long
+VBOX_GCC_PEDANTIC_CXX ?= -pedantic -Wshadow $(VBOX_GCC_WARN) -Wno-long-long $(VBOX_GCC_Wno-delete-non-virtual-dtor)
 VBOX_GCC_PEDANTIC_C   ?= -pedantic -Wshadow $(VBOX_GCC_WARN) -Wno-long-long -Wmissing-prototypes -Wstrict-prototypes -Wmissing-declarations -Werror-implicit-function-declaration
 ifeq ($(KBUILD_TYPE),debug)
  VBOX_GCC_FP     ?= -fno-omit-frame-pointer
@@ -2071,12 +2071,12 @@ VBOX_GCC_CHECK_LD = $(2)
 VBOX_GCC32_CHECK_CXX = $(2)
 else
 VBOX_GCC_CHECK_CC = $(shell \
-   if $(TOOL_$(VBOX_GCC_TOOL)_CC) $(1) -S -o /dev/null -xc /dev/null > /dev/null 2>&1; \
+   if $(TOOL_$(VBOX_GCC_TOOL)_CC) $(subst -Wno-,-W,$(1)) -S -o /dev/null -xc /dev/null > /dev/null 2>&1; \
    then echo "$(1)"; \
    else echo "$(2)"; fi; )
 
 VBOX_GCC_CHECK_CXX = $(shell \
-   if $(TOOL_$(VBOX_GCC_TOOL)_CXX) $(1) -S -o /dev/null -xc++ /dev/null > /dev/null 2>&1; \
+   if $(TOOL_$(VBOX_GCC_TOOL)_CXX) $(subst -Wno-,-W,$(1)) -S -o /dev/null -xc++ /dev/null > /dev/null 2>&1; \
    then echo "$(1)"; \
    else echo "$(2)"; fi; )
 
@@ -2114,17 +2114,18 @@ $(PATH_OUT)/GCCConfig.kmk: $(PATH_ROOT)/Config.kmk $(LOCALCFG) $(AUTOCFG)
 	$(APPEND) '$@' 'VBOX_GCC_VERSION_CXX           ?= $(call VBOX_GCC_VERSION,$(TOOL_$(VBOX_GCC_TOOL)_CXX))'
 	$(APPEND) '$@' 'VBOX_GCC_LIBGCC                ?= $(shell $(TOOL_$(VBOX_GCC_TOOL)_CC) -print-libgcc-file-name)'
 	$(APPEND) '$@' 'VBOX_GCC_Wno-pointer-sign      ?= $(call VBOX_GCC_CHECK_CC,-Wno-pointer-sign,)'
-	$(APPEND) '$@' 'VBOX_GCC_Wno-array_bounds      ?= $$(if $$(int-ge $$(VBOX_GCC_VERSION_CXX),40300),-Wno-array-bounds,)'
+	$(APPEND) '$@' 'VBOX_GCC_Wno-array_bounds      ?= $(call VBOX_GCC_CHECK_CC,-Wno-array-bounds,)'
 # -Wextra produces additional useful warnings but includes -Wno-missing-field-initializers (too noisy)
 	$(APPEND) '$@' 'VBOX_GCC_Wextra                ?= $(call VBOX_GCC_CHECK_CC,-Wextra,)'
 	$(APPEND) '$@' 'VBOX_GCC_Wlogical-op           ?= $(call VBOX_GCC_CHECK_CC,-Wlogical-op,)'
-	$(APPEND) '$@' 'VBOX_GCC_Wno-missing-field-initializers ?= $(call VBOX_GCC_CHECK_CC,-Wno-missing-field-initializers,)'
-	$(APPEND) '$@' 'VBOX_GCC_Wno-pointer-to-int-cast        ?= $(call VBOX_GCC_CHECK_CC,-Wno-pointer-to-int-cast,)'
-	$(APPEND) '$@' 'VBOX_GCC_Wno-int-to-pointer-cast        ?= $(call VBOX_GCC_CHECK_CC,-Wno-int-to-pointer-cast,)'
-	$(APPEND) '$@' 'VBOX_GCC_Wno-variadic-macros   ?= $(call VBOX_GCC_CHECK_CXX,-Wno-variadic-macros,)'
+	$(APPEND) '$@' 'VBOX_GCC_Wno-delete-non-virtual-dtor ?= $(call VBOX_GCC_CHECK_CXX,-Wno-delete-non-virtual-dtor,)'
+	$(APPEND) '$@' 'VBOX_GCC_Wno-int-to-pointer-cast ?= $(call VBOX_GCC_CHECK_CC,-Wno-int-to-pointer-cast,)'
 	$(APPEND) '$@' 'VBOX_GCC_Wno-invalid-offsetof  ?= $(call VBOX_GCC_CHECK_CXX,-Wno-invalid-offsetof,)'
-	$(APPEND) '$@' 'VBOX_GCC_fno-stack-protector   ?= $(call VBOX_GCC_CHECK_CC,-fno-stack-protector,)'
+	$(APPEND) '$@' 'VBOX_GCC_Wno-missing-field-initializers ?= $(call VBOX_GCC_CHECK_CC,-Wno-missing-field-initializers,)'
+	$(APPEND) '$@' 'VBOX_GCC_Wno-pointer-to-int-cast ?= $(call VBOX_GCC_CHECK_CC,-Wno-pointer-to-int-cast,)'
+	$(APPEND) '$@' 'VBOX_GCC_Wno-variadic-macros   ?= $(call VBOX_GCC_CHECK_CXX,-Wno-variadic-macros,)'
 	$(APPEND) '$@' 'VBOX_GCC_fdiagnostics-show-option ?= $(call VBOX_GCC_CHECK_CC,-fdiagnostics-show-option,)'
+	$(APPEND) '$@' 'VBOX_GCC_fno-stack-protector   ?= $(call VBOX_GCC_CHECK_CC,-fno-stack-protector,)'
 # Produce code optimized for the most common IA32/AMD64/EM64T processors. Introduced with gcc version 4.2.
 	$(APPEND) '$@' 'VBOX_GCC_mtune-generic         ?= $(call VBOX_GCC_CHECK_CC,-mtune=generic,)'
 	$(APPEND) '$@' 'VBOX_LD_as_needed              ?= $(call VBOX_GCC_CHECK_LD,--as-needed,)'
@@ -2556,7 +2557,10 @@ if1of ($(KBUILD_TARGET), linux)
  endif
  # Since Linux 2.6.15, <linux/autoconf.h> is included like this. It cannot hurt to do the
  # same for older Linux kernels
- ifneq ($(wildcard $(VBOX_LINUX_SRC)/include/generated/autoconf.h),)
+ ifneq ($(wildcard $(VBOX_LINUX_SRC)/include/linux/kconfig.h),)
+  # Linux >= 3.1
+  export VBOX_LINUX_INCLUDE := -include $(VBOX_LINUX_SRC)/include/linux/kconfig.h
+ else ifneq ($(wildcard $(VBOX_LINUX_SRC)/include/generated/autoconf.h),)
   # Linux >= 2.6.33
   export VBOX_LINUX_INCLUDE := -include $(VBOX_LINUX_SRC)/include/generated/autoconf.h
  else ifneq ($(wildcard $(VBOX_LINUX_SRC)/include/linux/autoconf.h),)
@@ -2584,7 +2588,11 @@ ifeq ($(KBUILD_TARGET),solaris)
   # uname -v can report "snv_XYZ" or "11.X"
   VBOX_SOLARIS_11_VERSION = $(shell uname -v | sed 's/snv_//' | cut -f1 -d'.')
   ifeq ($(VBOX_SOLARIS_11_VERSION),11)
-   VBOX_SOLARIS_11_VERSION = $(shell pkg contents -H -t set -o pkg.fmri entire | head -1 | sed 's/^.*\@//;s/\:.*//;s/.*,//' | cut -f2 -d'-' | cut -f2 -d'.')
+   VBOX_SOLARIS_11_FULLVERSION = $(shell pkg contents -H -t set -o pkg.fmri entire | $(SED_EXT) -e '1!d' -e 's/^.*\@//;s/\:.*//;s/.*,//')
+   # FULLVERSION format e.g. "5.11-0.175.1.0.0.16.0", we're interested in 175 (VERSION), 1 (UPDATE), 16 (BUILD).
+   VBOX_SOLARIS_11_VERSION = $(word 2, $(subst ., ,$(word 2,$(subst -, ,$(VBOX_SOLARIS_11_FULLVERSION)))))
+   VBOX_SOLARIS_11_UPDATE_VERSION = $(word 3, $(subst ., ,$(word 2,$(subst -, ,$(VBOX_SOLARIS_11_FULLVERSION)))))
+   VBOX_SOLARIS_11_BUILD_VERSION = $(word 6, $(subst ., ,$(word 2,$(subst -, ,$(VBOX_SOLARIS_11_FULLVERSION)))))
   endif
 
   # OSS audio support for Solaris
@@ -3151,6 +3159,8 @@ TEMPLATE_VBOXR3EXE_LDFLAGS.l4          = \
 	-Wl,--export-dynamic,--dynamic-linker=libld-l4.s.so \
 	-Wl,--rpath-link,$(L4_LIBDIR)
 TEMPLATE_VBOXR3EXE_LDFLAGS.linux       = -Wl,-z,noexecstack $(VBOX_LD_as_needed)
+TEMPLATE_VBOXR3EXE_LDFLAGS.solaris     = -Wl,-z,ignore # same as VBOX_LD_as_needed
+
  ifeq ($(KBUILD_TARGET),linux)
 TEMPLATE_VBOXR3EXE_LIBS                = pthread m rt dl
  else ifeq ($(KBUILD_TARGET),l4)
@@ -3686,6 +3696,7 @@ TEMPLATE_VBOXMAINEXE_LIBS                = $(LIB_RUNTIME) rt thread
 $(warning Warning: VBOX Build: Target $(KBUILD_TARGET) is not officially supported!)
 TEMPLATE_VBOXMAINEXE_LIBS                =
  endif
+TEMPLATE_VBOXMAINEXE_LDFLAGS.solaris     = -Wl,-z,ignore # Same as VBOX_LD_as_needed.
  ifdef VBOX_WITH_RUNPATH
 TEMPLATE_VBOXMAINEXE_LDFLAGS            += '$(VBOX_GCC_RPATH_OPT)$(VBOX_WITH_RUNPATH)'
  else ifdef VBOX_WITH_RELATIVE_RUNPATH
@@ -4046,7 +4057,8 @@ ifdef VBOX_WITH_QTGUI
   TEMPLATE_VBOXQT4GUIEXE_CXXFLAGS = \
 	-g -pipe $(filter-out -Wno-unused,$(VBOX_GCC_WARN)) -frtti -fno-exceptions -Wno-non-virtual-dtor \
 	-Wno-long-long -fshort-wchar -fno-strict-aliasing \
-	$(VBOX_GCC_fvisibility-hidden) $(VBOX_GCC_fvisibility-inlines-hidden)
+	$(VBOX_GCC_fvisibility-hidden) $(VBOX_GCC_fvisibility-inlines-hidden) \
+	$(VBOX_GCC_Wno-delete-non-virtual-dtor)
   TEMPLATE_VBOXQT4GUIEXE_CXXFLAGS.x86 = -m32
   TEMPLATE_VBOXQT4GUIEXE_CXXFLAGS.amd64 = -m64
   TEMPLATE_VBOXQT4GUIEXE_CXXFLAGS.linux = -pthread
@@ -4106,6 +4118,7 @@ ifdef VBOX_WITH_QTGUI
 	/usr/local/lib
    endif
    ifeq ($(KBUILD_TARGET),solaris)
+    TEMPLATE_VBOXQT4GUIEXE_LDFLAGS.solaris = -Wl,-z,ignore # Same as VBOX_LD_as_needed.
     TEMPLATE_VBOXQT4GUIEXE_LIBS += \
          rt socket nsl
    endif
@@ -4884,7 +4897,7 @@ endif
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 78361 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 80170 $  )
  VBOX_SVN_DEP          := $(wildcard $(PATH_ROOT)/.svn/entries)
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

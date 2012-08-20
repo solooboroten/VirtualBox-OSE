@@ -166,7 +166,7 @@ Machine::HWData::HWData()
     mMonitorCount = 1;
     mHWVirtExEnabled = true;
     mHWVirtExNestedPagingEnabled = true;
-#if HC_ARCH_BITS == 64 && !defined(RT_OS_LINUX)
+#if HC_ARCH_BITS == 64 && !defined(RT_OS_LINUX) && !defined(RT_OS_SOLARIS)
     mHWVirtExLargePagesEnabled = true;
 #else
     /* Not supported on 32 bits hosts. */
@@ -194,7 +194,7 @@ Machine::HWData::HWData()
     for (size_t i = 3; i < RT_ELEMENTS(mBootOrder); ++i)
         mBootOrder[i] = DeviceType_Null;
 
-    mClipboardMode = ClipboardMode_Bidirectional;
+    mClipboardMode = ClipboardMode_Disabled;
     mGuestPropertyNotificationPatterns = "";
 
     mFirmwareType = FirmwareType_BIOS;
@@ -12699,6 +12699,10 @@ void SessionMachine::unlockMedia()
  * Helper to change the machine state (reimplementation).
  *
  * @note Locks this object for writing.
+ * @note This method must not call saveSettings or SaveSettings, otherwise
+ *       it can cause crashes in random places due to unexpectedly committing
+ *       the current settings. The caller is responsible for that. The call
+ *       to saveStateSettings is fine, because this method does not commit.
  */
 HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
 {
@@ -12897,7 +12901,6 @@ HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
         {
             mData->mCurrentStateModified = TRUE;
             stsFlags |= SaveSTS_CurStateModified;
-            SaveSettings();     // @todo r=dj why the public method? why first SaveSettings and then saveStateSettings?
         }
     }
 #endif

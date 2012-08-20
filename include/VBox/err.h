@@ -1514,6 +1514,8 @@
 #define VERR_VD_CACHE_NOT_FOUND                     (-3275)
 /** The cache is not up to date with the image. */
 #define VERR_VD_CACHE_NOT_UP_TO_DATE                (-3276)
+/** Block read was marked as free in the image and returned as a zero block. */
+#define VINF_VD_NEW_ZEROED_BLOCK                    3277
 /** @} */
 
 
