@@ -43,6 +43,8 @@ class CMachine;
 class UIVMItem;
 class UIGChooserHandlerMouse;
 class UIGChooserHandlerKeyboard;
+class QTimer;
+class QPaintDevice;
 
 /* Context-menu type: */
 enum UIGraphicsSelectorContextMenuType
@@ -60,6 +62,9 @@ signals:
 
     /* Notifier: Root-item resize stuff: */
     void sigRootItemResized(const QSizeF &size, int iMinimumWidth);
+
+    /* Notifier: Focus change: */
+    void sigFocusChanged(UIGChooserItem *pFocusItem);
 
     /* Notifier: Selection change: */
     void sigSelectionChanged();
@@ -92,6 +97,9 @@ public:
 
     /* API: Scene getter: */
     QGraphicsScene* scene() const;
+
+    /* API: Paint-device getter: */
+    QPaintDevice* paintDevice() const;
 
     /* API: Root stuff: */
     UIGChooserItem* mainRoot() const;
@@ -136,6 +144,9 @@ public:
     /* API: Layout stuff: */
     void updateLayout();
 
+    /* API: Editing stuff: */
+    void startEditing();
+
     /* API: Drag and drop stuff: */
     void setCurrentDragObject(QDrag *pDragObject);
 
@@ -148,6 +159,10 @@ public:
     /* API: Group saving stuff: */
     void saveGroupSettings();
     bool isGroupSavingInProgress() const;
+
+    /* API: Lookup stuff: */
+    void lookFor(const QString &strLookupSymbol);
+    bool isPerformingLookup() const;
 
 private slots:
 
@@ -197,6 +212,9 @@ private slots:
     void sltGroupSavingStart();
     void sltGroupSavingComplete();
 
+    /* Handler: Lookup stuff: */
+    void sltEraseLookupTimer();
+
 private:
 
     /* Data enumerator: */
@@ -212,6 +230,7 @@ private:
     /* Helpers: Prepare stuff: */
     void prepareScene();
     void prepareRoot();
+    void prepareLookup();
     void prepareContextMenu();
     void prepareHandlers();
     void prepareGroupTree();
@@ -220,6 +239,7 @@ private:
     void cleanupGroupTree();
     void cleanupHandlers();
     void cleanupContextMenu();
+    void cleanupLookup();
     void cleanupRoot();
     void cleanupScene();
 
@@ -279,13 +299,16 @@ private:
 
     /* Helpers: Remove stuff: */
     void removeMachineItems(const QStringList &names, QList<UIGChooserItem*> &selectedItems);
-    void unregisterMachines(const QStringList &names);
+    void unregisterMachines(const QStringList &ids);
 
     /* Helper: Sorting stuff: */
     void sortItems(UIGChooserItem *pParent, bool fRecursively = false);
 
     /* Helper: Group saving stuff: */
     void makeSureGroupSavingIsFinished();
+
+    /* Helper: Lookup stuff: */
+    UIGChooserItem* lookForItem(UIGChooserItem *pParent, const QString &strStartingFrom);
 
     /* Variables: */
     QGraphicsScene *m_pScene;
@@ -307,6 +330,10 @@ private:
     QPointer<UIGChooserItem> m_pFocusItem;
     QMenu *m_pContextMenuGroup;
     QMenu *m_pContextMenuMachine;
+
+    /* Variables: Lookup stuff: */
+    QTimer *m_pLookupTimer;
+    QString m_strLookupString;
 };
 
 /* Allows to save group settings asynchronously: */

@@ -1,4 +1,4 @@
-/* $Id: UIGChooserView.cpp 42529 2012-08-02 11:53:21Z vboxsync $ */
+/* $Id: UIGChooserView.cpp 42873 2012-08-18 14:37:25Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -22,13 +22,14 @@
 
 /* GUI includes: */
 #include "UIGChooserView.h"
+#include "UIGChooserItem.h"
 
 UIGChooserView::UIGChooserView(QWidget *pParent)
     : QGraphicsView(pParent)
 {
     /* Fix palette: */
     QPalette pal = palette();
-    pal.setColor(QPalette::Base, pal.color(QPalette::Window));
+    pal.setColor(QPalette::Base, QColor(240, 240, 240));
     setPalette(pal);
 
     /* Scrollbars policy: */
@@ -46,6 +47,18 @@ void UIGChooserView::sltHandleRootItemResized(const QSizeF &size, int iMinimumWi
     /* Set minimum width: */
     setMinimumWidth(2 * frameWidth() + iMinimumWidth +
                     verticalScrollBar()->sizeHint().width());
+}
+
+void UIGChooserView::sltFocusChanged(UIGChooserItem *pFocusItem)
+{
+    /* Make sure focus-item set: */
+    if (!pFocusItem)
+        return;
+
+    QSize viewSize = viewport()->size();
+    QRectF geo = pFocusItem->geometry();
+    geo &= QRectF(geo.topLeft(), viewSize);
+    ensureVisible(geo, 0, 0);
 }
 
 void UIGChooserView::resizeEvent(QResizeEvent*)

@@ -1,4 +1,4 @@
-/* $Id: UIGChooserItem.cpp 42734 2012-08-09 23:51:30Z vboxsync $ */
+/* $Id: UIGChooserItem.cpp 42909 2012-08-21 15:46:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -45,8 +45,11 @@ UIGChooserItem::UIGChooserItem(UIGChooserItem *pParent, bool fTemporary)
     , m_pBackwardAnimation(0)
     , m_iAnimationDuration(400)
     , m_iDefaultDarkness(103)
+    , m_iBlackoutDarkness(110)
     , m_iHighlightDarkness(90)
-    , m_iGradient(m_iDefaultDarkness)
+    , m_iStrokeDarkness(130)
+    , m_iAnimationDarkness(m_iDefaultDarkness)
+    , m_iDragTokenDarkness(150)
 {
     /* Basic item setup: */
     setOwnedByLayout(false);
@@ -66,13 +69,13 @@ UIGChooserItem::UIGChooserItem(UIGChooserItem *pParent, bool fTemporary)
         QState *pStateHighlighted = new QState(m_pHighlightMachine);
 
         /* Forward animation: */
-        m_pForwardAnimation = new QPropertyAnimation(this, "gradient", this);
+        m_pForwardAnimation = new QPropertyAnimation(this, "animationDarkness", this);
         m_pForwardAnimation->setDuration(m_iAnimationDuration);
         m_pForwardAnimation->setStartValue(m_iDefaultDarkness);
         m_pForwardAnimation->setEndValue(m_iHighlightDarkness);
 
         /* Backward animation: */
-        m_pBackwardAnimation = new QPropertyAnimation(this, "gradient", this);
+        m_pBackwardAnimation = new QPropertyAnimation(this, "animationDarkness", this);
         m_pBackwardAnimation->setDuration(m_iAnimationDuration);
         m_pBackwardAnimation->setStartValue(m_iHighlightDarkness);
         m_pBackwardAnimation->setEndValue(m_iDefaultDarkness);
@@ -164,7 +167,7 @@ void UIGChooserItem::makeSureItsVisible()
             pParentItem->makeSureItsVisible();
             /* And make sure its opened: */
             if (pParentItem->closed())
-                pParentItem->open();
+                pParentItem->open(false);
         }
     }
 }
@@ -333,24 +336,24 @@ void UIGChooserItem::paintText(QPainter *pPainter, const QRect &rect, const QFon
 }
 
 /* static */
-int UIGChooserItem::textWidth(const QFont &font, int iCount)
+int UIGChooserItem::textWidth(const QFont &font, QPaintDevice *pPaintDevice, int iCount)
 {
     /* Return text width: */
-    QFontMetrics fm(font);
+    QFontMetrics fm(font, pPaintDevice);
     QString strString;
     strString.fill('_', iCount);
     return fm.width(strString);
 }
 
 /* static */
-QString UIGChooserItem::compressText(const QFont &font, QString strText, int iWidth)
+QString UIGChooserItem::compressText(const QFont &font, QPaintDevice *pPaintDevice, QString strText, int iWidth)
 {
     /* Check if passed text is empty: */
     if (strText.isEmpty())
         return strText;
 
     /* Check if passed text feats maximum width: */
-    QFontMetrics fm(font);
+    QFontMetrics fm(font, pPaintDevice);
     if (fm.width(strText) <= iWidth)
         return strText;
 

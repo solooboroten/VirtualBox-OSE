@@ -1,4 +1,4 @@
-/* $Id: ahci.c 39651 2011-12-17 13:13:49Z vboxsync $ */
+/* $Id: ahci.c 42842 2012-08-16 11:08:49Z vboxsync $ */
 /** @file
  * AHCI host adapter driver to boot from SATA disks.
  */
@@ -490,7 +490,7 @@ int ahci_read_sectors(bio_dsk_t __far *bios_dsk)
 {
     uint16_t        device_id;
 
-    device_id = bios_dsk->drqp.dev_id - BX_MAX_ATA_DEVICES - BX_MAX_SCSI_DEVICES;
+    device_id = VBOX_GET_AHCI_DEVICE(bios_dsk->drqp.dev_id);
     if (device_id > BX_MAX_AHCI_DEVICES)
         BX_PANIC("%s: device_id out of range %d\n", __func__, device_id);
 
@@ -519,7 +519,7 @@ int ahci_write_sectors(bio_dsk_t __far *bios_dsk)
 {
     uint16_t        device_id;
 
-    device_id = bios_dsk->drqp.dev_id - BX_MAX_ATA_DEVICES - BX_MAX_SCSI_DEVICES;
+    device_id = VBOX_GET_AHCI_DEVICE(bios_dsk->drqp.dev_id);
     if (device_id > BX_MAX_AHCI_DEVICES)
         BX_PANIC("%s: device_id out of range %d\n", __func__, device_id);
 
@@ -558,7 +558,7 @@ uint16_t ahci_cmd_packet(uint16_t device_id, uint8_t cmdlen, char __far *cmdbuf,
     }
 
     /* Convert to AHCI specific device number. */
-    device_id = device_id - BX_MAX_ATA_DEVICES - BX_MAX_SCSI_DEVICES;
+    device_id = VBOX_GET_AHCI_DEVICE(device_id);
 
     DBG_AHCI("%s: reading %lu bytes, skip %u/%u, device %d, port %d\n", __func__,
              length, bios_dsk->drqp.skip_b, bios_dsk->drqp.skip_a, 
@@ -668,7 +668,7 @@ static void ahci_port_detect_device(ahci_t __far *ahci, uint8_t u8Port)
 
                 /** @todo update sectors to be a 64 bit number (also lba...). */
                 if (cSectors == 268435455)
-                    cSectors = *(uint16_t *)(abBuffer+(100*2)); // words 100 to 103 (someday)
+                    cSectors = *(uint32_t *)(abBuffer+(100*2)); // words 100 to 103 (someday)
 
                 DBG_AHCI("AHCI: %ld sectors\n", cSectors);
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.2.0 Release Candidate 1 (2012-08-13)</title>
+    <title>Version 4.2.0 Release Candidate 2 (2012-08-22)</title>
 
     <para>This is a major update. The following major new features
       were added:</para>
@@ -46,7 +46,12 @@
        </listitem>
 
        <listitem>
-         <para>Added support for Host parallel port passthrough on Windows platform</para>
+         <para>Added support for parallel port passthrough on Windows hosts</para>
+       </listitem>
+
+       <listitem>
+         <para>Enhanced API for controlling the guest; please see the SDK reference and API
+           documentation for more information</para>
        </listitem>
 
     </itemizedlist>
@@ -126,7 +131,7 @@
 
       <listitem>
         <para>Snapshots: fixed a crash when restoring an old
-          snapshot when powering off a VM (bug #10491)</para>
+          snapshot when powering off a VM (bugs #9364, #9604, #10491)</para>
       </listitem>
 
       <listitem>
@@ -175,6 +180,10 @@
        <listitem>
          <para>Windows hosts: updated toolchain; make the source code compatible
            to VC 2010 and enable some security-related compiler options</para>
+       </listitem>
+
+       <listitem>
+         <para>NAT: improvements for the built-in TFTP server (bugs #7385, #10286)</para>
        </listitem>
 
     </itemizedlist>

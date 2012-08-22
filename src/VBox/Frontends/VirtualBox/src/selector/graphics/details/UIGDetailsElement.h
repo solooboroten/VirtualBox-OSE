@@ -44,17 +44,21 @@ Q_DECLARE_METATYPE(UITextTable);
 class UIGDetailsElement : public UIGDetailsItem
 {
     Q_OBJECT;
-    Q_PROPERTY(int gradient READ gradient WRITE setGradient);
+    Q_PROPERTY(int animationDarkness READ animationDarkness WRITE setAnimationDarkness);
     Q_PROPERTY(int additionalHeight READ additionalHeight WRITE setAdditionalHeight);
 
 signals:
+
+    /* Notifier: Prepare stuff: */
+    void sigElementUpdateDone();
 
     /* Notifiers: Hover stuff: */
     void sigHoverEnter();
     void sigHoverLeave();
 
-    /* Notifier: Toggle stuff: */
+    /* Notifiers: Toggle stuff: */
     void sigToggleElement(DetailsElementType type, bool fToggled);
+    void sigToggleElementFinished();
 
     /* Notifier: Link-click stuff: */
     void sigLinkClicked(const QString &strCategory, const QString &strControl, const QString &strId);
@@ -75,8 +79,8 @@ public:
     /* API: Open/close stuff: */
     bool closed() const;
     bool opened() const;
-    void close();
-    void open();
+    void close(bool fAnimated = true);
+    void open(bool fAnimated = true);
 
     /* API: Layout stuff: */
     virtual int minimumWidthHint() const;
@@ -85,6 +89,16 @@ public:
     /* API: Update stuff: */
     void updateHoverAccessibility();
     virtual void updateAppearance() = 0;
+
+    /* API: Animation stuff: */
+    void markAnimationFinished();
+
+protected slots:
+
+    /* Handlers: Toggle stuff: */
+    void sltToggleButtonClicked();
+    void sltElementToggleStart();
+    void sltElementToggleFinish(bool fToggled);
 
 protected:
 
@@ -96,7 +110,6 @@ protected:
         ElementData_Spacing,
         /* Pixmaps: */
         ElementData_Pixmap,
-        ElementData_ButtonPixmap,
         /* Fonts: */
         ElementData_NameFont,
         ElementData_TextFont,
@@ -130,21 +143,15 @@ protected:
     void updateLayout();
 
     /* Helpers: Hover stuff: */
-    int gradient() const { return m_iGradient; }
-    void setGradient(int iGradient) { m_iGradient = iGradient; update(); }
+    int animationDarkness() const { return m_iAnimationDarkness; }
+    void setAnimationDarkness(int iAnimationDarkness) { m_iAnimationDarkness = iAnimationDarkness; update(); }
 
     /* Helpers: Animation stuff: */
     void setAdditionalHeight(int iAdditionalHeight);
     int additionalHeight() const;
     UIGraphicsRotatorButton* button() const;
 
-private slots:
-
-    /* Handlers: Collapse/expand stuff: */
-    void sltElementToggleStart();
-    void sltElementToggleFinish(bool fToggled);
-
-private:
+protected:
 
     /* API: Children stuff: */
     void addItem(UIGDetailsItem *pItem);
@@ -165,8 +172,7 @@ private:
     void paint(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption, QWidget *pWidget = 0);
     void paintDecorations(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption);
     void paintElementInfo(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption);
-    static void paintBackground(QPainter *pPainter, const QRect &rect,
-                                int iRadius, int iHeaderHeight, int iGradient);
+    void paintBackground(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption);
 
     /* Handlers: Mouse stuff: */
     void hoverMoveEvent(QGraphicsSceneHoverEvent *pEvent);
@@ -179,7 +185,8 @@ private:
     void updateNameHoverRepresentation(QGraphicsSceneHoverEvent *pEvent);
 
     /* Helper: Layout stuff: */
-    static QTextLayout* prepareTextLayout(const QFont &font, const QString &strText, int iWidth, int &iHeight);
+    static QTextLayout* prepareTextLayout(const QFont &font, QPaintDevice *pPaintDevice,
+                                          const QString &strText, int iWidth, int &iHeight);
 
     /* Helper: Animation stuff: */
     void updateAnimationParameters();
@@ -189,12 +196,14 @@ private:
     DetailsElementType m_type;
     QIcon m_icon;
     QString m_strName;
-    QIcon m_buttonIcon;
+    UITextTable m_text;
+    int m_iCornerRadius;
+
+    /* Variables: Toggle stuff: */
     bool m_fClosed;
     UIGraphicsRotatorButton *m_pButton;
-    UITextTable m_text;
     int m_iAdditionalHeight;
-    int m_iCornerRadius;
+    bool m_fAnimationRunning;
 
     /* Variables: Hover stuff: */
     bool m_fHovered;
@@ -206,7 +215,7 @@ private:
     int m_iAnimationDuration;
     int m_iDefaultDarkness;
     int m_iHighlightDarkness;
-    int m_iGradient;
+    int m_iAnimationDarkness;
 };
 
 #endif /* __UIGDetailsElement_h__ */

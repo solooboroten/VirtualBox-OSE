@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.cpp 42402 2012-07-26 04:52:09Z vboxsync $ */
+/* $Id: HWSVMR0.cpp 42900 2012-08-21 10:30:08Z vboxsync $ */
 /** @file
  * HM SVM (AMD-V) - Host Context Ring-0.
  */
@@ -61,6 +61,10 @@ static void hmR0SvmSetMSRPermission(PVMCPU pVCpu, unsigned ulMSR, bool fRead, bo
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
+/* IO operation lookup arrays. */
+static uint32_t const g_aIOSize[8]  = {0, 1, 2, 0, 4, 0, 0, 0};
+static uint32_t const g_aIOOpAnd[8] = {0, 0xff, 0xffff, 0, 0xffffffff, 0, 0, 0};
+
 
 /**
  * Sets up and activates AMD-V on the current CPU.
@@ -163,7 +167,7 @@ VMMR0DECL(int) SVMR0InitVM(PVM pVM)
     pVM->hwaccm.s.svm.pIOBitmap     = RTR0MemObjAddress(pVM->hwaccm.s.svm.pMemObjIOBitmap);
     pVM->hwaccm.s.svm.pIOBitmapPhys = RTR0MemObjGetPagePhysAddr(pVM->hwaccm.s.svm.pMemObjIOBitmap, 0);
     /* Set all bits to intercept all IO accesses. */
-    ASMMemFill32(pVM->hwaccm.s.svm.pIOBitmap, PAGE_SIZE*3, 0xffffffff);
+    ASMMemFill32(pVM->hwaccm.s.svm.pIOBitmap, 3 << PAGE_SHIFT, 0xffffffff);
 
     /*
      * Erratum 170 which requires a forced TLB flush for each world switch:
@@ -233,7 +237,7 @@ VMMR0DECL(int) SVMR0InitVM(PVM pVM)
         pVCpu->hwaccm.s.svm.pMSRBitmap     = RTR0MemObjAddress(pVCpu->hwaccm.s.svm.pMemObjMSRBitmap);
         pVCpu->hwaccm.s.svm.pMSRBitmapPhys = RTR0MemObjGetPagePhysAddr(pVCpu->hwaccm.s.svm.pMemObjMSRBitmap, 0);
         /* Set all bits to intercept all MSR accesses. */
-        ASMMemFill32(pVCpu->hwaccm.s.svm.pMSRBitmap, PAGE_SIZE * 2, 0xffffffff);
+        ASMMemFill32(pVCpu->hwaccm.s.svm.pMSRBitmap, 2 << PAGE_SHIFT, 0xffffffff);
     }
 
     return VINF_SUCCESS;
@@ -890,8 +894,8 @@ VMMR0DECL(int) SVMR0LoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 #ifdef DEBUG
         /* Sync the hypervisor debug state now if any breakpoint is armed. */
         if (    CPUMGetHyperDR7(pVCpu) & (X86_DR7_ENABLED_MASK|X86_DR7_GD)
-            &&  !CPUMIsHyperDebugStateActive(pVCpu)
-            &&  !DBGFIsStepping(pVCpu))
+            && !CPUMIsHyperDebugStateActive(pVCpu)
+            && !DBGFIsStepping(pVCpu))
         {
             /* Save the host and load the hypervisor debug state. */
             int rc = CPUMR0LoadHyperDebugState(pVM, pVCpu, pCtx, false /* exclude DR6 */);
@@ -906,9 +910,9 @@ VMMR0DECL(int) SVMR0LoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         else
 #endif
         /* Sync the debug state now if any breakpoint is armed. */
-        if (    (pCtx->dr[7] & (X86_DR7_ENABLED_MASK|X86_DR7_GD))
-            &&  !CPUMIsGuestDebugStateActive(pVCpu)
-            &&  !DBGFIsStepping(pVCpu))
+        if (   (pCtx->dr[7] & (X86_DR7_ENABLED_MASK|X86_DR7_GD))
+            && !CPUMIsGuestDebugStateActive(pVCpu)
+            && !DBGFIsStepping(pVCpu))
         {
             STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatDRxArmed);
 
@@ -1170,21 +1174,21 @@ VMMR0DECL(int) SVMR0RunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     STAM_PROFILE_ADV_SET_STOPPED(&pVCpu->hwaccm.s.StatExit1);
     STAM_PROFILE_ADV_SET_STOPPED(&pVCpu->hwaccm.s.StatExit2);
 
-    VBOXSTRICTRC rc = VINF_SUCCESS;
-    int         rc2;
-    uint64_t    exitCode    = (uint64_t)SVM_EXIT_INVALID;
-    SVM_VMCB   *pVMCB       = NULL;
-    bool        fSyncTPR    = false;
-    unsigned    cResume     = 0;
-    uint8_t     u8LastTPR   = 0; /* Initialized for potentially stupid compilers. */
-    uint32_t    u32HostExtFeatures = 0;
+    VBOXSTRICTRC    rc = VINF_SUCCESS;
+    int             rc2;
+    uint64_t        exitCode    = (uint64_t)SVM_EXIT_INVALID;
+    SVM_VMCB       *pVMCB       = NULL;
+    bool            fSyncTPR    = false;
+    unsigned        cResume     = 0;
+    uint8_t         u8LastTPR   = 0; /* Initialized for potentially stupid compilers. */
+    uint32_t        u32HostExtFeatures = 0;
     PHMGLOBLCPUINFO pCpu    = 0;
-    RTCCUINTREG uOldEFlags  = ~(RTCCUINTREG)0;
+    RTCCUINTREG     uOldEFlags  = ~(RTCCUINTREG)0;
 #ifdef VBOX_STRICT
-    RTCPUID     idCpuCheck;
+    RTCPUID         idCpuCheck;
 #endif
 #ifdef VBOX_HIGH_RES_TIMERS_HACK_IN_RING0
-    uint64_t    u64LastTime = RTTimeMilliTS();
+    uint64_t        u64LastTime = RTTimeMilliTS();
 #endif
 
     pVMCB = (SVM_VMCB *)pVCpu->hwaccm.s.svm.pVMCB;
@@ -1455,7 +1459,7 @@ ResumeExecution:
      * Save the current Host TSC_AUX and write the guest TSC_AUX to the host, so that
      * RDTSCPs (that don't cause exits) reads the guest MSR. See @bugref{3324}.
      */
-    u32HostExtFeatures = ASMCpuId_EDX(0x80000001);  /** @todo Move this elsewhere, not needed on every world switch */
+    u32HostExtFeatures = pVM->hwaccm.s.cpuid.u32AMDFeatureEDX;
     if (    (u32HostExtFeatures & X86_CPUID_EXT_FEATURE_EDX_RDTSCP)
         && !(pVMCB->ctrl.u32InterceptCtrl2 & SVM_CTRL2_INTERCEPT_RDTSCP))
     {
@@ -2393,30 +2397,15 @@ ResumeExecution:
     case SVM_EXIT_IOIO:              /* I/O instruction. */
     {
         SVM_IOIO_EXIT   IoExitInfo;
-        uint32_t        uIOSize, uAndVal;
 
         IoExitInfo.au32[0] = pVMCB->ctrl.u64ExitInfo1;
-
-        /** @todo could use a lookup table here */
-        if (IoExitInfo.n.u1OP8)
-        {
-            uIOSize = 1;
-            uAndVal = 0xff;
-        }
-        else if (IoExitInfo.n.u1OP16)
-        {
-            uIOSize = 2;
-            uAndVal = 0xffff;
-        }
-        else if (IoExitInfo.n.u1OP32)
-        {
-            uIOSize = 4;
-            uAndVal = 0xffffffff;
-        }
-        else
+        unsigned uIdx      = (IoExitInfo.au32[0] >> 4) & 0x7;
+        uint32_t uIOSize   = g_aIOSize[uIdx];
+        uint32_t uAndVal   = g_aIOOpAnd[uIdx];
+        if (RT_UNLIKELY(!uIOSize))
         {
             AssertFailed(); /* should be fatal. */
-            rc = VINF_EM_RAW_EMULATE_INSTR;
+            rc = VINF_EM_RAW_EMULATE_INSTR;  /** @todo r=ramshankar: would this really fall back to the recompiler and work? */
             break;
         }
 
@@ -2821,7 +2810,7 @@ static int hmR0SvmEmulateTprVMMCall(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         if (!pPatch)
             break;
 
-        switch(pPatch->enmType)
+        switch (pPatch->enmType)
         {
             case HWACCMTPRINSTR_READ:
                 /* TPR caching in CR8 */
@@ -2855,8 +2844,8 @@ static int hmR0SvmEmulateTprVMMCall(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
                 pCtx->rip += pPatch->cbOp;
                 break;
 
-        default:
-                AssertMsgFailedReturn(("Unexpected type %d\n", pPatch->enmType), VERR_HMSVM_UNEXPECTED_PATCH_TYPE);
+            default:
+                    AssertMsgFailedReturn(("Unexpected type %d\n", pPatch->enmType), VERR_HMSVM_UNEXPECTED_PATCH_TYPE);
         }
     }
     return VINF_SUCCESS;

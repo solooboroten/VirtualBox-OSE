@@ -1,4 +1,4 @@
-/* $Id: UIGraphicsButton.cpp 42678 2012-08-08 11:25:47Z vboxsync $ */
+/* $Id: UIGraphicsButton.cpp 42799 2012-08-13 19:53:00Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -24,19 +24,31 @@
 /* GUI includes: */
 #include "UIGraphicsButton.h"
 
-UIGraphicsButton::UIGraphicsButton(QIGraphicsWidget *pParent)
+UIGraphicsButton::UIGraphicsButton(QIGraphicsWidget *pParent, const QIcon &icon)
     : QIGraphicsWidget(pParent)
+    , m_icon(icon)
+    , m_buttonType(UIGraphicsButtonType_Iconified)
+    , m_fParentSelected(false)
 {
     /* Refresh finally: */
     refresh();
 }
 
-void UIGraphicsButton::setIcon(const QIcon &icon)
+UIGraphicsButton::UIGraphicsButton(QIGraphicsWidget *pParent, UIGraphicsButtonType buttonType)
+    : QIGraphicsWidget(pParent)
+    , m_buttonType(buttonType)
+    , m_fParentSelected(false)
 {
-    /* Remember icon: */
-    m_icon = icon;
-    /* Relayout/redraw button: */
+    /* Refresh finally: */
     refresh();
+}
+
+void UIGraphicsButton::setParentSelected(bool fParentSelected)
+{
+    if (m_fParentSelected == fParentSelected)
+        return;
+    m_fParentSelected = fParentSelected;
+    update();
 }
 
 QVariant UIGraphicsButton::data(int iKey) const
@@ -70,16 +82,88 @@ QSizeF UIGraphicsButton::sizeHint(Qt::SizeHint which, const QSizeF &constraint /
 
 void UIGraphicsButton::paint(QPainter *pPainter, const QStyleOptionGraphicsItem* /* pOption */, QWidget* /* pWidget = 0 */)
 {
-    /* Variables: */
+    /* Prepare variables: */
     int iMargin = data(GraphicsButton_Margin).toInt();
-    QSize iconSize = data(GraphicsButton_IconSize).toSize();
     QIcon icon = data(GraphicsButton_Icon).value<QIcon>();
+    QSize iconSize = data(GraphicsButton_IconSize).toSize();
 
-    /* Draw pixmap: */
-    pPainter->drawPixmap(/* Pixmap rectangle: */
-                         QRect(QPoint(iMargin, iMargin), iconSize),
-                         /* Pixmap size: */
-                         icon.pixmap(iconSize));
+    /* Which type button has: */
+    switch (m_buttonType)
+    {
+        case UIGraphicsButtonType_Iconified:
+        {
+            /* Just draw the pixmap: */
+            pPainter->drawPixmap(QRect(QPoint(iMargin, iMargin), iconSize), icon.pixmap(iconSize));
+            break;
+        }
+        case UIGraphicsButtonType_DirectArrow:
+        {
+            /* Prepare variables: */
+            QPalette pal = palette();
+            QColor backgroundColor = pal.color(m_fParentSelected ? QPalette::Highlight : QPalette::Window);
+            QColor buttonColor = pal.color(QPalette::Window);
+            if (backgroundColor.lightness() > 170)
+                buttonColor = buttonColor.darker(160);
+            else
+                buttonColor = buttonColor.darker(99);
+
+            /* Setup: */
+            pPainter->setRenderHint(QPainter::Antialiasing);
+            QPen pen = pPainter->pen();
+            pen.setColor(buttonColor);
+            pen.setWidth(2);
+            pen.setCapStyle(Qt::RoundCap);
+
+            /* Draw path: */
+            QPainterPath circlePath;
+            circlePath.moveTo(iMargin, iMargin);
+            circlePath.lineTo(iMargin + iconSize.width() / 2, iMargin);
+            circlePath.arcTo(QRectF(circlePath.currentPosition(), iconSize).translated(-iconSize.width() / 2, 0), 90, -180);
+            circlePath.lineTo(iMargin, iMargin + iconSize.height());
+            circlePath.closeSubpath();
+            pPainter->strokePath(circlePath, pen);
+
+            /* Draw triangle: */
+            QPainterPath linePath;
+            linePath.moveTo(iMargin + 5, iMargin + 5);
+            linePath.lineTo(iMargin + iconSize.height() - 5, iMargin + iconSize.width() / 2);
+            linePath.lineTo(iMargin + 5, iMargin + iconSize.width() - 5);
+            pPainter->strokePath(linePath, pen);
+            break;
+        }
+        case UIGraphicsButtonType_RoundArrow:
+        {
+            /* Prepare variables: */
+            QPalette pal = palette();
+            QColor backgroundColor = pal.color(m_fParentSelected ? QPalette::Highlight : QPalette::Window);
+            QColor buttonColor = pal.color(QPalette::Window);
+            if (backgroundColor.lightness() > 170)
+                buttonColor = buttonColor.darker(160);
+            else
+                buttonColor = buttonColor.darker(99);
+
+            /* Setup: */
+            pPainter->setRenderHint(QPainter::Antialiasing);
+            QPen pen = pPainter->pen();
+            pen.setColor(buttonColor);
+            pen.setWidth(2);
+            pen.setCapStyle(Qt::RoundCap);
+
+            /* Draw circle: */
+            QPainterPath circlePath;
+            circlePath.moveTo(iMargin, iMargin);
+            circlePath.addEllipse(QRectF(circlePath.currentPosition(), iconSize));
+            pPainter->strokePath(circlePath, pen);
+
+            /* Draw triangle: */
+            QPainterPath linePath;
+            linePath.moveTo(iMargin + 5, iMargin + 5);
+            linePath.lineTo(iMargin + iconSize.height() - 5, iMargin + iconSize.width() / 2);
+            linePath.lineTo(iMargin + 5, iMargin + iconSize.width() - 5);
+            pPainter->strokePath(linePath, pen);
+            break;
+        }
+    }
 }
 
 void UIGraphicsButton::mousePressEvent(QGraphicsSceneMouseEvent *pEvent)

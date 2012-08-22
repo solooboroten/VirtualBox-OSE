@@ -1,4 +1,4 @@
-/* $Id: GuestImpl.cpp 42261 2012-07-20 13:27:47Z vboxsync $ */
+/* $Id: GuestImpl.cpp 42897 2012-08-21 10:03:52Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Guest
  */
@@ -31,10 +31,6 @@
 #include "Performance.h"
 
 #include <VBox/VMMDev.h>
-#ifdef VBOX_WITH_GUEST_CONTROL
-# include <VBox/com/array.h>
-# include <VBox/com/ErrorInfo.h>
-#endif
 #include <iprt/cpp/utils.h>
 #include <iprt/timer.h>
 #include <VBox/vmm/pgm.h>
@@ -46,7 +42,7 @@
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
 
-DEFINE_EMPTY_CTOR_DTOR (Guest)
+DEFINE_EMPTY_CTOR_DTOR(Guest)
 
 HRESULT Guest::FinalConstruct()
 {
@@ -55,7 +51,7 @@ HRESULT Guest::FinalConstruct()
 
 void Guest::FinalRelease()
 {
-    uninit ();
+    uninit();
     BaseFinalRelease();
 }
 
@@ -103,21 +99,21 @@ HRESULT Guest::init(Console *aParent)
     mGuestValidStats = pm::GUESTSTATMASK_NONE;
 
     mMagic = GUEST_MAGIC;
-    int vrc = RTTimerLRCreate (&mStatTimer, 1000 /* ms */,
-                               &Guest::staticUpdateStats, this);
-    AssertMsgRC (vrc, ("Failed to create guest statistics "
-                       "update timer(%Rra)\n", vrc));
+    int vrc = RTTimerLRCreate(&mStatTimer, 1000 /* ms */,
+                              &Guest::staticUpdateStats, this);
+    AssertMsgRC(vrc, ("Failed to create guest statistics update timer(%Rra)\n", vrc));
 
-#ifdef VBOX_WITH_GUEST_CONTROL
-    /* Init the context ID counter at 1000. */
-    mNextContextID = 1000;
-    /* Init the host PID counter. */
-    mNextHostPID = 0;
-#endif
-
+    try
+    {
 #ifdef VBOX_WITH_DRAG_AND_DROP
-    m_pGuestDnD = new GuestDnD(this);
+        m_pGuestDnD = new GuestDnD(this);
+        AssertPtr(m_pGuestDnD);
 #endif
+    }
+    catch(std::bad_alloc &)
+    {
+        return E_OUTOFMEMORY;
+    }
 
     return S_OK;
 }
@@ -135,59 +131,52 @@ void Guest::uninit()
     if (autoUninitSpan.uninitDone())
         return;
 
-#ifdef VBOX_WITH_GUEST_CONTROL
-    /* Scope write lock as much as possible. */
-    {
-        /*
-         * Cleanup must be done *before* AutoUninitSpan to cancel all
-         * all outstanding waits in API functions (which hold AutoCaller
-         * ref counts).
-         */
-        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-        /* Notify left over callbacks that we are about to shutdown ... */
-        CallbackMapIter it;
-        for (it = mCallbackMap.begin(); it != mCallbackMap.end(); it++)
-        {
-            int rc2 = callbackNotifyEx(it->first, VERR_CANCELLED,
-                                       Guest::tr("VM is shutting down, canceling uncompleted guest requests ..."));
-            AssertRC(rc2);
-        }
-
-        /* Destroy left over callback data. */
-        for (it = mCallbackMap.begin(); it != mCallbackMap.end(); it++)
-            callbackDestroy(it->first);
-
-        /* Clear process map (remove all callbacks). */
-        mGuestProcessMap.clear();
-    }
-#endif
-
     /* Destroy stat update timer */
-    int vrc = RTTimerLRDestroy (mStatTimer);
-    AssertMsgRC (vrc, ("Failed to create guest statistics "
-                       "update timer(%Rra)\n", vrc));
+    int vrc = RTTimerLRDestroy(mStatTimer);
+    AssertMsgRC(vrc, ("Failed to create guest statistics update timer(%Rra)\n", vrc));
     mStatTimer = NULL;
     mMagic     = 0;
 
+#ifdef VBOX_WITH_GUEST_CONTROL
+    LogFlowThisFunc(("Closing sessions (%RU64 total)\n",
+                     mData.mGuestSessions.size()));
+    GuestSessions::iterator itSessions = mData.mGuestSessions.begin();
+    while (itSessions != mData.mGuestSessions.end())
+    {
+#ifdef DEBUG
+        ULONG cRefs = itSessions->second->AddRef();
+        LogFlowThisFunc(("pSession=%p, cRefs=%RU32\n", itSessions->second, cRefs > 0 ? cRefs - 1 : 0));
+        itSessions->second->Release();
+#endif
+        itSessions->second->uninit();
+        itSessions++;
+    }
+    mData.mGuestSessions.clear();
+#endif
+
 #ifdef VBOX_WITH_DRAG_AND_DROP
-    delete m_pGuestDnD;
-    m_pGuestDnD = NULL;
+    if (m_pGuestDnD)
+    {
+        delete m_pGuestDnD;
+        m_pGuestDnD = NULL;
+    }
 #endif
 
     unconst(mParent) = NULL;
+
+    LogFlowFuncLeave();
 }
 
 /* static */
 void Guest::staticUpdateStats(RTTIMERLR hTimerLR, void *pvUser, uint64_t iTick)
 {
-    AssertReturnVoid (pvUser != NULL);
-    Guest *guest = static_cast <Guest *> (pvUser);
+    AssertReturnVoid(pvUser != NULL);
+    Guest *guest = static_cast<Guest *>(pvUser);
     Assert(guest->mMagic == GUEST_MAGIC);
     if (guest->mMagic == GUEST_MAGIC)
         guest->updateStats(iTick);
 
-    NOREF (hTimerLR);
+    NOREF(hTimerLR);
 }
 
 void Guest::updateStats(uint64_t iTick)
@@ -221,7 +210,7 @@ void Guest::updateStats(uint64_t iTick)
     uSharedMem      = 0;
     uZeroMem        = 0;
 
-    Console::SafeVMPtr pVM (mParent);
+    Console::SafeVMPtr pVM(mParent);
     if (pVM.isOk())
     {
         int rc;
@@ -295,7 +284,7 @@ STDMETHODIMP Guest::COMGETTER(OSTypeId)(BSTR *a_pbstrOSTypeId)
     return hrc;
 }
 
-STDMETHODIMP Guest::COMGETTER(AdditionsRunLevel) (AdditionsRunLevelType_T *aRunLevel)
+STDMETHODIMP Guest::COMGETTER(AdditionsRunLevel)(AdditionsRunLevelType_T *aRunLevel)
 {
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();

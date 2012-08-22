@@ -830,7 +830,13 @@ void UISelectorWindow::sltCurrentVMItemChanged(bool fRefreshDetails, bool fRefre
         if (fRefreshDetails)
             m_pDetails->setItems(currentItems());
         if (fRefreshSnapshots)
+        {
             m_pVMDesktop->updateSnapshots(pItem, pItem->machine());
+            /* Always hide snapshots-view if
+             * single group or more than one machine is selected: */
+            if (currentItems().size() > 1 || m_pChooser->singleGroupSelected())
+                m_pVMDesktop->lockSnapshots();
+        }
     }
     /* If currently selected VM item is NOT accessible: */
     else
@@ -1143,21 +1149,19 @@ void UISelectorWindow::prepareMenuFile(QMenu *pMenu)
 
 void UISelectorWindow::prepareCommonActions()
 {
-    m_pAction_Common_New               = gActionPool->action(UIActionIndexSelector_Simple_Common_New);
-    m_pAction_Common_Add               = gActionPool->action(UIActionIndexSelector_Simple_Common_Add);
     m_pAction_Common_StartOrShow       = gActionPool->action(UIActionIndexSelector_State_Common_StartOrShow);
     m_pAction_Common_PauseAndResume    = gActionPool->action(UIActionIndexSelector_Toggle_Common_PauseAndResume);
     m_pAction_Common_Reset             = gActionPool->action(UIActionIndexSelector_Simple_Common_Reset);
     m_pAction_Common_Discard           = gActionPool->action(UIActionIndexSelector_Simple_Common_Discard);
-    m_pAction_Common_LogDialog         = gActionPool->action(UIActionIndex_Simple_LogDialog);
     m_pAction_Common_Refresh           = gActionPool->action(UIActionIndexSelector_Simple_Common_Refresh);
     m_pAction_Common_ShowInFileManager = gActionPool->action(UIActionIndexSelector_Simple_Common_ShowInFileManager);
     m_pAction_Common_CreateShortcut    = gActionPool->action(UIActionIndexSelector_Simple_Common_CreateShortcut);
-    m_pAction_Common_SortParent        = gActionPool->action(UIActionIndexSelector_Simple_Common_SortParent);
 }
 
 void UISelectorWindow::prepareGroupActions()
 {
+    m_pAction_Group_New    = gActionPool->action(UIActionIndexSelector_Simple_Group_New);
+    m_pAction_Group_Add    = gActionPool->action(UIActionIndexSelector_Simple_Group_Add);
     m_pAction_Group_Rename = gActionPool->action(UIActionIndexSelector_Simple_Group_Rename);
     m_pAction_Group_Remove = gActionPool->action(UIActionIndexSelector_Simple_Group_Remove);
     m_pAction_Group_Sort   = gActionPool->action(UIActionIndexSelector_Simple_Group_Sort);
@@ -1165,10 +1169,14 @@ void UISelectorWindow::prepareGroupActions()
 
 void UISelectorWindow::prepareMachineActions()
 {
-    m_pAction_Machine_Settings = gActionPool->action(UIActionIndexSelector_Simple_Machine_Settings);
-    m_pAction_Machine_Clone    = gActionPool->action(UIActionIndexSelector_Simple_Machine_Clone);
-    m_pAction_Machine_Remove   = gActionPool->action(UIActionIndexSelector_Simple_Machine_Remove);
-    m_pAction_Machine_AddGroup = gActionPool->action(UIActionIndexSelector_Simple_Machine_AddGroup);
+    m_pAction_Machine_New        = gActionPool->action(UIActionIndexSelector_Simple_Machine_New);
+    m_pAction_Machine_Add        = gActionPool->action(UIActionIndexSelector_Simple_Machine_Add);
+    m_pAction_Machine_Settings   = gActionPool->action(UIActionIndexSelector_Simple_Machine_Settings);
+    m_pAction_Machine_Clone      = gActionPool->action(UIActionIndexSelector_Simple_Machine_Clone);
+    m_pAction_Machine_Remove     = gActionPool->action(UIActionIndexSelector_Simple_Machine_Remove);
+    m_pAction_Machine_AddGroup   = gActionPool->action(UIActionIndexSelector_Simple_Machine_AddGroup);
+    m_pAction_Machine_LogDialog  = gActionPool->action(UIActionIndex_Simple_LogDialog);
+    m_pAction_Machine_SortParent = gActionPool->action(UIActionIndexSelector_Simple_Machine_SortParent);
 }
 
 void UISelectorWindow::prepareMenuGroup(QMenu *pMenu)
@@ -1178,8 +1186,8 @@ void UISelectorWindow::prepareMenuGroup(QMenu *pMenu)
         return;
 
     /* Populate Machine-menu: */
-    pMenu->addAction(m_pAction_Common_New);
-    pMenu->addAction(m_pAction_Common_Add);
+    pMenu->addAction(m_pAction_Group_New);
+    pMenu->addAction(m_pAction_Group_Add);
     pMenu->addSeparator();
     pMenu->addAction(m_pAction_Group_Rename);
     pMenu->addAction(m_pAction_Group_Remove);
@@ -1190,17 +1198,17 @@ void UISelectorWindow::prepareMenuGroup(QMenu *pMenu)
     pMenu->addMenu(m_pGroupCloseMenu);
     pMenu->addSeparator();
     pMenu->addAction(m_pAction_Common_Discard);
-    pMenu->addAction(m_pAction_Common_LogDialog);
     pMenu->addAction(m_pAction_Common_Refresh);
     pMenu->addSeparator();
     pMenu->addAction(m_pAction_Common_ShowInFileManager);
     pMenu->addAction(m_pAction_Common_CreateShortcut);
     pMenu->addSeparator();
-    pMenu->addAction(m_pAction_Common_SortParent);
     pMenu->addAction(m_pAction_Group_Sort);
 
     /* Remember action list: */
-    m_groupActions << m_pAction_Group_Rename
+    m_groupActions << m_pAction_Group_New
+                   << m_pAction_Group_Add
+                   << m_pAction_Group_Rename
                    << m_pAction_Group_Remove
                    << m_pAction_Group_Sort;
 }
@@ -1212,8 +1220,8 @@ void UISelectorWindow::prepareMenuMachine(QMenu *pMenu)
         return;
 
     /* Populate Machine-menu: */
-    pMenu->addAction(m_pAction_Common_New);
-    pMenu->addAction(m_pAction_Common_Add);
+    pMenu->addAction(m_pAction_Machine_New);
+    pMenu->addAction(m_pAction_Machine_Add);
     pMenu->addAction(m_pAction_Machine_Settings);
     pMenu->addAction(m_pAction_Machine_Clone);
     pMenu->addAction(m_pAction_Machine_Remove);
@@ -1225,19 +1233,23 @@ void UISelectorWindow::prepareMenuMachine(QMenu *pMenu)
     pMenu->addMenu(m_pMachineCloseMenu);
     pMenu->addSeparator();
     pMenu->addAction(m_pAction_Common_Discard);
-    pMenu->addAction(m_pAction_Common_LogDialog);
+    pMenu->addAction(m_pAction_Machine_LogDialog);
     pMenu->addAction(m_pAction_Common_Refresh);
     pMenu->addSeparator();
     pMenu->addAction(m_pAction_Common_ShowInFileManager);
     pMenu->addAction(m_pAction_Common_CreateShortcut);
     pMenu->addSeparator();
-    pMenu->addAction(m_pAction_Common_SortParent);
+    pMenu->addAction(m_pAction_Machine_SortParent);
 
     /* Remember action list: */
-    m_machineActions << m_pAction_Machine_Settings
+    m_machineActions << m_pAction_Machine_New
+                     << m_pAction_Machine_Add
+                     << m_pAction_Machine_Settings
                      << m_pAction_Machine_Clone
                      << m_pAction_Machine_Remove
-                     << m_pAction_Machine_AddGroup;
+                     << m_pAction_Machine_AddGroup
+                     << m_pAction_Machine_LogDialog
+                     << m_pAction_Machine_SortParent;
 }
 
 void UISelectorWindow::prepareMenuGroupClose(QMenu *pMenu)
@@ -1324,7 +1336,7 @@ void UISelectorWindow::prepareWidgets()
     mVMToolBar->setContextMenuPolicy(Qt::CustomContextMenu);
     mVMToolBar->setIconSize(QSize(32, 32));
     mVMToolBar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    mVMToolBar->addAction(m_pAction_Common_New);
+    mVMToolBar->addAction(m_pAction_Machine_New);
     mVMToolBar->addAction(m_pAction_Machine_Settings);
     mVMToolBar->addAction(m_pAction_Common_StartOrShow);
     mVMToolBar->addAction(m_pAction_Common_Discard);
@@ -1388,19 +1400,22 @@ void UISelectorWindow::prepareConnections()
     connect(m_pExitAction, SIGNAL(triggered()), this, SLOT(sltPerformExit()));
 
     /* 'Group'/'Machine' menu common connections: */
-    connect(m_pAction_Common_Add, SIGNAL(triggered()), this, SLOT(sltShowAddMachineDialog()));
     connect(m_pAction_Common_StartOrShow, SIGNAL(triggered()), this, SLOT(sltPerformStartOrShowAction()));
     connect(m_pAction_Common_PauseAndResume, SIGNAL(toggled(bool)), this, SLOT(sltPerformPauseResumeAction(bool)));
     connect(m_pAction_Common_Reset, SIGNAL(triggered()), this, SLOT(sltPerformResetAction()));
     connect(m_pAction_Common_Discard, SIGNAL(triggered()), this, SLOT(sltPerformDiscardAction()));
-    connect(m_pAction_Common_LogDialog, SIGNAL(triggered()), this, SLOT(sltShowLogDialog()));
     connect(m_pAction_Common_Refresh, SIGNAL(triggered()), this, SLOT(sltPerformRefreshAction()));
     connect(m_pAction_Common_ShowInFileManager, SIGNAL(triggered()), this, SLOT(sltShowMachineInFileManager()));
     connect(m_pAction_Common_CreateShortcut, SIGNAL(triggered()), this, SLOT(sltPerformCreateShortcutAction()));
 
+    /* 'Group' menu connections: */
+    connect(m_pAction_Group_Add, SIGNAL(triggered()), this, SLOT(sltShowAddMachineDialog()));
+
     /* 'Machine' menu connections: */
+    connect(m_pAction_Machine_Add, SIGNAL(triggered()), this, SLOT(sltShowAddMachineDialog()));
     connect(m_pAction_Machine_Settings, SIGNAL(triggered()), this, SLOT(sltShowMachineSettingsDialog()));
     connect(m_pAction_Machine_Clone, SIGNAL(triggered()), this, SLOT(sltShowCloneMachineWizard()));
+    connect(m_pAction_Machine_LogDialog, SIGNAL(triggered()), this, SLOT(sltShowLogDialog()));
 
     /* 'Group/Close' menu connections: */
     connect(m_pGroupCloseMenu, SIGNAL(aboutToShow()), this, SLOT(sltGroupCloseMenuAboutToShow()));
@@ -1596,17 +1611,17 @@ void UISelectorWindow::updateActionsAppearance()
     m_pAction_Machine_Clone->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Machine_Clone, items));
     m_pAction_Machine_Remove->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Machine_Remove, items));
     m_pAction_Machine_AddGroup->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Machine_AddGroup, items));
+    m_pAction_Machine_LogDialog->setEnabled(isActionEnabled(UIActionIndex_Simple_LogDialog, items));
+    m_pAction_Machine_SortParent->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Machine_SortParent, items));
 
     /* Enable/disable common actions: */
     m_pAction_Common_StartOrShow->setEnabled(isActionEnabled(UIActionIndexSelector_State_Common_StartOrShow, items));
     m_pAction_Common_PauseAndResume->setEnabled(isActionEnabled(UIActionIndexSelector_Toggle_Common_PauseAndResume, items));
     m_pAction_Common_Reset->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Common_Reset, items));
     m_pAction_Common_Discard->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Common_Discard, items));
-    m_pAction_Common_LogDialog->setEnabled(isActionEnabled(UIActionIndex_Simple_LogDialog, items));
     m_pAction_Common_Refresh->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Common_Refresh, items));
     m_pAction_Common_ShowInFileManager->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Common_ShowInFileManager, items));
     m_pAction_Common_CreateShortcut->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Common_CreateShortcut, items));
-    m_pAction_Common_SortParent->setEnabled(isActionEnabled(UIActionIndexSelector_Simple_Common_SortParent, items));
 
     /* Enable/disable group-close actions: */
     m_pGroupCloseMenuAction->setEnabled(isActionEnabled(UIActionIndexSelector_Menu_Group_Close, items));
@@ -1715,11 +1730,14 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
             return isAtLeastOneItemInaccessible(items);
         }
         case UIActionIndex_Simple_LogDialog:
+        {
+            return items.size() == 1 && pItem->accessible();
+        }
         case UIActionIndexSelector_Simple_Common_ShowInFileManager:
         {
             return isAtLeastOneItemAccessible(items);
         }
-        case UIActionIndexSelector_Simple_Common_SortParent:
+        case UIActionIndexSelector_Simple_Machine_SortParent:
         {
             return !m_pChooser->isGroupSavingInProgress();
         }

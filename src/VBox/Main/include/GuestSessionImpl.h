@@ -1,5 +1,5 @@
 
-/* $Id: GuestSessionImpl.h 42783 2012-08-12 20:25:38Z vboxsync $ */
+/* $Id: GuestSessionImpl.h 42898 2012-08-21 10:07:13Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */
@@ -194,7 +194,7 @@ public:
     STDMETHOD(Close)(void);
     STDMETHOD(CopyFrom)(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn(CopyFileFlag_T, aFlags), IProgress **aProgress);
     STDMETHOD(CopyTo)(IN_BSTR aSource, IN_BSTR aDest, ComSafeArrayIn(CopyFileFlag_T, aFlags), IProgress **aProgress);
-    STDMETHOD(DirectoryCreate)(IN_BSTR aPath, ULONG aMode, ComSafeArrayIn(DirectoryCreateFlag_T, aFlags), IGuestDirectory **aDirectory);
+    STDMETHOD(DirectoryCreate)(IN_BSTR aPath, ULONG aMode, ComSafeArrayIn(DirectoryCreateFlag_T, aFlags));
     STDMETHOD(DirectoryCreateTemp)(IN_BSTR aTemplate, ULONG aMode, IN_BSTR aPath, BOOL aSecure, BSTR *aDirectory);
     STDMETHOD(DirectoryExists)(IN_BSTR aPath, BOOL *aExists);
     STDMETHOD(DirectoryOpen)(IN_BSTR aPath, IN_BSTR aFilter, ComSafeArrayIn(DirectoryOpenFlag_T, aFlags), IGuestDirectory **aDirectory);
@@ -243,27 +243,30 @@ private:
 public:
     /** @name Public internal methods.
      * @{ */
-    int                     directoryClose(ComObjPtr<GuestDirectory> pDirectory);
-    int                     directoryCreateInternal(const Utf8Str &strPath, uint32_t uMode, uint32_t uFlags, ComObjPtr<GuestDirectory> &pDirectory);
+    int                     directoryRemoveFromList(GuestDirectory *pDirectory);
+    int                     directoryCreateInternal(const Utf8Str &strPath, uint32_t uMode, uint32_t uFlags);
     int                     objectCreateTempInternal(Utf8Str strTemplate,
                                                      Utf8Str strPath,
                                                      bool fDirectory,
                                                      Utf8Str &strName,
                                                      int *prc);
     int                     directoryOpenInternal(const Utf8Str &strPath, const Utf8Str &strFilter, uint32_t uFlags, ComObjPtr<GuestDirectory> &pDirectory);
+    int                     directoryQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &objData);
     int                     dispatchToProcess(uint32_t uContextID, uint32_t uFunction, void *pvData, size_t cbData);
-    int                     fileClose(ComObjPtr<GuestFile> pFile);
+    int                     fileRemoveFromList(GuestFile *pFile);
     int                     fileRemoveInternal(Utf8Str strPath, int *prc);
     int                     fileOpenInternal(const Utf8Str &strPath, const Utf8Str &strOpenMode, const Utf8Str &strDisposition,
                                              uint32_t uCreationMode, int64_t iOffset, ComObjPtr<GuestFile> &pFile);
     int                     fileQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &objData);
     int                     fileQuerySizeInternal(const Utf8Str &strPath, int64_t *pllSize);
+    int                     fsQueryInfoInternal(const Utf8Str &strPath, GuestFsObjData &objData);
     const GuestCredentials &getCredentials(void);
     const GuestEnvironment &getEnvironment(void);
     Utf8Str                 getName(void);
+    ULONG                   getId(void) { return mData.mId; }
     Guest                  *getParent(void) { return mData.mParent; }
     uint32_t                getProtocolVersion(void) { return mData.mProtocolVersion; }
-    int                     processClose(ComObjPtr<GuestProcess> pProcess);
+    int                     processRemoveFromList(GuestProcess *pProcess);
     int                     processCreateExInteral(GuestProcessStartupInfo &procInfo, ComObjPtr<GuestProcess> &pProgress);
     inline bool             processExists(uint32_t uProcessID, ComObjPtr<GuestProcess> *pProcess);
     inline int              processGetByPID(ULONG uPID, ComObjPtr<GuestProcess> *pProcess);
@@ -301,6 +304,9 @@ private:
         SessionFiles         mFiles;
         /** Process objects bound to this session. */
         SessionProcesses     mProcesses;
+        /** Total number of session objects (processes,
+         *  files, ...). */
+        uint32_t             mNumObjects;
     } mData;
 };
 

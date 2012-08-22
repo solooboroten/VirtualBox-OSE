@@ -1,5 +1,5 @@
 
-/* $Id: GuestFileImpl.h 42611 2012-08-06 08:42:23Z vboxsync $ */
+/* $Id: GuestFileImpl.h 42897 2012-08-21 10:03:52Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */
@@ -62,12 +62,12 @@ public:
 
     STDMETHOD(Close)(void);
     STDMETHOD(QueryInfo)(IFsObjInfo **aInfo);
-    STDMETHOD(Read)(ULONG aToRead, ULONG *aRead, ComSafeArrayOut(BYTE, aData));
-    STDMETHOD(ReadAt)(LONG64 aOffset, ULONG aToRead, ULONG *aRead, ComSafeArrayOut(BYTE, aData));
+    STDMETHOD(Read)(ULONG aToRead, ULONG aTimeoutMS, ComSafeArrayOut(BYTE, aData));
+    STDMETHOD(ReadAt)(LONG64 aOffset, ULONG aToRead, ULONG aTimeoutMS, ComSafeArrayOut(BYTE, aData));
     STDMETHOD(Seek)(LONG64 aOffset, FileSeekType_T aType);
     STDMETHOD(SetACL)(IN_BSTR aACL);
-    STDMETHOD(Write)(ComSafeArrayIn(BYTE, aData), ULONG *aWritten);
-    STDMETHOD(WriteAt)(LONG64 aOffset, ComSafeArrayIn(BYTE, aData), ULONG *aWritten);
+    STDMETHOD(Write)(ComSafeArrayIn(BYTE, aData), ULONG aTimeoutMS, ULONG *aWritten);
+    STDMETHOD(WriteAt)(LONG64 aOffset, ComSafeArrayIn(BYTE, aData), ULONG aTimeoutMS, ULONG *aWritten);
     /** @}  */
 
 public:
@@ -82,9 +82,7 @@ private:
     struct Data
     {
         /** The associate session this file belongs to. */
-        ComObjPtr<GuestSession> mSession;
-        /** The process object this file is bound to. */
-        ComObjPtr<GuestProcess> mProcess;
+        GuestSession           *mSession;
         uint32_t                mCreationMode;
         uint32_t                mDisposition;
         Utf8Str                 mFileName;

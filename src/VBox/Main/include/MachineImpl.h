@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.h 42569 2012-08-03 09:52:23Z vboxsync $ */
+/* $Id: MachineImpl.h 42890 2012-08-20 17:45:13Z vboxsync $ */
 /** @file
  * Implementation of IMachine in VBoxSVC - Header.
  */
@@ -257,6 +257,10 @@ public:
         ULONG                mMemoryBalloonSize;
         BOOL                 mPageFusionEnabled;
         ULONG                mVRAMSize;
+        ULONG                mVideoCaptureWidth;
+        ULONG                mVideoCaptureHeight;
+        Bstr                 mVideoCaptureFile;
+        BOOL                 mVideoCaptureEnabled;
         ULONG                mMonitorCount;
         BOOL                 mHWVirtExEnabled;
         BOOL                 mHWVirtExExclusive;
@@ -351,9 +355,9 @@ public:
                  bool fForceOverwrite);
 
     // initializer for loading existing machine XML (either registered or not)
-    HRESULT init(VirtualBox *aParent,
-                 const Utf8Str &strConfigFile,
-                 const Guid *aId);
+    HRESULT initFromSettings(VirtualBox *aParent,
+                             const Utf8Str &strConfigFile,
+                             const Guid *aId);
 
     // initializer for machine config in memory (OVF import)
     HRESULT init(VirtualBox *aParent,
@@ -413,6 +417,14 @@ public:
     STDMETHOD(COMSETTER(PageFusionEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(VRAMSize))(ULONG *memorySize);
     STDMETHOD(COMSETTER(VRAMSize))(ULONG memorySize);
+    STDMETHOD(COMGETTER(VideoCaptureEnabled))(BOOL *u8VideoRecEnabled);
+    STDMETHOD(COMSETTER(VideoCaptureEnabled))(BOOL  u8VideoRecEnabled);
+    STDMETHOD(COMGETTER(VideoCaptureFile))(BSTR * ppChVideoRecFilename);
+    STDMETHOD(COMSETTER(VideoCaptureFile))(IN_BSTR pChVideoRecFilename);
+    STDMETHOD(COMGETTER(VideoCaptureWidth))(ULONG *u32VideoRecHorzRes);
+    STDMETHOD(COMSETTER(VideoCaptureWidth))(ULONG u32VideoRecHorzRes);
+    STDMETHOD(COMGETTER(VideoCaptureHeight))(ULONG *u32VideoRecVertRes);
+    STDMETHOD(COMSETTER(VideoCaptureHeight))(ULONG u32VideoRecVertRes);
     STDMETHOD(COMGETTER(MonitorCount))(ULONG *monitorCount);
     STDMETHOD(COMSETTER(MonitorCount))(ULONG monitorCount);
     STDMETHOD(COMGETTER(Accelerate3DEnabled))(BOOL *enabled);
@@ -935,7 +947,7 @@ protected:
     pm::CollectorGuest     *mCollectorGuest;
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
-    Machine* const          mPeer;
+    Machine * const         mPeer;
 
     VirtualBox * const      mParent;
 
@@ -1261,6 +1273,10 @@ public:
 private:
 
     Guid mSnapshotId;
+    /** This field replaces mPeer for SessionMachine instances, as having
+     * a peer reference is plain meaningless and causes many subtle problems
+     * with saving settings and the like. */
+    Machine * const mMachine;
 
     friend class Snapshot;
 };

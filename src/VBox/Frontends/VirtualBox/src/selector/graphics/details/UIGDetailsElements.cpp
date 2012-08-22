@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsElements.cpp 42755 2012-08-10 12:46:01Z vboxsync $ */
+/* $Id: UIGDetailsElements.cpp 42855 2012-08-16 18:42:47Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -76,12 +76,9 @@ void UIGDetailsElementInterface::updateAppearance()
 void UIGDetailsElementInterface::sltUpdateAppearanceFinished(const UITextTable &newText)
 {
     if (text() != newText)
-    {
         setText(newText);
-        model()->updateLayout();
-        update();
-    }
     cleanupThread();
+    emit sigElementUpdateDone();
 }
 
 void UIGDetailsElementInterface::cleanupThread()
@@ -119,10 +116,24 @@ void UIGDetailsUpdateThreadGeneral::run()
             m_text << UITextTableLine(QApplication::translate("UIGDetails", "Operating System", "details (general)"),
                                        vboxGlobal().vmGuestOSTypeDescription(machine().GetOSTypeId()));
 
-            /* Groups: */
+            /* Get groups: */
             QStringList groups = machine().GetGroups().toList();
-            if (!groups.contains("/") || groups.size() > 1)
+            /* Do not show groups for machine which is in root group only: */
+            if (groups.size() == 1)
+                groups.removeAll("/");
+            /* If group list still not empty: */
+            if (!groups.isEmpty())
+            {
+                /* For every group: */
+                for (int i = 0; i < groups.size(); ++i)
+                {
+                    /* Trim first '/' symbol: */
+                    QString &strGroup = groups[i];
+                    if (strGroup.startsWith("/") && strGroup != "/")
+                        strGroup.remove(0, 1);
+                }
                 m_text << UITextTableLine(QApplication::translate("UIGDetails", "Groups", "details (general)"), groups.join(", "));
+            }
         }
         else
             m_text << UITextTableLine(QApplication::translate("UIGDetails", "Information Inaccessible", "details"), QString());
@@ -223,6 +234,7 @@ int UIGDetailsElementPreview::minimumHeightHint(bool fClosed) const
 void UIGDetailsElementPreview::updateAppearance()
 {
     m_pPreview->setMachine(machine());
+    emit sigElementUpdateDone();
 }
 
 void UIGDetailsElementPreview::updateLayout()
@@ -233,7 +245,7 @@ void UIGDetailsElementPreview::updateLayout()
     /* Show/hide preview: */
     if (closed() && m_pPreview->isVisible())
         m_pPreview->hide();
-    if (opened() && !m_pPreview->isVisible())
+    if (opened() && !m_pPreview->isVisible() && !m_fAnimationRunning)
         m_pPreview->show();
 }
 

@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsSet.cpp 42768 2012-08-11 02:39:46Z vboxsync $ */
+/* $Id: UIGDetailsSet.cpp 42906 2012-08-21 13:32:51Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -31,6 +31,8 @@
 
 UIGDetailsSet::UIGDetailsSet(UIGDetailsItem *pParent)
     : UIGDetailsItem(pParent)
+    , m_fFullSet(true)
+    , m_pStep(0)
     , m_iStep(-1)
     , m_iLastStep(-1)
 {
@@ -42,7 +44,6 @@ UIGDetailsSet::UIGDetailsSet(UIGDetailsItem *pParent)
 
     /* Prepare connections: */
     connect(this, SIGNAL(sigStartFirstStep(QString)), this, SLOT(sltFirstStep(QString)), Qt::QueuedConnection);
-    connect(this, SIGNAL(sigElementPrepared(QString)), this, SLOT(sltNextStep(QString)), Qt::QueuedConnection);
     connect(this, SIGNAL(sigSetPrepared()), this, SLOT(sltSetPrepared()), Qt::QueuedConnection);
     connect(gVBoxEvents, SIGNAL(sigMachineStateChange(QString, KMachineState)), this, SLOT(sltMachineStateChange(QString)));
     connect(gVBoxEvents, SIGNAL(sigMachineDataChange(QString)), this, SLOT(sltMachineAttributesChange(QString)));
@@ -64,11 +65,12 @@ UIGDetailsSet::~UIGDetailsSet()
 void UIGDetailsSet::configure(UIVMItem *pItem, const QStringList &settings, bool fFullSet)
 {
     /* Assign settings: */
+    m_fFullSet = fFullSet;
     m_machine = pItem->machine();
     m_settings = settings;
 
     /* Create elements step-by-step: */
-    prepareElements(fFullSet);
+    prepareElements();
 }
 
 const CMachine& UIGDetailsSet::machine() const
@@ -78,6 +80,10 @@ const CMachine& UIGDetailsSet::machine() const
 
 void UIGDetailsSet::sltFirstStep(QString strSetId)
 {
+    /* Clear step: */
+    delete m_pStep;
+    m_pStep = 0;
+
     /* Was that a requested set? */
     if (strSetId != m_strSetId)
         return;
@@ -89,6 +95,10 @@ void UIGDetailsSet::sltFirstStep(QString strSetId)
 
 void UIGDetailsSet::sltNextStep(QString strSetId)
 {
+    /* Clear step: */
+    delete m_pStep;
+    m_pStep = 0;
+
     /* Was that a requested set? */
     if (strSetId != m_strSetId)
         return;
@@ -117,8 +127,7 @@ void UIGDetailsSet::sltMachineStateChange(QString strId)
         pItem->toElement()->updateHoverAccessibility();
 
     /* Update appearance: */
-    foreach (UIGDetailsItem *pItem, items())
-        pItem->toElement()->updateAppearance();
+    prepareElements();
 }
 
 void UIGDetailsSet::sltMachineAttributesChange(QString strId)
@@ -128,15 +137,13 @@ void UIGDetailsSet::sltMachineAttributesChange(QString strId)
         return;
 
     /* Update appearance: */
-    foreach (UIGDetailsItem *pItem, items())
-        pItem->toElement()->updateAppearance();
+    prepareElements();
 }
 
 void UIGDetailsSet::sltUpdateAppearance()
 {
     /* Update appearance: */
-    foreach (UIGDetailsItem *pItem, items())
-        pItem->toElement()->updateAppearance();
+    prepareElements();
 }
 
 QVariant UIGDetailsSet::data(int iKey) const
@@ -453,12 +460,12 @@ QSizeF UIGDetailsSet::sizeHint(Qt::SizeHint which, const QSizeF &constraint /* =
     return UIGDetailsItem::sizeHint(which, constraint);
 }
 
-void UIGDetailsSet::prepareElements(bool fFullSet)
+void UIGDetailsSet::prepareElements()
 {
     /* Which will be the last step? */
-    m_iLastStep = fFullSet ? DetailsElementType_Description : DetailsElementType_Preview;
+    m_iLastStep = m_fFullSet ? DetailsElementType_Description : DetailsElementType_Preview;
     /* Cleanup superfluous elements: */
-    if (!fFullSet)
+    if (!m_fFullSet)
         for (int i = DetailsElementType_Display; i <= DetailsElementType_Description; ++i)
             if (m_elements.contains(i))
                 delete m_elements[i];
@@ -475,6 +482,10 @@ void UIGDetailsSet::prepareElements(bool fFullSet)
             m_settings.removeAll(strElementTypeClosed);
         }
     }
+
+    /* Clear step: */
+    delete m_pStep;
+    m_pStep = 0;
 
     /* Prepare first element: */
     m_strSetId = QUuid::createUuid().toString();
@@ -497,24 +508,57 @@ void UIGDetailsSet::prepareElement(QString strSetId)
 
         /* Check if element is present already: */
         UIGDetailsElement *pElement = element(elementType);
-        /* Create if necessary: */
+        if (pElement && fOpen)
+            pElement->open(false);
+        /* Create element if necessary: */
+        bool fJustCreated = false;
         if (!pElement)
+        {
+            fJustCreated = true;
             pElement = createElement(elementType, fOpen);
-        /* Prepare element: */
+        }
+
+        /* Show element if necessary: */
         if (fVisible && !pElement->isVisible())
+        {
             pElement->show();
+            model()->updateLayout();
+        }
+        /* Hide element if necessary: */
         else if (!fVisible && pElement->isVisible())
+        {
             pElement->hide();
+            model()->updateLayout();
+        }
+        /* Update model if necessary: */
+        else if (fJustCreated)
+            model()->updateLayout();
+
+        /* For visible element: */
         if (pElement->isVisible())
+        {
+            /* Create prepare step: */
+            m_pStep = new UIPrepareStep(this, strSetId);
+            connect(pElement, SIGNAL(sigElementUpdateDone()), m_pStep, SLOT(sltStepDone()), Qt::QueuedConnection);
+            connect(m_pStep, SIGNAL(sigStepDone(const QString&)), this, SLOT(sltNextStep(const QString&)), Qt::QueuedConnection);
+
+            /* Update element: */
             pElement->updateAppearance();
-        model()->updateLayout();
-        /* Mark element prepared: */
-        emit sigElementPrepared(strSetId);
+        }
+        /* For invisible element: */
+        else
+        {
+            /* Just go to the next step: */
+            sltNextStep(strSetId);
+        }
     }
     /* Step number out of bounds: */
     else
     {
         /* Mark whole set prepared: */
+        model()->updateLayout();
+        foreach (UIGDetailsItem *pElement, items())
+            pElement->update();
         emit sigSetPrepared();
     }
 }

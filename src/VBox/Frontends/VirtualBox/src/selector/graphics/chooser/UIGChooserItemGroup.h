@@ -63,6 +63,7 @@ public:
 
     /* API: Basic stuff: */
     QString name() const;
+    void setName(const QString &strName);
     bool closed() const;
     bool opened() const;
     void close(bool fAnimated = true);
@@ -95,8 +96,6 @@ private:
         GroupItemData_MajorSpacing,
         GroupItemData_MinorSpacing,
         /* Pixmaps: */
-        GroupItemData_ToggleButtonPixmap,
-        GroupItemData_EnterButtonPixmap,
         GroupItemData_GroupPixmap,
         GroupItemData_MachinePixmap,
         /* Fonts: */

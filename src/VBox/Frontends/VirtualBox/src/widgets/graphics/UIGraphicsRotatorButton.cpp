@@ -1,4 +1,4 @@
-/* $Id: UIGraphicsRotatorButton.cpp 42526 2012-08-02 10:31:28Z vboxsync $ */
+/* $Id: UIGraphicsRotatorButton.cpp 42856 2012-08-17 00:21:30Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -31,7 +31,7 @@ UIGraphicsRotatorButton::UIGraphicsRotatorButton(QIGraphicsWidget *pParent,
                                                  bool fToggled,
                                                  bool fReflected /* = false */,
                                                  int iAnimationDuration /* = 300 */)
-    : UIGraphicsButton(pParent)
+    : UIGraphicsButton(pParent, UIGraphicsButtonType_RoundArrow)
     , m_fReflected(fReflected)
     , m_state(fToggled ? UIGraphicsRotatorButtonState_Rotated : UIGraphicsRotatorButtonState_Default)
     , m_pAnimationMachine(0)
@@ -41,6 +41,9 @@ UIGraphicsRotatorButton::UIGraphicsRotatorButton(QIGraphicsWidget *pParent,
     , m_pForwardSubordinateAnimation(0)
     , m_pBackwardSubordinateAnimation(0)
 {
+    /* Configure: */
+    setAutoHandleButtonClick(true);
+
     /* Create state machine: */
     m_pAnimationMachine = new QStateMachine(this);
     /* Create 'default' state: */
@@ -101,6 +104,20 @@ UIGraphicsRotatorButton::UIGraphicsRotatorButton(QIGraphicsWidget *pParent,
     m_pAnimationMachine->setInitialState(!fToggled ? pStateDefault : pStateRotated);
     /* Start state-machine: */
     m_pAnimationMachine->start();
+
+    /* Refresh: */
+    refresh();
+}
+
+void UIGraphicsRotatorButton::setAutoHandleButtonClick(bool fEnabled)
+{
+    /* Disconnect button-click signal: */
+    disconnect(this, SIGNAL(sigButtonClicked()), this, SLOT(sltButtonClicked()));
+    if (fEnabled)
+    {
+        /* Connect button-click signal: */
+        connect(this, SIGNAL(sigButtonClicked()), this, SLOT(sltButtonClicked()));
+    }
 }
 
 void UIGraphicsRotatorButton::setToggled(bool fToggled, bool fAnimated /* = true */)
@@ -157,18 +174,7 @@ bool UIGraphicsRotatorButton::isAnimationRunning() const
            m_pBackwardSubordinateAnimation->state() == QAbstractAnimation::Running;
 }
 
-void UIGraphicsRotatorButton::refresh()
-{
-    /* Update rotation center: */
-    QSizeF sh = minimumSizeHint();
-    setTransformOriginPoint(sh.width() / 2, sh.height() / 2);
-    /* Update rotation state: */
-    updateRotationState();
-    /* Call to base-class: */
-    UIGraphicsButton::refresh();
-}
-
-void UIGraphicsRotatorButton::mousePressEvent(QGraphicsSceneMouseEvent*)
+void UIGraphicsRotatorButton::sltButtonClicked()
 {
     /* Toggle state: */
     switch (state())
@@ -179,9 +185,15 @@ void UIGraphicsRotatorButton::mousePressEvent(QGraphicsSceneMouseEvent*)
     }
 }
 
-void UIGraphicsRotatorButton::mouseReleaseEvent(QGraphicsSceneMouseEvent*)
+void UIGraphicsRotatorButton::refresh()
 {
-    /* Do nothing (do NOT propagate to parent!)... */
+    /* Update rotation center: */
+    QSizeF sh = minimumSizeHint();
+    setTransformOriginPoint(sh.width() / 2, sh.height() / 2);
+    /* Update rotation state: */
+    updateRotationState();
+    /* Call to base-class: */
+    UIGraphicsButton::refresh();
 }
 
 void UIGraphicsRotatorButton::updateRotationState()

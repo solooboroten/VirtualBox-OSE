@@ -1,4 +1,4 @@
-/* $Id: VDI.cpp 40953 2012-04-16 20:10:59Z vboxsync $ */
+/* $Id: VDI.cpp 42915 2012-08-22 09:46:03Z vboxsync $ */
 /** @file
  * Virtual Disk Image (VDI), Core Code.
  */
@@ -3310,7 +3310,10 @@ static DECLCALLBACK(int) vdiAsyncDiscard(void *pBackendData, PVDIOCTX pIoCtx,
                                                 pbBlockData, pImage->cbTotalBlockData,
                                                 pIoCtx, &pMetaXfer, NULL, NULL);
                 if (RT_FAILURE(rc))
+                {
+                    RTMemFree(pvBlock);
                     break;
+                }
 
                 vdIfIoIntMetaXferRelease(pImage->pIfIo, pMetaXfer);
 

@@ -194,22 +194,20 @@ private:
     UIAction *m_pExitAction;
 
     /* Common Group/Machine actions: */
-    UIAction *m_pAction_Common_New;
-    UIAction *m_pAction_Common_Add;
     UIAction *m_pAction_Common_StartOrShow;
     UIAction *m_pAction_Common_PauseAndResume;
     UIAction *m_pAction_Common_Reset;
     UIAction *m_pAction_Common_Discard;
-    UIAction *m_pAction_Common_LogDialog;
     UIAction *m_pAction_Common_Refresh;
     UIAction *m_pAction_Common_ShowInFileManager;
     UIAction *m_pAction_Common_CreateShortcut;
-    UIAction *m_pAction_Common_SortParent;
 
     /* 'Group' menu action pointers: */
     QList<UIAction*> m_groupActions;
     QAction *m_pGroupMenuAction;
     QMenu *m_pGroupMenu;
+    UIAction *m_pAction_Group_New;
+    UIAction *m_pAction_Group_Add;
     UIAction *m_pAction_Group_Rename;
     UIAction *m_pAction_Group_Remove;
     UIAction *m_pAction_Group_Sort;
@@ -224,10 +222,14 @@ private:
     QList<UIAction*> m_machineActions;
     QAction *m_pMachineMenuAction;
     QMenu *m_pMachineMenu;
+    UIAction *m_pAction_Machine_New;
+    UIAction *m_pAction_Machine_Add;
     UIAction *m_pAction_Machine_Settings;
     UIAction *m_pAction_Machine_Clone;
     UIAction *m_pAction_Machine_Remove;
     UIAction *m_pAction_Machine_AddGroup;
+    UIAction *m_pAction_Machine_LogDialog;
+    UIAction *m_pAction_Machine_SortParent;
     /* 'Machine / Close' menu action pointers: */
     UIAction *m_pMachineCloseMenuAction;
     QMenu *m_pMachineCloseMenu;

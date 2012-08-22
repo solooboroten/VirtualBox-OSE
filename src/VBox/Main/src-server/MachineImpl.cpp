@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 42789 2012-08-13 10:03:00Z vboxsync $ */
+/* $Id: MachineImpl.cpp 42903 2012-08-21 12:22:35Z vboxsync $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -165,6 +165,11 @@ Machine::HWData::HWData()
     mAccelerate3DEnabled = false;
     mAccelerate2DVideoEnabled = false;
     mMonitorCount = 1;
+    mVideoCaptureFile = "Test.webm";
+    mVideoCaptureWidth = 640;
+    mVideoCaptureHeight = 480;
+    mVideoCaptureEnabled = true;
+
     mHWVirtExEnabled = true;
     mHWVirtExNestedPagingEnabled = true;
 #if HC_ARCH_BITS == 64 && !defined(RT_OS_LINUX)
@@ -389,9 +394,9 @@ HRESULT Machine::init(VirtualBox *aParent,
  *
  *  @return  Success indicator. if not S_OK, the machine object is invalid
  */
-HRESULT Machine::init(VirtualBox *aParent,
-                      const Utf8Str &strConfigFile,
-                      const Guid *aId)
+HRESULT Machine::initFromSettings(VirtualBox *aParent,
+                                  const Utf8Str &strConfigFile,
+                                  const Guid *aId)
 {
     LogFlowThisFuncEnter();
     LogFlowThisFunc(("(Init_Registered) aConfigFile='%s\n", strConfigFile.c_str()));
@@ -1655,6 +1660,95 @@ STDMETHODIMP Machine::COMSETTER(HPETEnabled)(BOOL enabled)
     mHWData->mHPETEnabled = enabled;
 
     return rc;
+}
+
+STDMETHODIMP Machine::COMGETTER(VideoCaptureEnabled)(BOOL * fEnabled)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    *fEnabled = mHWData->mVideoCaptureEnabled;
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMSETTER(VideoCaptureEnabled)(BOOL  fEnabled)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    mHWData->mVideoCaptureEnabled = fEnabled;
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMGETTER(VideoCaptureFile)(BSTR * apFile)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+    mHWData->mVideoCaptureFile.cloneTo(apFile);
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMSETTER(VideoCaptureFile)(IN_BSTR aFile)
+{
+    Utf8Str strFile(aFile);
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    if(strFile.isEmpty())
+       strFile = "VideoCap.webm";
+    mHWData->mVideoCaptureFile = strFile;
+    return S_OK;
+}
+
+
+STDMETHODIMP Machine::COMGETTER(VideoCaptureWidth)(ULONG *ulHorzRes)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+    *ulHorzRes = mHWData->mVideoCaptureWidth;
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMSETTER(VideoCaptureWidth)(ULONG ulHorzRes)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc()))
+    {
+        LogFlow(("Autolocked failed\n"));
+        return autoCaller.rc();
+    }
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    mHWData->mVideoCaptureWidth = ulHorzRes;
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMGETTER(VideoCaptureHeight)(ULONG *ulVertRes)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+     *ulVertRes = mHWData->mVideoCaptureHeight;
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMSETTER(VideoCaptureHeight)(ULONG ulVertRes)
+{
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+    mHWData->mVideoCaptureHeight = ulVertRes;
+    return S_OK;
 }
 
 STDMETHODIMP Machine::COMGETTER(VRAMSize)(ULONG *memorySize)
@@ -4583,7 +4677,12 @@ STDMETHODIMP Machine::GetParallelPort(ULONG slot, IParallelPort **port)
 STDMETHODIMP Machine::GetNetworkAdapter(ULONG slot, INetworkAdapter **adapter)
 {
     CheckComArgOutPointerValid(adapter);
-    CheckComArgExpr(slot, slot < mNetworkAdapters.size());
+    /* Do not assert if slot is out of range, just return the advertised
+       status.  testdriver/vbox.py triggers this in logVmInfo. */
+    if (slot >= mNetworkAdapters.size())
+        return setError(E_INVALIDARG,
+                        tr("No network adapter in slot %RU32 (total %RU32 adapters)"),
+                        slot, mNetworkAdapters.size());
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -5944,11 +6043,15 @@ STDMETHODIMP Machine::RemoveStorageController(IN_BSTR aName)
 
     {
         /* find all attached devices to the appropriate storage controller and detach them all */
-        size_t howManyAttach = mMediaData->mAttachments.size();
+        // make a temporary list because detachDevice invalidates iterators into
+        // mMediaData->mAttachments
+        MediaData::AttachmentList llAttachments2 = mMediaData->mAttachments;
 
-        for (size_t i = 0; i < howManyAttach; ++i)
+        for (MediaData::AttachmentList::iterator it = llAttachments2.begin();
+             it != llAttachments2.end();
+             ++it)
         {
-            MediumAttachment *pAttachTemp = mMediaData->mAttachments.front();
+            MediumAttachment *pAttachTemp = *it;
 
             AutoCaller localAutoCaller(pAttachTemp);
             if (FAILED(localAutoCaller.rc())) return localAutoCaller.rc();
@@ -5957,10 +6060,6 @@ STDMETHODIMP Machine::RemoveStorageController(IN_BSTR aName)
 
             if (pAttachTemp->getControllerName() == aName)
             {
-                LONG port = pAttachTemp->getPort();
-                LONG device = pAttachTemp->getDevice();
-
-                //rc = DetachDevice(aName, port, device);
                 rc = detachDevice(pAttachTemp, alock, NULL);
                 if (FAILED(rc)) return rc;
             }
@@ -7945,7 +8044,7 @@ void Machine::uninitDataAndChildObjects()
         // clean up the snapshots list (Snapshot::uninit() will handle the snapshot's children recursively)
         if (mData->mFirstSnapshot)
         {
-            // snapshots tree is protected by media write lock; strictly
+            // snapshots tree is protected by machine write lock; strictly
             // this isn't necessary here since we're deleting the entire
             // machine, but otherwise we assert in Snapshot::uninit()
             AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
@@ -8421,6 +8520,10 @@ HRESULT Machine::loadHardware(const settings::Hardware &data, const settings::De
         mHWData->mMonitorCount  = data.cMonitors;
         mHWData->mAccelerate3DEnabled = data.fAccelerate3D;
         mHWData->mAccelerate2DVideoEnabled = data.fAccelerate2DVideo;
+        mHWData->mVideoCaptureWidth = data.ulVideoCaptureHorzRes;
+        mHWData->mVideoCaptureHeight = data.ulVideoCaptureVertRes;
+        mHWData->mVideoCaptureEnabled = data.fVideoCaptureEnabled;
+        mHWData->mVideoCaptureFile = data.strVideoCaptureFile;
         mHWData->mFirmwareType = data.firmwareType;
         mHWData->mPointingHIDType = data.pointingHIDType;
         mHWData->mKeyboardHIDType = data.keyboardHIDType;
@@ -9100,6 +9203,8 @@ HRESULT Machine::prepareSaveSettings(bool *pfNeedsGlobalSaveSettings)
                 newConfigDir = newConfigDir.substr(0, configDir.length() - groupPlusName.length());
                 Utf8Str newConfigBaseDir(newConfigDir);
                 newConfigDir.append(newGroupPlusName);
+                /* consistency: use \ if appropriate on the platform */
+                RTPathChangeToDosSlashes(newConfigDir.mutableRaw(), false);
                 /* new dir and old dir cannot be equal here because of 'if'
                  * above and because name != newName */
                 Assert(configDir != newConfigDir);
@@ -9619,6 +9724,10 @@ HRESULT Machine::saveHardware(settings::Hardware &data, settings::Debugging *pDb
         data.cMonitors = mHWData->mMonitorCount;
         data.fAccelerate3D = !!mHWData->mAccelerate3DEnabled;
         data.fAccelerate2DVideo = !!mHWData->mAccelerate2DVideoEnabled;
+        data.ulVideoCaptureHorzRes = mHWData->mVideoCaptureWidth;
+        data.ulVideoCaptureVertRes = mHWData->mVideoCaptureHeight;
+        data.fVideoCaptureEnabled  = !! mHWData->mVideoCaptureEnabled;
+        data.strVideoCaptureFile = mHWData->mVideoCaptureFile;
 
         /* VRDEServer settings (optional) */
         rc = mVRDEServer->saveSettings(data.vrdeSettings);
@@ -11016,11 +11125,57 @@ void Machine::commit()
     mUSBController->commit();
     mBandwidthControl->commit();
 
-    /* Keep the original network adapter count until this point, so that
-     * discarding a chipset type change will not lose settings. */
-    mNetworkAdapters.resize(Global::getMaxNetworkAdapters(mHWData->mChipsetType));
-    for (ULONG slot = 0; slot < mNetworkAdapters.size(); slot++)
-        mNetworkAdapters[slot]->commit();
+    /* Since mNetworkAdapters is a list which might have been changed (resized)
+     * without using the Backupable<> template we need to handle the copying
+     * of the list entries manually, including the creation of peers for the
+     * new objects. */
+    bool commitNetworkAdapters = false;
+    size_t newSize = Global::getMaxNetworkAdapters(mHWData->mChipsetType);
+    if (mPeer)
+    {
+        /* commit everything, even the ones which will go away */
+        for (size_t slot = 0; slot < mNetworkAdapters.size(); slot++)
+            mNetworkAdapters[slot]->commit();
+        /* copy over the new entries, creating a peer and uninit the original */
+        mPeer->mNetworkAdapters.resize(RT_MAX(newSize, mPeer->mNetworkAdapters.size()));
+        for (size_t slot = 0; slot < newSize; slot++)
+        {
+            /* look if this adapter has a peer device */
+            ComObjPtr<NetworkAdapter> peer = mNetworkAdapters[slot]->getPeer();
+            if (!peer)
+            {
+                /* no peer means the adapter is a newly created one;
+                 * create a peer owning data this data share it with */
+                peer.createObject();
+                peer->init(mPeer, mNetworkAdapters[slot], true /* aReshare */);
+            }
+            mPeer->mNetworkAdapters[slot] = peer;
+        }
+        /* uninit any no longer needed network adapters */
+        for (size_t slot = newSize; slot < mNetworkAdapters.size(); slot++)
+            mNetworkAdapters[slot]->uninit();
+        for (size_t slot = newSize; slot < mPeer->mNetworkAdapters.size(); slot++)
+        {
+            if (mPeer->mNetworkAdapters[slot])
+                mPeer->mNetworkAdapters[slot]->uninit();
+        }
+        /* Keep the original network adapter count until this point, so that
+         * discarding a chipset type change will not lose settings. */
+        mNetworkAdapters.resize(newSize);
+        mPeer->mNetworkAdapters.resize(newSize);
+    }
+    else
+    {
+        /* we have no peer (our parent is the newly created machine);
+         * just commit changes to the network adapters */
+        commitNetworkAdapters = true;
+    }
+    if (commitNetworkAdapters)
+    {
+        for (size_t slot = 0; slot < mNetworkAdapters.size(); slot++)
+            mNetworkAdapters[slot]->commit();
+    }
+
     for (ULONG slot = 0; slot < RT_ELEMENTS(mSerialPorts); slot++)
         mSerialPorts[slot]->commit();
     for (ULONG slot = 0; slot < RT_ELEMENTS(mParallelPorts); slot++)
@@ -11034,8 +11189,6 @@ void Machine::commit()
 
         if (mPeer)
         {
-            AutoWriteLock peerlock(mPeer COMMA_LOCKVAL_SRC_POS);
-
             /* Commit all changes to new controllers (this will reshare data with
              * peers for those who have peers) */
             StorageControllerList *newList = new StorageControllerList();
@@ -11163,6 +11316,7 @@ void Machine::copyFrom(Machine *aThat)
         mStorageControllers->push_back(ctrl);
     }
 
+    mNetworkAdapters.resize(aThat->mNetworkAdapters.size());
     for (ULONG slot = 0; slot < mNetworkAdapters.size(); slot++)
         mNetworkAdapters[slot]->copyFrom(aThat->mNetworkAdapters[slot]);
     for (ULONG slot = 0; slot < RT_ELEMENTS(mSerialPorts); slot++)

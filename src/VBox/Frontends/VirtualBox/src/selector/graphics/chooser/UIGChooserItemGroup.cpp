@@ -1,4 +1,4 @@
-/* $Id: UIGChooserItemGroup.cpp 42734 2012-08-09 23:51:30Z vboxsync $ */
+/* $Id: UIGChooserItemGroup.cpp 42909 2012-08-21 15:46:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -105,7 +105,7 @@ UIGChooserItemGroup::UIGChooserItemGroup(UIGChooserItem *pParent,
     parentItem()->addItem(this, iPosition);
     setZValue(parentItem()->zValue() + 1);
     connect(this, SIGNAL(sigToggleStarted()), model(), SIGNAL(sigToggleStarted()));
-    connect(this, SIGNAL(sigToggleFinished()), model(), SIGNAL(sigToggleFinished()));
+    connect(this, SIGNAL(sigToggleFinished()), model(), SIGNAL(sigToggleFinished()), Qt::QueuedConnection);
 }
 
 UIGChooserItemGroup::UIGChooserItemGroup(UIGChooserItem *pParent,
@@ -165,6 +165,11 @@ UIGChooserItemGroup::~UIGChooserItemGroup()
 QString UIGChooserItemGroup::name() const
 {
     return m_strName;
+}
+
+void UIGChooserItemGroup::setName(const QString &strName)
+{
+    m_strName = strName;
 }
 
 bool UIGChooserItemGroup::closed() const
@@ -294,13 +299,11 @@ QVariant UIGChooserItemGroup::data(int iKey) const
     switch (iKey)
     {
         /* Layout hints: */
-        case GroupItemData_HorizonalMargin: return 8;
+        case GroupItemData_HorizonalMargin: return 5;
         case GroupItemData_VerticalMargin: return 5;
         case GroupItemData_MajorSpacing: return 10;
         case GroupItemData_MinorSpacing: return 3;
         /* Pixmaps: */
-        case GroupItemData_ToggleButtonPixmap: return UIIconPool::iconSet(":/arrow_right_10px.png");
-        case GroupItemData_EnterButtonPixmap: return UIIconPool::iconSet(":/start_16px.png");
         case GroupItemData_GroupPixmap: return UIIconPool::iconSet(":/nw_16px.png");
         case GroupItemData_MachinePixmap: return UIIconPool::iconSet(":/machine_16px.png");
         /* Fonts: */
@@ -346,7 +349,9 @@ QVariant UIGChooserItemGroup::data(int iKey) const
                 iMaximumWidth -= (iGroupPixmapWidth + iGroupCountTextWidth);
             if (isHovered() && !strMachineCountText.isEmpty())
                 iMaximumWidth -= (iMachinePixmapWidth + iMachineCountTextWidth);
-            return compressText(data(GroupItemData_NameFont).value<QFont>(), m_strName, iMaximumWidth);
+            return compressText(data(GroupItemData_NameFont).value<QFont>(),
+                                model()->paintDevice(),
+                                m_strName, iMaximumWidth);
         }
         case GroupItemData_GroupCountText: return m_groupItems.isEmpty() ? QString() : QString::number(m_groupItems.size());
         case GroupItemData_MachineCountText: return m_machineItems.isEmpty() ? QString() : QString::number(m_machineItems.size());
@@ -359,16 +364,18 @@ QVariant UIGChooserItemGroup::data(int iKey) const
             if (isMainRoot())
                 return QSizeF(0, 0);
             QFont font = data(GroupItemData_NameFont).value<QFont>();
-            QFontMetrics fm(font);
-            int iMaximumTextWidth = textWidth(font, 20);
-            QString strCompressedName = compressText(font, m_strName, iMaximumTextWidth);
+            QPaintDevice *pPaintDevice = model()->paintDevice();
+            QFontMetrics fm(font, pPaintDevice);
+            int iMaximumTextWidth = textWidth(font, pPaintDevice, 20);
+            QString strCompressedName = compressText(font, pPaintDevice,
+                                                     m_strName, iMaximumTextWidth);
             return QSize(fm.width(strCompressedName), fm.height());
         }
         case GroupItemData_NameSize:
         {
             if (isMainRoot())
                 return QSizeF(0, 0);
-            QFontMetrics fm(data(GroupItemData_NameFont).value<QFont>());
+            QFontMetrics fm(data(GroupItemData_NameFont).value<QFont>(), model()->paintDevice());
             return QSize(fm.width(data(GroupItemData_Name).toString()) + 2, fm.height());
         }
         case GroupItemData_NameEditorSize:
@@ -385,14 +392,14 @@ QVariant UIGChooserItemGroup::data(int iKey) const
         {
             if (isMainRoot())
                 return QSizeF(0, 0);
-            QFontMetrics fm(data(GroupItemData_InfoFont).value<QFont>());
+            QFontMetrics fm(data(GroupItemData_InfoFont).value<QFont>(), model()->paintDevice());
             return QSize(fm.width(data(GroupItemData_GroupCountText).toString()), fm.height());
         }
         case GroupItemData_MachineCountTextSize:
         {
             if (isMainRoot())
                 return QSizeF(0, 0);
-            QFontMetrics fm(data(GroupItemData_InfoFont).value<QFont>());
+            QFontMetrics fm(data(GroupItemData_InfoFont).value<QFont>(), model()->paintDevice());
             return QSize(fm.width(data(GroupItemData_MachineCountText).toString()), fm.height());
         }
         case GroupItemData_FullHeaderSize:
@@ -651,7 +658,7 @@ void UIGChooserItemGroup::updateLayout()
                 int iExitButtonHeight = data(GroupItemData_ExitButtonSize).toSizeF().height();
 
                 /* Layout exit-button: */
-                int iExitButtonX = iHorizontalMargin;
+                int iExitButtonX = iHorizontalMargin + 2;
                 int iExitButtonY = iExitButtonHeight == iFullHeaderHeight ? iVerticalMargin :
                                    iVerticalMargin + (iFullHeaderHeight - iExitButtonHeight) / 2;
                 m_pExitButton->setPos(iExitButtonX, iExitButtonY);
@@ -704,7 +711,7 @@ void UIGChooserItemGroup::updateLayout()
         m_pNameEditorWidget->resize(geometry().width() - iNameEditorX - iHorizontalMargin, m_pNameEditorWidget->height());
 
         /* Prepare body indent: */
-        iPreviousVerticalIndent = 2 * iVerticalMargin + iFullHeaderHeight;
+        iPreviousVerticalIndent = 3 * iVerticalMargin + iFullHeaderHeight;
     }
 
     /* No body for closed group: */
@@ -791,11 +798,12 @@ int UIGChooserItemGroup::minimumHeightHint(bool fClosedGroup) const
     /* But if group is opened: */
     if (!fClosedGroup)
     {
-        /* We should take into account: */
+        /* We should take into account vertical indent: */
+        iProposedHeight += iVerticalMargin;
+        /* And every item height: */
         QList<UIGChooserItem*> allItems = items();
         for (int i = 0; i < allItems.size(); ++i)
         {
-            /* Every item height: */
             UIGChooserItem *pItem = allItems[i];
             iProposedHeight += (pItem->minimumHeightHint() + iMinorSpacing);
         }
@@ -1081,8 +1089,8 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
 
     /* Prepare color: */
     QPalette pal = palette();
-    QColor base = pal.color(QPalette::Active, model()->selectionList().contains(this) ?
-                            QPalette::Highlight : QPalette::Window);
+    QColor windowColor = pal.color(QPalette::Active, model()->selectionList().contains(this) ?
+                                   QPalette::Highlight : QPalette::Window);
 
     /* Root item: */
     if (isRoot())
@@ -1091,7 +1099,7 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
         if (isMainRoot())
         {
             /* Simple and clear: */
-            pPainter->fillRect(rect, base);
+            pPainter->fillRect(rect, QColor(240, 240, 240));
         }
         else
         {
@@ -1114,13 +1122,13 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
 
             /* Fill background: */
             QLinearGradient headerGradient(backgroundRect.bottomLeft(), backgroundRect.topLeft());
-            headerGradient.setColorAt(0, base.darker(gradient()));
-            headerGradient.setColorAt(1, base.darker(110));
+            headerGradient.setColorAt(1, windowColor.darker(blackoutDarkness()));
+            headerGradient.setColorAt(0, windowColor.darker(animationDarkness()));
             pPainter->fillRect(backgroundRect, headerGradient);
 
             /* Stroke path: */
             pPainter->setClipping(false);
-            pPainter->strokePath(path, base.darker(130));
+            pPainter->strokePath(path, windowColor.darker(strokeDarkness()));
         }
     }
     /* Non-root item: */
@@ -1150,8 +1158,8 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
         tRect.setBottom(tRect.top() + iFullHeaderHeight);
         /* Prepare top gradient: */
         QLinearGradient tGradient(tRect.bottomLeft(), tRect.topLeft());
-        tGradient.setColorAt(0, base.darker(110));
-        tGradient.setColorAt(1, base.darker(gradient()));
+        tGradient.setColorAt(1, windowColor.darker(animationDarkness()));
+        tGradient.setColorAt(0, windowColor.darker(blackoutDarkness()));
         /* Fill top rectangle: */
         pPainter->fillRect(tRect, tGradient);
 
@@ -1160,12 +1168,12 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
             /* Calculate middle rectangle: */
             QRect midRect = QRect(tRect.bottomLeft(), rect.bottomRight());
             /* Paint all the stuff: */
-            pPainter->fillRect(midRect, base.darker(110));
+            pPainter->fillRect(midRect, QColor(245, 245, 245));
         }
 
          /* Stroke path: */
         pPainter->setClipping(false);
-        pPainter->strokePath(path, base.darker(130));
+        pPainter->strokePath(path, windowColor.darker(strokeDarkness()));
         pPainter->setClipPath(path);
 
         /* Paint drag token UP? */
@@ -1185,8 +1193,8 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
                 dragTokenGradient.setStart(dragTokenRect.topLeft());
                 dragTokenGradient.setFinalStop(dragTokenRect.bottomLeft());
             }
-            dragTokenGradient.setColorAt(0, base.darker(110));
-            dragTokenGradient.setColorAt(1, base.darker(150));
+            dragTokenGradient.setColorAt(0, windowColor.darker(blackoutDarkness()));
+            dragTokenGradient.setColorAt(1, windowColor.darker(dragTokenDarkness()));
             pPainter->fillRect(dragTokenRect, dragTokenGradient);
         }
     }
@@ -1206,12 +1214,27 @@ void UIGChooserItemGroup::paintGroupInfo(QPainter *pPainter, const QStyleOptionG
     QSize nameSize = data(GroupItemData_NameSize).toSize();
     int iFullHeaderHeight = data(GroupItemData_FullHeaderSize).toSize().height();
 
+    /* Update palette: */
+    if (model()->selectionList().contains(this))
+    {
+        QPalette pal = palette();
+        pPainter->setPen(pal.color(QPalette::HighlightedText));
+    }
+
+    /* Update buttons: */
+    if (m_pToggleButton)
+        m_pToggleButton->setParentSelected(model()->selectionList().contains(this));
+    if (m_pEnterButton)
+        m_pEnterButton->setParentSelected(model()->selectionList().contains(this));
+    if (m_pExitButton)
+        m_pExitButton->setParentSelected(model()->selectionList().contains(this));
+
     /* Paint name: */
     int iNameX = iHorizontalMargin + iMajorSpacing;
     if (!isRoot())
         iNameX += toggleButtonSize.width();
     else if (!isMainRoot())
-        iNameX += exitButtonSize.width();
+        iNameX += 2 + exitButtonSize.width();
     int iNameY = nameSize.height() == iFullHeaderHeight ? iVerticalMargin :
                  iVerticalMargin + (iFullHeaderHeight - nameSize.height()) / 2;
     paintText(/* Painter: */
@@ -1344,14 +1367,12 @@ void UIGChooserItemGroup::prepare()
     {
         /* Setup toggle-button: */
         m_pToggleButton = new UIGraphicsRotatorButton(this, "additionalHeight", opened());
-        m_pToggleButton->setIcon(data(GroupItemData_ToggleButtonPixmap).value<QIcon>());
         connect(m_pToggleButton, SIGNAL(sigRotationStart()), this, SLOT(sltGroupToggleStart()));
         connect(m_pToggleButton, SIGNAL(sigRotationFinish(bool)), this, SLOT(sltGroupToggleFinish(bool)));
         m_pToggleButton->hide();
 
         /* Setup enter-button: */
-        m_pEnterButton = new UIGraphicsButton(this);
-        m_pEnterButton->setIcon(data(GroupItemData_EnterButtonPixmap).value<QIcon>());
+        m_pEnterButton = new UIGraphicsButton(this, UIGraphicsButtonType_DirectArrow);
         connect(m_pEnterButton, SIGNAL(sigButtonClicked()), this, SLOT(sltIndentRoot()));
         m_pEnterButton->hide();
 
@@ -1368,8 +1389,7 @@ void UIGChooserItemGroup::prepare()
     if (!isMainRoot())
     {
         /* Setup exit-button: */
-        m_pExitButton = new UIGraphicsButton(this);
-        m_pExitButton->setIcon(data(GroupItemData_EnterButtonPixmap).value<QIcon>());
+        m_pExitButton = new UIGraphicsButton(this, UIGraphicsButtonType_DirectArrow);
         connect(m_pExitButton, SIGNAL(sigButtonClicked()), this, SLOT(sltUnindentRoot()));
         QSizeF sh = m_pExitButton->minimumSizeHint();
         m_pExitButton->setTransformOriginPoint(sh.width() / 2, sh.height() / 2);

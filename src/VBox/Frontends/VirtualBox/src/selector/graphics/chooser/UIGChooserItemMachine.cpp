@@ -1,4 +1,4 @@
-/* $Id: UIGChooserItemMachine.cpp 42760 2012-08-10 16:53:11Z vboxsync $ */
+/* $Id: UIGChooserItemMachine.cpp 42909 2012-08-21 15:46:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -149,13 +149,16 @@ QVariant UIGChooserItemMachine::data(int iKey) const
         /* Texts: */
         case MachineItemData_Name:
         {
-            return compressText(data(MachineItemData_NameFont).value<QFont>(), name(),
-                                data(MachineItemData_MaximumNameWidth).toInt());
+            return compressText(data(MachineItemData_NameFont).value<QFont>(), model()->paintDevice(),
+                                name(), data(MachineItemData_MaximumNameWidth).toInt());
         }
         case MachineItemData_SnapshotName:
         {
-            int iBracketWidth = QFontMetrics(data(MachineItemData_SnapshotNameFont).value<QFont>()).width("()");
-            QString strCompressedName = compressText(data(MachineItemData_SnapshotNameFont).value<QFont>(), snapshotName(),
+            QPaintDevice *pPaintDevice = model()->paintDevice();
+            int iBracketWidth = QFontMetrics(data(MachineItemData_SnapshotNameFont).value<QFont>(),
+                                             pPaintDevice).width("()");
+            QString strCompressedName = compressText(data(MachineItemData_SnapshotNameFont).value<QFont>(),
+                                                     pPaintDevice, snapshotName(),
                                                      data(MachineItemData_MaximumSnapshotNameWidth).toInt() - iBracketWidth);
             return QString("(%1)").arg(strCompressedName);
         }
@@ -167,13 +170,15 @@ QVariant UIGChooserItemMachine::data(int iKey) const
 
         case MachineItemData_NameSize:
         {
-            QFontMetrics fm(data(MachineItemData_NameFont).value<QFont>());
+            QFontMetrics fm(data(MachineItemData_NameFont).value<QFont>(), model()->paintDevice());
             return QSize(fm.width(data(MachineItemData_Name).toString()) + 2, fm.height());
         }
         case MachineItemData_MinimumNameWidth:
         {
             QFont font = data(MachineItemData_NameFont).value<QFont>();
-            return QFontMetrics(font).width(compressText(font, name(), textWidth(font, 15)));
+            QPaintDevice *pPaintDevice = model()->paintDevice();
+            return QFontMetrics(font, pPaintDevice).width(compressText(font, pPaintDevice,
+                                                                       name(), textWidth(font, pPaintDevice, 15)));
         }
         case MachineItemData_MaximumNameWidth:
         {
@@ -183,14 +188,14 @@ QVariant UIGChooserItemMachine::data(int iKey) const
 
         case MachineItemData_SnapshotNameSize:
         {
-            QFontMetrics fm(data(MachineItemData_SnapshotNameFont).value<QFont>());
+            QFontMetrics fm(data(MachineItemData_SnapshotNameFont).value<QFont>(), model()->paintDevice());
             return QSize(fm.width(data(MachineItemData_SnapshotName).toString()) + 2, fm.height());
         }
         case MachineItemData_MinimumSnapshotNameWidth:
         {
             if (snapshotName().isEmpty())
                 return 0;
-            QFontMetrics fm(data(MachineItemData_SnapshotNameFont).value<QFont>());
+            QFontMetrics fm(data(MachineItemData_SnapshotNameFont).value<QFont>(), model()->paintDevice());
             int iBracketWidth = fm.width("()");
             int iActualTextWidth = fm.width(snapshotName());
             int iMinimumTextWidth = fm.width("...");
@@ -221,7 +226,7 @@ QVariant UIGChooserItemMachine::data(int iKey) const
         }
         case MachineItemData_StateTextSize:
         {
-            QFontMetrics fm(data(MachineItemData_StateTextFont).value<QFont>());
+            QFontMetrics fm(data(MachineItemData_StateTextFont).value<QFont>(), model()->paintDevice());
             return QSize(fm.width(data(MachineItemData_StateText).toString()) + 2, fm.height());
         }
         case MachineItemData_ToolBarSize:
@@ -542,7 +547,7 @@ void UIGChooserItemMachine::paintBackground(QPainter *pPainter, const QRect &rec
     if (model()->selectionList().contains(this))
     {
         /* Highlight color: */
-        QColor highlight = pal.color(QPalette::Active, QPalette::Highlight);
+        QColor highlight = pal.color(QPalette::Highlight);
 
         /* Calculate top rectangle: */
         QRect tRect = rect;
@@ -555,15 +560,15 @@ void UIGChooserItemMachine::paintBackground(QPainter *pPainter, const QRect &rec
 
         /* Prepare top gradient: */
         QLinearGradient tGradient(tRect.bottomLeft(), tRect.topLeft());
-        tGradient.setColorAt(0, highlight.darker(103));
-        tGradient.setColorAt(1, highlight.darker(110));
+        tGradient.setColorAt(1, highlight.darker(blackoutDarkness()));
+        tGradient.setColorAt(0, highlight.darker(defaultDarkness()));
         /* Prepare bottom gradient: */
         QLinearGradient bGradient(bRect.topLeft(), bRect.bottomLeft());
-        bGradient.setColorAt(0, highlight.darker(103));
-        bGradient.setColorAt(1, highlight.darker(110));
+        bGradient.setColorAt(0, highlight.darker(defaultDarkness()));
+        bGradient.setColorAt(1, highlight.darker(blackoutDarkness()));
 
         /* Paint all the stuff: */
-        pPainter->fillRect(midRect, highlight.darker(103));
+        pPainter->fillRect(midRect, highlight.darker(defaultDarkness()));
         pPainter->fillRect(tRect, tGradient);
         pPainter->fillRect(bRect, bGradient);
     }
@@ -572,14 +577,12 @@ void UIGChooserItemMachine::paintBackground(QPainter *pPainter, const QRect &rec
     if (isHovered())
     {
         /* Choose color: */
-        QColor baseLight = pal.color(QPalette::Active, model()->selectionList().contains(this) ||
-                                                       model()->selectionList().contains(parentItem()) ?
-                                                       QPalette::Highlight : QPalette::Window);
-        QColor blurBase = pal.color(QPalette::Active, model()->selectionList().contains(this) ||
-                                                      model()->selectionList().contains(parentItem()) ?
-                                                      QPalette::Highlight : QPalette::Window);
-        if (!parentItem()->isRoot())
-            blurBase = blurBase.darker(110);
+        QColor baseLight = model()->selectionList().contains(this) ? pal.color(QPalette::Active, QPalette::Highlight) :
+                                                                     QColor(Qt::white);
+        QColor blurBase = model()->selectionList().contains(this) ? pal.color(QPalette::Active, QPalette::Highlight) :
+                                                                    QColor(Qt::white);
+        if (!model()->selectionList().contains(this) && !parentItem()->isRoot())
+            blurBase = blurBase.darker(defaultDarkness());
         blurBase.setAlpha(0);
 
         /* Draw background for blur: */
@@ -588,7 +591,7 @@ void UIGChooserItemMachine::paintBackground(QPainter *pPainter, const QRect &rec
 
         /* Add blur itself: */
         QPainter blurPainter(&background);
-        blurPainter.setBrush(baseLight.darker(gradient()));
+        blurPainter.setBrush(baseLight.darker(animationDarkness()));
         blurPainter.setPen(Qt::NoPen);
         blurPainter.drawRoundedRect(rect.adjusted(5, 5, -5, -5), 5, 5);
         blurPainter.end();
@@ -619,8 +622,8 @@ void UIGChooserItemMachine::paintBackground(QPainter *pPainter, const QRect &rec
             dragTokenGradient.setStart(dragTokenRect.topLeft());
             dragTokenGradient.setFinalStop(dragTokenRect.bottomLeft());
         }
-        dragTokenGradient.setColorAt(0, base.darker(110));
-        dragTokenGradient.setColorAt(1, base.darker(150));
+        dragTokenGradient.setColorAt(0, base.darker(blackoutDarkness()));
+        dragTokenGradient.setColorAt(1, base.darker(dragTokenDarkness()));
         pPainter->fillRect(dragTokenRect, dragTokenGradient);
     }
 
@@ -655,6 +658,13 @@ void UIGChooserItemMachine::paintMachineInfo(QPainter *pPainter, const QStyleOpt
     QSize snapshotNameSize = data(MachineItemData_SnapshotNameSize).toSize();
     QSize machineStatePixmapSize = data(MachineItemData_StatePixmapSize).toSize();
     QSize machineStateTextSize = data(MachineItemData_StateTextSize).toSize();
+
+    /* Update palette: */
+    if (model()->selectionList().contains(this))
+    {
+        QPalette pal = palette();
+        pPainter->setPen(pal.color(QPalette::HighlightedText));
+    }
 
     /* Calculate indents: */
     int iLeftColumnIndent = iMargin;
@@ -792,24 +802,28 @@ void UIGChooserItemMachine::prepare()
     m_pToolBar = new UIGraphicsToolBar(this, 2, 2);
 
     /* Create buttons: */
-    m_pSettingsButton = new UIGraphicsZoomButton(m_pToolBar, UIGraphicsZoomDirection_Top | UIGraphicsZoomDirection_Left);
+    m_pSettingsButton = new UIGraphicsZoomButton(m_pToolBar,
+                                                 data(MachineItemData_SettingsButtonPixmap).value<QIcon>(),
+                                                 UIGraphicsZoomDirection_Top | UIGraphicsZoomDirection_Left);
     m_pSettingsButton->setIndent(m_pToolBar->toolBarMargin() - 1);
-    m_pSettingsButton->setIcon(data(MachineItemData_SettingsButtonPixmap).value<QIcon>());
     m_pToolBar->insertItem(m_pSettingsButton, 0, 0);
 
-    m_pStartButton = new UIGraphicsZoomButton(m_pToolBar, UIGraphicsZoomDirection_Top | UIGraphicsZoomDirection_Right);
+    m_pStartButton = new UIGraphicsZoomButton(m_pToolBar,
+                                              data(MachineItemData_StartButtonPixmap).value<QIcon>(),
+                                              UIGraphicsZoomDirection_Top | UIGraphicsZoomDirection_Right);
     m_pStartButton->setIndent(m_pToolBar->toolBarMargin() - 1);
-    m_pStartButton->setIcon(data(MachineItemData_StartButtonPixmap).value<QIcon>());
     m_pToolBar->insertItem(m_pStartButton, 0, 1);
 
-    m_pPauseButton = new UIGraphicsZoomButton(m_pToolBar, UIGraphicsZoomDirection_Bottom | UIGraphicsZoomDirection_Left);
+    m_pPauseButton = new UIGraphicsZoomButton(m_pToolBar,
+                                              data(MachineItemData_PauseButtonPixmap).value<QIcon>(),
+                                              UIGraphicsZoomDirection_Bottom | UIGraphicsZoomDirection_Left);
     m_pPauseButton->setIndent(m_pToolBar->toolBarMargin() - 1);
-    m_pPauseButton->setIcon(data(MachineItemData_PauseButtonPixmap).value<QIcon>());
     m_pToolBar->insertItem(m_pPauseButton, 1, 0);
 
-    m_pCloseButton = new UIGraphicsZoomButton(m_pToolBar, UIGraphicsZoomDirection_Bottom | UIGraphicsZoomDirection_Right);
+    m_pCloseButton = new UIGraphicsZoomButton(m_pToolBar,
+                                              data(MachineItemData_CloseButtonPixmap).value<QIcon>(),
+                                              UIGraphicsZoomDirection_Bottom | UIGraphicsZoomDirection_Right);
     m_pCloseButton->setIndent(m_pToolBar->toolBarMargin() - 1);
-    m_pCloseButton->setIcon(data(MachineItemData_CloseButtonPixmap).value<QIcon>());
     m_pToolBar->insertItem(m_pCloseButton, 1, 1);
 
     connect(m_pSettingsButton, SIGNAL(sigButtonClicked()),

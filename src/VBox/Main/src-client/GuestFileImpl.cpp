@@ -1,5 +1,5 @@
 
-/* $Id: GuestFileImpl.cpp 42611 2012-08-06 08:42:23Z vboxsync $ */
+/* $Id: GuestFileImpl.cpp 42897 2012-08-21 10:03:52Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */
@@ -29,13 +29,19 @@
 
 #include <VBox/com/array.h>
 
+#ifdef LOG_GROUP
+ #undef LOG_GROUP
+#endif
+#define LOG_GROUP LOG_GROUP_GUEST_CONTROL
+#include <VBox/log.h>
+
 
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
 
 DEFINE_EMPTY_CTOR_DTOR(GuestFile)
 
-HRESULT GuestFile::FinalConstruct()
+HRESULT GuestFile::FinalConstruct(void)
 {
     LogFlowThisFunc(("\n"));
     return BaseFinalConstruct();
@@ -62,10 +68,10 @@ int GuestFile::init(GuestSession *pSession, const Utf8Str &strPath,
 
     mData.mSession = pSession;
     mData.mCreationMode = uCreationMode;
-    mData.mDisposition = getDispositionFromString(strDisposition);
+    mData.mDisposition = GuestFile::getDispositionFromString(strDisposition);
     mData.mFileName = strPath;
     mData.mInitialSize = 0;
-    mData.mOpenMode = getOpenModeFromString(strOpenMode);
+    mData.mOpenMode = GuestFile::getOpenModeFromString(strOpenMode);
     mData.mOffset = iOffset;
 
     /** @todo Validate parameters! */
@@ -89,7 +95,7 @@ void GuestFile::uninit(void)
     if (autoUninitSpan.uninitDone())
         return;
 
-    mData.mSession->fileClose(this);
+    LogFlowThisFuncLeave();
 }
 
 // implementation of public getters/setters for attributes
@@ -226,10 +232,23 @@ STDMETHODIMP GuestFile::Close(void)
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
 #else
+    LogFlowThisFuncEnter();
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    ReturnComNotImplemented();
+    AssertPtr(mData.mSession);
+    int rc = mData.mSession->fileRemoveFromList(this);
+
+    /*
+     * Release autocaller before calling uninit.
+     */
+    autoCaller.release();
+
+    uninit();
+
+    LogFlowFuncLeaveRC(rc);
+    return S_OK;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -245,7 +264,7 @@ STDMETHODIMP GuestFile::QueryInfo(IFsObjInfo **aInfo)
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestFile::Read(ULONG aToRead, ULONG *aRead, ComSafeArrayOut(BYTE, aData))
+STDMETHODIMP GuestFile::Read(ULONG aToRead, ULONG aTimeoutMS, ComSafeArrayOut(BYTE, aData))
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
@@ -257,7 +276,7 @@ STDMETHODIMP GuestFile::Read(ULONG aToRead, ULONG *aRead, ComSafeArrayOut(BYTE, 
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestFile::ReadAt(LONG64 aOffset, ULONG aToRead, ULONG *aRead, ComSafeArrayOut(BYTE, aData))
+STDMETHODIMP GuestFile::ReadAt(LONG64 aOffset, ULONG aToRead, ULONG aTimeoutMS, ComSafeArrayOut(BYTE, aData))
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
@@ -293,7 +312,7 @@ STDMETHODIMP GuestFile::SetACL(IN_BSTR aACL)
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestFile::Write(ComSafeArrayIn(BYTE, aData), ULONG *aWritten)
+STDMETHODIMP GuestFile::Write(ComSafeArrayIn(BYTE, aData), ULONG aTimeoutMS, ULONG *aWritten)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
@@ -305,7 +324,7 @@ STDMETHODIMP GuestFile::Write(ComSafeArrayIn(BYTE, aData), ULONG *aWritten)
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP GuestFile::WriteAt(LONG64 aOffset, ComSafeArrayIn(BYTE, aData), ULONG *aWritten)
+STDMETHODIMP GuestFile::WriteAt(LONG64 aOffset, ComSafeArrayIn(BYTE, aData), ULONG aTimeoutMS, ULONG *aWritten)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();

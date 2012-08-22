@@ -27,6 +27,16 @@
 
 /* Forward declarations: */
 class QGraphicsSceneMouseEvent;
+class QGraphicsSceneHoverEvent;
+class QPropertyAnimation;
+
+/* Graphics-button types: */
+enum UIGraphicsButtonType
+{
+    UIGraphicsButtonType_Iconified,
+    UIGraphicsButtonType_DirectArrow,
+    UIGraphicsButtonType_RoundArrow
+};
 
 /* Graphics-button representation: */
 class UIGraphicsButton : public QIGraphicsWidget
@@ -41,10 +51,11 @@ signals:
 public:
 
     /* Constructor: */
-    UIGraphicsButton(QIGraphicsWidget *pParent);
+    UIGraphicsButton(QIGraphicsWidget *pParent, const QIcon &icon);
+    UIGraphicsButton(QIGraphicsWidget *pParent, UIGraphicsButtonType buttonType);
 
-    /* API: Icon setter: */
-    void setIcon(const QIcon &icon);
+    /* API: Parent stuff: */
+    void setParentSelected(bool fParentSelected);
 
 protected:
 
@@ -76,6 +87,8 @@ private:
 
     /* Variables: */
     QIcon m_icon;
+    UIGraphicsButtonType m_buttonType;
+    bool m_fParentSelected;
 };
 
 #endif /* __UIGraphicsButton_h__ */
