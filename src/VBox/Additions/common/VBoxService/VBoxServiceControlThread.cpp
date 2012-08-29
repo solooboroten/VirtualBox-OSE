@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControlThread.cpp 42739 2012-08-10 06:56:05Z vboxsync $ */
+/* $Id: VBoxServiceControlThread.cpp 43049 2012-08-28 15:05:14Z vboxsync $ */
 /** @file
  * VBoxServiceControlExecThread - Thread for every started guest process.
  */

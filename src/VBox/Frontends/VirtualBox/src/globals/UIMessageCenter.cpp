@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp 42879 2012-08-20 11:34:13Z vboxsync $ */
+/* $Id: UIMessageCenter.cpp 42998 2012-08-27 14:09:06Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

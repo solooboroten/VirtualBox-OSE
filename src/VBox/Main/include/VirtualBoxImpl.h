@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.h 42888 2012-08-20 17:36:31Z vboxsync $ */
+/* $Id: VirtualBoxImpl.h 43041 2012-08-28 13:58:40Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */

@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogic.cpp 42748 2012-08-10 09:33:34Z vboxsync $ */
+/* $Id: UIMachineLogic.cpp 43029 2012-08-28 11:30:40Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,5 +1,5 @@
 
-/* $Id: GuestSessionImpl.cpp 42897 2012-08-21 10:03:52Z vboxsync $ */
+/* $Id: GuestSessionImpl.cpp 42928 2012-08-22 18:59:29Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */

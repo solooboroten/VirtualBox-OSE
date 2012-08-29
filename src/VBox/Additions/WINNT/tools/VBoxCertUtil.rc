@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: VBoxCertUtil.rc 42939 2012-08-23 10:47:09Z vboxsync $ */
 /** @file
  * VBoxCertUtil - Resource file containing version info and icon.
  */

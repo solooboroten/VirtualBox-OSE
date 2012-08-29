@@ -1,4 +1,4 @@
-/* $Id: DevOVMF.cpp 42443 2012-07-30 05:05:12Z vboxsync $ */
+/* $Id: DevOVMF.cpp 43021 2012-08-28 04:04:45Z vboxsync $ */
 /** @file
  * DevEFI - EFI <-> VirtualBox Integration Framework.
  */

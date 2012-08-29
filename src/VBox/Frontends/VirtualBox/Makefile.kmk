@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42730 2012-08-09 19:59:32Z vboxsync $
+# $Id: Makefile.kmk 43059 2012-08-29 07:48:37Z vboxsync $
 ## @file
 # Makefile for the VirtualBox Qt GUI.
 #

@@ -1,4 +1,4 @@
-/* $Id: DevAHCI.cpp 42891 2012-08-20 19:08:35Z vboxsync $ */
+/* $Id: DevAHCI.cpp 42999 2012-08-27 14:13:43Z vboxsync $ */
 /** @file
  * VBox storage devices: AHCI controller device (disk and cdrom).
  *                       Implements the AHCI standard 1.1

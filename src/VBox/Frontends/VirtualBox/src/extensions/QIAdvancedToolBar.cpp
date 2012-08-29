@@ -1,4 +1,4 @@
-/* $Id: QIAdvancedToolBar.cpp 42526 2012-08-02 10:31:28Z vboxsync $ */
+/* $Id: QIAdvancedToolBar.cpp 43003 2012-08-27 16:02:21Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

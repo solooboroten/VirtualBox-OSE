@@ -1,4 +1,4 @@
-; $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $ 
+; $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $ 
 ;; @file
 ; Auto Generated source file. Do not edit.
 ;
@@ -552,7 +552,7 @@
 ;
 ; Source file: logo.c
 ;
-;  $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  Stuff for drawing the BIOS logo.
 ;  
 ;  
@@ -570,7 +570,7 @@
 ;
 ; Source file: scsi.c
 ;
-;  $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  SCSI host adapter driver to boot from SCSI disks
 ;  
 ;  
@@ -588,7 +588,7 @@
 ;
 ; Source file: ahci.c
 ;
-;  $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  AHCI host adapter driver to boot from SATA disks.
 ;  
 ;  
@@ -606,7 +606,7 @@
 ;
 ; Source file: apm.c
 ;
-;  $Id$
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  APM BIOS support. Implements APM version 1.2.
 ;  
 ;  
@@ -624,7 +624,7 @@
 ;
 ; Source file: pcibios.c
 ;
-;  $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  PCI BIOS support.
 ;  
 ;  
@@ -676,7 +676,7 @@
 ;
 ; Source file: support.asm
 ;
-;  $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  Compiler support routines.
 ;  
 ;  
@@ -773,7 +773,7 @@
 ;
 ; Source file: pci32.c
 ;
-;  $Id: VBoxBiosAlternative.asm 42455 2012-07-30 15:58:01Z vboxsync $
+;  $Id: VBoxBiosAlternative.asm 43078 2012-08-29 14:34:43Z vboxsync $
 ;  32-bit PCI BIOS wrapper.
 ;  
 ;  

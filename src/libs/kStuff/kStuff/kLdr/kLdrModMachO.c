@@ -1,4 +1,4 @@
-/* $Id: kLdrModMachO.c 47 2012-04-11 00:00:12Z bird $ */
+/* $Id: kLdrModMachO.c 49 2012-08-28 23:49:20Z bird $ */
 /** @file
  * kLdr - The Module Interpreter for the MACH-O format.
  */
@@ -1009,6 +1009,17 @@ static int  kldrModMachOPreParseLoadCommands(KU8 *pbLoadCommands, const mach_hea
                 /** @todo Check anything here need converting? */
                 break;
 
+            case LC_CODE_SIGNATURE:
+                if (u.pUuid->cmdsize != sizeof(linkedit_data_command_t))
+                    return KLDR_ERR_MACHO_BAD_LOAD_COMMAND;
+                break;
+
+            case LC_VERSION_MIN_MACOSX:
+            case LC_VERSION_MIN_IPHONEOS:
+                if (u.pUuid->cmdsize != sizeof(version_min_command_t))
+                    return KLDR_ERR_MACHO_BAD_LOAD_COMMAND;
+                break;
+
             case LC_LOADFVMLIB:
             case LC_IDFVMLIB:
             case LC_IDENT:
@@ -1659,7 +1670,7 @@ static int kldrModMachOQueryLinkerSymbol(PKLDRMODMACHO pModMachO, PKLDRMOD pMod,
         if (   pModMachO->Hdr.magic == IMAGE_MACHO32_SIGNATURE
             || pModMachO->Hdr.magic == IMAGE_MACHO32_SIGNATURE_OE)
         {
-            section_64_t *pSect = (section_64_t *)pModMachO->aSegments[iSeg].paSections[iSect].pvMachoSection;
+            section_32_t *pSect = (section_32_t *)pModMachO->aSegments[iSeg].paSections[iSect].pvMachoSection;
             uValue = pSect->addr;
             if (!s_aPrefixes[iPrefix].fStart)
                 uValue += pSect->size;

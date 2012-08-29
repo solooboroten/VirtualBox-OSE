@@ -1,4 +1,4 @@
-/* $Id: UIGChooserHandlerMouse.cpp 42678 2012-08-08 11:25:47Z vboxsync $ */
+/* $Id: UIGChooserHandlerMouse.cpp 43012 2012-08-27 19:44:52Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42746 2012-08-10 08:46:42Z vboxsync $
+# $Id: Makefile.kmk 43010 2012-08-27 19:25:04Z vboxsync $
 ## @file
 # Install misc stuff and create dist packages for Mac OS X.
 #
