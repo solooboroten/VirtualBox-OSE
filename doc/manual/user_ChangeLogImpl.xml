@@ -1,6 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.1.22 (2012-09-07)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: fixed a potential host crash triggered by shutting down a VM
+          when another VM was running (only affected 32-bit hosts and 64-bit OS X hosts,
+          4.1 regression, bug #9897)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a potential host crash under a high guest memory pressure
+          (seen with Windows 8 guests)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: respect RAM preallocation while restoring saved state.</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed handling of task gates if VT-x/AMD-V is disabled</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed audio CD passthrough for certain media players</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: don't crash if a USB device is plugged or unplugged when
+          saving or loading the VM state (SMP guests only)</para>
+      </listitem>
+
+      <listitem>
+        <para>RTC: fixed a potential corruption of CMOS bank 1</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X hosts: installer fixes for Leopard (4.1.20 regression)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed memory leak in VBoxTray (bug #10808)</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.1.20 (2012-08-20)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -8255,4 +8306,4 @@
     </itemizedlist>
 
   </sect1>
- 
+

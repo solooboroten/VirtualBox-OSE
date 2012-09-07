@@ -4012,13 +4012,15 @@ static int atapiPassthroughSS(PAHCIPORTTASKSTATE pAhciPortTaskState, PAHCIPort p
                 ataSCSIPadStr((uint8_t *)pAhciPortTaskState->pSGListHead[0].pvSeg + 16, "CD-ROM", 16);
                 ataSCSIPadStr((uint8_t *)pAhciPortTaskState->pSGListHead[0].pvSeg + 32, "1.0", 4);
             }
-            else if (pAhciPortTaskState->aATAPICmd[0] == SCSI_READ_TOC_PMA_ATIP)
+            else if (   pAhciPortTaskState->aATAPICmd[0] == SCSI_READ_TOC_PMA_ATIP
+                     && (pAhciPortTaskState->aATAPICmd[2] & 0xf) != 0x05
+                     && pAhciPortTaskState->aATAPICmd[6] != 0xaa)
             {
                 /* Set the media type if we can detect it. */
                 uint8_t *pbBuf = (uint8_t *)pAhciPortTaskState->pSGListHead[0].pvSeg;
 
                 /** @todo: Implemented only for formatted TOC now. */
-                if (   (pAhciPortTaskState->aATAPICmd[1] & 0xf) == 0
+                if (   (pAhciPortTaskState->aATAPICmd[2] & 0xf) == 0
                     && cbTransfer >= 6)
                 {
                     uint32_t NewMediaType;

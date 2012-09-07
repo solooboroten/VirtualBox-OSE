@@ -2267,7 +2267,7 @@
     </message>
     <message>
         <source>Displays the MAC address of this adapter. It contains exactly 12 characters chosen from {0-9,A-F}. Note that the second character must be an even digit.</source>
-        <translation>Zeigt die MAC-Adresse dieses Adapters. Sie besteht aus genau 12 Zeichen aus dem Zeichenvorrat {0-9,A-F}. Das zweite Zeichen muss eine gerate Zahl sein.</translation>
+        <translation>Zeigt die MAC-Adresse dieses Adapters. Sie besteht aus genau 12 Zeichen aus dem Zeichenvorrat {0-9,A-F}. Das zweite Zeichen muss eine gerade Zahl sein.</translation>
     </message>
     <message>
         <source>Generates a new random MAC address.</source>
@@ -3108,7 +3108,7 @@
     </message>
     <message>
         <source>Limits the amount of time that each virtual CPU is allowed to run for. Each virtual CPU will be allowed to use up to this percentage of the processing time available on one physical CPU. The execution cap can be disabled by setting it to 100%. Setting the cap too low can make the machine feel slow to respond.</source>
-        <translation>Begrenzt die jeder virtuellen CPU zur Verfügung stehenden Zeit. Jede virtuelle CPU darf nicht länger als dieser Prozentsatz der verfügbaren Zeit auf einer physischen CPU laufen. Durch Setzen dieses Wertes auf 100% wird diese Begrenzung aufgehoben. Wird dieser Wert zu tief gewählt, kann sich dies negativ auf das Zeitverhalten der VM auswirken.</translation>
+        <translation>Begrenzt die jeder virtuellen CPU zur Verfügung stehende Zeit. Jede virtuelle CPU darf nicht länger als dieser Prozentsatz der verfügbaren Zeit auf einer physischen CPU laufen. Durch Setzen dieses Wertes auf 100% wird diese Begrenzung aufgehoben. Wird dieser Wert zu tief gewählt, kann sich dies negativ auf das Zeitverhalten der VM auswirken.</translation>
     </message>
     <message>
         <source>you have set the processor execution cap to a low value. This can make the machine feel slow to respond.</source>
@@ -6385,7 +6385,7 @@
     <message>
         <source>Allow All</source>
         <comment>NetworkAdapterPromiscModePolicyType</comment>
-        <translation>erlauben für allen VMs und den Host</translation>
+        <translation>erlauben für alle VMs und den Host</translation>
     </message>
     <message>
         <source>Dynamically allocated storage</source>

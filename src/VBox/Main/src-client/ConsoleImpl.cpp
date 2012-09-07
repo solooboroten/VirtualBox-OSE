@@ -7773,7 +7773,7 @@ HRESULT Console::attachUSBDevice(IUSBDevice *aHostDevice, ULONG aMaskedIfs)
     alock.leave();
 
 /** @todo just do everything here and only wrap the PDMR3Usb call. That'll offload some notification stuff from the EMT thread. */
-    int vrc = VMR3ReqCallWait(ptrVM, VMCPUID_ANY,
+    int vrc = VMR3ReqCallWait(ptrVM, 0 /* idDstCpu (saved state, see #6232) */,
                               (PFNRT)usbAttachCallback, 7,
                               this, ptrVM.raw(), aHostDevice, uuid.raw(), fRemote, Address.c_str(), aMaskedIfs);
 
@@ -7897,7 +7897,7 @@ HRESULT Console::detachUSBDevice(USBDeviceList::iterator &aIt)
     alock.leave();
 
 /** @todo just do everything here and only wrap the PDMR3Usb call. That'll offload some notification stuff from the EMT thread. */
-    int vrc = VMR3ReqCallWait(ptrVM, VMCPUID_ANY,
+    int vrc = VMR3ReqCallWait(ptrVM, 0 /* idDstCpu (saved state, see #6232) */,
                               (PFNRT)usbDetachCallback, 5,
                               this, ptrVM.raw(), &aIt, (*aIt)->id().raw());
     ComAssertRCRet(vrc, E_FAIL);
