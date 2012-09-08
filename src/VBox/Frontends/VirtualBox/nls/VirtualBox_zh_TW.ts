@@ -3422,7 +3422,7 @@
     </message>
     <message>
         <source>you have hardware virtualization (VT-x/AMD-V) enabled. Your host configuration does not support hardware virtualization, so it will be disabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
-        <translation>您已啟用硬體虛擬化 (VT-x/AMD-V)。 您的主機組態不支援硬體虛擬化，因此將停用。 當您按下 [確定] 按鈕接受 VM 設定值將會自動完成。</translation>
+        <translation type="obsolete">您已啟用硬體虛擬化 (VT-x/AMD-V)。 您的主機組態不支援硬體虛擬化，因此將停用。 當您按下 [確定] 按鈕接受 VM 設定值將會自動完成。</translation>
     </message>
 </context>
 <context>
@@ -4735,6 +4735,18 @@
     <message>
         <source>Failed to set groups of the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
         <translation>設定虛擬機器 &lt;b&gt;%1&lt;/b&gt; 的群組失敗。</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not start the machine &lt;b&gt;%1&lt;/b&gt; because the following physical network interfaces were not found:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/p&gt;&lt;p&gt;You can either change the machine&apos;s network settings or stop the machine.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;無法啟動機器 &lt;b&gt;%1&lt;/b&gt;，因為找不到以下實體網路介面:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/p&gt;&lt;p&gt;您可以變更機器的網路設定或停止機器。&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Change Network Settings</source>
+        <translation>變更網路設定</translation>
+    </message>
+    <message>
+        <source>Close Virtual Machine</source>
+        <translation>關閉虛擬機器</translation>
     </message>
 </context>
 <context>

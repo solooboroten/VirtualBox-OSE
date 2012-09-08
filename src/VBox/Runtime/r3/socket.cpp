@@ -1,10 +1,10 @@
-/* $Id: socket.cpp 39807 2012-01-19 10:43:42Z vboxsync $ */
+/* $Id: socket.cpp 43213 2012-09-06 08:37:56Z vboxsync $ */
 /** @file
  * IPRT - Network Sockets.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,6 +30,7 @@
 *******************************************************************************/
 #ifdef RT_OS_WINDOWS
 # include <winsock2.h>
+# include <ws2tcpip.h>
 #else /* !RT_OS_WINDOWS */
 # include <errno.h>
 # include <sys/stat.h>
@@ -67,6 +68,7 @@
 
 #include "internal/magics.h"
 #include "internal/socket.h"
+#include "internal/string.h"
 
 
 /*******************************************************************************
@@ -586,6 +588,7 @@ RTDECL(int) RTSocketSetInheritance(RTSOCKET hSocket, bool fInheritable)
     return rc;
 }
 
+
 static bool rtSocketIsIPv4Numerical(const char *pszAddress, PRTNETADDRIPV4 pAddr)
 {
 
@@ -680,6 +683,151 @@ RTDECL(int) RTSocketParseInetAddress(const char *pszAddress, unsigned uPort, PRT
 }
 
 
+/*
+ * New function to allow both ipv4 and ipv6 addresses to be resolved.
+ * Breaks compatibility with windows before 2000.
+ */
+RTDECL(int) RTSocketQueryAddressStr(const char *pszHost, char *pszResult, size_t *pcbResult, PRTNETADDRTYPE penmAddrType)
+{
+    AssertPtrReturn(pszHost, VERR_INVALID_POINTER);
+    AssertPtrReturn(pcbResult, VERR_INVALID_POINTER);
+    AssertPtrNullReturn(penmAddrType, VERR_INVALID_POINTER);
+    AssertPtrNullReturn(pszResult, VERR_INVALID_POINTER);
+
+#if defined(RT_OS_OS2) || defined(RT_OS_WINDOWS) /** @todo dynamically resolve the APIs not present in NT4! */
+    return VERR_NOT_SUPPORTED;
+
+#else
+    int rc;
+    if (*pcbResult < 16)
+        return VERR_NET_ADDRESS_NOT_AVAILABLE;
+
+    /* Setup the hint. */
+    struct addrinfo grHints;
+    RT_ZERO(grHints);
+    grHints.ai_socktype = 0;
+    grHints.ai_flags    = 0;
+    grHints.ai_protocol = 0;
+    grHints.ai_family   = AF_UNSPEC;
+    if (penmAddrType)
+    {
+        switch (*penmAddrType)
+        {
+            case RTNETADDRTYPE_INVALID:
+                /*grHints.ai_family = AF_UNSPEC;*/
+                break;
+            case RTNETADDRTYPE_IPV4:
+                grHints.ai_family = AF_INET;
+                break;
+            case RTNETADDRTYPE_IPV6:
+                grHints.ai_family = AF_INET6;
+                break;
+            default:
+                AssertFailedReturn(VERR_INVALID_PARAMETER);
+        }
+    }
+
+# ifdef RT_OS_WINDOWS
+    /*
+     * Winsock2 init
+     */
+    /** @todo someone should check if we really need 2, 2 here */
+    WORD    wVersionRequested = MAKEWORD(2, 2);
+    WSADATA wsaData;
+    rc = WSAStartup(wVersionRequested, &wsaData);
+    if (wsaData.wVersion != wVersionRequested)
+    {
+        AssertMsgFailed(("Wrong winsock version\n"));
+        return VERR_NOT_SUPPORTED;
+    }
+# endif
+
+    /** @todo r=bird: getaddrinfo and freeaddrinfo breaks the additions on NT4. */
+    struct addrinfo *pgrResults = NULL;
+    rc = getaddrinfo(pszHost, "", &grHints, &pgrResults);
+    if (rc != 0)
+        return VERR_NET_ADDRESS_NOT_AVAILABLE;
+
+    // return data
+    // on multiple matches return only the first one
+
+    if (!pgrResults)
+        return VERR_NET_ADDRESS_NOT_AVAILABLE;
+
+    struct addrinfo const *pgrResult = pgrResults->ai_next;
+    if (!pgrResult)
+    {
+        freeaddrinfo(pgrResults);
+        return VERR_NET_ADDRESS_NOT_AVAILABLE;
+    }
+
+    uint8_t const  *pbDummy;
+    RTNETADDRTYPE   enmAddrType = RTNETADDRTYPE_INVALID;
+    size_t          cchIpAddress;
+    char            szIpAddress[48];
+    if (pgrResult->ai_family == AF_INET)
+    {
+        struct sockaddr_in const *pgrSa = (struct sockaddr_in const *)pgrResult->ai_addr;
+        pbDummy = (uint8_t const *)&pgrSa->sin_addr;
+        cchIpAddress = RTStrPrintf(szIpAddress, sizeof(szIpAddress), "%u.%u.%u.%u",
+                                   pbDummy[0], pbDummy[1], pbDummy[2], pbDummy[3]);
+        Assert(cchIpAddress >= 7 && cchIpAddress < sizeof(szIpAddress) - 1);
+        enmAddrType = RTNETADDRTYPE_IPV4;
+        rc = VINF_SUCCESS;
+    }
+    else if (pgrResult->ai_family == AF_INET6)
+    {
+        struct sockaddr_in6 const *pgrSa6 = (struct sockaddr_in6 const *)pgrResult->ai_addr;
+        pbDummy = (uint8_t const *) &pgrSa6->sin6_addr;
+        char szTmp[32+1];
+        size_t cchTmp = RTStrPrintf(szTmp, sizeof(szTmp),
+                                    "%02x%02x%02x%02x"
+                                    "%02x%02x%02x%02x"
+                                    "%02x%02x%02x%02x"
+                                    "%02x%02x%02x%02x",
+                                    pbDummy[0],  pbDummy[1],  pbDummy[2],  pbDummy[3],
+                                    pbDummy[4],  pbDummy[5],  pbDummy[6],  pbDummy[7],
+                                    pbDummy[8],  pbDummy[9],  pbDummy[10], pbDummy[11],
+                                    pbDummy[12], pbDummy[13], pbDummy[14], pbDummy[15]);
+        Assert(cchTmp == 32);
+        rc = rtStrToIpAddr6Str(szTmp, szIpAddress, sizeof(szIpAddress), NULL, 0, true);
+        if (RT_SUCCESS(rc))
+            cchIpAddress = strlen(szIpAddress);
+        else
+        {
+            szIpAddress[0] = '\0';
+            cchIpAddress = 0;
+        }
+        enmAddrType = RTNETADDRTYPE_IPV6;
+    }
+    else
+    {
+        rc = VERR_NET_ADDRESS_NOT_AVAILABLE;
+        szIpAddress[0] = '\0';
+        cchIpAddress = 0;
+    }
+    freeaddrinfo(pgrResults);
+
+    /*
+     * Copy out the result.
+     */
+    size_t const cbResult = *pcbResult;
+    *pcbResult = cchIpAddress + 1;
+    if (cchIpAddress < cbResult)
+        memcpy(pszResult, szIpAddress, cchIpAddress + 1);
+    else
+    {
+        RT_BZERO(pszResult, cbResult);
+        if (RT_SUCCESS(rc))
+            rc = VERR_BUFFER_OVERFLOW;
+    }
+    if (penmAddrType && RT_SUCCESS(rc))
+        *penmAddrType = enmAddrType;
+    return rc;
+#endif /* !RT_OS_OS2 */
+}
+
+
 RTDECL(int) RTSocketRead(RTSOCKET hSocket, void *pvBuffer, size_t cbBuffer, size_t *pcbRead)
 {
     /*
@@ -691,7 +839,6 @@ RTDECL(int) RTSocketRead(RTSOCKET hSocket, void *pvBuffer, size_t cbBuffer, size
     AssertReturn(cbBuffer > 0, VERR_INVALID_PARAMETER);
     AssertPtr(pvBuffer);
     AssertReturn(rtSocketTryLock(pThis), VERR_CONCURRENT_ACCESS);
-
 
     int rc = rtSocketSwitchBlockingMode(pThis, true /* fBlocking */);
     if (RT_FAILURE(rc))

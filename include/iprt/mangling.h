@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -880,6 +880,8 @@
 # define RTNetIPv6PseudoChecksumEx                      RT_MANGLER(RTNetIPv6PseudoChecksumEx)
 # define RTNetTCPChecksum                               RT_MANGLER(RTNetTCPChecksum)
 # define RTNetUDPChecksum                               RT_MANGLER(RTNetUDPChecksum)
+# define RTNetIsIPv4AddrStr                             RT_MANGLER(RTNetIsIPv4AddrStr)
+# define RTNetIsIPv6AddrStr                             RT_MANGLER(RTNetIsIPv6AddrStr)
 # define RTOnceSlow                                     RT_MANGLER(RTOnceSlow)
 # define RTOnceReset                                    RT_MANGLER(RTOnceReset)
 # define RTPathAbs                                      RT_MANGLER(RTPathAbs)
@@ -1196,6 +1198,7 @@
 # define RTSha512Update                                 RT_MANGLER(RTSha512Update)
 # define RTSocketClose                                  RT_MANGLER(RTSocketClose)
 # define RTSocketFromNative                             RT_MANGLER(RTSocketFromNative)
+# define RTSocketQueryAddressStr                        RT_MANGLER(RTSocketQueryAddressStr)
 # define RTSocketGetLocalAddress                        RT_MANGLER(RTSocketGetLocalAddress)
 # define RTSocketGetPeerAddress                         RT_MANGLER(RTSocketGetPeerAddress)
 # define RTSocketParseInetAddress                       RT_MANGLER(RTSocketParseInetAddress)

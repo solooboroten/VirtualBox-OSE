@@ -1,4 +1,4 @@
-/* $Id: PGMAllPool.cpp 42700 2012-08-09 00:50:39Z vboxsync $ */
+/* $Id: PGMAllPool.cpp 43197 2012-09-05 10:45:32Z vboxsync $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -2036,7 +2036,8 @@ static int pgmPoolCacheFreeOne(PPGMPOOL pPool, uint16_t iUser)
          * Reject any attempts at flushing the currently active shadow CR3 mapping.
          * Call pgmPoolCacheUsed to move the page to the head of the age list.
          */
-        if (!pgmPoolIsPageLocked(pPage))
+        if (   !pgmPoolIsPageLocked(pPage)
+            && pPage->idx >= PGMPOOL_IDX_FIRST /* paranoia (#6349) */)
             break;
         LogFlow(("pgmPoolCacheFreeOne: refuse CR3 mapping\n"));
         pgmPoolCacheUsed(pPool, pPage);
@@ -3711,17 +3712,22 @@ static void pgmPoolTrackClearPageUser(PPGMPOOL pPool, PPGMPOOLPAGE pPage, PCPGMP
     uint32_t iUserTable = pUser->iUserTable;
 
     /*
-     * Map the user page.
+     * Map the user page.  Ignore references made by fictitious pages.
      */
     PPGMPOOLPAGE pUserPage = &pPool->aPages[pUser->iUser];
+    LogFlow(("pgmPoolTrackClearPageUser: clear %x in %s (%RGp) (flushing %s)\n", iUserTable, pgmPoolPoolKindToStr(pUserPage->enmKind), pUserPage->Core.Key, pgmPoolPoolKindToStr(pPage->enmKind)));
     union
     {
         uint64_t       *pau64;
         uint32_t       *pau32;
     } u;
+    if (pUserPage->idx < PGMPOOL_IDX_FIRST)
+    {
+        Assert(!pUserPage->pvPageR3);
+        return;
+    }
     u.pau64 = (uint64_t *)PGMPOOL_PAGE_2_PTR(pPool->CTX_SUFF(pVM), pUserPage);
 
-    LogFlow(("pgmPoolTrackClearPageUser: clear %x in %s (%RGp) (flushing %s)\n", iUserTable, pgmPoolPoolKindToStr(pUserPage->enmKind), pUserPage->Core.Key, pgmPoolPoolKindToStr(pPage->enmKind)));
 
     /* Safety precaution in case we change the paging for other modes too in the future. */
     Assert(!pgmPoolIsPageLocked(pPage));
@@ -4782,14 +4788,13 @@ int pgmPoolFlushPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage, bool fFlush)
              pPage, pPage->Core.Key, pPage->idx, pgmPoolPoolKindToStr(pPage->enmKind), pPage->GCPhys));
 
     /*
-     * Quietly reject any attempts at flushing any of the special root pages.
+     * Reject any attempts at flushing any of the special root pages (shall
+     * not happen).
      */
-    if (pPage->idx < PGMPOOL_IDX_FIRST)
-    {
-        AssertFailed(); /* can no longer happen */
-        Log(("pgmPoolFlushPage: special root page, rejected. enmKind=%s idx=%d\n", pgmPoolPoolKindToStr(pPage->enmKind), pPage->idx));
-        return VINF_SUCCESS;
-    }
+    AssertMsgReturn(pPage->idx >= PGMPOOL_IDX_FIRST,
+                    ("pgmPoolFlushPage: special root page, rejected. enmKind=%s idx=%d\n",
+                     pgmPoolPoolKindToStr(pPage->enmKind), pPage->idx),
+                    VINF_SUCCESS);
 
     pgmLock(pVM);
 
@@ -4902,7 +4907,8 @@ void pgmPoolFreeByPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage, uint16_t iUser, uint3
     STAM_PROFILE_START(&pPool->StatFree, a);
     LogFlow(("pgmPoolFreeByPage: pPage=%p:{.Key=%RHp, .idx=%d, enmKind=%s} iUser=%d iUserTable=%#x\n",
              pPage, pPage->Core.Key, pPage->idx, pgmPoolPoolKindToStr(pPage->enmKind), iUser, iUserTable));
-    Assert(pPage->idx >= PGMPOOL_IDX_FIRST);
+    AssertReturnVoid(pPage->idx >= PGMPOOL_IDX_FIRST); /* paranoia (#6349) */
+
     pgmLock(pVM);
     pgmPoolTrackFreeUser(pPool, pPage, iUser, iUserTable);
     if (!pPage->fCached)
@@ -5403,6 +5409,16 @@ void pgmR3PoolReset(PVM pVM)
     for (unsigned i = PGMPOOL_IDX_FIRST_SPECIAL; i < PGMPOOL_IDX_FIRST; i++)
     {
         PPGMPOOLPAGE pPage = &pPool->aPages[i];
+
+        /** @todo r=bird: Is this code still needed in any way?  The special root
+         *        pages should not be monitored or anything these days AFAIK. */
+        Assert(pPage->iNext == NIL_PGMPOOL_IDX);
+        Assert(pPage->iModifiedNext == NIL_PGMPOOL_IDX);
+        Assert(pPage->iModifiedPrev == NIL_PGMPOOL_IDX);
+        Assert(pPage->iMonitoredNext == NIL_PGMPOOL_IDX);
+        Assert(pPage->iMonitoredPrev == NIL_PGMPOOL_IDX);
+        Assert(!pPage->fMonitored);
+
         pPage->iNext = NIL_PGMPOOL_IDX;
         pPage->iModifiedNext = NIL_PGMPOOL_IDX;
         pPage->iModifiedPrev = NIL_PGMPOOL_IDX;

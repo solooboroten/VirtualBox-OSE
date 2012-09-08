@@ -1,4 +1,4 @@
-/* $Id: UIGChooserItemGroup.cpp 43011 2012-08-27 19:26:11Z vboxsync $ */
+/* $Id: UIGChooserItemGroup.cpp 43210 2012-09-05 18:15:30Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -24,6 +24,8 @@
 #include <QLineEdit>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
+#include <QHBoxLayout>
+#include <QMenu>
 
 /* GUI includes: */
 #include "UIGChooserItemGroup.h"
@@ -31,6 +33,7 @@
 #include "UIGChooserModel.h"
 #include "UIIconPool.h"
 #include "UIGraphicsRotatorButton.h"
+#include "UIGChooserView.h"
 
 /* static */
 QString UIGChooserItemGroup::className() { return "UIGChooserItemGroup"; }
@@ -46,6 +49,7 @@ UIGChooserItemGroup::UIGChooserItemGroup(QGraphicsScene *pScene)
     , m_iAdditionalHeight(0)
     , m_iCornerRadius(10)
     , m_fMainRoot(true)
+    , m_iBlackoutDarkness(110)
 {
     /* Prepare: */
     prepare();
@@ -69,6 +73,7 @@ UIGChooserItemGroup::UIGChooserItemGroup(QGraphicsScene *pScene,
     , m_iAdditionalHeight(0)
     , m_iCornerRadius(10)
     , m_fMainRoot(fMainRoot)
+    , m_iBlackoutDarkness(110)
 {
     /* Prepare: */
     prepare();
@@ -96,6 +101,7 @@ UIGChooserItemGroup::UIGChooserItemGroup(UIGChooserItem *pParent,
     , m_iAdditionalHeight(0)
     , m_iCornerRadius(10)
     , m_fMainRoot(false)
+    , m_iBlackoutDarkness(110)
 {
     /* Prepare: */
     prepare();
@@ -122,6 +128,7 @@ UIGChooserItemGroup::UIGChooserItemGroup(UIGChooserItem *pParent,
     , m_iAdditionalHeight(0)
     , m_iCornerRadius(10)
     , m_fMainRoot(false)
+    , m_iBlackoutDarkness(110)
 {
     /* Prepare: */
     prepare();
@@ -240,9 +247,9 @@ void UIGChooserItemGroup::sltNameEditingFinished()
     if (strNewName.isEmpty() || groupNames.contains(strNewName))
         return;
 
-    /* Since '/' symbol is forbidden,
-     * we should replace it: */
-    strNewName.replace('/', '_');
+    /* We should replace forbidden symbols
+     * with ... well, probably underscores: */
+    strNewName.replace(QRegExp("[\\\\/:*?\"<>]"), "_");
 
     /* Set new name / update model: */
     m_strName = strNewName;
@@ -891,8 +898,9 @@ bool UIGChooserItemGroup::isDropAllowed(QGraphicsSceneDragDropEvent *pEvent, Dra
         const UIGChooserItemMimeData *pCastedMimeData = qobject_cast<const UIGChooserItemMimeData*>(pMimeData);
         AssertMsg(pCastedMimeData, ("Can't cast passed mime-data to UIGChooserItemMimeData!"));
         UIGChooserItem *pItem = pCastedMimeData->item();
-        /* Make sure passed group contains only mutable machines: */
-        if (pItem->toGroupItem()->isContainsLockedMachine())
+        /* Make sure passed group is mutable within this group: */
+        if (pItem->toGroupItem()->isContainsLockedMachine() &&
+            !items(UIGChooserItemType_Group).contains(pItem))
             return false;
         /* Make sure passed group is not 'this': */
         if (pItem == this)
@@ -913,8 +921,9 @@ bool UIGChooserItemGroup::isDropAllowed(QGraphicsSceneDragDropEvent *pEvent, Dra
         const UIGChooserItemMimeData *pCastedMimeData = qobject_cast<const UIGChooserItemMimeData*>(pMimeData);
         AssertMsg(pCastedMimeData, ("Can't cast passed mime-data to UIGChooserItemMimeData!"));
         UIGChooserItem *pItem = pCastedMimeData->item();
-        /* Make sure passed machine is mutable: */
-        if (pItem->toMachineItem()->isLockedMachine())
+        /* Make sure passed machine is mutable within this group: */
+        if (pItem->toMachineItem()->isLockedMachine() &&
+            !items(UIGChooserItemType_Machine).contains(pItem))
             return false;
         switch (pEvent->proposedAction())
         {
@@ -1112,7 +1121,8 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
 
     /* Prepare color: */
     QPalette pal = palette();
-    QColor windowColor = pal.color(QPalette::Active, model()->selectionList().contains(this) ?
+    QColor windowColor = pal.color(QPalette::Active,
+                                   model()->selectionList().contains(this) ?
                                    QPalette::Highlight : QPalette::Window);
 
     /* Root item: */
@@ -1216,8 +1226,8 @@ void UIGChooserItemGroup::paintBackground(QPainter *pPainter, const QRect &rect)
                 dragTokenGradient.setStart(dragTokenRect.topLeft());
                 dragTokenGradient.setFinalStop(dragTokenRect.bottomLeft());
             }
-            dragTokenGradient.setColorAt(0, windowColor.darker(blackoutDarkness()));
-            dragTokenGradient.setColorAt(1, windowColor.darker(dragTokenDarkness()));
+            dragTokenGradient.setColorAt(0, windowColor.darker(dragTokenDarkness()));
+            dragTokenGradient.setColorAt(1, windowColor.darker(dragTokenDarkness() + 40));
             pPainter->fillRect(dragTokenRect, dragTokenGradient);
         }
     }
@@ -1406,10 +1416,9 @@ void UIGChooserItemGroup::prepare()
         m_pEnterButton->hide();
 
         /* Setup name-editor: */
-        m_pNameEditorWidget = new QLineEdit(m_strName);
-        m_pNameEditorWidget->setTextMargins(0, 0, 0, 0);
+        m_pNameEditorWidget = new UIGroupRenameEditor(m_strName, this);
         m_pNameEditorWidget->setFont(data(GroupItemData_NameFont).value<QFont>());
-        connect(m_pNameEditorWidget, SIGNAL(editingFinished()), this, SLOT(sltNameEditingFinished()));
+        connect(m_pNameEditorWidget, SIGNAL(sigEditingFinished()), this, SLOT(sltNameEditingFinished()));
         m_pNameEditor = new QGraphicsProxyWidget(this);
         m_pNameEditor->setWidget(m_pNameEditorWidget);
         m_pNameEditor->hide();
@@ -1436,5 +1445,102 @@ void UIGChooserItemGroup::copyContent(UIGChooserItemGroup *pFrom, UIGChooserItem
     /* Copy machine items: */
     foreach (UIGChooserItem *pMachineItem, pFrom->items(UIGChooserItemType_Machine))
         new UIGChooserItemMachine(pTo, pMachineItem->toMachineItem());
+}
+
+UIGroupRenameEditor::UIGroupRenameEditor(const QString &strName, UIGChooserItem *pParent)
+    : m_pParent(pParent)
+    , m_pLineEdit(0)
+    , m_pTemporaryMenu(0)
+{
+    /* Create line-edit: */
+    m_pLineEdit = new QLineEdit(strName, this);
+    m_pLineEdit->setTextMargins(0, 0, 0, 0);
+    connect(m_pLineEdit, SIGNAL(returnPressed()), this, SIGNAL(sigEditingFinished()));
+    /* Create main-layout: */
+    QHBoxLayout *pLayout = new QHBoxLayout(this);
+    pLayout->setContentsMargins(0, 0, 0, 0);
+    /* Add line-edit into main-layout: */
+    pLayout->addWidget(m_pLineEdit);
+    /* Install event-filter: */
+    m_pLineEdit->installEventFilter(this);
+}
+
+QString UIGroupRenameEditor::text() const
+{
+    return m_pLineEdit->text();
+}
+
+void UIGroupRenameEditor::setText(const QString &strText)
+{
+    m_pLineEdit->setText(strText);
+}
+
+void UIGroupRenameEditor::setFont(const QFont &font)
+{
+    QWidget::setFont(font);
+    m_pLineEdit->setFont(font);
+}
+
+void UIGroupRenameEditor::setFocus()
+{
+    m_pLineEdit->setFocus();
+}
+
+bool UIGroupRenameEditor::eventFilter(QObject *pWatched, QEvent *pEvent)
+{
+    /* Process only events sent to line-edit: */
+    if (pWatched != m_pLineEdit)
+        return QWidget::eventFilter(pWatched, pEvent);
+
+    /* Handle events: */
+    switch (pEvent->type())
+    {
+        case QEvent::ContextMenu:
+        {
+            /* Handle context-menu event: */
+            handleContextMenuEvent(static_cast<QContextMenuEvent*>(pEvent));
+            /* Filter out this event: */
+            return true;
+        }
+        case QEvent::FocusOut:
+        {
+            if (!m_pTemporaryMenu)
+                emit sigEditingFinished();
+            break;
+        }
+        default:
+            break;
+    }
+
+    /* Call to base-class: */
+    return QWidget::eventFilter(pWatched, pEvent);
+}
+
+void UIGroupRenameEditor::handleContextMenuEvent(QContextMenuEvent *pContextMenuEvent)
+{
+    /* Prepare variables: */
+    QGraphicsView *pView = m_pParent->model()->scene()->views().first();
+
+    /* Create context-menu: */
+    m_pTemporaryMenu = new QMenu(pView);
+    QMenu *pMenu = m_pLineEdit->createStandardContextMenu();
+    const QList<QAction*> &actions = pMenu->actions();
+    foreach (QAction *pAction, actions)
+        m_pTemporaryMenu->addAction(pAction);
+
+    /* Determine global position: */
+    QPoint subItemPos = pContextMenuEvent->pos();
+    QPoint itemPos = mapToParent(subItemPos);
+    QPointF scenePos = m_pParent->mapToScene(itemPos);
+    QPoint viewPos = pView->mapFromScene(scenePos);
+    QPoint globalPos = pView->mapToGlobal(viewPos);
+
+    /* Show context menu: */
+    m_pTemporaryMenu->exec(globalPos);
+
+    /* Delete context menu: */
+    delete m_pTemporaryMenu;
+    m_pTemporaryMenu = 0;
+    delete pMenu;
 }
 

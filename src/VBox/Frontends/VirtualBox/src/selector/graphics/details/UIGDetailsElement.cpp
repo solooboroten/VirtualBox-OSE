@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsElement.cpp 42909 2012-08-21 15:46:56Z vboxsync $ */
+/* $Id: UIGDetailsElement.cpp 43223 2012-09-06 11:48:24Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -51,7 +51,7 @@ UIGDetailsElement::UIGDetailsElement(UIGDetailsSet *pParent, DetailsElementType 
     , m_pForwardAnimation(0)
     , m_pBackwardAnimation(0)
     , m_iAnimationDuration(400)
-    , m_iDefaultDarkness(103)
+    , m_iDefaultDarkness(100)
     , m_iHighlightDarkness(90)
     , m_iAnimationDarkness(m_iDefaultDarkness)
 {
@@ -825,8 +825,28 @@ QTextLayout* UIGDetailsElement::prepareTextLayout(const QFont &font, QPaintDevic
     QFontMetrics fm(font, pPaintDevice);
     int iLeading = fm.leading();
 
+    /* Only bold sub-strings are currently handled: */
+    QString strModifiedText(strText);
+    QRegExp boldRegExp("<b>([\\s\\S]+)</b>");
+    QList<QTextLayout::FormatRange> formatRangeList;
+    while (boldRegExp.indexIn(strModifiedText) != -1)
+    {
+        /* Prepare format: */
+        QTextLayout::FormatRange formatRange;
+        QFont font = formatRange.format.font();
+        font.setBold(true);
+        formatRange.format.setFont(font);
+        formatRange.start = boldRegExp.pos(0);
+        formatRange.length = boldRegExp.cap(1).size();
+        /* Add format range to list: */
+        formatRangeList << formatRange;
+        /* Replace sub-string: */
+        strModifiedText.replace(boldRegExp.cap(0), boldRegExp.cap(1));
+    }
+
     /* Create layout; */
-    QTextLayout *pTextLayout = new QTextLayout(strText, font, pPaintDevice);
+    QTextLayout *pTextLayout = new QTextLayout(strModifiedText, font, pPaintDevice);
+    pTextLayout->setAdditionalFormats(formatRangeList);
 
     /* Configure layout: */
     QTextOption textOption;

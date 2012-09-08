@@ -11,7 +11,7 @@
     <message>
         <source>--</source>
         <comment>Native language country name (empty if this language is for all countries)</comment>
-        <translation></translation>
+        <translation>Italia</translation>
     </message>
     <message>
         <source>English</source>
@@ -21,7 +21,7 @@
     <message>
         <source>--</source>
         <comment>Language country name, in English (empty if native country name is empty)</comment>
-        <translation></translation>
+        <translation>Italy</translation>
     </message>
     <message>
         <source>Oracle Corporation</source>
@@ -1117,15 +1117,15 @@
     </message>
     <message>
         <source>Hard Disk Controller (IDE)</source>
-        <translation>Controller IDE disco fisso</translation>
+        <translation>Controller disco fisso (IDE)</translation>
     </message>
     <message>
         <source>Hard Disk Controller (SATA)</source>
-        <translation>Controller SATA disco fisso</translation>
+        <translation>Controller disco fisso (SATA)</translation>
     </message>
     <message>
         <source>Hard Disk Controller (SCSI)</source>
-        <translation>Controller SCSI disco fisso</translation>
+        <translation>Controller disco fisso (SCSI)</translation>
     </message>
     <message>
         <source>DVD</source>
@@ -3484,7 +3484,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>DHCP server network mask of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation>la maschera di rete del server DHCP di &lt;b&gt;%1&lt;/b&gt; è errata</translation>
+        <translation>La maschera di rete del server DHCP di &lt;b&gt;%1&lt;/b&gt; è errata</translation>
     </message>
     <message>
         <source>DHCP lower address bound of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
@@ -4428,7 +4428,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>&lt;qt&gt;%1&lt;/qt&gt;</source>
-        <translation></translation>
+        <translation>&lt;qt&gt;%1&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>Specifies whether multiple simultaneous connections to the VM are permitted.</source>
@@ -6040,7 +6040,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>you have hardware virtualization (VT-x/AMD-V) enabled. Your host configuration does not support hardware virtualization, so it will be disabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
-        <translation>hai abilitato la virtualizzazione hardware (VT-x/AMD-V). La configurazione dell&apos;host non supporta la virtualizzazione hardware, per cui sarà disabilitata. Ciò avverrà automaticamente quando accetterai le impostazioni della MV premendo il pulsante OK.</translation>
+        <translation type="obsolete">hai abilitato la virtualizzazione hardware (VT-x/AMD-V). La configurazione dell&apos;host non supporta la virtualizzazione hardware, per cui sarà disabilitata. Ciò avverrà automaticamente quando accetterai le impostazioni della MV premendo il pulsante OK.</translation>
     </message>
 </context>
 <context>
@@ -7905,6 +7905,18 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Failed to set groups of the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
         <translation>Impostazione dei gruppi della macchina virtuale&lt;b&gt;%1&lt;/b&gt; non riuscita. </translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not start the machine &lt;b&gt;%1&lt;/b&gt; because the following physical network interfaces were not found:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/p&gt;&lt;p&gt;You can either change the machine&apos;s network settings or stop the machine.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Impossibile avviare la macchina virtuale &lt;b&gt;%1&lt;/b&gt; poiché le seguenti interfacce fisiche non sono state trovate:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Puoi cambiare le impostazioni di rete della macchina o fermarla.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Change Network Settings</source>
+        <translation>Cambia impostazioni di rete</translation>
+    </message>
+    <message>
+        <source>Close Virtual Machine</source>
+        <translation>Chiudi la macchina virtuale</translation>
     </message>
 </context>
 <context>
@@ -12104,7 +12116,7 @@ Versione %1</translation>
     <message>
         <source>SCSI</source>
         <comment>StorageBus</comment>
-        <translation></translation>
+        <translation>SCSI</translation>
     </message>
     <message>
         <source>PIIX3</source>
@@ -12119,22 +12131,22 @@ Versione %1</translation>
     <message>
         <source>ICH6</source>
         <comment>StorageControllerType</comment>
-        <translation></translation>
+        <translation>ICH6</translation>
     </message>
     <message>
         <source>AHCI</source>
         <comment>StorageControllerType</comment>
-        <translation></translation>
+        <translation>AHCI</translation>
     </message>
     <message>
         <source>Lsilogic</source>
         <comment>StorageControllerType</comment>
-        <translation></translation>
+        <translation>Lsilogic</translation>
     </message>
     <message>
         <source>BusLogic</source>
         <comment>StorageControllerType</comment>
-        <translation></translation>
+        <translation>BusLogic</translation>
     </message>
     <message>
         <source>Bridged adapter, %1</source>
@@ -12149,7 +12161,7 @@ Versione %1</translation>
     <message>
         <source>Intel PRO/1000 MT Server (82545EM)</source>
         <comment>NetworkAdapterType</comment>
-        <translation></translation>
+        <translation>Intel PRO/1000 MT Server (82545EM)</translation>
     </message>
     <message>
         <source>Bridged Adapter</source>
@@ -12304,7 +12316,7 @@ Versione %1</translation>
     <message>
         <source>I82078</source>
         <comment>StorageControllerType</comment>
-        <translation></translation>
+        <translation>I82078</translation>
     </message>
     <message>
         <source>Empty</source>
@@ -12443,32 +12455,32 @@ Versione %1</translation>
     <message>
         <source>B</source>
         <comment>size suffix Bytes</comment>
-        <translation></translation>
+        <translation>B</translation>
     </message>
     <message>
         <source>KB</source>
         <comment>size suffix KBytes=1024 Bytes</comment>
-        <translation></translation>
+        <translation>KB</translation>
     </message>
     <message>
         <source>MB</source>
         <comment>size suffix MBytes=1024 KBytes</comment>
-        <translation></translation>
+        <translation>MB</translation>
     </message>
     <message>
         <source>GB</source>
         <comment>size suffix GBytes=1024 MBytes</comment>
-        <translation></translation>
+        <translation>GB</translation>
     </message>
     <message>
         <source>TB</source>
         <comment>size suffix TBytes=1024 GBytes</comment>
-        <translation></translation>
+        <translation>TB</translation>
     </message>
     <message>
         <source>PB</source>
         <comment>size suffix PBytes=1024 TBytes</comment>
-        <translation></translation>
+        <translation>PB</translation>
     </message>
     <message>
         <source>Enabled</source>
@@ -12584,7 +12596,7 @@ Versione %1</translation>
     <message>
         <source>Intel HD Audio</source>
         <comment>AudioControllerType</comment>
-        <translation></translation>
+        <translation>Intel HD Audio</translation>
     </message>
     <message>
         <source>PIIX3</source>
@@ -12594,7 +12606,7 @@ Versione %1</translation>
     <message>
         <source>ICH9</source>
         <comment>ChipsetType</comment>
-        <translation></translation>
+        <translation>ICH9</translation>
     </message>
     <message>
         <source>and</source>
