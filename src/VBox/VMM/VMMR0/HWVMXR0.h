@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.h 41906 2012-06-24 15:44:03Z vboxsync $ */
+/* $Id: HWVMXR0.h 43307 2012-09-12 11:13:58Z vboxsync $ */
 /** @file
  * HM VMX (VT-x) - Internal header file.
  */

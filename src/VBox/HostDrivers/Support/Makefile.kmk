@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42962 2012-08-23 19:30:07Z vboxsync $
+# $Id: Makefile.kmk 43315 2012-09-12 18:08:57Z vboxsync $
 ## @file
 # Sub-Makefile for the support library and the drivers/modules/kexts it uses.
 #

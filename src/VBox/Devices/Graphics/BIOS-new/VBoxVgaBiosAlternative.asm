@@ -1,4 +1,4 @@
-; $Id: VBoxVgaBiosAlternative.asm 43257 2012-09-08 09:29:54Z vboxsync $ 
+; $Id: VBoxVgaBiosAlternative.asm 43316 2012-09-13 05:03:17Z vboxsync $ 
 ;; @file
 ; Auto Generated source file. Do not edit.
 ;
