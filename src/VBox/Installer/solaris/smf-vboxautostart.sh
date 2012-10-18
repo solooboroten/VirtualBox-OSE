@@ -1,5 +1,5 @@
 #!/sbin/sh
-# $Id: smf-vboxautostart.sh 42491 2012-08-01 07:09:11Z vboxsync $
+# $Id: smf-vboxautostart.sh $
 
 # Copyright (C) 2012 Oracle Corporation
 #

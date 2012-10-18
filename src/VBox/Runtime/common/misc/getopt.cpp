@@ -1,4 +1,4 @@
-/* $Id: getopt.cpp 42129 2012-07-12 17:32:31Z vboxsync $ */
+/* $Id: getopt.cpp $ */
 /** @file
  * IPRT - Command Line Parsing
  */

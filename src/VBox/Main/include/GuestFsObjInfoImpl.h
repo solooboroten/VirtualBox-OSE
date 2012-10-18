@@ -1,5 +1,5 @@
 
-/* $Id: GuestFsObjInfoImpl.h 42673 2012-08-08 08:07:09Z vboxsync $ */
+/* $Id: GuestFsObjInfoImpl.h $ */
 /** @file
  * VirtualBox Main - XXX.
  */

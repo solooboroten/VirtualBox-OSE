@@ -1,4 +1,4 @@
-/* $Id: VBoxHelpers.h 35907 2011-02-09 11:20:31Z vboxsync $ */
+/* $Id: VBoxHelpers.h $ */
 /** @file
  * helpers - Guest Additions Service helper functions header.
  */

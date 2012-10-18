@@ -1,4 +1,4 @@
-/* $Id: VBoxAutostart.h 42732 2012-08-09 22:32:48Z vboxsync $ */
+/* $Id: VBoxAutostart.h $ */
 /** @file
  * VBoxAutostart - VirtualBox Autostart service.
  */

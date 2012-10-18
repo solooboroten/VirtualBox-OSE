@@ -2,6 +2,36 @@
 <!DOCTYPE TS>
 <TS version="2.0" language="en">
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message numerus="yes">
+        <location filename="../src/selector/graphics/chooser/UIGChooserItemGroup.cpp" line="262"/>
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation>
+            <numerusform>%n group</numerusform>
+            <numerusform>%n groups</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/selector/graphics/chooser/UIGChooserItemGroup.cpp" line="278"/>
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation>
+            <numerusform>%n machine</numerusform>
+            <numerusform>%n machines</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../src/selector/graphics/chooser/UIGChooserItemGroup.cpp" line="279"/>
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>UIMessageCenter</name>
     <message numerus="yes">
         <source>&lt;p&gt;The %n following virtual machine(s) are currently in a saved state: &lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;If you continue the runtime state of the exported machine(s) will be discarded. The other machine(s) will not be changed.&lt;/p&gt;</source>

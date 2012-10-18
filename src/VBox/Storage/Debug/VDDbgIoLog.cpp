@@ -1,4 +1,4 @@
-/* $Id: VDDbgIoLog.cpp 40990 2012-04-19 13:28:59Z vboxsync $ */
+/* $Id: VDDbgIoLog.cpp $ */
 /** @file
  *
  * VD Debug library - I/O logger.

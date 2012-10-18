@@ -1,4 +1,4 @@
-/* $Id: DBGFMem.cpp 42165 2012-07-16 13:36:01Z vboxsync $ */
+/* $Id: DBGFMem.cpp $ */
 /** @file
  * DBGF - Debugger Facility, Memory Methods.
  */

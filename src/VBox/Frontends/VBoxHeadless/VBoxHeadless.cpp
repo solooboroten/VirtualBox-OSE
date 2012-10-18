@@ -1,4 +1,4 @@
-/* $Id: VBoxHeadless.cpp 42476 2012-07-31 11:15:17Z vboxsync $ */
+/* $Id: VBoxHeadless.cpp $ */
 /** @file
  * VBoxHeadless - The VirtualBox Headless frontend for running VMs on servers.
  */

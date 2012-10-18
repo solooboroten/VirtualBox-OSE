@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-os2.cpp 41067 2012-04-26 11:36:57Z vboxsync $ */
+/* $Id: SUPDrv-os2.cpp $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - OS/2 specifics.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxMPCrUtil.cpp 42029 2012-07-05 15:34:03Z vboxsync $ */
+/* $Id: VBoxMPCrUtil.cpp $ */
 
 /** @file
  * VBox WDDM Miniport driver

@@ -1,4 +1,4 @@
-/* $Id: PDMAsyncCompletionFileNormal.cpp 41862 2012-06-21 15:08:02Z vboxsync $ */
+/* $Id: PDMAsyncCompletionFileNormal.cpp $ */
 /** @file
  * PDM Async I/O - Async File I/O manager.
  */

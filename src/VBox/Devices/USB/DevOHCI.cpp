@@ -1,4 +1,4 @@
-/* $Id: DevOHCI.cpp 43149 2012-09-03 08:42:00Z vboxsync $ */
+/* $Id: DevOHCI.cpp $ */
 /** @file
  * DevOHCI - Open Host Controller Interface for USB.
  */

@@ -1,4 +1,4 @@
-/* $Id: tstRTTemp.cpp 42714 2012-08-09 14:57:24Z vboxsync $ */
+/* $Id: tstRTTemp.cpp $ */
 /** @file
  * IPRT Testcase - Temporary files and directories.
  */

@@ -1,4 +1,4 @@
-/* $Id: Performance.h 40358 2012-03-05 14:40:52Z vboxsync $ */
+/* $Id: Performance.h $ */
 /** @file
  * VirtualBox Main - Performance Classes declaration.
  */
@@ -39,6 +39,12 @@ namespace pm
 {
     /* CPU load is measured in 1/1000 of per cent. */
     const uint64_t PM_CPU_LOAD_MULTIPLIER = UINT64_C(100000);
+    /* Network load is measured in 1/1000 of per cent. */
+    const uint64_t PM_NETWORK_LOAD_MULTIPLIER = UINT64_C(100000);
+    /* Disk load is measured in 1/1000 of per cent. */
+    const uint64_t PM_DISK_LOAD_MULTIPLIER = UINT64_C(100000);
+    /* Sampler precision in milliseconds. */
+    const uint64_t PM_SAMPLER_PRECISION_MS = 50;
 
     /* Sub Metrics **********************************************************/
     class CircularBuffer
@@ -62,13 +68,13 @@ namespace pm
     class SubMetric : public CircularBuffer
     {
     public:
-        SubMetric(const char *name, const char *description)
+        SubMetric(com::Utf8Str name, const char *description)
         : mName(name), mDescription(description) {};
         void query(ULONG *data);
-        const char *getName() { return mName; };
+        const char *getName() { return mName.c_str(); };
         const char *getDescription() { return mDescription; };
     private:
-        const char *mName;
+        const com::Utf8Str mName;
         const char *mDescription;
     };
 
@@ -349,6 +355,8 @@ namespace pm
         virtual int getHostCpuMHz(ULONG *mhz);
         /** Returns the amount of physical memory in kilobytes. */
         virtual int getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *available);
+        /** Returns file system counters in megabytes. */
+        virtual int getHostFilesystemUsage(const char *name, ULONG *total, ULONG *used, ULONG *available);
         /** Returns CPU usage in 1/1000th per cent by a particular process. */
         virtual int getProcessCpuLoad(RTPROCESS process, ULONG *user, ULONG *kernel);
         /** Returns the amount of memory used by a process in kilobytes. */
@@ -356,17 +364,24 @@ namespace pm
 
         /** Returns CPU usage counters in platform-specific units. */
         virtual int getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64_t *idle);
+        /** Returns received and transmitted bytes. */
+        virtual int getRawHostNetworkLoad(const char *name, uint64_t *rx, uint64_t *tx);
+        /** Returns disk usage counters in platform-specific units. */
+        virtual int getRawHostDiskLoad(const char *name, uint64_t *disk_ms, uint64_t *total_ms);
         /** Returns process' CPU usage counter in platform-specific units. */
         virtual int getRawProcessCpuLoad(RTPROCESS process, uint64_t *user, uint64_t *kernel, uint64_t *total);
     };
 
     extern CollectorHAL *createHAL();
 
+    typedef std::list<RTCString> DiskList;
+    extern int getDiskListByFs(const char *name, DiskList& list);
+
     /* Base Metrics *********************************************************/
     class BaseMetric
     {
     public:
-        BaseMetric(CollectorHAL *hal, const char *name, ComPtr<IUnknown> object)
+        BaseMetric(CollectorHAL *hal, const com::Utf8Str name, ComPtr<IUnknown> object)
             : mPeriod(0), mLength(0), mHAL(hal), mName(name), mObject(object),
               mLastSampleTaken(0), mEnabled(false), mUnregistered(false) {};
         virtual ~BaseMetric() {};
@@ -389,7 +404,7 @@ namespace pm
         bool isEnabled() { return mEnabled; };
         ULONG getPeriod() { return mPeriod; };
         ULONG getLength() { return mLength; };
-        const char *getName() { return mName; };
+        const char *getName() { return mName.c_str(); };
         ComPtr<IUnknown> getObject() { return mObject; };
         bool associatedWith(ComPtr<IUnknown> object) { return mObject == object; };
 
@@ -397,7 +412,7 @@ namespace pm
         ULONG           mPeriod;
         ULONG           mLength;
         CollectorHAL    *mHAL;
-        const char      *mName;
+        const com::Utf8Str mName;
         ComPtr<IUnknown> mObject;
         uint64_t         mLastSampleTaken;
         bool             mEnabled;
@@ -485,6 +500,78 @@ namespace pm
         SubMetric *mUsed;
         SubMetric *mAvailable;
     };
+
+    class HostNetworkLoadRaw : public BaseMetric
+    {
+    public:
+        HostNetworkLoadRaw(CollectorHAL *hal, ComPtr<IUnknown> object, com::Utf8Str name, com::Utf8Str shortname, com::Utf8Str ifname, uint32_t speed, SubMetric *rx, SubMetric *tx)
+            : BaseMetric(hal, name, object), mShortName(shortname), mInterfaceName(ifname), mRx(rx), mTx(tx), mRxPrev(0), mTxPrev(0), mRc(VINF_SUCCESS) { mSpeed = (uint64_t)speed * (1000000/8); /* Convert to bytes/sec */ };
+        ~HostNetworkLoadRaw() { delete mRx; delete mTx; };
+
+        void init(ULONG period, ULONG length);
+
+        void preCollect(CollectorHints& hints, uint64_t iTick);
+        void collect();
+        const char *getUnit() { return "%"; };
+        ULONG getMinValue() { return 0; };
+        ULONG getMaxValue() { return PM_NETWORK_LOAD_MULTIPLIER; };
+        ULONG getScale() { return PM_NETWORK_LOAD_MULTIPLIER / 100; }
+
+    private:
+        com::Utf8Str  mShortName;
+        com::Utf8Str  mInterfaceName;
+        SubMetric    *mRx;
+        SubMetric    *mTx;
+        uint64_t      mRxPrev;
+        uint64_t      mTxPrev;
+        uint64_t      mSpeed;
+        int           mRc;
+    };
+
+    class HostFilesystemUsage : public BaseMetric
+    {
+    public:
+        HostFilesystemUsage(CollectorHAL *hal, ComPtr<IUnknown> object, com::Utf8Str name, com::Utf8Str fsname, SubMetric *total, SubMetric *used, SubMetric *available)
+            : BaseMetric(hal, name, object), mFsName(fsname), mTotal(total), mUsed(used), mAvailable(available) {};
+        ~HostFilesystemUsage() { delete mTotal; delete mUsed; delete mAvailable; };
+
+        void init(ULONG period, ULONG length);
+        void preCollect(CollectorHints& hints, uint64_t iTick);
+        void collect();
+        const char *getUnit() { return "mB"; };
+        ULONG getMinValue() { return 0; };
+        ULONG getMaxValue() { return INT32_MAX; };
+        ULONG getScale() { return 1; }
+    private:
+        com::Utf8Str mFsName;
+        SubMetric   *mTotal;
+        SubMetric   *mUsed;
+        SubMetric   *mAvailable;
+    };
+
+    class HostDiskLoadRaw : public BaseMetric
+    {
+    public:
+        HostDiskLoadRaw(CollectorHAL *hal, ComPtr<IUnknown> object, com::Utf8Str name, com::Utf8Str diskname, SubMetric *util)
+            : BaseMetric(hal, name, object), mDiskName(diskname), mUtil(util), mDiskPrev(0), mTotalPrev(0) {};
+        ~HostDiskLoadRaw() { delete mUtil; };
+
+        void init(ULONG period, ULONG length);
+
+        void preCollect(CollectorHints& hints, uint64_t iTick);
+        void collect();
+        const char *getUnit() { return "%"; };
+        ULONG getMinValue() { return 0; };
+        ULONG getMaxValue() { return PM_DISK_LOAD_MULTIPLIER; };
+        ULONG getScale() { return PM_DISK_LOAD_MULTIPLIER / 100; }
+
+    private:
+        com::Utf8Str  mDiskName;
+        SubMetric    *mUtil;
+        uint64_t      mDiskPrev;
+        uint64_t      mTotalPrev;
+    };
+
 
 #ifndef VBOX_COLLECTOR_TEST_CASE
     class HostRamVmm : public BaseMetric
@@ -692,6 +779,7 @@ namespace pm
     public:
         Filter(ComSafeArrayIn(IN_BSTR, metricNames),
                ComSafeArrayIn(IUnknown * , objects));
+        Filter(const com::Utf8Str name, const ComPtr<IUnknown> &aObject);
         static bool patternMatch(const char *pszPat, const char *pszName,
                                  bool fSeenColon = false);
         bool match(const ComPtr<IUnknown> object, const RTCString &name) const;

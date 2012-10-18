@@ -1,4 +1,4 @@
-/* $Id: VBoxMPHGSMI.h 40566 2012-03-21 14:12:23Z vboxsync $ */
+/* $Id: VBoxMPHGSMI.h $ */
 
 /** @file
  * VBox Miniport HGSMI related header

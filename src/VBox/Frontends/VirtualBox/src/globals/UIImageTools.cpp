@@ -1,4 +1,4 @@
-/* $Id: UIImageTools.cpp 41527 2012-05-31 16:29:00Z vboxsync $ */
+/* $Id: UIImageTools.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

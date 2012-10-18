@@ -1,4 +1,4 @@
-/* $Id: MultiResult.h 41200 2012-05-08 08:47:18Z vboxsync $ */
+/* $Id: MultiResult.h $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:

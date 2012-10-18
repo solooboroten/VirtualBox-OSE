@@ -1,4 +1,4 @@
-/* $Id: IEMAllInstructions.cpp.h 42729 2012-08-09 19:31:30Z vboxsync $ */
+/* $Id: IEMAllInstructions.cpp.h $ */
 /** @file
  * IEM - Instruction Decoding and Emulation.
  */

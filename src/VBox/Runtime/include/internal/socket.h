@@ -1,4 +1,4 @@
-/* $Id: socket.h 39801 2012-01-18 18:01:11Z vboxsync $ */
+/* $Id: socket.h $ */
 /** @file
  * IPRT - Internal Header for RTSocket.
  */

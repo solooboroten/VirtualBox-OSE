@@ -1,4 +1,4 @@
-/* $Id: tstRTR0DbgKrnlInfoDriver.cpp 41947 2012-06-28 06:29:36Z vboxsync $ */
+/* $Id: tstRTR0DbgKrnlInfoDriver.cpp $ */
 /** @file
  * IPRT R0 Testcase - Debug kernel information, driver program.
  */

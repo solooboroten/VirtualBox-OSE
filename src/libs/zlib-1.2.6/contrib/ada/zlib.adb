@@ -6,7 +6,7 @@
 --  Open source license information is in the zlib.ads file.  --
 ----------------------------------------------------------------
 
---  $Id: zlib.adb 40354 2012-03-05 13:39:00Z vboxsync $
+--  $Id: zlib.adb $
 
 with Ada.Exceptions;
 with Ada.Unchecked_Conversion;

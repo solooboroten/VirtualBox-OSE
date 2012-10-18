@@ -1,4 +1,4 @@
-/* $Id: QIWidgetValidator.cpp 43126 2012-08-30 19:22:02Z vboxsync $ */
+/* $Id: QIWidgetValidator.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

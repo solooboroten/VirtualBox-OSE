@@ -1,4 +1,4 @@
-/* $Id: RemoteUSBDeviceImpl.cpp 38911 2011-09-30 09:52:40Z vboxsync $ */
+/* $Id: RemoteUSBDeviceImpl.cpp $ */
 
 /** @file
  *

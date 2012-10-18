@@ -1,4 +1,4 @@
-/* $Id: PCIRawDevImpl.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: PCIRawDevImpl.cpp $ */
 /** @file
  * VirtualBox Driver Interface to raw PCI device.
  */

@@ -1,4 +1,4 @@
-/* $Id: DrvStorageFilter.cpp 40379 2012-03-06 15:04:31Z vboxsync $ */
+/* $Id: DrvStorageFilter.cpp $ */
 /** @file
  * VBox Sample Driver.
  */

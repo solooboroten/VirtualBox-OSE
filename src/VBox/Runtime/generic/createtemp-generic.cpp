@@ -1,4 +1,4 @@
-/* $Id: createtemp-generic.cpp 42712 2012-08-09 14:36:02Z vboxsync $ */
+/* $Id: createtemp-generic.cpp $ */
 /** @file
  * IPRT - temporary file and directory creation, generic implementation.
  */

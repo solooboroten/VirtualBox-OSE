@@ -1,4 +1,4 @@
-/* $Id: logcom.cpp 39243 2011-11-08 15:36:46Z vboxsync $ */
+/* $Id: logcom.cpp $ */
 /** @file
  * IPRT - Logging to Serial Port.
  */

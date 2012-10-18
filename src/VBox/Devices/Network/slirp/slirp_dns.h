@@ -1,4 +1,4 @@
-/* $Id: slirp_dns.h 41977 2012-07-02 08:52:58Z vboxsync $ */
+/* $Id: slirp_dns.h $ */
 /** @file
  * NAT - Slirp's dns header.
  */

@@ -1,4 +1,4 @@
-/* $Id: PATMPatch.cpp 42481 2012-07-31 13:38:15Z vboxsync $ */
+/* $Id: PATMPatch.cpp $ */
 /** @file
  * PATMPatch - Dynamic Guest OS Instruction patches
  *

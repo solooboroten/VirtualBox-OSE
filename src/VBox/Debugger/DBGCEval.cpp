@@ -1,4 +1,4 @@
-/* $Id: DBGCEval.cpp 41780 2012-06-16 18:53:58Z vboxsync $ */
+/* $Id: DBGCEval.cpp $ */
 /** @file
  * DBGC - Debugger Console, command evaluator.
  */

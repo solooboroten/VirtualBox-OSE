@@ -1,4 +1,4 @@
-/* $Id: tstMemAutoPtr.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstMemAutoPtr.cpp $ */
 /** @file
  * IPRT - Testcase the RTCMemAutoPtr template.
  */

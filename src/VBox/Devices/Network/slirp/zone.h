@@ -1,4 +1,4 @@
-/* $Id: zone.h 38492 2011-08-19 03:24:58Z vboxsync $ */
+/* $Id: zone.h $ */
 /** @file
  * NAT - this file is for sharing zone declaration with emu emulation and logging routines.
  */

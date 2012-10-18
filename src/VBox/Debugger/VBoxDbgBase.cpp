@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgBase.cpp 38812 2011-09-21 11:56:33Z vboxsync $ */
+/* $Id: VBoxDbgBase.cpp $ */
 /** @file
  * VBox Debugger GUI - Base classes.
  */

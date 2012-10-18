@@ -1,4 +1,4 @@
-/* $Id: filesystem.cpp 41549 2012-06-01 17:29:05Z vboxsync $ */
+/* $Id: filesystem.cpp $ */
 /** @file
  * IPRT Filesystem API (Filesystem) - generic code.
  */

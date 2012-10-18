@@ -1,4 +1,4 @@
-/* $Id: vboxfs_vnode.h 39258 2011-11-09 18:50:33Z vboxsync $ */
+/* $Id: vboxfs_vnode.h $ */
 /** @file
  * VirtualBox File System for Solaris Guests, VNode header.
  */

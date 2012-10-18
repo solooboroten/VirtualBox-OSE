@@ -1,4 +1,4 @@
-/* $Id: DBGCCommands.cpp 41938 2012-06-27 23:56:53Z vboxsync $ */
+/* $Id: DBGCCommands.cpp $ */
 /** @file
  * DBGC - Debugger Console, Native Commands.
  */

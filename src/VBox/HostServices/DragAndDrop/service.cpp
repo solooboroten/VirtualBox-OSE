@@ -1,4 +1,4 @@
-/* $Id: service.cpp 42342 2012-07-24 09:36:51Z vboxsync $ */
+/* $Id: service.cpp $ */
 /** @file
  * Drag and Drop Service.
  */

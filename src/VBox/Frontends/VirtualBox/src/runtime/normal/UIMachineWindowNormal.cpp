@@ -1,4 +1,4 @@
-/* $Id: UIMachineWindowNormal.cpp 43067 2012-08-29 11:08:34Z vboxsync $ */
+/* $Id: UIMachineWindowNormal.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

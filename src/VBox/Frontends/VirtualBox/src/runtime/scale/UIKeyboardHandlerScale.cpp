@@ -1,4 +1,4 @@
-/* $Id: UIKeyboardHandlerScale.cpp 41107 2012-05-02 00:14:21Z vboxsync $ */
+/* $Id: UIKeyboardHandlerScale.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

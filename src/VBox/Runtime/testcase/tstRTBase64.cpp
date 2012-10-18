@@ -1,4 +1,4 @@
-/* $Id: tstRTBase64.cpp 40058 2012-02-10 13:10:26Z vboxsync $ */
+/* $Id: tstRTBase64.cpp $ */
 /** @file
  * IPRT Testcase - Base64.
  */

@@ -845,7 +845,7 @@
     <message>
         <source>Virtual Disk Image</source>
         <translatorcomment>EG - het woord &apos;Disk image&apos; is lastig, suggesties: schijf afbeelding, ..RL -  Ik zou gewoon image laten staan, als begrip</translatorcomment>
-        <translation>Virtueel schijf-image</translation>
+        <translation>Virtuele schijf-image</translation>
     </message>
     <message>
         <source>Unknown Hardware Item</source>
@@ -1812,6 +1812,53 @@
     <message>
         <source>CD/DVD-ROM Device</source>
         <translation type="obsolete">cd/dvd-station</translation>
+    </message>
+</context>
+<context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation>&lt;b&gt;%1&lt;/b&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation>
+            <numerusform>%n groep(en)</numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation>
+            <numerusform>%n machine(s)</numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation>
+            <numerusform>(%n draaiend)</numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</translation>
     </message>
 </context>
 <context>
@@ -3891,19 +3938,19 @@
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE controller</translation>
+        <translation type="obsolete">IDE controller</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA controller</translation>
+        <translation type="obsolete">SATA controller</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI controller</translation>
+        <translation type="obsolete">SCSI controller</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Diskette controller</translation>
+        <translation type="obsolete">Diskette controller</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -3998,7 +4045,7 @@
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS controller</translation>
+        <translation type="obsolete">SAS controller</translation>
     </message>
     <message>
         <source>Type:</source>
@@ -4030,7 +4077,7 @@
     </message>
     <message>
         <source>Set up the virtual CD/DVD drive</source>
-        <translation>Zet een virtueel CD/DVD-station op</translation>
+        <translation>Zet een virtuele CD/DVD-station op</translation>
     </message>
     <message>
         <source>Floppy &amp;Drive:</source>
@@ -4042,7 +4089,7 @@
     </message>
     <message>
         <source>Set up the virtual floppy drive</source>
-        <translation>Zet een virtueel diskette-station op</translation>
+        <translation>Zet een virtuele diskette-station op</translation>
     </message>
     <message>
         <source>Create a new hard disk...</source>
@@ -4050,11 +4097,11 @@
     </message>
     <message>
         <source>Choose a virtual hard disk file...</source>
-        <translation>Kies een virtueel harde schijf bestand...</translation>
+        <translation>Kies een virtuele harde schijf bestand...</translation>
     </message>
     <message>
         <source>Choose a virtual CD/DVD disk file...</source>
-        <translation>Kies een virtueel CD/DVD-schijfbestand...</translation>
+        <translation>Kies een virtuele CD/DVD-schijfbestand...</translation>
     </message>
     <message>
         <source>Remove disk from virtual drive</source>
@@ -4062,7 +4109,7 @@
     </message>
     <message>
         <source>Choose a virtual floppy disk file...</source>
-        <translation>Kies een virtueel diskettebestand...</translation>
+        <translation>Kies een virtuele diskette bestand...</translation>
     </message>
     <message>
         <source>When checked the virtual disk will not be removed when the guest system ejects it.</source>
@@ -4118,6 +4165,10 @@
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
         <translatorcomment>number is hier aantal</translatorcomment>
         <translation>Selecteert het aantal poorten van de SATA-opslagcontroller die momenteel geselecteerd is in Opslagstructuur. Deze moet op zijn minst staan op één meer dan het hoogste aantal poorten dat u nodig hebt om te gebruiken.</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation>Controller: %1</translation>
     </message>
 </context>
 <context>
@@ -6750,19 +6801,19 @@
     </message>
     <message>
         <source>Please choose whether the new virtual hard drive file should grow as it is used (dynamically allocated) or if it should be created at its maximum size (fixed size).</source>
-        <translation>Kies of het nieuwe virtueel schijfbestand naar de maximale grootte moet groeien door gebruik (dynamisch gealloceerd) of dat het op de maximale grootte moet worden aangemaakt (gefixeerde grootte).</translation>
+        <translation>Kies of het nieuwe virtuele schijf bestand naar de maximale grootte moet groeien door gebruik (dynamisch gealloceerd) of dat het op de maximale grootte moet worden aangemaakt (gefixeerde grootte).</translation>
     </message>
     <message>
         <source>&lt;p&gt;A &lt;b&gt;dynamically allocated&lt;/b&gt; hard drive file will only use space on your physical hard drive as it fills up (up to a maximum &lt;b&gt;fixed size&lt;/b&gt;), although it will not shrink again automatically when space on it is freed.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Een &lt;b&gt;dynamisch gealloceerd&lt;/b&gt; virtueel schijfbestand zal tijdens gebruik groeien tot de aangegeven maximale grootte en zo in het begin minder ruimte op uw fysieke harde schijf innemen, hoewel het schijfbestand niet automatisch zal krimpen wanneer ruimte wordt vrijgemaakt.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Een &lt;b&gt;dynamisch gealloceerd&lt;/b&gt; virtuele schijf bestand zal tijdens gebruik groeien tot de aangegeven maximale grootte en zo in het begin minder ruimte op uw fysieke harde schijf innemen, hoewel het schijfbestand niet automatisch zal krimpen wanneer ruimte wordt vrijgemaakt.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;A &lt;b&gt;fixed size&lt;/b&gt; hard drive file may take longer to create on some systems but is often faster to use.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Aanmaken van een virtueel schijfbestand van &lt;b&gt;gefixeerde grootte&lt;/b&gt; kan op sommige systemen langer duren, maar is vaak sneller in het gebruik.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Aanmaken van een virtuele schijf bestand van &lt;b&gt;gefixeerde grootte&lt;/b&gt; kan op sommige systemen langer duren, maar is vaak sneller in het gebruik.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;You can also choose to &lt;b&gt;split&lt;/b&gt; the hard drive file into several files of up to two gigabytes each. This is mainly useful if you wish to store the virtual machine on removable USB devices or old systems, some of which cannot handle very large files.</source>
-        <translation>&lt;p&gt;U kunt er ook voor kiezen het virtueel schijfbestand &lt;b&gt;te splitsen&lt;/b&gt; in meerdere bestanden van maximaal twee gigabytes elk. Dit is hoofdzakelijk handig indien u de virtuele machine wilt opslaan op verwijderbare USB-apparaten of op oudere systemen, waarvan sommige niet kunnen omgaan met erg grote bestanden.</translation>
+        <translation>&lt;p&gt;U kunt er ook voor kiezen het virtuele schijf bestand &lt;b&gt;te splitsen&lt;/b&gt; in meerdere bestanden van maximaal twee gigabytes elk. Dit is hoofdzakelijk handig indien u de virtuele machine wilt opslaan op verwijderbare USB-apparaten of op oudere systemen, waarvan sommige niet kunnen omgaan met erg grote bestanden.</translation>
     </message>
     <message>
         <source>&amp;Dynamically allocated</source>
@@ -6778,7 +6829,7 @@
     </message>
     <message>
         <source>Please choose a location for new virtual hard drive file</source>
-        <translation>Kies een lokatie voor het nieuwe virtueel harde schijf bestand</translation>
+        <translation>Kies een lokatie voor het nieuwe virtuele harde schijf bestand</translation>
     </message>
     <message>
         <source>New hard drive to create</source>
@@ -6790,7 +6841,7 @@
     </message>
     <message>
         <source>Choose a location for new virtual hard drive file...</source>
-        <translation>Kies een lokatie voor het nieuwe virtueel harde schijf bestand...</translation>
+        <translation>Kies een lokatie voor het nieuwe virtuele harde schijf bestand...</translation>
     </message>
     <message>
         <source>%1_copy</source>
@@ -6995,7 +7046,7 @@
     </message>
     <message>
         <source>Please choose a virtual appliance file</source>
-        <translation>Kies een virtueel appliance bestand</translation>
+        <translation>Kies een virtuele appliance bestand</translation>
     </message>
     <message>
         <source>Open Virtualization Format Archive (%1)</source>
@@ -7077,7 +7128,7 @@
     </message>
     <message>
         <source>Choose a virtual optical disk file...</source>
-        <translation>Kies een virtueel optische schijf bestand...</translation>
+        <translation>Kies een virtuele optische schijf bestand...</translation>
     </message>
 </context>
 <context>
@@ -7147,19 +7198,20 @@
     </message>
     <message>
         <source>Please choose whether the new virtual hard drive file should grow as it is used (dynamically allocated) or if it should be created at its maximum size (fixed size).</source>
-        <translation>Kies of het nieuwe virtueel schijfbestand naar de maximale grootte moet groeien door gebruik (dynamisch gealloceerd) of dat het op de maximale grootte moet worden aangemaakt (gefixeerde grootte).</translation>
+        <translation>Kies of het nieuwe virtuele schijf bestand naar de maximale grootte moet groeien door gebruik (dynamisch gealloceerd), of dat het op de maximale grootte moet worden aangemaakt (gefixeerde grootte).</translation>
     </message>
     <message>
         <source>&lt;p&gt;A &lt;b&gt;dynamically allocated&lt;/b&gt; hard drive file will only use space on your physical hard drive as it fills up (up to a maximum &lt;b&gt;fixed size&lt;/b&gt;), although it will not shrink again automatically when space on it is freed.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Een &lt;b&gt;dynamisch gealloceerd&lt;/b&gt; virtueel schijfbestand zal tijdens gebruik groeien tot de aangegeven maximale grootte en zo in het begin minder ruimte op uw fysieke harde schijf innemen, hoewel het schijfbestand niet automatisch zal krimpen wanneer ruimte wordt vrijgemaakt.&lt;/p&gt;</translation>
+        <translatorcomment>in 1 zin vertalen geeft een te lange Nederlandse zin</translatorcomment>
+        <translation>&lt;p&gt;Een &lt;b&gt;dynamisch gealloceerd&lt;/b&gt; virtuele schijf bestand zal tijdens gebruik groeien tot de aangegeven maximale grootte en zo in het begin minder ruimte op uw fysieke harde schijf innemen. Het schijfbestand zal niet automatisch krimpen wanneer er ruimte wordt vrijgemaakt.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;A &lt;b&gt;fixed size&lt;/b&gt; hard drive file may take longer to create on some systems but is often faster to use.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Aanmaken van een virtueel schijfbestand van &lt;b&gt;gefixeerde grootte&lt;/b&gt; kan op sommige systemen langer duren, maar is vaak sneller in het gebruik.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Aanmaken van een virtuele schijf bestand van &lt;b&gt;gefixeerde grootte&lt;/b&gt; kan op sommige systemen langer duren, maar is vaak sneller in het gebruik.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;You can also choose to &lt;b&gt;split&lt;/b&gt; the hard drive file into several files of up to two gigabytes each. This is mainly useful if you wish to store the virtual machine on removable USB devices or old systems, some of which cannot handle very large files.</source>
-        <translation>&lt;p&gt;U kunt er ook voor kiezen het virtueel schijfbestand &lt;b&gt;te splitsen&lt;/b&gt; in meerdere bestanden van maximaal twee gigabytes elk. Dit is hoofdzakelijk handig indien u de virtuele machine wilt opslaan op verwijderbare USB-apparaten of op oudere systemen, waarvan sommige niet kunnen omgaan met erg grote bestanden.</translation>
+        <translation>&lt;p&gt;U kunt er ook voor kiezen het virtuele schijf bestand &lt;b&gt;te splitsen&lt;/b&gt; in meerdere bestanden van maximaal twee gigabytes elk. Dit is hoofdzakelijk handig indien u de virtuele machine wilt opslaan op verwijderbare USB-apparaten of op oudere systemen, waarvan sommige niet kunnen omgaan met erg grote bestanden.</translation>
     </message>
     <message>
         <source>&amp;Dynamically allocated</source>
@@ -7183,11 +7235,11 @@
     </message>
     <message>
         <source>Please type the name of the new virtual hard drive file into the box below or click on the folder icon to select a different folder to create the file in.</source>
-        <translation>Typ de naam van de nieuwe virtuele schijf in de ruimte beneden of klik op het mapicoontje, kies een andere map en maak daar het bestand in aan.</translation>
+        <translation>Typ de naam van de nieuwe virtuele schijf in de ruimte beneden; of klik op het mapicoontje, kies een andere map en maak daar het bestand in aan.</translation>
     </message>
     <message>
         <source>Choose a location for new virtual hard drive file...</source>
-        <translation>Kies een lokatie voor het nieuwe virtueel harde schijf bestand...</translation>
+        <translation>Kies een lokatie voor het nieuwe virtuele harde schijf bestand...</translation>
     </message>
     <message>
         <source>Select the size of the virtual hard drive in megabytes. This size is the limit on the amount of file data that a virtual machine will be able to store on the hard drive.</source>
@@ -7218,23 +7270,23 @@
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE controller</translation>
+        <translation type="obsolete">IDE controller</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA controller</translation>
+        <translation type="obsolete">SATA controller</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI controller</translation>
+        <translation type="obsolete">SCSI controller</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Diskette controller</translation>
+        <translation type="obsolete">Diskette controller</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS controller</translation>
+        <translation type="obsolete">SAS controller</translation>
     </message>
     <message>
         <source>Name and operating system</source>
@@ -7274,7 +7326,7 @@
     </message>
     <message>
         <source>Choose a virtual hard drive file...</source>
-        <translation>Kies een virtueel harde schijf bestand...</translation>
+        <translation>Kies een virtuele harde schijf bestand...</translation>
     </message>
     <message>
         <source>&amp;Memory size</source>
@@ -8801,27 +8853,27 @@
     </message>
     <message>
         <source>Please choose a virtual hard drive file</source>
-        <translation>Kies een virtueel harde schijf bestand</translation>
+        <translation>Kies een virtuele harde schijf bestand</translation>
     </message>
     <message>
         <source>All virtual hard drive files (%1)</source>
-        <translation>Alle virtueel harde schijf bestanden (%1)</translation>
+        <translation>Alle virtuele harde schijf bestanden (%1)</translation>
     </message>
     <message>
         <source>Please choose a virtual optical disk file</source>
-        <translation>Kies een virtueel optisch schijf bestand</translation>
+        <translation>Kies een virtuele optisch schijf bestand</translation>
     </message>
     <message>
         <source>All virtual optical disk files (%1)</source>
-        <translation>Alle virtueel optische schijf bestanden (%1)</translation>
+        <translation>Alle virtuele optische schijf bestanden (%1)</translation>
     </message>
     <message>
         <source>Please choose a virtual floppy disk file</source>
-        <translation>Kies een virtueel diskette bestand</translation>
+        <translation>Kies een virtuele diskette bestand</translation>
     </message>
     <message>
         <source>All virtual floppy disk files (%1)</source>
-        <translation>Alle virtueel diskette bestanden (%1)</translation>
+        <translation>Alle virtuele diskette bestanden (%1)</translation>
     </message>
     <message>
         <source>VDI (VirtualBox Disk Image)</source>
@@ -8849,7 +8901,7 @@
     </message>
     <message>
         <source>Please choose a location for new virtual hard drive file</source>
-        <translation>Kies een lokatie voor het nieuwe virtueel harde schijf bestand</translation>
+        <translation>Kies een lokatie voor het nieuwe virtuele harde schijf bestand</translation>
     </message>
 </context>
 <context>
@@ -9561,7 +9613,7 @@
     <name>VBoxVMInformationDlg</name>
     <message>
         <source>%1 - Session Information</source>
-        <translation>%1 - Sessie informatie</translation>
+        <translation>%1 - Sessie-informatie</translation>
     </message>
     <message>
         <source>&amp;Details</source>

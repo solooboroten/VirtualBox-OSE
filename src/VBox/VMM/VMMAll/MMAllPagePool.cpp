@@ -1,4 +1,4 @@
-/* $Id: MMAllPagePool.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: MMAllPagePool.cpp $ */
 /** @file
  * MM - Memory Manager - Page Pool.
  *

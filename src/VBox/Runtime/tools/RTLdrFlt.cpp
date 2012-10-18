@@ -1,4 +1,4 @@
-/* $Id: RTLdrFlt.cpp 41493 2012-05-30 13:47:41Z vboxsync $ */
+/* $Id: RTLdrFlt.cpp $ */
 /** @file
  * IPRT - Utility for translating addresses into symbols+offset.
  */
@@ -176,7 +176,7 @@ int main(int argc, char **argv)
                 return RTEXITCODE_SUCCESS;
 
             case 'V':
-                RTPrintf("$Revision: 41493 $\n");
+                RTPrintf("$Revision: 78250 $\n");
                 return RTEXITCODE_SUCCESS;
 
             case VINF_GETOPT_NOT_OPTION:

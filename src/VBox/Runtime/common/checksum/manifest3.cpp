@@ -1,4 +1,4 @@
-/* $Id: manifest3.cpp 39439 2011-11-28 13:56:13Z vboxsync $ */
+/* $Id: manifest3.cpp $ */
 /** @file
  * IPRT - Manifest, the bits with the most dependencies.
  */

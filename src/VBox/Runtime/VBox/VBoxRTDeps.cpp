@@ -1,4 +1,4 @@
-/* $Id: VBoxRTDeps.cpp 41117 2012-05-02 14:22:29Z vboxsync $ */
+/* $Id: VBoxRTDeps.cpp $ */
 /** @file
  * IPRT - VBoxRT.dll/so dependencies.
  */

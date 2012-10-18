@@ -1,4 +1,4 @@
-/* $Id: sleepqueue-r0drv-freebsd.h 37305 2011-06-02 12:32:20Z vboxsync $ */
+/* $Id: sleepqueue-r0drv-freebsd.h $ */
 /** @file
  * IPRT - FreeBSD Ring-0 Driver Helpers for Abstracting Sleep Queues,
  */
@@ -198,7 +198,7 @@ DECLINLINE(void) rtR0SemBsdWaitDoIt(PRTR0SEMBSDSLEEP pWait)
     if (pWait->fInterruptible)
         fSleepqFlags |= SLEEPQ_INTERRUPTIBLE;
 
-    sleepq_add(pWait->pvWaitChan, NULL, "IPRT Semaphore", fSleepqFlags, 0);
+    sleepq_add(pWait->pvWaitChan, NULL, "VBoxIS", fSleepqFlags, 0);
 
     if (!pWait->fIndefinite)
     {

@@ -1,4 +1,4 @@
-/* $Id: PDMInternal.h 40920 2012-04-14 11:51:38Z vboxsync $ */
+/* $Id: PDMInternal.h $ */
 /** @file
  * PDM - Internal header file.
  */

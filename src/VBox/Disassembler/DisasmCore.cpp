@@ -1,4 +1,4 @@
-/* $Id: DisasmCore.cpp 41886 2012-06-22 13:24:38Z vboxsync $ */
+/* $Id: DisasmCore.cpp $ */
 /** @file
  * VBox Disassembler - Core Components.
  */

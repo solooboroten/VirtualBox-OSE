@@ -1,4 +1,4 @@
-/* $Id: VBoxFUSE.cpp 39984 2012-02-03 13:07:56Z vboxsync $ */
+/* $Id: VBoxFUSE.cpp $ */
 /** @file
  * VBoxFUSE - Disk Image Flattening FUSE Program.
  */

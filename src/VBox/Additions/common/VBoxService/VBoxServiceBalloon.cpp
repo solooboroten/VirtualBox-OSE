@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceBalloon.cpp 40128 2012-02-14 12:56:40Z vboxsync $ */
+/* $Id: VBoxServiceBalloon.cpp $ */
 /** @file
  * VBoxService - Memory Ballooning.
  */

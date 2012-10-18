@@ -1,4 +1,4 @@
-/* $Id: UIGChooserModel.cpp 43155 2012-09-03 20:54:57Z vboxsync $ */
+/* $Id: UIGChooserModel.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -345,10 +345,37 @@ QString UIGChooserModel::currentItemDefinition() const
     return pSelectedItem ? strItemType + "=" + strItemName : QString();
 }
 
-bool UIGChooserModel::singleGroupSelected() const
+bool UIGChooserModel::isSingleGroupSelected() const
 {
     return selectionList().size() == 1 &&
            selectionList().first()->type() == UIGChooserItemType_Group;
+}
+
+bool UIGChooserModel::isAllItemsOfOneGroupSelected() const
+{
+    /* Make sure at least on item selected: */
+    if (selectionList().isEmpty())
+        return false;
+
+    /* Determine the parent group of the first item: */
+    UIGChooserItem *pFirstParent = selectionList().first()->parentItem();
+
+    /* Make sure this parent is not main root item: */
+    if (pFirstParent == mainRoot())
+        return false;
+
+    /* Enumerate selected set: */
+    QSet<UIGChooserItem*> selectedSet;
+    foreach (UIGChooserItem *pSelectedItem, selectionList())
+        selectedSet << pSelectedItem;
+
+    /* Enumerate first parent children set: */
+    QSet<UIGChooserItem*> firstParentSet;
+    foreach (UIGChooserItem *pSelectedItem, pFirstParent->items())
+        firstParentSet << pSelectedItem;
+
+    /* Check if both sets contains the same: */
+    return selectedSet == firstParentSet;
 }
 
 void UIGChooserModel::setFocusItem(UIGChooserItem *pItem, bool fWithSelection /* = false */)
@@ -884,7 +911,7 @@ void UIGChooserModel::sltStartEditingSelectedGroup()
         return;
 
     /* Only for single selected group: */
-    if (!singleGroupSelected())
+    if (!isSingleGroupSelected())
         return;
 
     /* Start editing group name: */
@@ -894,20 +921,18 @@ void UIGChooserModel::sltStartEditingSelectedGroup()
 void UIGChooserModel::sltCreateNewMachine()
 {
     UIGChooserItem *pGroup = 0;
-    if (singleGroupSelected())
+    if (isSingleGroupSelected())
         pGroup = selectionList().first();
     else if (!selectionList().isEmpty())
         pGroup = selectionList().first()->parentItem();
+    QString strGroupName;
     if (pGroup)
-    {
-        UIWizardNewVM wizard(&vboxGlobal().selectorWnd(), fullName(pGroup));
-        wizard.exec();
-    }
-    else
-    {
-        UIWizardNewVM wizard(&vboxGlobal().selectorWnd());
-        wizard.exec();
-    }
+        strGroupName = fullName(pGroup);
+    UISafePointerWizard pWizard = new UIWizardNewVM(&vboxGlobal().selectorWnd(), strGroupName);
+    pWizard->prepare();
+    pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UIGChooserModel::sltActionHovered(QAction *pAction)
@@ -1004,7 +1029,7 @@ void UIGChooserModel::sltSortParentGroup()
 
 void UIGChooserModel::sltSortGroup()
 {
-    if (singleGroupSelected())
+    if (isSingleGroupSelected())
         sortItems(selectionList().first());
 }
 
@@ -1668,8 +1693,14 @@ void UIGChooserModel::updateMachineItems(const QString &strId, UIGChooserItem *p
         if (UIGChooserItemMachine *pMachineItem = pItem->toMachineItem())
             if (pMachineItem->id() == strId)
             {
+                /* Update machine item: */
                 pMachineItem->recache();
+                pMachineItem->updateToolTip();
                 pMachineItem->update();
+                /* Update parent group item: */
+                UIGChooserItemGroup *pParentGroupItem = pMachineItem->parentItem()->toGroupItem();
+                pParentGroupItem->updateToolTip();
+                pParentGroupItem->update();
             }
 }
 

@@ -1,4 +1,4 @@
-/* $Id: DevFwCommon.h 40277 2012-02-28 14:10:07Z vboxsync $ */
+/* $Id: DevFwCommon.h $ */
 /** @file
  * FwCommon - Shared firmware code, header.
  */

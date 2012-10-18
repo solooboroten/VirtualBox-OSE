@@ -1,4 +1,4 @@
-/* $Id: QED.cpp 40843 2012-04-10 08:53:19Z vboxsync $ */
+/* $Id: QED.cpp $ */
 /** @file
  * QED - QED Disk image.
  */

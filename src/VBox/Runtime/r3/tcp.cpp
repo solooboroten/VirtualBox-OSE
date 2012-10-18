@@ -1,4 +1,4 @@
-/* $Id: tcp.cpp 39802 2012-01-18 18:15:47Z vboxsync $ */
+/* $Id: tcp.cpp $ */
 /** @file
  * IPRT - TCP/IP.
  */

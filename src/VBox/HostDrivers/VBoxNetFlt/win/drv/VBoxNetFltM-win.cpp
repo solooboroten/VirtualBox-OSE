@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFltM-win.cpp 40806 2012-04-06 21:05:19Z vboxsync $ */
+/* $Id: VBoxNetFltM-win.cpp $ */
 /** @file
  * VBoxNetFltM-win.cpp - Bridged Networking Driver, Windows Specific Code.
  * Miniport edge

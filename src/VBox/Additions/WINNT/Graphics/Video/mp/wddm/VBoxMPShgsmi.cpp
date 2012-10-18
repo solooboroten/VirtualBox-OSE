@@ -1,4 +1,4 @@
-/* $Id: VBoxMPShgsmi.cpp 41109 2012-05-02 08:37:46Z vboxsync $ */
+/* $Id: VBoxMPShgsmi.cpp $ */
 
 /** @file
  * VBox WDDM Miniport driver

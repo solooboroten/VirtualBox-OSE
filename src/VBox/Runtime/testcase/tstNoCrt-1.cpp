@@ -1,4 +1,4 @@
-/* $Id: tstNoCrt-1.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstNoCrt-1.cpp $ */
 /** @file
  * IPRT Testcase - Testcase for the No-CRT assembly bits.
  */

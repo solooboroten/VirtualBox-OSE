@@ -1,4 +1,4 @@
-/* $Id: comparepaths.cpp 42980 2012-08-24 15:43:52Z vboxsync $ */
+/* $Id: comparepaths.cpp $ */
 /** @file
  * IPRT - Path Comparison.
  */

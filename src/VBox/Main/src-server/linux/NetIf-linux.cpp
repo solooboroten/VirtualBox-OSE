@@ -1,4 +1,4 @@
-/* $Id: NetIf-linux.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: NetIf-linux.cpp $ */
 /** @file
  * Main - NetIfList, Linux implementation.
  */
@@ -147,6 +147,35 @@ static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
                 }
             }
             fclose(fp);
+        }
+        /*
+         * Don't even try to get speed for non-Ethernet interfaces, it only
+         * produces errors.
+         */
+        pInfo->uSpeedMbits = 0;
+        if (pInfo->enmMediumType == NETIF_T_ETHERNET)
+        {
+            /*
+             * I wish I could do simple ioctl here, but older kernels require root
+             * privileges for any ethtool commands.
+             */
+            char szBuf[256];
+            /* First, we try to retrieve the speed via sysfs. */
+            RTStrPrintf(szBuf, sizeof(szBuf), "/sys/class/net/%s/speed", pszName);
+            fp = fopen(szBuf, "r");
+            if (fp)
+            {
+                if (fscanf(fp, "%u", &pInfo->uSpeedMbits) != 1)
+                    pInfo->uSpeedMbits = 0;
+                fclose(fp);
+            }
+            if (pInfo->uSpeedMbits == 0)
+            {
+                /* Failed to get speed via sysfs, go to plan B. */
+                int rc = NetIfAdpCtlOut(pszName, "speed", szBuf, sizeof(szBuf));
+                if (RT_SUCCESS(rc))
+                    pInfo->uSpeedMbits = RTStrToUInt32(szBuf);
+            }
         }
     }
     return VINF_SUCCESS;

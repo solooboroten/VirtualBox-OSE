@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibCredentials.cpp 40436 2012-03-12 18:28:21Z vboxsync $ */
+/* $Id: VBoxGuestR3LibCredentials.cpp $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, user credentials.
  */

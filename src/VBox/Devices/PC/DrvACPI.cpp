@@ -1,4 +1,4 @@
-/* $Id: DrvACPI.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvACPI.cpp $ */
 /** @file
  * DrvACPI - ACPI Host Driver.
  */

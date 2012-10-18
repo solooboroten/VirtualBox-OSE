@@ -1,4 +1,4 @@
-/* $Id: dbgmoddwarf.cpp 43020 2012-08-28 00:21:09Z vboxsync $ */
+/* $Id: dbgmoddwarf.cpp $ */
 /** @file
  * IPRT - Debug Info Reader For DWARF.
  */

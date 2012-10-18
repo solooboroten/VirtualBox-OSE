@@ -1,4 +1,4 @@
-/* $Id: InitVariable.c 43212 2012-09-06 05:49:10Z vboxsync $ */
+/* $Id: InitVariable.c $ */
 /** @file
  * InitVariable.h
  */

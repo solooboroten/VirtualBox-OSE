@@ -1,4 +1,4 @@
-/* $Id: tstVDShareable.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
+/* $Id: tstVDShareable.cpp $ */
 /** @file
  * Simple VBox HDD container test utility for shareable images.
  */

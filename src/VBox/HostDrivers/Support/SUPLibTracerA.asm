@@ -1,4 +1,4 @@
-; $Id: SUPLibTracerA.asm 41147 2012-05-03 20:15:27Z vboxsync $
+; $Id: SUPLibTracerA.asm $
 ;; @file
 ; VirtualBox Support Library - Tracer Interface, Assembly bits.
 ;

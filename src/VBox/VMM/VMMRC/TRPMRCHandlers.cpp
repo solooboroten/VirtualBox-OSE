@@ -1,4 +1,4 @@
-/* $Id: TRPMRCHandlers.cpp 42779 2012-08-11 22:47:43Z vboxsync $ */
+/* $Id: TRPMRCHandlers.cpp $ */
 /** @file
  * TRPM - Raw-mode Context Trap Handlers, CPP part
  */

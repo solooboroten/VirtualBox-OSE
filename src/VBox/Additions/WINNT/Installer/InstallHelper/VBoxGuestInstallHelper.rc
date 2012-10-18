@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestInstallHelper.rc 34098 2010-11-16 10:40:59Z vboxsync $ */
+/* $Id: VBoxGuestInstallHelper.rc $ */
 /** @file
  * VBoxGuestInstallHelper - Resource file containing version info.
  */

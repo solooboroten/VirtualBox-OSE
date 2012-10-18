@@ -1,4 +1,4 @@
-/* $Id: alloc-win.cpp 40751 2012-04-03 07:43:32Z vboxsync $ */
+/* $Id: alloc-win.cpp $ */
 /** @file
  * IPRT - Memory Allocation, Windows.
  */

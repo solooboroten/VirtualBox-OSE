@@ -2296,6 +2296,50 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt; {1 %2&lt;?}</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -5052,19 +5096,19 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE 컨트롤러</translation>
+        <translation type="obsolete">IDE 컨트롤러</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA 컨트롤러</translation>
+        <translation type="obsolete">SATA 컨트롤러</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI 컨트롤러</translation>
+        <translation type="obsolete">SCSI 컨트롤러</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>플로피 컨트롤러</translation>
+        <translation type="obsolete">플로피 컨트롤러</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -5184,7 +5228,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS 컨트롤러</translation>
+        <translation type="obsolete">SAS 컨트롤러</translation>
     </message>
     <message>
         <source>Storage Controller</source>
@@ -5311,6 +5355,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
         <translation>저장소 트리에서 선택한 현재 SATA 저장소 컨트롤러의 포트 개수를 설정합니다. 사용할 최대 포트 번호보다 1 이상 커야 합니다.</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -9097,23 +9145,23 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE 컨트롤러</translation>
+        <translation type="obsolete">IDE 컨트롤러</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA 컨트롤러</translation>
+        <translation type="obsolete">SATA 컨트롤러</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI 컨트롤러</translation>
+        <translation type="obsolete">SCSI 컨트롤러</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>플로피 컨트롤러</translation>
+        <translation type="obsolete">플로피 컨트롤러</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS 컨트롤러</translation>
+        <translation type="obsolete">SAS 컨트롤러</translation>
     </message>
     <message>
         <source>Name and operating system</source>

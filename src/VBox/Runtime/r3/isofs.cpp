@@ -1,4 +1,4 @@
-/* $Id: isofs.cpp 39032 2011-10-19 11:08:50Z vboxsync $ */
+/* $Id: isofs.cpp $ */
 /** @file
  * IPRT - ISO 9660 file system handling.
  */

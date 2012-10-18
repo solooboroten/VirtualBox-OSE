@@ -2542,6 +2542,53 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation>&lt;b&gt;%1&lt;/b&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation>
+            <numerusform>Un gruppo</numerusform>
+            <numerusform>%n gruppi</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation>
+            <numerusform>Una macchina</numerusform>
+            <numerusform>%n macchine</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation>
+            <numerusform>(una in esecuzione)</numerusform>
+            <numerusform>(%n in esecuzione)</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -5482,19 +5529,19 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>Controller IDE</translation>
+        <translation type="obsolete">Controller IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>Controller SATA</translation>
+        <translation type="obsolete">Controller SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>Controller SCSI</translation>
+        <translation type="obsolete">Controller SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Controller floppy</translation>
+        <translation type="obsolete">Controller floppy</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -5586,7 +5633,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>Controller SAS</translation>
+        <translation type="obsolete">Controller SAS</translation>
     </message>
     <message>
         <source>Type:</source>
@@ -5817,6 +5864,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Storage Controller 1</source>
         <translation type="obsolete">Controller di archiviazione 1</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation>Controller: %1</translation>
     </message>
 </context>
 <context>
@@ -10141,23 +10192,23 @@ questo passo e collegare hard disk più tardi tramite Impostazioni della MV.&lt;
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>Controller IDE</translation>
+        <translation type="obsolete">Controller IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>Controller SATA</translation>
+        <translation type="obsolete">Controller SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>Controller SCSI</translation>
+        <translation type="obsolete">Controller SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Controller floppy</translation>
+        <translation type="obsolete">Controller floppy</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>Controller SAS</translation>
+        <translation type="obsolete">Controller SAS</translation>
     </message>
     <message>
         <source>Name and operating system</source>

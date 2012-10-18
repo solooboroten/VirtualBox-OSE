@@ -1,4 +1,4 @@
-/* $Id: tstVDIo.cpp 40710 2012-03-29 15:03:36Z vboxsync $ */
+/* $Id: tstVDIo.cpp $ */
 /** @file
  *
  * VBox HDD container test utility - I/O replay.

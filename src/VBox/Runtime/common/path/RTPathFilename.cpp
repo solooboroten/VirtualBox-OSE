@@ -1,4 +1,4 @@
-/* $Id: RTPathFilename.cpp 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: RTPathFilename.cpp $ */
 /** @file
  * IPRT - RTPathFilename
  */

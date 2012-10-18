@@ -1,4 +1,4 @@
-/* $Id: DumpD3DCaps9.cpp 39330 2011-11-16 11:09:11Z vboxsync $ */
+/* $Id: DumpD3DCaps9.cpp $ */
 
 /** @file
  * Copyright (C) 2011 Oracle Corporation

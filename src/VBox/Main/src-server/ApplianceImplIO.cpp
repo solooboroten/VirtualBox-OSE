@@ -1,4 +1,4 @@
-/* $Id: ApplianceImplIO.cpp 42389 2012-07-25 12:04:38Z vboxsync $ */
+/* $Id: ApplianceImplIO.cpp $ */
 /** @file
  *
  * IO helper for IAppliance COM class implementations.

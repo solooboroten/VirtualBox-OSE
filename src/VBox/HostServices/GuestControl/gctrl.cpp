@@ -1,4 +1,4 @@
-/* $Id: gctrl.cpp 39685 2011-12-30 01:29:33Z vboxsync $ */
+/* $Id: gctrl.cpp $ */
 /** @file
  * Guest Control Service: Internal function used by service, Main and testcase.
  */

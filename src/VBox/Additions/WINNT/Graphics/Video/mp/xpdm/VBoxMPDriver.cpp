@@ -1,4 +1,4 @@
-/* $Id: VBoxMPDriver.cpp 42233 2012-07-19 16:25:49Z vboxsync $ */
+/* $Id: VBoxMPDriver.cpp $ */
 
 /** @file
  * VBox XPDM Miniport driver interface functions

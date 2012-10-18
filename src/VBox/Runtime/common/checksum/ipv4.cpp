@@ -1,4 +1,4 @@
-/* $Id: ipv4.cpp 39080 2011-10-21 14:26:05Z vboxsync $ */
+/* $Id: ipv4.cpp $ */
 /** @file
  * IPRT - IPv4 Checksum calculation and validation.
  */

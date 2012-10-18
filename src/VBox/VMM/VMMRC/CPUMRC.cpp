@@ -1,4 +1,4 @@
-/* $Id: CPUMRC.cpp 42774 2012-08-11 20:17:35Z vboxsync $ */
+/* $Id: CPUMRC.cpp $ */
 /** @file
  * CPUM - Raw-mode Context Code.
  */

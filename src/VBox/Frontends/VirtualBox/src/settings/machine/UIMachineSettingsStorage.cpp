@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsStorage.cpp 43132 2012-08-31 11:36:34Z vboxsync $ */
+/* $Id: UIMachineSettingsStorage.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -540,7 +540,7 @@ int ControllerItem::childCount() const
 
 QString ControllerItem::text() const
 {
-    return ctrName();
+    return UIMachineSettingsStorage::tr("Controller: %1").arg(ctrName());
 }
 
 QString ControllerItem::tip() const
@@ -2306,27 +2306,27 @@ void UIMachineSettingsStorage::addController()
 
 void UIMachineSettingsStorage::addIDEController()
 {
-    addControllerWrapper (generateUniqueName (tr ("IDE Controller")), KStorageBus_IDE, KStorageControllerType_PIIX4);
+    addControllerWrapper (generateUniqueName ("IDE"), KStorageBus_IDE, KStorageControllerType_PIIX4);
 }
 
 void UIMachineSettingsStorage::addSATAController()
 {
-    addControllerWrapper (generateUniqueName (tr ("SATA Controller")), KStorageBus_SATA, KStorageControllerType_IntelAhci);
+    addControllerWrapper (generateUniqueName ("SATA"), KStorageBus_SATA, KStorageControllerType_IntelAhci);
 }
 
 void UIMachineSettingsStorage::addSCSIController()
 {
-    addControllerWrapper (generateUniqueName (tr ("SCSI Controller")), KStorageBus_SCSI, KStorageControllerType_LsiLogic);
+    addControllerWrapper (generateUniqueName ("SCSI"), KStorageBus_SCSI, KStorageControllerType_LsiLogic);
 }
 
 void UIMachineSettingsStorage::addFloppyController()
 {
-    addControllerWrapper (generateUniqueName (tr ("Floppy Controller")), KStorageBus_Floppy, KStorageControllerType_I82078);
+    addControllerWrapper (generateUniqueName ("Floppy"), KStorageBus_Floppy, KStorageControllerType_I82078);
 }
 
 void UIMachineSettingsStorage::addSASController()
 {
-    addControllerWrapper (generateUniqueName (tr ("SAS Controller")), KStorageBus_SAS, KStorageControllerType_LsiLogicSas);
+    addControllerWrapper (generateUniqueName ("SAS"), KStorageBus_SAS, KStorageControllerType_LsiLogicSas);
 }
 
 void UIMachineSettingsStorage::delController()
@@ -3087,8 +3087,12 @@ QString UIMachineSettingsStorage::getWithNewHDWizard()
     CGuestOSType guestOSType = vboxGlobal().virtualBox().GetGuestOSType(m_strMachineGuestOSTypeId);
     QFileInfo fileInfo(m_strMachineSettingsFilePath);
     /* Show New VD wizard: */
-    UIWizardNewVD dlg(this, QString(), fileInfo.absolutePath(), guestOSType.GetRecommendedHDD());
-    return dlg.exec() == QDialog::Accepted ? dlg.virtualDisk().GetId() : QString();
+    UISafePointerWizardNewVD pWizard = new UIWizardNewVD(this, QString(), fileInfo.absolutePath(), guestOSType.GetRecommendedHDD());
+    pWizard->prepare();
+    QString strResult = pWizard->exec() == QDialog::Accepted ? pWizard->virtualDisk().GetId() : QString();
+    if (pWizard)
+        delete pWizard;
+    return strResult;
 }
 
 void UIMachineSettingsStorage::updateAdditionalObjects (KDeviceType aType)

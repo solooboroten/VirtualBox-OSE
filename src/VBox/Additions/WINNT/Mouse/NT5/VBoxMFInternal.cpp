@@ -1,4 +1,4 @@
-/* $Id: VBoxMFInternal.cpp 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: VBoxMFInternal.cpp $ */
 
 /** @file
  * VBox Mouse filter internal functions

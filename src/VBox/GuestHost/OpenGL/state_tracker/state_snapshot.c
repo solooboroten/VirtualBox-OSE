@@ -1,4 +1,4 @@
-/* $Id: state_snapshot.c 43027 2012-08-28 11:12:02Z vboxsync $ */
+/* $Id: state_snapshot.c $ */
 
 /** @file
  * VBox Context state saving/loading used by VM snapshot

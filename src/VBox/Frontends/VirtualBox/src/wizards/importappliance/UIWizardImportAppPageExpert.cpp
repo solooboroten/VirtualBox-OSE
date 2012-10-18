@@ -1,4 +1,4 @@
-/* $Id: UIWizardImportAppPageExpert.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
+/* $Id: UIWizardImportAppPageExpert.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -50,6 +50,7 @@ UIWizardImportAppPageExpert::UIWizardImportAppPageExpert(const QString &strFileN
         pMainLayout->addWidget(m_pVMApplianceLabel);
         pMainLayout->addWidget(m_pFileSelector);
         pMainLayout->addWidget(m_pApplianceWidget);
+        m_pFileSelector->setPath(strFileName);
     }
 
     /* Setup connections: */

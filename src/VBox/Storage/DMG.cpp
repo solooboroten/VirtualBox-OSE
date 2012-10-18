@@ -1,4 +1,4 @@
-/* $Id: DMG.cpp 41783 2012-06-16 19:24:15Z vboxsync $ */
+/* $Id: DMG.cpp $ */
 /** @file
  * VBoxDMG - Interpreter for Apple Disk Images (DMG).
  */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 41561 2012-06-04 12:10:19Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the VBox debugger.
 #

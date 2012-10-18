@@ -1,4 +1,4 @@
-/* $Id: tstRTBitOperations.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: tstRTBitOperations.cpp $ */
 /** @file
  * IPRT Testcase - Inlined Bit Operations.
  */

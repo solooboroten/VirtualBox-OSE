@@ -1,4 +1,4 @@
-/* $Id: EventQueue.cpp 41015 2012-04-20 21:13:11Z vboxsync $ */
+/* $Id: EventQueue.cpp $ */
 /** @file
  * MS COM / XPCOM Abstraction Layer:
  * Event and EventQueue class declaration

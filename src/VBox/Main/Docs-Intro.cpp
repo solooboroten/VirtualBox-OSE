@@ -1,4 +1,4 @@
-/* $Id: Docs-Intro.cpp 39683 2011-12-29 16:13:02Z vboxsync $ */
+/* $Id: Docs-Intro.cpp $ */
 /** @file
  * This file contains the introduction to Main for developers.
  */

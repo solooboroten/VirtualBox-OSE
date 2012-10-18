@@ -1,4 +1,4 @@
-/* $Id: tcp_input.c 41453 2012-05-26 03:40:24Z vboxsync $ */
+/* $Id: tcp_input.c $ */
 /** @file
  * NAT - TCP input.
  */

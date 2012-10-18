@@ -1,4 +1,4 @@
-/* $Id: VBoxMPVidModes.cpp 42217 2012-07-18 20:41:29Z vboxsync $ */
+/* $Id: VBoxMPVidModes.cpp $ */
 
 /** @file
  * VBox Miniport video modes related functions

@@ -1,4 +1,4 @@
-/** @file $Id: vboxvideo_drv.h 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo_drv.h $
  *
  * VirtualBox Additions Linux kernel video driver
  */

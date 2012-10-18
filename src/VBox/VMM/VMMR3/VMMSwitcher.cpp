@@ -1,4 +1,4 @@
-/* $Id: VMMSwitcher.cpp 42025 2012-07-05 12:52:41Z vboxsync $ */
+/* $Id: VMMSwitcher.cpp $ */
 /** @file
  * VMM - The Virtual Machine Monitor, World Switcher(s).
  */

@@ -1,4 +1,4 @@
-/* $Id: bootp.c 41977 2012-07-02 08:52:58Z vboxsync $ */
+/* $Id: bootp.c $ */
 /** @file
  * NAT - BOOTP/DHCP server emulation.
  */

@@ -1,4 +1,4 @@
-/* $Id: vbsf.c 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: vbsf.c $ */
 /** @file
  * VirtualBox Windows Guest Shared Folders.
  *

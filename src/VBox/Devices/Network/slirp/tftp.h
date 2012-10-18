@@ -1,4 +1,4 @@
-/* $Id: tftp.h 43233 2012-09-06 20:21:37Z vboxsync $ */
+/* $Id: tftp.h $ */
 /** @file
  * NAT - TFTP server (declarations/defines).
  */

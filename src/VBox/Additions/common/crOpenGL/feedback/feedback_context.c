@@ -1,4 +1,4 @@
-/* $Id: feedback_context.c 42499 2012-08-01 10:26:43Z vboxsync $ */
+/* $Id: feedback_context.c $ */
 
 /** @file
  * VBox feedback spu, context tracking.

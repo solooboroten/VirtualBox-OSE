@@ -1,4 +1,4 @@
-/* $Id: RTManifest.cpp 39181 2011-11-02 21:50:06Z vboxsync $ */
+/* $Id: RTManifest.cpp $ */
 /** @file
  * IPRT - Manifest Utility.
  */

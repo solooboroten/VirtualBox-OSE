@@ -1,4 +1,4 @@
-/* $Id: VBoxPciInternal.h 43265 2012-09-10 09:44:02Z vboxsync $ */
+/* $Id: VBoxPciInternal.h $ */
 /** @file
  * VBoxPci - PCI driver (Host), Internal Header.
  */

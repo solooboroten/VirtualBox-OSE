@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42314 2012-07-23 04:22:46Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Windows guest miniport driver.
 #

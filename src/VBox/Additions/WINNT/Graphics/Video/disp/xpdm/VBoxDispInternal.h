@@ -1,4 +1,4 @@
-/* $Id: VBoxDispInternal.h 39606 2011-12-14 11:23:58Z vboxsync $ */
+/* $Id: VBoxDispInternal.h $ */
 
 /** @file
  * VBox XPDM Display driver, internal header

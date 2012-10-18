@@ -1,4 +1,4 @@
-/* $Id: base64.cpp 40058 2012-02-10 13:10:26Z vboxsync $ */
+/* $Id: base64.cpp $ */
 /** @file
  * IPRT - Base64, MIME content transfer encoding.
  */

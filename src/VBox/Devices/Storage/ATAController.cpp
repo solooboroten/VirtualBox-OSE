@@ -1,4 +1,4 @@
-/* $Id: ATAController.cpp 40999 2012-04-20 07:01:49Z vboxsync $ */
+/* $Id: ATAController.cpp $ */
 /** @file
  * DevATA, DevAHCI - Shared ATA/ATAPI controller code (disk and cdrom).
  *

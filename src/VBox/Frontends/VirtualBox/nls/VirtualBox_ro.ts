@@ -2069,6 +2069,56 @@
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt; {1 %2&lt;?}</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -4597,20 +4647,16 @@ Acest director este folosit, dacă nu este explicit specificat altfel, atunci c�
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>IDE Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>SATA Controller</source>
-        <translation>Controlor SATA</translation>
+        <translation type="obsolete">Controlor SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>Controlor SCSI</translation>
+        <translation type="obsolete">Controlor SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Controlor unitate de dischetă</translation>
+        <translation type="obsolete">Controlor unitate de dischetă</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -4718,7 +4764,7 @@ Acest director este folosit, dacă nu este explicit specificat altfel, atunci c�
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>Controlor SAS</translation>
+        <translation type="obsolete">Controlor SAS</translation>
     </message>
     <message>
         <source>Storage Controller</source>
@@ -4844,6 +4890,10 @@ Acest director este folosit, dacă nu este explicit specificat altfel, atunci c�
     </message>
     <message>
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -8762,24 +8812,20 @@ din listă apăsând butonul &lt;b&gt;Existent&lt;/b&gt; (pentru a invoca dialog
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>IDE Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>SATA Controller</source>
-        <translation type="unfinished">Controlor SATA</translation>
+        <translation type="obsolete">Controlor SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation type="unfinished">Controlor SCSI</translation>
+        <translation type="obsolete">Controlor SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation type="unfinished">Controlor unitate de dischetă</translation>
+        <translation type="obsolete">Controlor unitate de dischetă</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation type="unfinished">Controlor SAS</translation>
+        <translation type="obsolete">Controlor SAS</translation>
     </message>
     <message>
         <source>Name and operating system</source>

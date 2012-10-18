@@ -1,4 +1,4 @@
-/* $Id: tstThread-1.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstThread-1.cpp $ */
 /** @file
  * IPRT Testcase - Thread Testcase no.1.
  */

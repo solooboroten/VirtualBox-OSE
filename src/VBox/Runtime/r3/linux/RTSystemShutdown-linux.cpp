@@ -1,4 +1,4 @@
-/* $Id: RTSystemShutdown-linux.cpp 39724 2012-01-08 01:09:54Z vboxsync $ */
+/* $Id: RTSystemShutdown-linux.cpp $ */
 /** @file
  * IPRT - RTSystemShutdown, linux implementation.
  */

@@ -1,4 +1,4 @@
-/** @file $Id: vboxvideo_crtc.c 42784 2012-08-12 20:31:36Z vboxsync $
+/** @file $Id: vboxvideo_crtc.c $
  *
  * VirtualBox Additions Linux kernel video driver, KMS support
  */

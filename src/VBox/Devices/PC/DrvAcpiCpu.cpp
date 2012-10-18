@@ -1,4 +1,4 @@
-/* $Id: DrvAcpiCpu.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvAcpiCpu.cpp $ */
 /** @file
  * DrvAcpiCpu - ACPI CPU dummy driver for hotplugging.
  */

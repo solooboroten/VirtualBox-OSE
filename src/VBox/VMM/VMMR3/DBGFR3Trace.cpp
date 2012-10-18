@@ -1,4 +1,4 @@
-/* $Id: DBGFR3Trace.cpp 41975 2012-06-30 20:21:27Z vboxsync $ */
+/* $Id: DBGFR3Trace.cpp $ */
 /** @file
  * DBGF - Debugger Facility, Tracing.
  */

@@ -1,4 +1,4 @@
-/* $Id: tstRTProcCreateEx.cpp 42973 2012-08-24 12:30:32Z vboxsync $ */
+/* $Id: tstRTProcCreateEx.cpp $ */
 /** @file
  * IPRT Testcase - RTProcCreateEx.
  */

@@ -1,4 +1,4 @@
-/* $Id: VMMDevTesting.h 42585 2012-08-03 16:50:05Z vboxsync $ */
+/* $Id: VMMDevTesting.h $ */
 /** @file
  * VMMDev - Testing Extensions.
  */

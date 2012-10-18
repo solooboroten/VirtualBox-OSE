@@ -1,4 +1,4 @@
-/* $Id: VBoxREMWrapper.cpp 42420 2012-07-26 17:33:01Z vboxsync $ */
+/* $Id: VBoxREMWrapper.cpp $ */
 /** @file
  *
  * VBoxREM Win64 DLL Wrapper.

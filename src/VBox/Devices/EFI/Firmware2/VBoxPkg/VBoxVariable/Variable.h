@@ -1,4 +1,4 @@
-/* $Id: Variable.h 43212 2012-09-06 05:49:10Z vboxsync $ */
+/* $Id: Variable.h $ */
 /** @file
  * Variable.h
  */

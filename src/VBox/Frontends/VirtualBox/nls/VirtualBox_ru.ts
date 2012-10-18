@@ -2341,6 +2341,56 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation>&lt;b&gt;%1&lt;/b&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation>
+            <numerusform>%n группа</numerusform>
+            <numerusform>%n группы</numerusform>
+            <numerusform>%n групп</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation>
+            <numerusform>%n машина</numerusform>
+            <numerusform>%n машины</numerusform>
+            <numerusform>%n машин</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation>
+            <numerusform>(%n запущена)</numerusform>
+            <numerusform>(%n запущены)</numerusform>
+            <numerusform>(%n запущено)</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -5097,19 +5147,19 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE контроллер</translation>
+        <translation type="obsolete">IDE контроллер</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA контроллер</translation>
+        <translation type="obsolete">SATA контроллер</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI контроллер</translation>
+        <translation type="obsolete">SCSI контроллер</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Floppy контроллер</translation>
+        <translation type="obsolete">Floppy контроллер</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -5229,7 +5279,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS контроллер</translation>
+        <translation type="obsolete">SAS контроллер</translation>
     </message>
     <message>
         <source>Storage Controller</source>
@@ -5356,6 +5406,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
         <translation>Задаёт количество портов контроллера носителей информации типа SATA, выбранного в данный момент в дереве носителей информации. Это значение не может быть меньше, чем максимальный номер использованного порта + 1.</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation>Контроллер: %1</translation>
     </message>
 </context>
 <context>
@@ -9198,23 +9252,23 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE контроллер</translation>
+        <translation type="obsolete">IDE контроллер</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA контроллер</translation>
+        <translation type="obsolete">SATA контроллер</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI контроллер</translation>
+        <translation type="obsolete">SCSI контроллер</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Floppy контроллер</translation>
+        <translation type="obsolete">Floppy контроллер</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS контроллер</translation>
+        <translation type="obsolete">SAS контроллер</translation>
     </message>
     <message>
         <source>Name and operating system</source>
@@ -11336,12 +11390,12 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Unlocked</source>
         <comment>SessionState</comment>
-        <translation>Разблокировано</translation>
+        <translation>Разблокирована</translation>
     </message>
     <message>
         <source>Locked</source>
         <comment>SessionState</comment>
-        <translation>Заблокировано</translation>
+        <translation>Заблокирована</translation>
     </message>
     <message>
         <source>Unlocking</source>

@@ -1,4 +1,4 @@
-/* $Id: strformatrt.cpp 40988 2012-04-19 13:25:45Z vboxsync $ */
+/* $Id: strformatrt.cpp $ */
 /** @file
  * IPRT - IPRT String Formatter Extensions.
  */

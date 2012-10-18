@@ -1,4 +1,4 @@
-/* $Id: avl_Base.cpp.h 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: avl_Base.cpp.h $ */
 /** @file
  * kAVLBase - basic routines for all AVL trees.
  */

@@ -1,4 +1,4 @@
-/* $Id: pci32.c 42127 2012-07-12 15:21:46Z vboxsync $ */
+/* $Id: pci32.c $ */
 /** @file
  * 32-bit PCI BIOS wrapper.
  */

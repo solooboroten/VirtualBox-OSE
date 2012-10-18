@@ -277,9 +277,12 @@ void UISelectorWindow::sltShowImportApplianceWizard(const QString &strFileName /
 #else /* Q_WS_MAC */
     QString strTmpFile = strFileName;
 #endif /* !Q_WS_MAC */
-    UIWizardImportApp wizard(this, strTmpFile);
-    if (strFileName.isEmpty() || wizard.isValid())
-        wizard.exec();
+    UISafePointerWizardImportApp pWizard = new UIWizardImportApp(this, strTmpFile);
+    pWizard->prepare();
+    if (strFileName.isEmpty() || pWizard->isValid())
+        pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UISelectorWindow::sltShowExportApplianceWizard()
@@ -293,8 +296,11 @@ void UISelectorWindow::sltShowExportApplianceWizard()
     for (int i = 0; i < items.size(); ++i)
         names << items[i]->name();
     /* Show Export Appliance wizard: */
-    UIWizardExportApp wizard(this, names);
-    wizard.exec();
+    UISafePointerWizard pWizard = new UIWizardExportApp(this, names);
+    pWizard->prepare();
+    pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UISelectorWindow::sltShowPreferencesDialog()
@@ -415,8 +421,11 @@ void UISelectorWindow::sltShowCloneMachineWizard()
     AssertMsgReturnVoid(pItem, ("Current item should be selected!\n"));
 
     /* Show Clone VM wizard: */
-    UIWizardCloneVM wizard(this, pItem->machine());
-    wizard.exec();
+    UISafePointerWizard pWizard = new UIWizardCloneVM(this, pItem->machine());
+    pWizard->prepare();
+    pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UISelectorWindow::sltPerformStartOrShowAction()
@@ -786,8 +795,8 @@ void UISelectorWindow::sltCurrentVMItemChanged(bool fRefreshDetails, bool fRefre
     UIVMItem *pItem = currentItem();
 
     /* Determine which menu to show: */
-    m_pGroupMenuAction->setVisible(m_pChooser->singleGroupSelected());
-    m_pMachineMenuAction->setVisible(!m_pChooser->singleGroupSelected());
+    m_pGroupMenuAction->setVisible(m_pChooser->isSingleGroupSelected());
+    m_pMachineMenuAction->setVisible(!m_pChooser->isSingleGroupSelected());
     if (m_pGroupMenuAction->isVisible())
     {
         foreach (UIAction *pAction, m_machineActions)
@@ -822,7 +831,7 @@ void UISelectorWindow::sltCurrentVMItemChanged(bool fRefreshDetails, bool fRefre
             m_pVMDesktop->updateSnapshots(pItem, pItem->machine());
             /* Always hide snapshots-view if
              * single group or more than one machine is selected: */
-            if (currentItems().size() > 1 || m_pChooser->singleGroupSelected())
+            if (currentItems().size() > 1 || m_pChooser->isSingleGroupSelected())
                 m_pVMDesktop->lockSnapshots();
         }
     }
@@ -1623,18 +1632,18 @@ void UISelectorWindow::updateActionsAppearance()
 
     /* Start/Show action is deremined by 1st item: */
     if (pItem && pItem->accessible())
-        m_pAction_Common_StartOrShow->setState(isItemPoweredOff(pItem) ? 1 : 2);
+        m_pAction_Common_StartOrShow->setState(UIVMItem::isItemPoweredOff(pItem) ? 1 : 2);
     else
         m_pAction_Common_StartOrShow->setState(1);
 
     /* Pause/Resume action is deremined by 1st started item: */
     UIVMItem *pFirstStartedAction = 0;
     foreach (UIVMItem *pSelectedItem, items)
-        if (isItemStarted(pSelectedItem))
+        if (UIVMItem::isItemStarted(pSelectedItem))
             pFirstStartedAction = pSelectedItem;
     /* Update the Pause/Resume action appearance: */
     m_pAction_Common_PauseAndResume->blockSignals(true);
-    m_pAction_Common_PauseAndResume->setChecked(pFirstStartedAction && isItemPaused(pFirstStartedAction));
+    m_pAction_Common_PauseAndResume->setChecked(pFirstStartedAction && UIVMItem::isItemPaused(pFirstStartedAction));
     m_pAction_Common_PauseAndResume->updateAppearance();
     m_pAction_Common_PauseAndResume->blockSignals(false);
 
@@ -1668,20 +1677,20 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
         case UIActionIndexSelector_Simple_Group_Sort:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
-                   m_pChooser->singleGroupSelected();
+                   m_pChooser->isSingleGroupSelected();
         }
         case UIActionIndexSelector_Simple_Machine_Settings:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
                    items.size() == 1 &&
                    pItem->accessible() &&
-                   !isItemStuck(pItem);
+                   !UIVMItem::isItemStuck(pItem);
         }
         case UIActionIndexSelector_Simple_Machine_Clone:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
                    items.size() == 1 &&
-                   isItemEditable(pItem);
+                   UIVMItem::isItemEditable(pItem);
         }
         case UIActionIndexSelector_Simple_Machine_Remove:
         {
@@ -1691,6 +1700,7 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
         case UIActionIndexSelector_Simple_Machine_AddGroup:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
+                   !m_pChooser->isAllItemsOfOneGroupSelected() &&
                    isItemsPoweredOff(items);
         }
         case UIActionIndexSelector_State_Common_StartOrShow:
@@ -1764,7 +1774,7 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
 bool UISelectorWindow::isItemsPoweredOff(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (!isItemPoweredOff(pItem))
+        if (!UIVMItem::isItemPoweredOff(pItem))
             return false;
     return true;
 }
@@ -1774,7 +1784,7 @@ bool UISelectorWindow::isAtLeastOneItemAbleToShutdown(const QList<UIVMItem*> &it
 {
     foreach (UIVMItem *pItem, items)
     {
-        if (!isItemRunning(pItem))
+        if (!UIVMItem::isItemRunning(pItem))
             continue;
 
         CSession session = vboxGlobal().openExistingSession(pItem->id());
@@ -1833,7 +1843,7 @@ bool UISelectorWindow::isAtLeastOneItemInaccessible(const QList<UIVMItem*> &item
 bool UISelectorWindow::isAtLeastOneItemRemovable(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (!pItem->accessible() || isItemEditable(pItem))
+        if (!pItem->accessible() || UIVMItem::isItemEditable(pItem))
             return true;
     return false;
 }
@@ -1843,8 +1853,8 @@ bool UISelectorWindow::isAtLeastOneItemCanBeStartedOrShowed(const QList<UIVMItem
 {
     foreach (UIVMItem *pItem, items)
     {
-        if ((isItemPoweredOff(pItem) && isItemEditable(pItem)) ||
-            (isItemStarted(pItem) && pItem->canSwitchTo()))
+        if ((UIVMItem::isItemPoweredOff(pItem) && UIVMItem::isItemEditable(pItem)) ||
+            (UIVMItem::isItemStarted(pItem) && pItem->canSwitchTo()))
             return true;
     }
     return false;
@@ -1854,7 +1864,7 @@ bool UISelectorWindow::isAtLeastOneItemCanBeStartedOrShowed(const QList<UIVMItem
 bool UISelectorWindow::isAtLeastOneItemDiscardable(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (isItemSaved(pItem) && isItemEditable(pItem))
+        if (UIVMItem::isItemSaved(pItem) && UIVMItem::isItemEditable(pItem))
             return true;
     return false;
 }
@@ -1863,7 +1873,7 @@ bool UISelectorWindow::isAtLeastOneItemDiscardable(const QList<UIVMItem*> &items
 bool UISelectorWindow::isAtLeastOneItemStarted(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (isItemStarted(pItem))
+        if (UIVMItem::isItemStarted(pItem))
             return true;
     return false;
 }
@@ -1872,73 +1882,8 @@ bool UISelectorWindow::isAtLeastOneItemStarted(const QList<UIVMItem*> &items)
 bool UISelectorWindow::isAtLeastOneItemRunning(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (isItemRunning(pItem))
+        if (UIVMItem::isItemRunning(pItem))
             return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemEditable(UIVMItem *pItem)
-{
-    return pItem->accessible() &&
-           pItem->sessionState() == KSessionState_Unlocked;
-}
-
-/* static */
-bool UISelectorWindow::isItemSaved(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        pItem->machineState() == KMachineState_Saved)
-        return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemPoweredOff(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        (pItem->machineState() == KMachineState_PoweredOff ||
-         pItem->machineState() == KMachineState_Saved ||
-         pItem->machineState() == KMachineState_Teleported ||
-         pItem->machineState() == KMachineState_Aborted))
-        return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemStarted(UIVMItem *pItem)
-{
-    return isItemRunning(pItem) || isItemPaused(pItem);
-}
-
-/* static */
-bool UISelectorWindow::isItemRunning(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        (pItem->machineState() == KMachineState_Running ||
-         pItem->machineState() == KMachineState_Teleporting ||
-         pItem->machineState() == KMachineState_LiveSnapshotting))
-        return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemPaused(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        (pItem->machineState() == KMachineState_Paused ||
-         pItem->machineState() == KMachineState_TeleportingPausedVM))
-        return true;
-    return false;
-
-}
-
-/* static */
-bool UISelectorWindow::isItemStuck(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        pItem->machineState() == KMachineState_Stuck)
-        return true;
     return false;
 }
 

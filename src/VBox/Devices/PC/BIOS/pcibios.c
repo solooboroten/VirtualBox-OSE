@@ -1,4 +1,4 @@
-/* $Id: pcibios.c 42793 2012-08-13 14:38:20Z vboxsync $ */
+/* $Id: pcibios.c $ */
 /** @file
  * PCI BIOS support.
  */

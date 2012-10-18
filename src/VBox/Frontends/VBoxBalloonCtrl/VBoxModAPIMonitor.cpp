@@ -1,5 +1,5 @@
 
-/* $Id: VBoxModAPIMonitor.cpp 41444 2012-05-25 08:23:06Z vboxsync $ */
+/* $Id: VBoxModAPIMonitor.cpp $ */
 /** @file
  * VBoxModAPIMonitor - API monitor module for detecting host isolation.
  */

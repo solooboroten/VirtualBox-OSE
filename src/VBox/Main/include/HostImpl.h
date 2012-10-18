@@ -1,4 +1,4 @@
-/* $Id: HostImpl.h 36615 2011-04-07 12:45:27Z vboxsync $ */
+/* $Id: HostImpl.h $ */
 /** @file
  * Implementation of IHost.
  */
@@ -144,8 +144,11 @@ private:
     bool validateDevice(const char *deviceNode, bool isCDROM);
 #endif
 
+    HRESULT updateNetIfList();
+
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
     void registerMetrics(PerformanceCollector *aCollector);
+    void registerDiskMetrics(PerformanceCollector *aCollector);
     void unregisterMetrics(PerformanceCollector *aCollector);
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 

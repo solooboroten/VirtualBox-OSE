@@ -1,4 +1,4 @@
-/* $Id: DevRTC.cpp 43241 2012-09-07 12:06:37Z vboxsync $ */
+/* $Id: DevRTC.cpp $ */
 /** @file
  * Motorola MC146818 RTC/CMOS Device with PIIX4 extensions.
  */

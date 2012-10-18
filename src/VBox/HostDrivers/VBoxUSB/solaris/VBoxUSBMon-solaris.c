@@ -1,4 +1,4 @@
-/* $Id: VBoxUSBMon-solaris.c 42946 2012-08-23 11:47:22Z vboxsync $ */
+/* $Id: VBoxUSBMon-solaris.c $ */
 /** @file
  * VirtualBox USB Monitor Driver, Solaris Hosts.
  */

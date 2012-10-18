@@ -1,4 +1,4 @@
-/* $Id: tstVBoxDbg.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstVBoxDbg.cpp $ */
 /** @file
  * VBox Debugger GUI, dummy testcase.
  */

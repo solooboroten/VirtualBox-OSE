@@ -1,4 +1,4 @@
-/* $Id: Global.cpp 43248 2012-09-07 15:16:12Z vboxsync $ */
+/* $Id: Global.cpp $ */
 /** @file
  * VirtualBox COM global definitions
  *

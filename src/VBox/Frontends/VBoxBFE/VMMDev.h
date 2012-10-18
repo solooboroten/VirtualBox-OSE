@@ -1,4 +1,4 @@
-/* $Id: VMMDev.h 39892 2012-01-26 20:22:33Z vboxsync $ */
+/* $Id: VMMDev.h $ */
 /** @file
  * VBox frontends: Basic Frontend (BFE):
  * Declaration of VMMDev: driver interface to VMM device

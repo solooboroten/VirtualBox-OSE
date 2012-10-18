@@ -1,4 +1,4 @@
-/** @file $Id: vboxvideo_mode.h 39335 2011-11-16 15:37:26Z vboxsync $
+/** @file $Id: vboxvideo_mode.h $
  *
  * VirtualBox Additions Linux kernel video driver
  */

@@ -1,4 +1,4 @@
-/* $Id: reqpool.cpp 40100 2012-02-13 17:45:33Z vboxsync $ */
+/* $Id: reqpool.cpp $ */
 /** @file
  * IPRT - Request Pool.
  */

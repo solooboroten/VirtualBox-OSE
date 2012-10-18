@@ -1,4 +1,4 @@
-/* $Id: PDMAsyncCompletionFileFailsafe.cpp 39078 2011-10-21 14:18:22Z vboxsync $ */
+/* $Id: PDMAsyncCompletionFileFailsafe.cpp $ */
 /** @file
  * PDM Async I/O - Transport data asynchronous in R3 using EMT.
  * Simple File I/O manager.

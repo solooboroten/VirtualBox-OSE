@@ -1,4 +1,4 @@
-/* $Id: DevVirtioNet.cpp 41917 2012-06-26 10:33:05Z vboxsync $ */
+/* $Id: DevVirtioNet.cpp $ */
 /** @file
  * DevVirtioNet - Virtio Network Device
  */

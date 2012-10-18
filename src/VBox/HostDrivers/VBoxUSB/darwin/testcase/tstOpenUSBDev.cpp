@@ -1,4 +1,4 @@
-/* $Id: tstOpenUSBDev.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstOpenUSBDev.cpp $ */
 /** @file
  * Testcase that attempts to locate and open the specfied device.
  */
@@ -206,7 +206,7 @@ int main(int argc, char **argv)
             case 'h':
                 return tstSyntax(argv[0]);
             case 'V':
-                RTPrintf("$Revision: 38636 $\n");
+                RTPrintf("$Revision: 73843 $\n");
                 return 0;
 
             default:

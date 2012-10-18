@@ -1,4 +1,4 @@
-/* $Id: TestVBox.java 38914 2011-09-30 10:12:01Z vboxsync $ */
+/* $Id: TestVBox.java $ */
 
 /* Small sample/testcase which demonstrates that the same source code can
  * be used to connect to the webservice and (XP)COM APIs. */

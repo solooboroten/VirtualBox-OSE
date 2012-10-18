@@ -1,4 +1,4 @@
-/* $Id: VBoxManageInfo.cpp 42672 2012-08-08 07:52:11Z vboxsync $ */
+/* $Id: VBoxManageInfo.cpp $ */
 /** @file
  * VBoxManage - The 'showvminfo' command and helper routines.
  */
@@ -224,7 +224,7 @@ static void outputMachineReadableString(const char *pszName, Bstr const *pbstrVa
                 RTPrintf("%s", psz);
                 break;
             }
-            RTPrintf(".*s\\%c", psz - pszNext, *pszNext);
+            RTPrintf("%.*s\\%c", pszNext - psz, psz, *pszNext);
             psz = pszNext + 1;
         }
         RTPrintf("\"\n");
@@ -499,7 +499,7 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
     SHOW_BOOLEAN_PROP(     machine, PageFusionEnabled,          "pagefusion",           "Page Fusion");
     SHOW_ULONG_PROP(       machine, VRAMSize,                   "vram",                 "VRAM size",        "MB");
     SHOW_ULONG_PROP(       machine, CPUExecutionCap,            "cpuexecutioncap",      "CPU exec cap",     "%%");
-    SHOW_BOOLEAN_PROP(     machine, PageFusionEnabled,          "hpet",                 "HPET");
+    SHOW_BOOLEAN_PROP(     machine, HPETEnabled,                "hpet",                 "HPET");
 
     ChipsetType_T chipsetType;
     CHECK_ERROR2_RET(machine, COMGETTER(ChipsetType)(&chipsetType), hrcCheck);
@@ -1154,6 +1154,8 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                     RTPrintf("macaddress%d=\"%ls\"\n", currentNIC + 1, strMACAddress.raw());
                     RTPrintf("cableconnected%d=\"%s\"\n", currentNIC + 1, fConnected ? "on" : "off");
                     RTPrintf("nic%d=\"%s\"\n", currentNIC + 1, strAttachment.c_str());
+                    RTPrintf("nictype%d=\"%s\"\n", currentNIC + 1, pszNICType);
+                    RTPrintf("nicspeed%d=\"%d\"\n", currentNIC + 1, ulLineSpeed);
                 }
                 else
                     RTPrintf("NIC %u:           MAC: %ls, Attachment: %s, Cable connected: %s, Trace: %s (file: %ls), Type: %s, Reported speed: %d Mbps, Boot priority: %d, Promisc Policy: %s, Bandwidth group: %ls\n",

@@ -1,4 +1,4 @@
-/* $Id: tstInt.cpp 41429 2012-05-24 09:38:38Z vboxsync $ */
+/* $Id: tstInt.cpp $ */
 /** @file
  * SUP Testcase - Test the interrupt gate feature of the support library.
  */

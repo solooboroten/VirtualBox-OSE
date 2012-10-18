@@ -1,4 +1,4 @@
-/* $Id: solaudio.c 40844 2012-04-10 10:37:46Z vboxsync $ */
+/* $Id: solaudio.c $ */
 /** @file
  * VirtualBox Audio Driver - Solaris host.
  */

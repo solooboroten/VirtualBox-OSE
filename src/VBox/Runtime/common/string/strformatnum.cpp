@@ -1,4 +1,4 @@
-/* $Id: strformatnum.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: strformatnum.cpp $ */
 /** @file
  * IPRT - String Formatter, Single Numbers.
  */

@@ -1,4 +1,4 @@
-/* $Id: rtSemWaitOs2ConvertTimeout.cpp 40304 2012-02-29 20:02:14Z vboxsync $ */
+/* $Id: rtSemWaitOs2ConvertTimeout.cpp $ */
 /** @file
  * IPRT - RTSemEventMultiWait, implementation based on RTSemEventMultiWaitEx.
  */

@@ -1,4 +1,4 @@
-/* $Id: tstRTSemXRoads.cpp 41001 2012-04-20 07:07:05Z vboxsync $ */
+/* $Id: tstRTSemXRoads.cpp $ */
 /** @file
  * IPRT Testcase - RTSemXRoads.
  */

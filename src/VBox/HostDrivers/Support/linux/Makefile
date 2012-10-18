@@ -1,4 +1,4 @@
-# $Id: Makefile 41354 2012-05-19 18:18:42Z vboxsync $
+# $Id: Makefile $
 ## @file
 # Makefile for the VirtualBox Linux Host Driver.
 #

@@ -1,4 +1,4 @@
-/* $Id: MachineImplCloneVM.cpp 42109 2012-07-11 13:28:52Z vboxsync $ */
+/* $Id: MachineImplCloneVM.cpp $ */
 /** @file
  * Implementation of MachineCloneVM
  */

@@ -1,4 +1,4 @@
-/* $Id: SnapshotImpl.cpp 42889 2012-08-20 17:44:10Z vboxsync $ */
+/* $Id: SnapshotImpl.cpp $ */
 /** @file
  *
  * COM class implementation for Snapshot and SnapshotMachine in VBoxSVC.

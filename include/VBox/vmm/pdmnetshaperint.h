@@ -1,4 +1,4 @@
-/* $Id: pdmnetshaperint.h 43124 2012-08-30 19:13:57Z vboxsync $ */
+/* $Id: pdmnetshaperint.h $ */
 /** @file
  * PDM Network Shaper - Internal data structures and functions common for both
  * R0 and R3 parts.

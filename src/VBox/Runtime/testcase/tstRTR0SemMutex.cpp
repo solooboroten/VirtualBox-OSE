@@ -1,4 +1,4 @@
-/* $Id: tstRTR0SemMutex.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: tstRTR0SemMutex.cpp $ */
 /** @file
  * IPRT R0 Testcase - Mutex Semaphores.
  */

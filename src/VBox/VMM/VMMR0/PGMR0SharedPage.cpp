@@ -1,4 +1,4 @@
-/* $Id: PGMR0SharedPage.cpp 43045 2012-08-28 14:21:43Z vboxsync $ */
+/* $Id: PGMR0SharedPage.cpp $ */
 /** @file
  * PGM - Page Manager and Monitor, Page Sharing, Ring-0.
  */

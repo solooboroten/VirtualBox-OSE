@@ -1,6 +1,185 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.2.2 (2012-10-18)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: adapted to changes in Mac OS X 10.8.2 (bug #10965)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: restored VM item tool-tip functionality (4.2 regression)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: added group item tool-tip functionality</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed handling of the .ova/.ovf file name association
+          (4.2 regression)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: it was not possible to change any setting before the
+          first VM was created (bug #10928)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: disable grouping action if all the selected items are
+          full children list of the same group already</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: added menu for runtime drag-and-drop option change</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: cleanup shared-clipboard menu on visual-mode change</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: make sure VM receives keyboard focus on entering fullscreen-mode
+          on Win host (bug #11051)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: disable proxy authentication for security reasons</para>
+      </listitem>
+
+      <listitem>
+        <para>3D Support: <emphasis>DrawIndexedPrimitiveUP</emphasis> implementation
+          fixes for the Windows WDDM video driver (bug #10929) </para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed a release assertion in the AHCI emulation when requests
+          where cancelled with async I/O disabled</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed a hang during VM reset under certain circumstances
+           (bug #10898)</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: fixed a crash under rare circumstances (Windows hosts only;
+          bug #10128)</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: automatically use the host resolver if the host name server is
+          set to some unusual loopback value (bug #10864)</para>
+      </listitem>
+
+      <listitem>
+        <para>E1000: fixed a VirtualBox crash during intensive network transfers
+           (4.2 regression; bugs #10936, #10969, #10980)</para>
+      </listitem>
+
+      <listitem>
+        <para>ICH9: fixed PCI bridge initialization</para>
+      </listitem>
+
+      <listitem>
+        <para>USB mouse: ensure that the last mouse event doesn't get lost if no URBs
+          are available</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: certain legacy guests (e.g. Windows 95) didn't find the boot
+          device after a warm reboot</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: don't trash the palette in text modes when setting the border
+          color</para>
+      </listitem>
+
+      <listitem>
+        <para>EFI: fixed OS X guest autoboot (4.2 regression)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed output of <emphasis>showvminfo --machinereadable</emphasis>
+          (bug #10973)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed parsing of <emphasis>storageattach --discard</emphasis>
+          (bug #11023)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed wrong output of the HPET setting in <emphasis>showvminfo</emphasis>
+          (bug #11065)</para>
+      </listitem>
+      
+      <listitem>
+        <para>VBoxManage: fixed closing the guest session after executing a 
+          guest process via guest control</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxShell: adaptions to interface name changes</para>
+      </listitem>
+
+      <listitem>
+        <para>Guest Additions device: fixed a Guest Additions hang when a
+         machine was reset after a crash</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: Linux 3.7-rc1 fixes</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: support X.Org Server 1.13</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed a hang when the X server was restarted with
+           old guest kernels</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed a VBoxService crash during CPU hot remove
+           (bug #10964)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed automatic screen resize
+          issue for NT4 guests</para>
+      </listitem>
+      
+      <listitem>
+        <para>OS/2 Additions: fixed shutdown hang</para>
+      </listitem>
+
+      <listitem>
+        <para>OS/2 Additions: fixed mouse driver panic</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: fixed autostart service going into maintenance mode after
+          all VMs started</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: fixed linking the host driver with the dtrace module</para>
+      </listitem>
+
+    </itemizedlist>
+
+  </sect1>
+
+  <sect1>
+
     <title>Version 4.2.0 (2012-09-13)</title>
 
     <para>This is a major update. The following major new features

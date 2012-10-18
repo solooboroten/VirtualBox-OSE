@@ -1,4 +1,4 @@
-/* $Id: DisasmTables.cpp 42719 2012-08-09 17:23:46Z vboxsync $ */
+/* $Id: DisasmTables.cpp $ */
 /** @file
  * VBox disassembler - Tables for X86 (32-bit and 16-bit modes).
  */

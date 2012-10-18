@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp 43127 2012-08-30 19:26:29Z vboxsync $ */
+/* $Id: VBoxGlobal.cpp $ */
 /** @file
  * VBox Qt GUI - VBoxGlobal class implementation.
  */
@@ -1452,7 +1452,8 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
             /* Get current controller: */
             const CStorageController &controller = controllers[i];
             /* Add controller information: */
-            item += QString(sSectionItemTpl3).arg(controller.GetName());
+            QString strControllerName = QApplication::translate("UIMachineSettingsStorage", "Controller: %1");
+            item += QString(sSectionItemTpl3).arg(strControllerName.arg(controller.GetName()));
             ++ rows;
 
             /* Populate sorted map with attachments information: */
@@ -2046,13 +2047,28 @@ void VBoxGlobal::startEnumeratingMedia()
 void VBoxGlobal::reloadProxySettings()
 {
     UIProxyManager proxyManager(settings().proxySettings());
+    if (proxyManager.authEnabled())
+    {
+        proxyManager.setAuthEnabled(false);
+        proxyManager.setAuthLogin(QString());
+        proxyManager.setAuthPassword(QString());
+        VBoxGlobalSettings globalSettings = settings();
+        globalSettings.setProxySettings(proxyManager.toString());
+        vboxGlobal().setSettings(globalSettings);
+    }
     if (proxyManager.proxyEnabled())
     {
+#if 0
         QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy,
                                                          proxyManager.proxyHost(),
                                                          proxyManager.proxyPort().toInt(),
                                                          proxyManager.authEnabled() ? proxyManager.authLogin() : QString(),
                                                          proxyManager.authEnabled() ? proxyManager.authPassword() : QString()));
+#else
+        QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::HttpProxy,
+                                                         proxyManager.proxyHost(),
+                                                         proxyManager.proxyPort().toInt()));
+#endif
     }
     else
     {
@@ -3841,6 +3857,10 @@ bool VBoxGlobal::isWddmCompatibleOsType(const QString &strGuestOSTypeId)
 #ifdef Q_WS_MAC
 bool VBoxGlobal::isSheetWindowAllowed(QWidget *pParent) const
 {
+    /* Disallow for null parent: */
+    if (!pParent)
+        return false;
+
     /* Make sure Mac Sheet is not used for the same parent now. */
     if (sheetWindowUsed(pParent))
         return false;
@@ -3856,6 +3876,10 @@ bool VBoxGlobal::isSheetWindowAllowed(QWidget *pParent) const
 
 void VBoxGlobal::setSheetWindowUsed(QWidget *pParent, bool fUsed)
 {
+    /* Ignore null parent: */
+    if (!pParent)
+        return;
+
     if (fUsed)
     {
         AssertMsg(!m_sheets.contains(pParent), ("Trying to use Mac Sheet for parent which already has one!"));

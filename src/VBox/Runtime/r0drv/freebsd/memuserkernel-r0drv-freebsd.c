@@ -1,4 +1,4 @@
-/* $Id: memuserkernel-r0drv-freebsd.c 41169 2012-05-04 14:24:42Z vboxsync $ */
+/* $Id: memuserkernel-r0drv-freebsd.c $ */
 /** @file
  * IPRT - User & Kernel Memory, Ring-0 Driver, FreeBSD.
  */

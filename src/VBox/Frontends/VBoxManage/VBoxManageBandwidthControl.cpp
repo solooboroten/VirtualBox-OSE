@@ -1,4 +1,4 @@
-/* $Id: VBoxManageBandwidthControl.cpp 41884 2012-06-22 12:13:12Z vboxsync $ */
+/* $Id: VBoxManageBandwidthControl.cpp $ */
 /** @file
  * VBoxManage - The bandwidth control related commands.
  */

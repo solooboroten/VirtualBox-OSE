@@ -1,4 +1,4 @@
-/* $Id: UIVMPreviewWindow.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
+/* $Id: UIVMPreviewWindow.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

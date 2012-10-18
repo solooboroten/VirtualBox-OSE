@@ -1,4 +1,4 @@
-/* $Id: VBoxUhgsmiKmt.h 42499 2012-08-01 10:26:43Z vboxsync $ */
+/* $Id: VBoxUhgsmiKmt.h $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -19,7 +19,6 @@
 #ifndef ___VBoxUhgsmiKmt_h__
 #define ___VBoxUhgsmiKmt_h__
 
-#include "VBoxUhgsmiBase.h"
 #include "VBoxDispD3DCmn.h"
 
 

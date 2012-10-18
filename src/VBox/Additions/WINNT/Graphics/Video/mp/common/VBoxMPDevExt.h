@@ -1,4 +1,4 @@
-/* $Id: VBoxMPDevExt.h 41638 2012-06-09 16:58:09Z vboxsync $ */
+/* $Id: VBoxMPDevExt.h $ */
 
 /** @file
  * VBox Miniport device extension header

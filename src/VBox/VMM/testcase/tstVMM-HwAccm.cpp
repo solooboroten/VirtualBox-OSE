@@ -1,4 +1,4 @@
-/* $Id: tstVMM-HwAccm.cpp 39084 2011-10-22 00:37:15Z vboxsync $ */
+/* $Id: tstVMM-HwAccm.cpp $ */
 /** @file
  * VMM Testcase.
  */

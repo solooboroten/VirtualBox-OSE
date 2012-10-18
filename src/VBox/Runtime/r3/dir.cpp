@@ -1,4 +1,4 @@
-/* $Id: dir.cpp 39627 2011-12-15 11:44:19Z vboxsync $ */
+/* $Id: dir.cpp $ */
 /** @file
  * IPRT - Directory Manipulation, Part 1.
  */

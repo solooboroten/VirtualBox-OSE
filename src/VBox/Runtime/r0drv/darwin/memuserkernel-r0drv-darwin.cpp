@@ -1,4 +1,4 @@
-/* $Id: memuserkernel-r0drv-darwin.cpp 41169 2012-05-04 14:24:42Z vboxsync $ */
+/* $Id: memuserkernel-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - User & Kernel Memory, Ring-0 Driver, Darwin.
  */

@@ -1,4 +1,4 @@
-/* $Id: scm.cpp 41966 2012-06-29 02:53:56Z vboxsync $ */
+/* $Id: scm.cpp $ */
 /** @file
  * IPRT Testcase / Tool - Source Code Massager.
  */
@@ -1529,7 +1529,7 @@ int main(int argc, char **argv)
             case 'V':
             {
                 /* The following is assuming that svn does it's job here. */
-                static const char s_szRev[] = "$Revision: 41966 $";
+                static const char s_szRev[] = "$Revision: 78836 $";
                 const char *psz = RTStrStripL(strchr(s_szRev, ' '));
                 RTPrintf("r%.*s\n", strchr(psz, ' ') - psz, psz);
                 return 0;

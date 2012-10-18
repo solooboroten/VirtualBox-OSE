@@ -1,4 +1,4 @@
-/* $Id: Nvram.cpp 43256 2012-09-08 03:38:02Z vboxsync $ */
+/* $Id: Nvram.cpp $ */
 /** @file
  * VBox NVRAM COM Class implementation.
  */

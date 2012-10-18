@@ -1,4 +1,4 @@
-/* $Id: RTLogWriteDebugger-r0drv-solaris.c 40966 2012-04-17 16:43:28Z vboxsync $ */
+/* $Id: RTLogWriteDebugger-r0drv-solaris.c $ */
 /** @file
  * IPRT - Log To Debugger, Ring-0 Driver, Solaris.
  */

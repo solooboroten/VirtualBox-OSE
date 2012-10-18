@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42470 2012-07-31 06:59:12Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Solaris guest additions base directory.
 #

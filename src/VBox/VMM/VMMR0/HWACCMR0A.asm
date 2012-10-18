@@ -1,4 +1,4 @@
-; $Id: HWACCMR0A.asm 42671 2012-08-08 06:01:09Z vboxsync $
+; $Id: HWACCMR0A.asm $
 ;; @file
 ; VMXM - R0 vmx helpers
 ;

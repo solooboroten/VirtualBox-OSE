@@ -1,4 +1,4 @@
-/* $Id: QCOW.cpp 40106 2012-02-13 18:48:25Z vboxsync $ */
+/* $Id: QCOW.cpp $ */
 /** @file
  * QCOW - QCOW Disk image.
  */

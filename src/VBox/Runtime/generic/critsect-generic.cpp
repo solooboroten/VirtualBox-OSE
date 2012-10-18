@@ -1,4 +1,4 @@
-/* $Id: critsect-generic.cpp 40420 2012-03-10 19:40:57Z vboxsync $ */
+/* $Id: critsect-generic.cpp $ */
 /** @file
  * IPRT - Critical Section, Generic.
  */

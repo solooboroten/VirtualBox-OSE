@@ -1,4 +1,4 @@
-; $Id: EfiThunk.asm 39163 2011-11-01 18:42:55Z vboxsync $
+; $Id: EfiThunk.asm $
 ;; @file
 ; 16-bit EFI Thunk - 16-bit code executed immediately after CPU startup/reset,
 ;                    performs minimal setup, switches CPU to 32-bit mode

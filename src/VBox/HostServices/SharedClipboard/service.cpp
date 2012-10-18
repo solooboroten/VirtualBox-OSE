@@ -1,4 +1,4 @@
-/* $Id: service.cpp 41892 2012-06-22 18:00:06Z vboxsync $ */
+/* $Id: service.cpp $ */
 /** @file
  * Shared Clipboard: Host service entry points.
  */

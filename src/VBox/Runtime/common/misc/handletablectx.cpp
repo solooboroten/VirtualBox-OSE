@@ -1,4 +1,4 @@
-/* $Id: handletablectx.cpp 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: handletablectx.cpp $ */
 /** @file
  * IPRT - Handle Tables.
  */

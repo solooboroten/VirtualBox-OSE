@@ -1,4 +1,4 @@
-/* $Id: ahci.c 42968 2012-08-24 08:29:35Z vboxsync $ */
+/* $Id: ahci.c $ */
 /** @file
  * AHCI host adapter driver to boot from SATA disks.
  */

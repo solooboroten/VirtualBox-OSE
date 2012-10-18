@@ -2392,6 +2392,56 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt; {1 %2&lt;?}</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -5204,19 +5254,19 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>Mòdul IDE</translation>
+        <translation type="obsolete">Mòdul IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>Mòdul SATA</translation>
+        <translation type="obsolete">Mòdul SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>Mòdul SCSI</translation>
+        <translation type="obsolete">Mòdul SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Mòdul de disquet</translation>
+        <translation type="obsolete">Mòdul de disquet</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -5336,7 +5386,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>Controlador SAS</translation>
+        <translation type="obsolete">Controlador SAS</translation>
     </message>
     <message>
         <source>Storage Controller</source>
@@ -5463,6 +5513,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
         <translation>Selecciona el recompte de ports del controlador d&apos;emmagatzematge SATA que estan seleccionats actualment a l&apos;arbre d&apos;emmagatzematge. Això ha de ser com a mínim un més que el valor més alt del nombre de ports que necessiteu fer servir.</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -9704,23 +9758,23 @@ pas i connectar discos durs més avant, fent servir el diàleg de configuració 
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation type="unfinished">Mòdul IDE</translation>
+        <translation type="obsolete">Mòdul IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation type="unfinished">Mòdul SATA</translation>
+        <translation type="obsolete">Mòdul SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation type="unfinished">Mòdul SCSI</translation>
+        <translation type="obsolete">Mòdul SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation type="unfinished">Mòdul de disquet</translation>
+        <translation type="obsolete">Mòdul de disquet</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation type="unfinished">Controlador SAS</translation>
+        <translation type="obsolete">Controlador SAS</translation>
     </message>
     <message>
         <source>Name and operating system</source>

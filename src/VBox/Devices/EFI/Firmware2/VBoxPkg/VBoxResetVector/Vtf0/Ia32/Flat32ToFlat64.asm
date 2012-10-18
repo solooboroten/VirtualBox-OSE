@@ -1,4 +1,4 @@
-; $Id: Flat32ToFlat64.asm 43313 2012-09-12 14:58:36Z vboxsync $
+; $Id: Flat32ToFlat64.asm $
 ;; @file
 
 

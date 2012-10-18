@@ -1,4 +1,4 @@
-/* $Id: semevent-r0drv-os2.cpp 40304 2012-02-29 20:02:14Z vboxsync $ */
+/* $Id: semevent-r0drv-os2.cpp $ */
 /** @file
  * IPRT - Single Release Event Semaphores, Ring-0 Driver, OS/2.
  */

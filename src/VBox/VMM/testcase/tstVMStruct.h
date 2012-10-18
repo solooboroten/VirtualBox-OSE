@@ -1,4 +1,4 @@
-/* $Id: tstVMStruct.h 42407 2012-07-26 11:41:35Z vboxsync $ */
+/* $Id: tstVMStruct.h $ */
 /** @file
  * tstVMMStruct - Statements for generating VM and VMCPU offset and size tests.
  *

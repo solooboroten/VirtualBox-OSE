@@ -1,4 +1,4 @@
-/* $Id: VBoxWatchdog.cpp 42211 2012-07-18 14:24:58Z vboxsync $ */
+/* $Id: VBoxWatchdog.cpp $ */
 /** @file
  * VBoxWatchdog.cpp - VirtualBox Watchdog.
  */

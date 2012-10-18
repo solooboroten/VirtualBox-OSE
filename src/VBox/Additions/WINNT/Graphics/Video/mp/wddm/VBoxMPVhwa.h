@@ -1,4 +1,4 @@
-/* $Id: VBoxMPVhwa.h 39981 2012-02-03 12:13:33Z vboxsync $ */
+/* $Id: VBoxMPVhwa.h $ */
 
 /** @file
  * VBox WDDM Miniport driver

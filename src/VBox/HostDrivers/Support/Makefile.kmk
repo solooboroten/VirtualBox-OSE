@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 43315 2012-09-12 18:08:57Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the support library and the drivers/modules/kexts it uses.
 #
@@ -298,7 +298,9 @@ if1of ($(KBUILD_TARGET), darwin linux solaris win)
 
  #VBoxDrv_LDFLAGS.darwin    = -v -Wl,-whyload -Wl,-v -Wl,-whatsloaded
  VBoxDrv_LDFLAGS.solaris += -N misc/ctf
- VBoxDrv_LDFLAGS.solaris += -N misc/dtrace
+ ifdef VBOX_WITH_NATIVE_DTRACE
+  VBoxDrv_LDFLAGS.solaris += -N drv/dtrace
+ endif
  VBoxDrv_LDFLAGS.win.x86  = -Entry:DriverEntry@8
  VBoxDrv_LDFLAGS.win.amd64= -Entry:DriverEntry
 

@@ -1,4 +1,4 @@
-/* $Id: ip_icmp.c 40582 2012-03-23 04:18:12Z vboxsync $ */
+/* $Id: ip_icmp.c $ */
 /** @file
  * NAT - IP/ICMP handling.
  */

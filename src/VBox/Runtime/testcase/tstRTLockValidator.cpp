@@ -1,4 +1,4 @@
-/* $Id: tstRTLockValidator.cpp 40624 2012-03-26 08:18:13Z vboxsync $ */
+/* $Id: tstRTLockValidator.cpp $ */
 /** @file
  * IPRT Testcase - RTLockValidator.
  */

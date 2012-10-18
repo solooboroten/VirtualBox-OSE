@@ -8,7 +8,7 @@
    subject to change. Applications should only use zlib.h.
  */
 
-/* @(#) $Id: zutil.h 40354 2012-03-05 13:39:00Z vboxsync $ */
+/* @(#) $Id: zutil.h $ */
 
 #ifndef ZUTIL_H
 #define ZUTIL_H

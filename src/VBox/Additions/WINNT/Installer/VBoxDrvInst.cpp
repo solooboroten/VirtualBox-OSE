@@ -1,4 +1,4 @@
-/* $Id: VBoxDrvInst.cpp 43033 2012-08-28 12:08:37Z vboxsync $ */
+/* $Id: VBoxDrvInst.cpp $ */
 /** @file
  * VBoxDrvInst - Driver and service installation helper for Windows guests.
  */

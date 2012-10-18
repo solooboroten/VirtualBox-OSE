@@ -1,4 +1,4 @@
-/* $Id: UIGlobalSettingsExtension.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
+/* $Id: UIGlobalSettingsExtension.cpp $ */
 /** @file
  * VBox Qt GUI - UIGlobalSettingsExtension class implementation.
  */

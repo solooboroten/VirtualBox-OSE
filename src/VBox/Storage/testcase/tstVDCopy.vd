@@ -1,4 +1,4 @@
-# $Id: tstVDCopy.vd 38469 2011-08-16 10:34:32Z vboxsync $
+# $Id: tstVDCopy.vd $
 #
 # Storage: Testcase for VDCopy with snapshots and optimizations.
 #

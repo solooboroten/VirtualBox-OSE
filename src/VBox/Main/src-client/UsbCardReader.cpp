@@ -1,4 +1,4 @@
-/* $Id: UsbCardReader.cpp 42433 2012-07-27 11:30:39Z vboxsync $ */
+/* $Id: UsbCardReader.cpp $ */
 
 /** @file
  * UsbCardReader - Driver Interface to USB Smart Card Reader emulation.

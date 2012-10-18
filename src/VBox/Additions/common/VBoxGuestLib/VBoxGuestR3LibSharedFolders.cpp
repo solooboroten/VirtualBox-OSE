@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibSharedFolders.cpp 41443 2012-05-25 07:52:59Z vboxsync $ */
+/* $Id: VBoxGuestR3LibSharedFolders.cpp $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, shared folders.
  */

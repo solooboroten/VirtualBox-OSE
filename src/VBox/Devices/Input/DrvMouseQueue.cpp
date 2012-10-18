@@ -1,4 +1,4 @@
-/* $Id: DrvMouseQueue.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvMouseQueue.cpp $ */
 /** @file
  * VBox input devices: Mouse queue driver
  */

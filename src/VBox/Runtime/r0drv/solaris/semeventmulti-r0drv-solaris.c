@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-r0drv-solaris.c 42835 2012-08-16 05:32:52Z vboxsync $ */
+/* $Id: semeventmulti-r0drv-solaris.c $ */
 /** @file
  * IPRT - Multiple Release Event Semaphores, Ring-0 Driver, Solaris.
  */

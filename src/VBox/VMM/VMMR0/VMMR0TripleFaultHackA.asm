@@ -1,4 +1,4 @@
-; $Id: VMMR0TripleFaultHackA.asm 43135 2012-08-31 12:18:50Z vboxsync $
+; $Id: VMMR0TripleFaultHackA.asm $
 ;; @file
 ; VMM - Host Context Ring 0, Assembly Code for The Triple Fault Debugging Hack.
 ;

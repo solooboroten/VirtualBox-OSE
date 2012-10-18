@@ -1,4 +1,4 @@
-/* $Id: VBoxUsbMon.h 38488 2011-08-18 10:26:06Z vboxsync $ */
+/* $Id: VBoxUsbMon.h $ */
 /** @file
  * VBox USB Monitor
  */

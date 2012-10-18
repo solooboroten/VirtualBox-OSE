@@ -1,4 +1,4 @@
-/* $Id: int-1.d 40974 2012-04-18 14:48:31Z vboxsync $ */
+/* $Id: int-1.d $ */
 /** @file
  * DTracing VBox - Interrupt Experiment #1.
  */

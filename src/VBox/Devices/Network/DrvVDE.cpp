@@ -1,4 +1,4 @@
-/* $Id: DrvVDE.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvVDE.cpp $ */
 /** @file
  * VDE network transport driver.
  */

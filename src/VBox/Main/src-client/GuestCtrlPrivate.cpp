@@ -1,4 +1,4 @@
-/* $Id: GuestCtrlPrivate.cpp 43162 2012-09-04 13:53:59Z vboxsync $ */
+/* $Id: GuestCtrlPrivate.cpp $ */
 /** @file
  *
  * Internal helpers/structures for guest control functionality.

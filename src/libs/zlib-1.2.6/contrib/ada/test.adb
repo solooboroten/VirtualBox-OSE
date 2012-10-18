@@ -6,7 +6,7 @@
 --  Open source license information is in the zlib.ads file.  --
 ----------------------------------------------------------------
 
---  $Id: test.adb 40354 2012-03-05 13:39:00Z vboxsync $
+--  $Id: test.adb $
 
 --  The program has a few aims.
 --  1. Test ZLib.Ada95 thick binding functionality.

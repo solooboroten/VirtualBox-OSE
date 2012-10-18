@@ -1,4 +1,4 @@
-/* $Id: UIGChooserHandlerKeyboard.cpp 43054 2012-08-28 17:49:54Z vboxsync $ */
+/* $Id: UIGChooserHandlerKeyboard.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

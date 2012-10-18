@@ -1,4 +1,4 @@
-; $Id: VBoxInstallHelper.def 40997 2012-04-19 19:54:24Z vboxsync $
+; $Id: VBoxInstallHelper.def $
 ;; @file
 ; VBoxInstallHelper - Defines the exports the MSI engine uses.
 ;

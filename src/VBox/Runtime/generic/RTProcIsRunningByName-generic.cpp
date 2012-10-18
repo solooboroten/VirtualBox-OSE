@@ -1,4 +1,4 @@
-/* $Id: RTProcIsRunningByName-generic.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: RTProcIsRunningByName-generic.cpp $ */
 /** @file
  * IPRT - RTProcIsRunningByName, generic stub.
  */

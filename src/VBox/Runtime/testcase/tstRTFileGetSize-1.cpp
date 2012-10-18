@@ -1,4 +1,4 @@
-/* $Id: tstRTFileGetSize-1.cpp 39327 2011-11-16 10:52:07Z vboxsync $ */
+/* $Id: tstRTFileGetSize-1.cpp $ */
 /** @file
  * IPRT Testcase - RTFileGetSize.
  */

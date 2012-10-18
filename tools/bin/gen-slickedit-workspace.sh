@@ -1,5 +1,5 @@
 # !kmk_ash
-# $Id: gen-slickedit-workspace.sh 41828 2012-06-19 14:34:32Z vboxsync $
+# $Id: gen-slickedit-workspace.sh $
 ## @file
 # Script for generating a SlickEdit workspace.
 #

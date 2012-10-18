@@ -1,4 +1,4 @@
-# $Id: Config.kmk 42363 2012-07-24 12:59:54Z vboxsync $
+# $Id: Config.kmk $
 ## @file
 # kBuild Configuration file for the Devices.
 #

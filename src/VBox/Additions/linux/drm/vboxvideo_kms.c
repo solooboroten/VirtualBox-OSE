@@ -1,4 +1,4 @@
-/** @file $Id: vboxvideo_kms.c 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo_kms.c $
  *
  * VirtualBox Additions Linux kernel video driver, KMS support
  */

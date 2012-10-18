@@ -1,4 +1,4 @@
-/* $Id: VBoxNetBaseService.h 39557 2011-12-08 05:55:10Z vboxsync $ */
+/* $Id: VBoxNetBaseService.h $ */
 /** @file
  * VBoxNetUDP - IntNet Client Library.
  */

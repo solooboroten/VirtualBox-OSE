@@ -1,4 +1,4 @@
-/* $Id: fdc.c 38821 2011-09-22 14:39:27Z vboxsync $ */
+/* $Id: fdc.c $ */
 /** @file
  * VBox storage devices: Floppy disk controller
  */

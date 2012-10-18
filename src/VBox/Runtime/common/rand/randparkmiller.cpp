@@ -1,4 +1,4 @@
-/* $Id: randparkmiller.cpp 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: randparkmiller.cpp $ */
 /** @file
  * IPRT - Random Numbers, Park-Miller Pseudo Random.
  */

@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInDiggers.cpp 40726 2012-03-30 12:04:07Z vboxsync $ */
+/* $Id: DBGPlugInDiggers.cpp $ */
 /** @file
  * DBGPlugInDiggers - Debugger and Guest OS Digger Plug-in.
  */

@@ -1,4 +1,4 @@
-/* $Id: tstLdrObjR0.cpp 41736 2012-06-15 00:39:37Z vboxsync $ */
+/* $Id: tstLdrObjR0.cpp $ */
 /** @file
  * IPRT - RTLdr test object.
  *

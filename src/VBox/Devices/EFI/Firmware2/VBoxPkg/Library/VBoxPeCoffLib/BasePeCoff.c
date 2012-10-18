@@ -1,4 +1,4 @@
-/* $Id: BasePeCoff.c 38952 2011-10-06 05:28:02Z vboxsync $ */
+/* $Id: BasePeCoff.c $ */
 /** @file
  * BasePeCoff.c
  */

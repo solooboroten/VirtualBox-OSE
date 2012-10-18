@@ -1,5 +1,5 @@
 
-/* $Id: GuestFileImpl.cpp 43162 2012-09-04 13:53:59Z vboxsync $ */
+/* $Id: GuestFileImpl.cpp $ */
 /** @file
  * VirtualBox Main - XXX.
  */

@@ -1,4 +1,4 @@
-/* $Id: Performance.cpp 40568 2012-03-21 16:11:19Z vboxsync $ */
+/* $Id: Performance.cpp $ */
 /** @file
  * VBox Performance Classes implementation.
  */
@@ -58,12 +58,27 @@ int CollectorHAL::getRawHostCpuLoad(uint64_t * /* user */, uint64_t * /* kernel 
     return E_NOTIMPL;
 }
 
+int CollectorHAL::getRawHostNetworkLoad(const char * /* name */, uint64_t * /* rx */, uint64_t * /* tx */)
+{
+    return E_NOTIMPL;
+}
+
+int CollectorHAL::getRawHostDiskLoad(const char * /* name */, uint64_t * /* disk_ms */, uint64_t * /* total_ms */)
+{
+    return E_NOTIMPL;
+}
+
 int CollectorHAL::getRawProcessCpuLoad(RTPROCESS  /* process */, uint64_t * /* user */, uint64_t * /* kernel */, uint64_t * /* total */)
 {
     return E_NOTIMPL;
 }
 
 int CollectorHAL::getHostMemoryUsage(ULONG * /* total */, ULONG * /* used */, ULONG * /* available */)
+{
+    return E_NOTIMPL;
+}
+
+int CollectorHAL::getHostFilesystemUsage(const char * /* name */, ULONG * /* total */, ULONG * /* used */, ULONG * /* available */)
 {
     return E_NOTIMPL;
 }
@@ -553,13 +568,32 @@ bool BaseMetric::collectorBeat(uint64_t nowAt)
 {
     if (isEnabled())
     {
-        if (nowAt - mLastSampleTaken >= mPeriod * 1000)
+        if (mLastSampleTaken == 0)
         {
             mLastSampleTaken = nowAt;
             Log4(("{%p} " LOG_FN_FMT ": Collecting %s for obj(%p)...\n",
                         this, __PRETTY_FUNCTION__, getName(), (void *)mObject));
             return true;
         }
+        /*
+         * We use low resolution timers which may fire just a little bit early.
+         * We compensate for that by jumping into the future by several
+         * milliseconds (see @bugref{6345}).
+         */
+        if (nowAt - mLastSampleTaken + PM_SAMPLER_PRECISION_MS >= mPeriod * 1000)
+        {
+            /*
+             * We don't want the beat to drift. This is why the timestamp of
+             * the last taken sample is not the actual time but the time we
+             * should have taken the measurement at.
+             */
+            mLastSampleTaken += mPeriod * 1000;
+            Log4(("{%p} " LOG_FN_FMT ": Collecting %s for obj(%p)...\n",
+                        this, __PRETTY_FUNCTION__, getName(), (void *)mObject));
+            return true;
+        }
+        Log4(("{%p} " LOG_FN_FMT ": Enabled but too early to collect %s for obj(%p)\n",
+              this, __PRETTY_FUNCTION__, getName(), (void *)mObject));
     }
     return false;
 }
@@ -625,6 +659,124 @@ void HostCpuLoadRaw::collect()
     }
 }
 
+void HostNetworkLoadRaw::init(ULONG period, ULONG length)
+{
+    mPeriod = period;
+    mLength = length;
+    mRx->init(mLength);
+    mTx->init(mLength);
+    int rc = mHAL->getRawHostNetworkLoad(mShortName.c_str(), &mRxPrev, &mTxPrev);
+    //AssertRC(rc);
+}
+
+void HostNetworkLoadRaw::preCollect(CollectorHints& /* hints */, uint64_t /* iTick */)
+{
+    if (RT_FAILURE(mRc))
+    {
+        ComPtr<IHostNetworkInterface> networkInterface;
+        ComPtr<IHost> host = getObject();
+        HRESULT hrc = host->FindHostNetworkInterfaceByName(com::Bstr(mInterfaceName).raw(), networkInterface.asOutParam());
+        if (SUCCEEDED(hrc))
+        {
+            LogRel(("Failed to collect network metrics for %s: %Rrc (%d).\n", mInterfaceName.c_str(), mRc, mRc));
+            mRc = VINF_SUCCESS;
+        }
+    }
+}
+
+void HostNetworkLoadRaw::collect()
+{
+    uint64_t rx, tx;
+
+    mRc = mHAL->getRawHostNetworkLoad(mShortName.c_str(), &rx, &tx);
+    if (RT_SUCCESS(mRc))
+    {
+        uint64_t rxDiff = rx - mRxPrev;
+        uint64_t txDiff = tx - mTxPrev;
+
+        if (RT_UNLIKELY(mSpeed * getPeriod() == 0))
+        {
+            LogFlowThisFunc(("Check cable for %s! speed=%llu period=%d.\n", mShortName.c_str(), mSpeed, getPeriod()));
+            mRx->put(0);
+            mTx->put(0);
+        }
+        else
+        {
+            mRx->put((ULONG)(PM_NETWORK_LOAD_MULTIPLIER * rxDiff / (mSpeed * getPeriod())));
+            mTx->put((ULONG)(PM_NETWORK_LOAD_MULTIPLIER * txDiff / (mSpeed * getPeriod())));
+        }
+
+        mRxPrev = rx;
+        mTxPrev = tx;
+    }
+    else
+        LogFlowThisFunc(("Failed to collect data: %Rrc (%d)."
+                         " Will update the list of interfaces...\n", mRc,mRc));
+}
+
+void HostDiskLoadRaw::init(ULONG period, ULONG length)
+{
+    mPeriod = period;
+    mLength = length;
+    mUtil->init(mLength);
+    int rc = mHAL->getRawHostDiskLoad(mDiskName.c_str(), &mDiskPrev, &mTotalPrev);
+    AssertRC(rc);
+}
+
+void HostDiskLoadRaw::preCollect(CollectorHints& hints, uint64_t /* iTick */)
+{
+    hints.collectHostCpuLoad();
+}
+
+void HostDiskLoadRaw::collect()
+{
+    uint64_t disk, total;
+
+    int rc = mHAL->getRawHostDiskLoad(mDiskName.c_str(), &disk, &total);
+    if (RT_SUCCESS(rc))
+    {
+        uint64_t diskDiff = disk - mDiskPrev;
+        uint64_t totalDiff = total - mTotalPrev;
+
+        if (RT_UNLIKELY(totalDiff == 0))
+        {
+            Assert(totalDiff);
+            LogFlowThisFunc(("Improbable! Less than millisecond passed! Disk=%s\n", mDiskName.c_str()));
+            mUtil->put(0);
+        }
+        else if (diskDiff > totalDiff)
+        {
+            /*
+             * It is possible that the disk spent more time than CPU because
+             * CPU measurements are taken during the pre-collect phase. We try
+             * to compensate for than by adding the extra to the next round of
+             * measurements.
+             */
+            mUtil->put(PM_NETWORK_LOAD_MULTIPLIER);
+            Assert((diskDiff - totalDiff) < mPeriod * 1000);
+            if ((diskDiff - totalDiff) > mPeriod * 1000)
+            {
+                LogRel(("Disk utilization time exceeds CPU time by more"
+                        " than the collection period (%llu ms)\n", diskDiff - totalDiff));
+            }
+            else
+            {
+                disk = mDiskPrev + totalDiff;
+                LogFlowThisFunc(("Moved %u milliseconds to the next period.\n", (unsigned)(diskDiff - totalDiff)));
+            }
+        }
+        else
+        {
+            mUtil->put((ULONG)(PM_NETWORK_LOAD_MULTIPLIER * diskDiff / totalDiff));
+        }
+
+        mDiskPrev = disk;
+        mTotalPrev = total;
+    }
+    else
+        LogFlowThisFunc(("Failed to collect data: %Rrc (%d).\n", rc));
+}
+
 void HostCpuMhz::init(ULONG period, ULONG length)
 {
     mPeriod = period;
@@ -658,6 +810,32 @@ void HostRamUsage::collect()
 {
     ULONG total, used, available;
     int rc = mHAL->getHostMemoryUsage(&total, &used, &available);
+    if (RT_SUCCESS(rc))
+    {
+        mTotal->put(total);
+        mUsed->put(used);
+        mAvailable->put(available);
+
+    }
+}
+
+void HostFilesystemUsage::init(ULONG period, ULONG length)
+{
+    mPeriod = period;
+    mLength = length;
+    mTotal->init(mLength);
+    mUsed->init(mLength);
+    mAvailable->init(mLength);
+}
+
+void HostFilesystemUsage::preCollect(CollectorHints& /* hints */, uint64_t /* iTick */)
+{
+}
+
+void HostFilesystemUsage::collect()
+{
+    ULONG total, used, available;
+    int rc = mHAL->getHostFilesystemUsage(mFsName.c_str(), &total, &used, &available);
     if (RT_SUCCESS(rc))
     {
         mTotal->put(total);
@@ -1072,6 +1250,11 @@ Filter::Filter(ComSafeArrayIn(IN_BSTR, metricNames),
     }
 }
 
+Filter::Filter(const com::Utf8Str name, const ComPtr<IUnknown> &aObject)
+{
+    processMetricList(name, aObject);
+}
+
 void Filter::init(ComSafeArrayIn(IN_BSTR, metricNames),
                   ComSafeArrayIn(IUnknown *, objects))
 {
@@ -1206,7 +1389,7 @@ bool Filter::match(const ComPtr<IUnknown> object, const RTCString &name) const
             // Objects match, compare names
             if (patternMatch((*it).second.c_str(), name.c_str()))
             {
-                LogFlowThisFunc(("...found!\n"));
+                //LogFlowThisFunc(("...found!\n"));
                 return true;
             }
         }

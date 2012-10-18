@@ -1,4 +1,4 @@
-/* $Id: tstRTSymlink.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
+/* $Id: tstRTSymlink.cpp $ */
 /** @file
  * IPRT Testcase - Symbolic Links.
  */

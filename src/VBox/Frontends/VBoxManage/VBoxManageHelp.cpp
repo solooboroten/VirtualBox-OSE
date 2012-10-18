@@ -1,4 +1,4 @@
-/* $Id: VBoxManageHelp.cpp 42460 2012-07-30 20:37:10Z vboxsync $ */
+/* $Id: VBoxManageHelp.cpp $ */
 /** @file
  * VBoxManage - help and other message output.
  */
@@ -360,8 +360,10 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
 #endif
                      "                            [--autostart-enabled on|off]\n"
                      "                            [--autostart-delay <seconds>]\n"
+#if 0 /* Disabled until the feature is implemented. */
                      "                            [--autostop-type disabled|savestate|poweroff|\n"
                      "                                             acpishutdown]\n"
+#endif
                      "\n");
     }
 
@@ -534,7 +536,6 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            [--add ide|sata|scsi|floppy|sas]\n"
                      "                            [--controller LSILogic|LSILogicSAS|BusLogic|\n"
                      "                                          IntelAHCI|PIIX3|PIIX4|ICH6|I82078]\n"
-                     "                            [--sataideemulation<1-4> <1-30>]\n"
                      "                            [--sataportcount <1-30>]\n"
                      "                            [--hostiocache on|off]\n"
                      "                            [--bootable on|off]\n"

@@ -1,4 +1,4 @@
-/* $Id: scmrw.cpp 40534 2012-03-19 11:49:34Z vboxsync $ */
+/* $Id: scmrw.cpp $ */
 /** @file
  * IPRT Testcase / Tool - Source Code Massager.
  */

@@ -1,4 +1,4 @@
-/* $Id: avl_RemoveNode.cpp.h 40053 2012-02-09 15:36:48Z vboxsync $ */
+/* $Id: avl_RemoveNode.cpp.h $ */
 /** @file
  * kAVLRemove2 - Remove specific node (by pointer) from an AVL tree.
  */

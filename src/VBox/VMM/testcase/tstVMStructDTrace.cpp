@@ -1,4 +1,4 @@
-/* $Id: tstVMStructDTrace.cpp 41268 2012-05-14 08:35:51Z vboxsync $ */
+/* $Id: tstVMStructDTrace.cpp $ */
 /** @file
  * tstVMMStructDTrace - Generates the DTrace test scripts for check that C/C++
  *                      and DTrace has the same understand of the VM, VMCPU and

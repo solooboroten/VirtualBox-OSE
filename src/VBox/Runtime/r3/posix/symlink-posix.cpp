@@ -1,4 +1,4 @@
-/* $Id: symlink-posix.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
+/* $Id: symlink-posix.cpp $ */
 /** @file
  * IPRT - Symbolic Links, POSIX.
  */

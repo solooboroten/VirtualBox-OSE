@@ -1,4 +1,4 @@
-/* $Id: ISCSI.cpp 42398 2012-07-25 15:26:56Z vboxsync $ */
+/* $Id: ISCSI.cpp $ */
 /** @file
  * iSCSI initiator driver, VD backend.
  */

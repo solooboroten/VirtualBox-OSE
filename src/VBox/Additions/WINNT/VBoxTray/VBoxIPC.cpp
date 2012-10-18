@@ -1,4 +1,4 @@
-/* $Id: VBoxIPC.cpp 35863 2011-02-07 10:59:08Z vboxsync $ */
+/* $Id: VBoxIPC.cpp $ */
 /** @file
  * VboxIPC - IPC thread.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxDispDbg.h 43236 2012-09-07 09:32:42Z vboxsync $ */
+/* $Id: VBoxDispDbg.h $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll

@@ -1,4 +1,4 @@
-/* $Id: HostNetworkInterfaceImpl.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: HostNetworkInterfaceImpl.cpp $ */
 
 /** @file
  *
@@ -21,6 +21,8 @@
 #include "AutoCaller.h"
 #include "Logging.h"
 #include "netif.h"
+#include "Performance.h"
+#include "PerformanceImpl.h"
 
 #include <iprt/cpp/utils.h>
 
@@ -84,6 +86,48 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, Bstr aShortName, Guid aG
     return S_OK;
 }
 
+void HostNetworkInterface::registerMetrics(PerformanceCollector *aCollector, ComPtr<IUnknown> objptr)
+{
+    LogFlowThisFunc(("mShortName={%ls}, mInterfaceName={%ls}, mGuid={%s}, mSpeedMbits=%u\n",
+                     mShortName.raw(), mInterfaceName.raw(), mGuid.toString().c_str(), m.speedMbits));
+    pm::CollectorHAL *hal = aCollector->getHAL();
+    /* Create sub metrics */
+    Utf8StrFmt strName("Net/%ls/Load", mShortName.raw());
+    pm::SubMetric *networkLoadRx   = new pm::SubMetric(strName + "/Rx",
+        "Percentage of network interface receive bandwidth used.");
+    pm::SubMetric *networkLoadTx   = new pm::SubMetric(strName + "/Tx",
+        "Percentage of network interface transmit bandwidth used.");
+
+    /* Create and register base metrics */
+    pm::BaseMetric *networkLoad = new pm::HostNetworkLoadRaw(hal, objptr, strName, Utf8Str(mShortName), Utf8Str(mInterfaceName), m.speedMbits, networkLoadRx, networkLoadTx);
+    aCollector->registerBaseMetric(networkLoad);
+
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx, 0));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx,
+                                              new pm::AggregateMax()));
+
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx, 0));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx,
+                                              new pm::AggregateMax()));
+}
+
+void HostNetworkInterface::unregisterMetrics(PerformanceCollector *aCollector, ComPtr<IUnknown> objptr)
+{
+    LogFlowThisFunc(("mShortName={%ls}, mInterfaceName={%ls}, mGuid={%s}\n",
+                     mShortName.raw(), mInterfaceName.raw(), mGuid.toString().c_str()));
+    Utf8StrFmt name("Net/%ls/Load", mShortName.raw());
+    aCollector->unregisterMetricsFor(objptr, name + "/*");
+    aCollector->unregisterBaseMetricsFor(objptr, name);
+}
+
 #ifdef VBOX_WITH_HOSTNETIF_API
 
 HRESULT HostNetworkInterface::updateConfig()
@@ -104,8 +148,8 @@ HRESULT HostNetworkInterface::updateConfig()
 #else /* !RT_OS_WINDOWS */
         m.mediumType = info.enmMediumType;
         m.status = info.enmStatus;
-
 #endif /* !RT_OS_WINDOWS */
+        m.speedMbits = info.uSpeedMbits;
         return S_OK;
     }
     return rc == VERR_NOT_IMPLEMENTED ? E_NOTIMPL : E_FAIL;
@@ -138,9 +182,15 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, HostNetworkInterfaceType
     unconst(mInterfaceName) = aInterfaceName;
     unconst(mGuid) = pIf->Uuid;
     if (pIf->szShortName[0])
+    {
         unconst(mNetworkName) = composeNetworkName(pIf->szShortName);
+        unconst(mShortName)   = pIf->szShortName;
+    }
     else
+    {
         unconst(mNetworkName) = composeNetworkName(aInterfaceName);
+        unconst(mShortName)   = aInterfaceName;
+    }
     mIfType = ifType;
 
     m.realIPAddress = m.IPAddress = pIf->IPAddress.u;
@@ -156,6 +206,7 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, HostNetworkInterfaceType
     m.mediumType = pIf->enmMediumType;
     m.status = pIf->enmStatus;
 #endif /* !RT_OS_WINDOWS */
+    m.speedMbits = pIf->uSpeedMbits;
 
     /* Confirm a successful initialization */
     autoInitSpan.setSucceeded();
@@ -552,6 +603,8 @@ HRESULT HostNetworkInterface::setVirtualBox(VirtualBox *pVBox)
 {
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
+    AssertReturn(mVBox != pVBox, S_OK);
+
     unconst(mVBox) = pVBox;
 
 #if !defined(RT_OS_WINDOWS)

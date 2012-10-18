@@ -1,4 +1,4 @@
-/* $Id: VSCSILun.cpp 38844 2011-09-23 12:25:21Z vboxsync $ */
+/* $Id: VSCSILun.cpp $ */
 /** @file
  * Virtual SCSI driver: LUN handling
  */

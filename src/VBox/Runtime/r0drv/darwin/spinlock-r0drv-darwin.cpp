@@ -1,4 +1,4 @@
-/* $Id: spinlock-r0drv-darwin.cpp 40806 2012-04-06 21:05:19Z vboxsync $ */
+/* $Id: spinlock-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - Spinlocks, Ring-0 Driver, Darwin.
  */

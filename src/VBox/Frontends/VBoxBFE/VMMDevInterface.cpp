@@ -1,4 +1,4 @@
-/* $Id: VMMDevInterface.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: VMMDevInterface.cpp $ */
 /** @file
  * VBox frontends: Basic Frontend (BFE):
  * Implementation of VMMDev: driver interface to VMM device

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42239 2012-07-19 20:40:31Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for VBoxCredProv test cases.
 #

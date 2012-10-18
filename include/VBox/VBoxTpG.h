@@ -1,4 +1,4 @@
-/* $Id: VBoxTpG.h 41343 2012-05-16 20:07:33Z vboxsync $ */
+/* $Id: VBoxTpG.h $ */
 /** @file
  * VBox Tracepoint Generator Structures.
  */

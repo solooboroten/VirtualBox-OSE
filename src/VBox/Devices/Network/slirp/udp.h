@@ -1,4 +1,4 @@
-/* $Id: udp.h 39894 2012-01-27 06:35:38Z vboxsync $ */
+/* $Id: udp.h $ */
 /** @file
  * NAT - UDP protocol (declarations/defines).
  */

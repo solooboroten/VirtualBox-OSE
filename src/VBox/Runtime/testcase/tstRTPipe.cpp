@@ -1,4 +1,4 @@
-/* $Id: tstRTPipe.cpp 39690 2011-12-30 13:06:50Z vboxsync $ */
+/* $Id: tstRTPipe.cpp $ */
 /** @file
  * IPRT Testcase - RTPipe.
  */

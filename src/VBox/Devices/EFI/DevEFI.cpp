@@ -1,4 +1,4 @@
-/* $Id: DevEFI.cpp 41284 2012-05-14 14:19:35Z vboxsync $ */
+/* $Id: DevEFI.cpp $ */
 /** @file
  * DevEFI - EFI <-> VirtualBox Integration Framework.
  */

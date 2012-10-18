@@ -1,4 +1,4 @@
-; $Id: HWACCMRCA.asm 42815 2012-08-15 04:11:49Z vboxsync $
+; $Id: HWACCMRCA.asm $
 ;; @file
 ; VMXM - GC vmx helpers
 ;

@@ -1,4 +1,4 @@
-/* $Id: dnsproxy.c 40423 2012-03-11 03:22:22Z vboxsync $ */
+/* $Id: dnsproxy.c $ */
 /*
  * Copyright (c) 2003,2004,2005 Armin Wolfermann
  *

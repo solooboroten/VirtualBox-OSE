@@ -1,4 +1,4 @@
-/* $Id: DBGCInternal.h 41561 2012-06-04 12:10:19Z vboxsync $ */
+/* $Id: DBGCInternal.h $ */
 /** @file
  * DBGC - Debugger Console, Internal Header File.
  */

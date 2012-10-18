@@ -2026,6 +2026,53 @@
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt; {1 %2&lt;?}</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -4554,19 +4601,19 @@
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>Controlador IDE</translation>
+        <translation type="obsolete">Controlador IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>Controlador SATA</translation>
+        <translation type="obsolete">Controlador SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>Controlador SCSI</translation>
+        <translation type="obsolete">Controlador SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Controlador de Disquete</translation>
+        <translation type="obsolete">Controlador de Disquete</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -4658,7 +4705,7 @@
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>Controlador SAS</translation>
+        <translation type="obsolete">Controlador SAS</translation>
     </message>
     <message>
         <source>Type:</source>
@@ -4776,6 +4823,10 @@
     </message>
     <message>
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -8529,23 +8580,23 @@ diálogo de Configurações da MV.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation type="unfinished">Controlador IDE</translation>
+        <translation type="obsolete">Controlador IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation type="unfinished">Controlador SATA</translation>
+        <translation type="obsolete">Controlador SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation type="unfinished">Controlador SCSI</translation>
+        <translation type="obsolete">Controlador SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation type="unfinished">Controlador de Disquete</translation>
+        <translation type="obsolete">Controlador de Disquete</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation type="unfinished">Controlador SAS</translation>
+        <translation type="obsolete">Controlador SAS</translation>
     </message>
     <message>
         <source>Name and operating system</source>

@@ -1,4 +1,4 @@
-/* $Id: filteraudio.c 39104 2011-10-25 06:36:29Z vboxsync $ */
+/* $Id: filteraudio.c $ */
 /** @file
  * VBox audio devices: filter driver, which sits between the host audio driver
  * and the virtual audio device and intercept all host driver operations.

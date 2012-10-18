@@ -2417,6 +2417,53 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt; {1 %2&lt;?}</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -5312,19 +5359,19 @@ serial ports</comment>
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>IDE-styrkort</translation>
+        <translation type="obsolete">IDE-styrkort</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>SATA-styrkort</translation>
+        <translation type="obsolete">SATA-styrkort</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>SCSI-styrkort</translation>
+        <translation type="obsolete">SCSI-styrkort</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Diskettstyrkort</translation>
+        <translation type="obsolete">Diskettstyrkort</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -5444,7 +5491,7 @@ serial ports</comment>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>SAS-styrkort</translation>
+        <translation type="obsolete">SAS-styrkort</translation>
     </message>
     <message>
         <source>Storage Controller</source>
@@ -5579,6 +5626,10 @@ serial ports</comment>
     <message>
         <source>When checked the guest system will see the virtual disk as a solid state device.</source>
         <translation>När kryssad kommer gästsystemet att se den virtuella disken som en Solid-State-enhet.</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -9715,23 +9766,23 @@ serial ports</comment>
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation type="unfinished">IDE-styrkort</translation>
+        <translation type="obsolete">IDE-styrkort</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation type="unfinished">SATA-styrkort</translation>
+        <translation type="obsolete">SATA-styrkort</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation type="unfinished">SCSI-styrkort</translation>
+        <translation type="obsolete">SCSI-styrkort</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation type="unfinished">Diskettstyrkort</translation>
+        <translation type="obsolete">Diskettstyrkort</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation type="unfinished">SAS-styrkort</translation>
+        <translation type="obsolete">SAS-styrkort</translation>
     </message>
     <message>
         <source>Name and operating system</source>

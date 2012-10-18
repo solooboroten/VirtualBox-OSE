@@ -1,4 +1,4 @@
-/* $Id: PGMAllPool.cpp 43197 2012-09-05 10:45:32Z vboxsync $ */
+/* $Id: PGMAllPool.cpp $ */
 /** @file
  * PGM Shadow Page Pool.
  */

@@ -1,4 +1,4 @@
-/* $Id: DisasmFormatYasm.cpp 42369 2012-07-24 13:55:34Z vboxsync $ */
+/* $Id: DisasmFormatYasm.cpp $ */
 /** @file
  * VBox Disassembler - Yasm(/Nasm) Style Formatter.
  */

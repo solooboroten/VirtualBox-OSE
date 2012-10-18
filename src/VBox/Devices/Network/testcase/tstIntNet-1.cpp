@@ -1,4 +1,4 @@
-/* $Id: tstIntNet-1.cpp 41414 2012-05-23 12:37:28Z vboxsync $ */
+/* $Id: tstIntNet-1.cpp $ */
 /** @file
  * VBox - Testcase for internal networking, simple NetFlt trunk creation.
  */
@@ -749,7 +749,7 @@ int main(int argc, char **argv)
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: 41414 $\n");
+                RTPrintf("$Revision: 78135 $\n");
                 return 0;
 
             default:

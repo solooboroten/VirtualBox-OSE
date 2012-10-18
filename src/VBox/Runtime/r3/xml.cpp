@@ -1,4 +1,4 @@
-/* $Id: xml.cpp 39933 2012-02-01 13:45:02Z vboxsync $ */
+/* $Id: xml.cpp $ */
 /** @file
  * IPRT - XML Manipulation API.
  */

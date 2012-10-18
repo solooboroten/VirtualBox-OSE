@@ -1,4 +1,4 @@
-/* $Id: VBoxMF.h 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: VBoxMF.h $ */
 /** @file
  * VBox Mouse filter header
  */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42423 2012-07-26 18:41:09Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Linux installer.
 #
@@ -124,6 +124,7 @@ VBOX_LNX_STRIP_BIN = \
 	$(if $(VBOX_WITH_SHARED_FOLDERS), VBoxSharedFolders.so,) \
 	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestPropSvc.so,) \
 	$(if $(VBOX_WITH_GUEST_CONTROL),VBoxGuestControlSvc.so,) \
+	VBoxHostChannel.so \
 	$(if $(VBOX_WITH_DRAG_AND_DROP),VBoxDragAndDropSvc.so,) \
 	$(if $(VBOX_WITH_MAIN), \
 		VBoxAutostart \

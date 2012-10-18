@@ -1,4 +1,4 @@
-/* $Id: DrvNetShaper.cpp 42102 2012-07-11 10:52:50Z vboxsync $ */
+/* $Id: DrvNetShaper.cpp $ */
 /** @file
  * NetShaperFilter - Network shaper filter driver.
  */

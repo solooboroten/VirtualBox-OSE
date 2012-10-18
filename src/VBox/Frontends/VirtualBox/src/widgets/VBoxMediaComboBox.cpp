@@ -1,4 +1,4 @@
-/* $Id: VBoxMediaComboBox.cpp 41615 2012-06-07 16:55:08Z vboxsync $ */
+/* $Id: VBoxMediaComboBox.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

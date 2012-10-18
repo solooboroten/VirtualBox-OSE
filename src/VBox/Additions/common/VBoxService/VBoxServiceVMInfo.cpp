@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceVMInfo.cpp 43230 2012-09-06 15:34:30Z vboxsync $ */
+/* $Id: VBoxServiceVMInfo.cpp $ */
 /** @file
  * VBoxService - Virtual Machine Information for the Host.
  */

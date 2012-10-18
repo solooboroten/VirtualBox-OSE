@@ -1,4 +1,4 @@
-/* $Id: vboxfs_prov.h 39297 2011-11-14 16:46:52Z vboxsync $ */
+/* $Id: vboxfs_prov.h $ */
 /** @file
  * VirtualBox File System for Solaris Guests, provider header.
  * Portions contributed by: Ronald.

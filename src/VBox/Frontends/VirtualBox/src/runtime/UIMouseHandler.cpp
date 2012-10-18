@@ -1,4 +1,4 @@
-/* $Id: UIMouseHandler.cpp 42261 2012-07-20 13:27:47Z vboxsync $ */
+/* $Id: UIMouseHandler.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

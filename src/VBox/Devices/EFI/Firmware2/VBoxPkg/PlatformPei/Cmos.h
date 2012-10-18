@@ -1,4 +1,4 @@
-/* $Id: Cmos.h 42405 2012-07-26 07:04:37Z vboxsync $ */
+/* $Id: Cmos.h $ */
 /** @file
  * Cmos.h
  */

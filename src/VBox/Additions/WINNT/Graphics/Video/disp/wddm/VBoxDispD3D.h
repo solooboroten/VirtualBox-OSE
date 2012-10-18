@@ -1,4 +1,4 @@
-/* $Id: VBoxDispD3D.h 43236 2012-09-07 09:32:42Z vboxsync $ */
+/* $Id: VBoxDispD3D.h $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
@@ -117,7 +117,9 @@ typedef struct VBOXWDDMDISP_STREAM_SOURCE_INFO
 
 typedef struct VBOXWDDMDISP_INDICES_INFO
 {
-  UINT   uiStride;
+    struct VBOXWDDMDISP_ALLOCATION *pIndicesAlloc;
+    const void *pvIndicesUm;
+    UINT uiStride;
 } VBOXWDDMDISP_INDICES_INFO;
 
 typedef struct VBOXWDDMDISP_RENDERTGT_FLAGS
@@ -191,11 +193,10 @@ typedef struct VBOXWDDMDISP_DEVICE
     D3DDDI_CREATEDEVICEFLAGS fFlags;
     /* number of StreamSources set */
     UINT cStreamSources;
+    UINT cStreamSourcesUm;
     VBOXWDDMDISP_STREAMSOURCEUM aStreamSourceUm[VBOXWDDMDISP_MAX_VERTEX_STREAMS];
     struct VBOXWDDMDISP_ALLOCATION *aStreamSource[VBOXWDDMDISP_MAX_VERTEX_STREAMS];
     VBOXWDDMDISP_STREAM_SOURCE_INFO StreamSourceInfo[VBOXWDDMDISP_MAX_VERTEX_STREAMS];
-    VBOXWDDMDISP_INDICIESUM IndiciesUm;
-    struct VBOXWDDMDISP_ALLOCATION *pIndicesAlloc;
     VBOXWDDMDISP_INDICES_INFO IndiciesInfo;
     /* need to cache the ViewPort data because IDirect3DDevice9::SetViewport
      * is split into two calls : SetViewport & SetZRange */
@@ -233,7 +234,10 @@ typedef struct VBOXWDDMDISP_LOCKINFO
         D3DDDIBOX  Box;
     };
     D3DDDI_LOCKFLAGS fFlags;
-    D3DLOCKED_RECT LockedRect;
+    union {
+        D3DLOCKED_RECT LockedRect;
+        D3DLOCKED_BOX LockedBox;
+    };
 #ifdef VBOXWDDMDISP_DEBUG
     PVOID pvData;
 #endif
@@ -245,6 +249,7 @@ typedef enum
     VBOXDISP_D3DIFTYPE_SURFACE,
     VBOXDISP_D3DIFTYPE_TEXTURE,
     VBOXDISP_D3DIFTYPE_CUBE_TEXTURE,
+    VBOXDISP_D3DIFTYPE_VOLUME_TEXTURE,
     VBOXDISP_D3DIFTYPE_VERTEXBUFFER,
     VBOXDISP_D3DIFTYPE_INDEXBUFFER
 } VBOXDISP_D3DIFTYPE;

@@ -1,4 +1,4 @@
-/* $Id: FTMAll.cpp 41801 2012-06-17 16:46:51Z vboxsync $ */
+/* $Id: FTMAll.cpp $ */
 /** @file
  * FTM - Fault Tolerance Manager - All contexts
  */

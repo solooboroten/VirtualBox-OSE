@@ -1,4 +1,4 @@
-/* $Id: VBox-doc.c 41857 2012-06-21 09:12:56Z vboxsync $ */
+/* $Id: VBox-doc.c $ */
 /** @file
  * VirtualBox Top Level Documentation File.
  */

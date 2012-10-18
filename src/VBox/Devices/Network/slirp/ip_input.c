@@ -1,4 +1,4 @@
-/* $Id: ip_input.c 41969 2012-06-29 03:46:00Z vboxsync $ */
+/* $Id: ip_input.c $ */
 /** @file
  * NAT - IP input.
  */

@@ -1,4 +1,4 @@
-/* $Id: UIGMachinePreview.cpp 42686 2012-08-08 15:24:24Z vboxsync $ */
+/* $Id: UIGMachinePreview.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

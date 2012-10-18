@@ -1,4 +1,4 @@
-/* $Id: semeventwait-r0drv-solaris.h 41774 2012-06-16 14:44:06Z vboxsync $ */
+/* $Id: semeventwait-r0drv-solaris.h $ */
 /** @file
  * IPRT - Solaris Ring-0 Driver Helpers for Event Semaphore Waits.
  */

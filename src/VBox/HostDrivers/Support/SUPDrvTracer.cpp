@@ -1,4 +1,4 @@
-/* $Id: SUPDrvTracer.cpp 42011 2012-07-04 05:25:31Z vboxsync $ */
+/* $Id: SUPDrvTracer.cpp $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Tracer Interface.
  */

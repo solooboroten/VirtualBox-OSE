@@ -1,4 +1,4 @@
-/* $Id: process-win.cpp 42077 2012-07-10 08:37:08Z vboxsync $ */
+/* $Id: process-win.cpp $ */
 /** @file
  * IPRT - Process, Windows.
  */

@@ -1,4 +1,4 @@
-/* $Id: DBGFStack.cpp 42449 2012-07-30 15:10:30Z vboxsync $ */
+/* $Id: DBGFStack.cpp $ */
 /** @file
  * DBGF - Debugger Facility, Call Stack Analyser.
  */

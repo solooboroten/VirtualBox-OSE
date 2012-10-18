@@ -1,4 +1,4 @@
-/* $Id: PDMAsyncCompletionInternal.h 41777 2012-06-16 18:49:15Z vboxsync $ */
+/* $Id: PDMAsyncCompletionInternal.h $ */
 /** @file
  * PDM - Pluggable Device Manager, Async I/O Completion internal header.
  */

@@ -1,4 +1,4 @@
-/* $Id: AutostartDb-generic.cpp 42491 2012-08-01 07:09:11Z vboxsync $ */
+/* $Id: AutostartDb-generic.cpp $ */
 /** @file
  * VirtualBox Main - Autostart implementation.
  */

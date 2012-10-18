@@ -1,4 +1,4 @@
-/* $Id: VBoxMPHGSMI.cpp 40566 2012-03-21 14:12:23Z vboxsync $ */
+/* $Id: VBoxMPHGSMI.cpp $ */
 
 /** @file
  * VBox Miniport HGSMI related functions

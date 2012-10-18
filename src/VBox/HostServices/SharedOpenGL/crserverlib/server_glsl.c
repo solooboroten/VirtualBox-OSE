@@ -1,4 +1,4 @@
-/* $Id: server_glsl.c 41928 2012-06-27 16:06:23Z vboxsync $ */
+/* $Id: server_glsl.c $ */
 
 /** @file
  * VBox OpenGL: GLSL related functions

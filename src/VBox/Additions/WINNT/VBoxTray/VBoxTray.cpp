@@ -1,4 +1,4 @@
-/* $Id: VBoxTray.cpp 42003 2012-07-03 14:57:45Z vboxsync $ */
+/* $Id: VBoxTray.cpp $ */
 /** @file
  * VBoxTray - Guest Additions Tray Application
  */
@@ -31,7 +31,6 @@
 #include "VBoxSharedFolders.h"
 #include "VBoxIPC.h"
 #include "VBoxLA.h"
-#include "VBoxMMR.h"
 #include <VBoxHook.h>
 #include "resource.h"
 #include <malloc.h>
@@ -114,14 +113,6 @@ static VBOXSERVICEINFO vboxServiceTable[] =
         VBoxLAThread,
         VBoxLADestroy
     },
-#ifdef VBOX_WITH_MMR
-    {
-        "Multimedia Redirection",
-        VBoxMMRInit,
-        VBoxMMRThread,
-        VBoxMMRDestroy
-    },
-#endif
     {
         NULL
     }

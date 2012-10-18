@@ -1,4 +1,4 @@
-/* $Id: alloc-r0drv-solaris.c 40968 2012-04-17 17:35:53Z vboxsync $ */
+/* $Id: alloc-r0drv-solaris.c $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver, Solaris.
  */

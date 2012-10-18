@@ -1,4 +1,4 @@
-/* $Id: tstDBGCParser.cpp 41571 2012-06-04 19:49:03Z vboxsync $ */
+/* $Id: tstDBGCParser.cpp $ */
 /** @file
  * DBGC Testcase - Command Parser.
  */

@@ -1,4 +1,4 @@
-/* $Id: service.cpp 42354 2012-07-24 12:13:00Z vboxsync $ */
+/* $Id: service.cpp $ */
 /** @file
  * Guest Control Service: Controlling the guest.
  */

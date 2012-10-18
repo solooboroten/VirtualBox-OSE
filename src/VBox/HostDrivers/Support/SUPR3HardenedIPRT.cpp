@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedIPRT.cpp 39091 2011-10-24 13:58:22Z vboxsync $ */
+/* $Id: SUPR3HardenedIPRT.cpp $ */
 /** @file
  * VirtualBox Support Library - Hardened Support Routines using IPRT.
  */

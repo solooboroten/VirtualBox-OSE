@@ -1,4 +1,4 @@
-/* $Id: DevLPC.cpp 39135 2011-10-28 09:47:55Z vboxsync $ */
+/* $Id: DevLPC.cpp $ */
 /** @file
  * DevLPC - LPC device emulation
  */

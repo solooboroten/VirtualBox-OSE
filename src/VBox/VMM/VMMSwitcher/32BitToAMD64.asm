@@ -1,4 +1,4 @@
-; $Id: 32BitToAMD64.asm 41933 2012-06-27 18:37:33Z vboxsync $
+; $Id: 32BitToAMD64.asm $
 ;; @file
 ; VMM - World Switchers, 32-Bit to AMD64
 ;

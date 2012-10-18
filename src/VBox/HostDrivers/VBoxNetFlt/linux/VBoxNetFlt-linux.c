@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFlt-linux.c 41774 2012-06-16 14:44:06Z vboxsync $ */
+/* $Id: VBoxNetFlt-linux.c $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Linux Specific Code.
  */

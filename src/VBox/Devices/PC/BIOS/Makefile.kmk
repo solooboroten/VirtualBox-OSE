@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42770 2012-08-11 17:03:21Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the New BIOS ROM.
 #

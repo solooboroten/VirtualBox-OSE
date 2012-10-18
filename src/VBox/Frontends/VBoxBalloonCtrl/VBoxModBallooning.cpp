@@ -1,4 +1,4 @@
-/* $Id: VBoxModBallooning.cpp 41602 2012-06-06 16:44:14Z vboxsync $ */
+/* $Id: VBoxModBallooning.cpp $ */
 /** @file
  * VBoxModBallooning - Module for handling the automatic ballooning of VMs.
  */

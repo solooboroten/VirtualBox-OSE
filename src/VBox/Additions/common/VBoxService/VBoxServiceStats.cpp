@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceStats.cpp 40128 2012-02-14 12:56:40Z vboxsync $ */
+/* $Id: VBoxServiceStats.cpp $ */
 /** @file
  * VBoxStats - Guest statistics notification
  */

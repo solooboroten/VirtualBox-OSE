@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromWin32.cpp 39801 2012-01-18 18:01:11Z vboxsync $ */
+/* $Id: RTErrConvertFromWin32.cpp $ */
 /** @file
  * IPRT - Convert win32 error codes to iprt status codes.
  */

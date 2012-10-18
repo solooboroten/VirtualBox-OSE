@@ -1,4 +1,4 @@
-/* $Id: VBoxMPIOCTL.cpp 40566 2012-03-21 14:12:23Z vboxsync $ */
+/* $Id: VBoxMPIOCTL.cpp $ */
 
 /** @file
  * VBox XPDM Miniport IOCTL handlers

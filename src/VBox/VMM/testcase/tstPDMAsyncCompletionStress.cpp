@@ -1,4 +1,4 @@
-/* $Id: tstPDMAsyncCompletionStress.cpp 39084 2011-10-22 00:37:15Z vboxsync $ */
+/* $Id: tstPDMAsyncCompletionStress.cpp $ */
 /** @file
  * PDM Asynchronous Completion Stresstest.
  *

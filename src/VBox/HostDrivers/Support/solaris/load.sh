@@ -1,5 +1,5 @@
 #!/bin/bash
-# $Id: load.sh 40618 2012-03-25 19:51:16Z vboxsync $
+# $Id: load.sh $
 ## @file
 # For development.
 #

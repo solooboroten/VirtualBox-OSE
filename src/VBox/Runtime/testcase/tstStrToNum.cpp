@@ -1,4 +1,4 @@
-/* $Id: tstStrToNum.cpp 40627 2012-03-26 09:02:42Z vboxsync $ */
+/* $Id: tstStrToNum.cpp $ */
 /** @file
  * IPRT Testcase - String To Number Conversion.
  */

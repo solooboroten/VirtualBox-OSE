@@ -1,4 +1,4 @@
-/* $Id: DrvIntNet.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvIntNet.cpp $ */
 /** @file
  * DrvIntNet - Internal network transport driver.
  */

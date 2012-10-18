@@ -1,4 +1,4 @@
-/* $Id: RTProcDaemonize-generic.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: RTProcDaemonize-generic.cpp $ */
 /** @file
  * IPRT - RTProcDaemonize, generic implementation.
  */

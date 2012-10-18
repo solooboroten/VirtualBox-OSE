@@ -1,4 +1,4 @@
-/* $Id: mp-darwin.cpp 41774 2012-06-16 14:44:06Z vboxsync $ */
+/* $Id: mp-darwin.cpp $ */
 /** @file
  * IPRT - Multiprocessor, Darwin.
  */

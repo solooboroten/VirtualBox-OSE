@@ -1,4 +1,4 @@
-/* $Id: ctl.h 42070 2012-07-10 05:02:49Z vboxsync $ */
+/* $Id: ctl.h $ */
 /** @file
  * NAT - IP subnet constants.
  */

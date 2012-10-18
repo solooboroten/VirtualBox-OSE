@@ -1,4 +1,4 @@
-/* $Id: DevVGATmpl.h 39091 2011-10-24 13:58:22Z vboxsync $ */
+/* $Id: DevVGATmpl.h $ */
 /** @file
  * DevVGA - VBox VGA/VESA device, code templates.
  */

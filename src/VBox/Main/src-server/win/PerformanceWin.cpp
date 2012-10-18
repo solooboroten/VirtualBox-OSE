@@ -1,4 +1,4 @@
-/* $Id: PerformanceWin.cpp 35368 2010-12-30 13:38:23Z vboxsync $ */
+/* $Id: PerformanceWin.cpp $ */
 
 /** @file
  *
@@ -346,6 +346,11 @@ int CollectorWin::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
     }
     *used = (ULONG)(it->second.ramUsed / 1024);
     return VINF_SUCCESS;
+}
+
+int getDiskListByFs(const char *name, DiskList& list)
+{
+    return VERR_NOT_IMPLEMENTED;
 }
 
 }

@@ -1,4 +1,4 @@
-/* $Id: DevFwCommon.cpp 40277 2012-02-28 14:10:07Z vboxsync $ */
+/* $Id: DevFwCommon.cpp $ */
 /** @file
  * FwCommon - Shared firmware code (used by DevPcBios & DevEFI).
  */

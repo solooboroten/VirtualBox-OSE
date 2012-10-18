@@ -1,4 +1,4 @@
-/* $Id: VBoxAutostartStart.cpp 42732 2012-08-09 22:32:48Z vboxsync $ */
+/* $Id: VBoxAutostartStart.cpp $ */
 /** @file
  * VBoxAutostart - VirtualBox Autostart service, start machines during system boot.
  */

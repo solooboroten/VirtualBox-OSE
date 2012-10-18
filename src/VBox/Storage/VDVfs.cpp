@@ -1,4 +1,4 @@
-/* $Id: VDVfs.cpp 43121 2012-08-30 18:36:48Z vboxsync $ */
+/* $Id: VDVfs.cpp $ */
 /** @file
  * Virtual Disk Container implementation. - VFS glue.
  */

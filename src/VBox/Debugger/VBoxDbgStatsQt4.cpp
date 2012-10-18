@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgStatsQt4.cpp 39917 2012-01-31 14:04:52Z vboxsync $ */
+/* $Id: VBoxDbgStatsQt4.cpp $ */
 /** @file
  * VBox Debugger GUI - Statistics.
  */

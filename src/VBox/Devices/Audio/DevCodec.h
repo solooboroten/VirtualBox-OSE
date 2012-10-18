@@ -1,4 +1,4 @@
-/* $Id: DevCodec.h 39368 2011-11-18 15:19:35Z vboxsync $ */
+/* $Id: DevCodec.h $ */
 /** @file
  * DevCodec - VBox ICH Intel HD Audio Codec.
  */

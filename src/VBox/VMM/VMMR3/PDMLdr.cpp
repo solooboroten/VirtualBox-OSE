@@ -1,4 +1,4 @@
-/* $Id: PDMLdr.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: PDMLdr.cpp $ */
 /** @file
  * PDM - Pluggable Device Manager, module loader.
  */

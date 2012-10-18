@@ -1,4 +1,4 @@
-/* $Id: tstGuestCtrlContextID.cpp 43036 2012-08-28 13:22:39Z vboxsync $ */
+/* $Id: tstGuestCtrlContextID.cpp $ */
 
 /** @file
  *

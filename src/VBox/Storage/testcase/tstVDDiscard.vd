@@ -1,4 +1,4 @@
-# $Id: tstVDDiscard.vd 39520 2011-12-02 21:17:42Z vboxsync $
+# $Id: tstVDDiscard.vd $
 #
 # Storage: Testcase for discarding data in a disk.
 #

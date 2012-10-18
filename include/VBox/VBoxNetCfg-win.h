@@ -1,4 +1,4 @@
-/* $Id: VBoxNetCfg-win.h 40993 2012-04-19 14:25:38Z vboxsync $ */
+/* $Id: VBoxNetCfg-win.h $ */
 /** @file
  * Network Configuration API for Windows platforms.
  */

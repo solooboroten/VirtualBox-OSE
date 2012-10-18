@@ -1,4 +1,4 @@
-/* $Id: fsw_core.h 42741 2012-08-10 07:11:09Z vboxsync $ */
+/* $Id: fsw_core.h $ */
 /** @file
  * fsw_core.h - Core file system wrapper abstraction layer header.
  */

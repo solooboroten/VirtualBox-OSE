@@ -1,4 +1,4 @@
-/* $Id: VBoxDispProfile.h 41637 2012-06-09 12:57:58Z vboxsync $ */
+/* $Id: VBoxDispProfile.h $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll

@@ -1,4 +1,4 @@
-/* $Id: QIRichTextLabel.cpp 41151 2012-05-03 21:43:01Z vboxsync $ */
+/* $Id: QIRichTextLabel.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

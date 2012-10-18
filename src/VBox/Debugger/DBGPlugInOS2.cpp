@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInOS2.cpp 40728 2012-03-30 14:42:08Z vboxsync $ */
+/* $Id: DBGPlugInOS2.cpp $ */
 /** @file
  * DBGPlugInOS2 - Debugger and Guest OS Digger Plugin For OS/2.
  */

@@ -1,4 +1,4 @@
-/* $Id: uri.cpp 39447 2011-11-29 10:02:42Z vboxsync $ */
+/* $Id: uri.cpp $ */
 /** @file
  * IPRT - Uniform Resource Identifier handling.
  */

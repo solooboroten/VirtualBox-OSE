@@ -2089,6 +2089,50 @@
     </message>
 </context>
 <context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished">&lt;nobr&gt;%1&lt;/nobr&gt; {1 %2&lt;?}</translation>
+    </message>
+</context>
+<context>
     <name>UIGChooserModel</name>
     <message>
         <source>New group</source>
@@ -4494,19 +4538,19 @@
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation>Pengendali IDE</translation>
+        <translation type="obsolete">Pengendali IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation>Pengendali SATA</translation>
+        <translation type="obsolete">Pengendali SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation>Pengendali SCSI</translation>
+        <translation type="obsolete">Pengendali SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation>Pengendali Floppy</translation>
+        <translation type="obsolete">Pengendali Floppy</translation>
     </message>
     <message>
         <source>Hard &amp;Disk:</source>
@@ -4598,7 +4642,7 @@
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation>Pengendali SAS</translation>
+        <translation type="obsolete">Pengendali SAS</translation>
     </message>
     <message>
         <source>Type:</source>
@@ -4717,6 +4761,10 @@
     <message>
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
         <translation>Pilih cacah port dari pengendali penyimpanan SATA yang kini dipilih dalam Pohon Penyimpanan. Ini mesti paling tidak lebih satu daripada nomor port tertinggi yang Anda perlu pergunakan.</translation>
+    </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -8494,23 +8542,23 @@ langkah ini dan memasang hard disk pada waktu lain menggunakan dialog Setting Me
     </message>
     <message>
         <source>IDE Controller</source>
-        <translation type="unfinished">Pengendali IDE</translation>
+        <translation type="obsolete">Pengendali IDE</translation>
     </message>
     <message>
         <source>SATA Controller</source>
-        <translation type="unfinished">Pengendali SATA</translation>
+        <translation type="obsolete">Pengendali SATA</translation>
     </message>
     <message>
         <source>SCSI Controller</source>
-        <translation type="unfinished">Pengendali SCSI</translation>
+        <translation type="obsolete">Pengendali SCSI</translation>
     </message>
     <message>
         <source>Floppy Controller</source>
-        <translation type="unfinished">Pengendali Floppy</translation>
+        <translation type="obsolete">Pengendali Floppy</translation>
     </message>
     <message>
         <source>SAS Controller</source>
-        <translation type="unfinished">Pengendali SAS</translation>
+        <translation type="obsolete">Pengendali SAS</translation>
     </message>
     <message>
         <source>Name and operating system</source>

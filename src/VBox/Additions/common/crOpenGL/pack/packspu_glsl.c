@@ -1,4 +1,4 @@
-/* $Id: packspu_glsl.c 42528 2012-08-02 11:32:51Z vboxsync $ */
+/* $Id: packspu_glsl.c $ */
 
 /** @file
  * VBox OpenGL GLSL related functions

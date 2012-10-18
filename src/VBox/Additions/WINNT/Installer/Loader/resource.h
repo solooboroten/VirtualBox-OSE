@@ -1,4 +1,4 @@
-/* $Id: resource.h 31661 2010-08-13 15:49:24Z vboxsync $ */
+/* $Id: resource.h $ */
 /** @file
  * AutoStartMenu - resource header file.
  */

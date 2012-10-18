@@ -1,4 +1,4 @@
-/* $Id: cr_glsl.h 43051 2012-08-28 15:35:26Z vboxsync $ */
+/* $Id: cr_glsl.h $ */
 
 /** @file
  * VBox crOpenGL: GLSL related state info

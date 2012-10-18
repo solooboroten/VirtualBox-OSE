@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFltRt-win.cpp 41005 2012-04-20 13:09:52Z vboxsync $ */
+/* $Id: VBoxNetFltRt-win.cpp $ */
 /** @file
  * VBoxNetFltRt-win.cpp - Bridged Networking Driver, Windows Specific Code.
  * NetFlt Runtime

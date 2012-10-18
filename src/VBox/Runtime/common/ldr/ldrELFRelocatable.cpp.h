@@ -1,4 +1,4 @@
-/* $Id: ldrELFRelocatable.cpp.h 41510 2012-05-30 20:05:54Z vboxsync $ */
+/* $Id: ldrELFRelocatable.cpp.h $ */
 /** @file
  * IPRT - Binary Image Loader, Template for ELF Relocatable Images.
  */

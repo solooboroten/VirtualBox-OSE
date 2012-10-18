@@ -1,4 +1,4 @@
-/* $Id: fsw_iso9660.c 42741 2012-08-10 07:11:09Z vboxsync $ */
+/* $Id: fsw_iso9660.c $ */
 /** @file
  * fsw_iso9660.c - ISO9660 file system driver code.
  *

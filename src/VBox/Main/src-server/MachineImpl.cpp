@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 43185 2012-09-05 09:00:05Z vboxsync $ */
+/* $Id: MachineImpl.cpp $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */

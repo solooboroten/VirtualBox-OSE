@@ -1,4 +1,4 @@
-/* $Id: VBoxManageAppliance.cpp 40329 2012-03-02 16:13:50Z vboxsync $ */
+/* $Id: VBoxManageAppliance.cpp $ */
 /** @file
  * VBoxManage - The appliance-related commands.
  */

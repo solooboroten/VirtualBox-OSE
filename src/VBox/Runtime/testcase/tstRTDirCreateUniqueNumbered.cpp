@@ -1,4 +1,4 @@
-/* $Id: tstRTDirCreateUniqueNumbered.cpp 40903 2012-04-13 14:38:54Z vboxsync $ */
+/* $Id: tstRTDirCreateUniqueNumbered.cpp $ */
 /** @file
  * IPRT Testcase - Unique directory creation.
  */

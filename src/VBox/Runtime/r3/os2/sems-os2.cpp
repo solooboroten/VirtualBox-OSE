@@ -1,4 +1,4 @@
-/* $Id: sems-os2.cpp 40304 2012-02-29 20:02:14Z vboxsync $ */
+/* $Id: sems-os2.cpp $ */
 /** @file
  * IPRT - Semaphores, OS/2.
  */

@@ -1,4 +1,4 @@
-; $Id: CPUMInternal.mac 41932 2012-06-27 17:35:44Z vboxsync $
+; $Id: CPUMInternal.mac $
 ;; @file
 ; CPUM - Internal header file (asm).
 ;

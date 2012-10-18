@@ -1,4 +1,4 @@
-/* $Id: VBoxVRDP.cpp 33966 2010-11-11 10:32:07Z vboxsync $ */
+/* $Id: VBoxVRDP.cpp $ */
 /** @file
  * VBoxVRDP - VBox VRDP connection notification
  */

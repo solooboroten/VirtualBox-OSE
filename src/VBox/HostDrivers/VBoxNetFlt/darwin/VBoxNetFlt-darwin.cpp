@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFlt-darwin.cpp 41774 2012-06-16 14:44:06Z vboxsync $ */
+/* $Id: VBoxNetFlt-darwin.cpp $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Darwin Specific Code.
  */
