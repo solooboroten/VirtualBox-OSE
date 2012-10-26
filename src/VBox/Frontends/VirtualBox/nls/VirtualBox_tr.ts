@@ -377,7 +377,7 @@
     </message>
     <message>
         <source>ACPI Sh&amp;utdown</source>
-        <translation>ACPI &amp;Kapatma</translation>
+        <translation>ACPI &amp;Kapama</translation>
     </message>
     <message>
         <source>ACPI S&amp;hutdown</source>
@@ -1040,7 +1040,7 @@
     <message>
         <source>Processors</source>
         <comment>details report</comment>
-        <translation>İşlemciler</translation>
+        <translation>İşlemci</translation>
     </message>
     <message>
         <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
@@ -1105,7 +1105,7 @@
     <message>
         <source>Screens</source>
         <comment>details report</comment>
-        <translation>Ekranlar</translation>
+        <translation>Ekran</translation>
     </message>
     <message>
         <source>2D Video</source>
@@ -1838,7 +1838,7 @@
     <message>
         <source>Processors</source>
         <comment>details (system)</comment>
-        <translation>İşlemciler</translation>
+        <translation>İşlemci</translation>
     </message>
     <message>
         <source>%1%</source>
@@ -1863,7 +1863,7 @@
     <message>
         <source>Screens</source>
         <comment>details (display)</comment>
-        <translation>Ekranlar</translation>
+        <translation>Ekran</translation>
     </message>
     <message>
         <source>3D</source>
@@ -3541,7 +3541,7 @@
     </message>
     <message>
         <source>&amp;Enable Network Adapter</source>
-        <translation>Ağ Bağdaştırıcısını &amp;Etkinleştir</translation>
+        <translation>Ağ Bağdaştırıcısı &amp;etkin</translation>
     </message>
     <message>
         <source>A&amp;dapter Type:</source>
@@ -5615,11 +5615,11 @@
     </message>
     <message>
         <source>You are trying to shut down the guest with the ACPI power button. This is currently not possible because the guest does not support software shutdown.</source>
-        <translation>Misafiri ACPI güç düğmesi ile kapatmayı deniyorsunuz. Bu şu anda mümkün değil çünkü misafir yazılımla kapatmayı desteklemiyor.</translation>
+        <translation>Misafiri ACPI güç düğmesi ile kapamayı deniyorsunuz. Bu şu anda mümkün değil çünkü misafir yazılımla kapamayı desteklemiyor.</translation>
     </message>
     <message>
         <source>&lt;p&gt;VT-x/AMD-V hardware acceleration has been enabled, but is not operational. Your 64-bit guest will fail to detect a 64-bit CPU and will not be able to boot.&lt;/p&gt;&lt;p&gt;Please ensure that you have enabled VT-x/AMD-V properly in the BIOS of your host computer.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;VT-x/AMD-V donanım sanallaştırma etkinleştirildi ama kullanılmaya hazır değil. 64-bit misafiriniz 64-bit bir işlemciyi algılaması başarısız olacak ve önyükleme yapılamayacaktır.&lt;/p&gt;&lt;p&gt;Lütfen anamakinenizin BIOS&apos;undaki VT-x/AMD-V ayarını uygun bir şekilde etkinleştirdiğinizden emin olun.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;VT-x/AMD-V donanım sanallaştırma etkinleştirildi ama kullanılmaya hazır değil. 64-bit misafiriniz 64-bit bir işlemciyi algılaması başarısız olacak ve önyükleme yapılamayacaktır.&lt;/p&gt;&lt;p&gt;Lütfen anamakinenizin BIOS&apos;undaki VT-x/AMD-V ayarını uygun bir şekilde etkinleştirdiğinizi garantileyin.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Close VM</source>
@@ -5687,7 +5687,7 @@
     </message>
     <message>
         <source>&lt;p&gt;VT-x/AMD-V hardware acceleration has been enabled, but is not operational. Certain guests (e.g. OS/2 and QNX) require this feature.&lt;/p&gt;&lt;p&gt;Please ensure that you have enabled VT-x/AMD-V properly in the BIOS of your host computer.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;VT-x/AMD-V donanım sanallaştırma etkinleştirildi ama kullanılmaya hazır değil. Belli misafirler (örn. OS/2 ve QNX) bu özelliği gerektirir.&lt;/p&gt;&lt;p&gt;Lütfen anamakinenizin BIOS&apos;undaki VT-x/AMD-V ayarını uygun bir şekilde etkinleştirdiğinizden emin olun.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;VT-x/AMD-V donanım sanallaştırma etkinleştirildi ama kullanılmaya hazır değil. Belli misafirler (örn. OS/2 ve QNX) bu özelliği gerektirir.&lt;/p&gt;&lt;p&gt;Lütfen anamakinenizin BIOS&apos;undaki VT-x/AMD-V ayarını uygun bir şekilde etkinleştirdiğinizi garantileyin.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;Invalid e-mail address or password specified.&lt;/p&gt;</source>
@@ -5965,7 +5965,7 @@
     </message>
     <message>
         <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;VirtualBox Misafir Eklentileri bu sanal makinede mevcut görünmüyor ve paylaşılan klasörler onlar olmadan kullanılamaz. Paylaşılan klasörleri sanal makine içerisinde kullanmak için &lt;b&gt;Aygıtlar&lt;/b&gt; menüsünden &lt;b&gt;Misafir Eklentileri Yükle&lt;/b&gt;&apos;yi seçerek, eğer yüklü değillerse lütfen Misafir Eklentileri yükleyin veya düzgün olarak çalışmıyorlarsa, yeniden yükleyin. Eğer yüklü ama makine tam olarak henüz başlatılmadıysa o zaman paylaşılan klasörler o seferlik kullanılabilir olacaktır.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;VirtualBox Misafir Eklentileri bu sanal makinede mevcut görünmüyor ve paylaşılan klasörler onlar olmadan kullanılamaz. Paylaşılan klasörleri sanal makine içerisinde kullanmak için lütfen &lt;b&gt;Aygıtlar&lt;/b&gt; menüsünden &lt;b&gt;Misafir Eklentilerini Yükle&lt;/b&gt;&apos;yi seçerek, yüklü değillerse Misafir Eklentilerini yükleyin veya düzgün olarak çalışmıyorlarsa, yeniden yükleyin. Eğer yüklü ama makine tam olarak henüz başlatılmadıysa o zaman paylaşılan klasörler o seferlik kullanılabilir olacaktır.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
@@ -6173,7 +6173,7 @@
     <message>
         <source>ACPI Shutdown</source>
         <comment>machine</comment>
-        <translation>ACPI Kapatma</translation>
+        <translation>ACPI Kapama</translation>
     </message>
     <message>
         <source>Power Off</source>
@@ -6202,7 +6202,7 @@
     </message>
     <message>
         <source>&lt;p&gt;Are you sure you want to discard the saved state of the following virtual machines?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;This operation is equivalent to resetting or powering off the machine without doing a proper shutdown of the guest OS.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Aşağıdaki sanal makinelerin kaydedilmiş durumundan vazgeçmek istediğinize emin misiniz?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Bu işlem misafir İS&apos;nin uygun bir kapatma olmadan makine gücünü kapatmaya veya sıfırlamaya eşdeğerdir.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Aşağıdaki sanal makinelerin kaydedilmiş durumundan vazgeçmek istediğinize emin misiniz?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Bu işlem misafir İS&apos;nin uygun bir kapama olmadan makine gücünü kapatmaya veya sıfırlamaya eşdeğerdir.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;Do you really want to reset the following virtual machines?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;This will cause any unsaved data in applications running inside it to be lost.&lt;/p&gt;</source>
@@ -6210,7 +6210,7 @@
     </message>
     <message>
         <source>&lt;p&gt;Do you really want to send an ACPI shutdown signal to the following virtual machines?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Aşağıdaki sanal makinelere gerçekten ACPI kapatma sinyali göndermek istiyor musunuz?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;</translation>
+        <translation>&lt;p&gt;Aşağıdaki sanal makinelere gerçekten ACPI kapama sinyali göndermek istiyor musunuz?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;Do you really want to power off the following virtual machines?&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;This will cause any unsaved data in applications running inside it to be lost.&lt;/p&gt;</source>
@@ -7310,15 +7310,15 @@ bu basamağı atlayarak sabit diskleri Sanal Makine Ayarları penceresinden ekle
     </message>
     <message>
         <source>&lt;p&gt;Sends the ACPI Power Button press event to the virtual machine.&lt;/p&gt;&lt;p&gt;Normally, the guest operating system running inside the virtual machine will detect this event and perform a clean shutdown procedure. This is a recommended way to turn off the virtual machine because all applications running inside it will get a chance to save their data and state.&lt;/p&gt;&lt;p&gt;If the machine doesn&apos;t respond to this action then the guest operating system may be misconfigured or doesn&apos;t understand ACPI Power Button events at all. In this case you should select the &lt;b&gt;Power off the machine&lt;/b&gt; action to stop virtual machine execution.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Sanal makineye ACPI Güç Düğmesine basma olayını gönderir.&lt;/p&gt;&lt;p&gt;Normal olarak, sanal makine içinde çalışan misafir işletim sistemi bu olayı algılayacaktır ve temiz bir kapatma işlemi yapacaktır. Bu, sanal makineyi kapatmak için önerilen bir yoldur çünkü içinde çalışan tüm uygulamalara verilerini ve durumlarını kaydetme fırsatı verecetir.&lt;/p&gt;&lt;p&gt;Eğer makine bu eyleme yanıt vermezse o zaman misafir işletim sistemi ACPI Güç Düğmesi olaylarının hiç birini anlamıyordur ya da eksik yapılandırılmış olabilir. Bu durumda sanal makinenin çalıştırılmasını durdurmak için &lt;b&gt;Makinenin gücünü kapat&lt;/b&gt; eylemini seçmelisiniz.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Sanal makineye ACPI Güç Düğmesine basma olayını gönderir.&lt;/p&gt;&lt;p&gt;Normal olarak, sanal makine içinde çalışan misafir işletim sistemi bu olayı algılayacaktır ve temiz bir kapama işlemi yapacaktır. Bu, sanal makineyi kapatmak için önerilen bir yoldur çünkü içinde çalışan tüm uygulamalara verilerini ve durumlarını kaydetme fırsatı verecetir.&lt;/p&gt;&lt;p&gt;Eğer makine bu eyleme yanıt vermezse o zaman misafir işletim sistemi ACPI Güç Düğmesi olaylarının hiç birini anlamıyordur ya da eksik yapılandırılmış olabilir. Bu durumda sanal makinenin çalıştırılmasını durdurmak için &lt;b&gt;Makinenin gücünü kapat&lt;/b&gt; eylemini seçmelisiniz.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>S&amp;end the shutdown signal</source>
-        <translation>Kapatma sinyali &amp;gönder</translation>
+        <translation>Kapama sinyali &amp;gönder</translation>
     </message>
     <message>
         <source>&lt;p&gt;Turns off the virtual machine.&lt;/p&gt;&lt;p&gt;Note that this action will stop machine execution immediately so that the guest operating system running inside it will not be able to perform a clean shutdown procedure which may result in &lt;i&gt;data loss&lt;/i&gt; inside the virtual machine. Selecting this action is recommended only if the virtual machine does not respond to the &lt;b&gt;Send the shutdown signal&lt;/b&gt; action.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Sanal makineyi kapatır.&lt;/p&gt;&lt;p&gt;Bu eylem sanal makinenin çalıştırılmasını anında durduracak onun için içerisinde çalışan misafir işletim sisteminin, sanal makine içerisinde &lt;i&gt;veri kaybı&lt;/i&gt; ile sonuçlanabilen temiz bir kapatma işlemi yapılamayacağını unutmayın. Bu eylemi seçmek sadece eğer sanal makine &lt;b&gt;Kapatma sinyali gönder&lt;/b&gt; eylemine yanıt vermiyorsa önerilir.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Sanal makineyi kapatır.&lt;/p&gt;&lt;p&gt;Bu eylem sanal makinenin çalıştırılmasını anında durduracak onun için içerisinde çalışan misafir işletim sisteminin, sanal makine içerisinde &lt;i&gt;veri kaybı&lt;/i&gt; ile sonuçlanabilen temiz bir kapama işlemi yapılamayacağını unutmayın. Bu eylemi seçmek sadece eğer sanal makine &lt;b&gt;Kapama sinyali gönder&lt;/b&gt; eylemine yanıt vermiyorsa önerilir.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&amp;Power off the machine</source>
@@ -9483,7 +9483,7 @@ Version %1</source>
     <message>
         <source>Null Audio Driver</source>
         <comment>AudioDriverType</comment>
-        <translation>Geçersiz Ses Sürücüsü</translation>
+        <translation>Belirsiz Ses Sürücüsü</translation>
     </message>
     <message>
         <source>Windows Multimedia</source>
@@ -10244,7 +10244,7 @@ Version %1</source>
     <message>
         <source>Screens</source>
         <comment>details report</comment>
-        <translation>Ekranlar</translation>
+        <translation>Ekran</translation>
     </message>
     <message>
         <source>SAS</source>
@@ -10351,7 +10351,7 @@ Version %1</source>
     <message>
         <source>Null</source>
         <comment>AuthType</comment>
-        <translation>Boş</translation>
+        <translation>Belirsiz</translation>
     </message>
     <message>
         <source>External</source>

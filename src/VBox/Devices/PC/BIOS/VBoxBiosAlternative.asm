@@ -911,7 +911,7 @@ section CONST progbits vstart=0x30 align=1 ; size=0xc94 class=DATA group=DGROUP
 
 section CONST2 progbits vstart=0xcc4 align=1 ; size=0x3fa class=DATA group=DGROUP
 _bios_cvs_version_string:                    ; 0xf0cc4 LB 0x12
-    db  'VirtualBox 4.2.2', 000h, 000h
+    db  'VirtualBox 4.2.4', 000h, 000h
 _bios_prefix_string:                         ; 0xf0cd6 LB 0x8
     db  'BIOS: ', 000h, 000h
 _isotag:                                     ; 0xf0cde LB 0x6
@@ -15154,13 +15154,12 @@ dummy_iret:                                  ; 0xfff53 LB 0x9d
     dec bp                                    ; 4d
     dec cx                                    ; 49
     pop di                                    ; 5f
-    mov di, 00160h                            ; bf 60 01
-    add byte [bx+si], dl                      ; 00 10
-    push CS                                   ; 0e
-    add byte [di], al                         ; 00 05
+    sbb AL, strict byte 000h                  ; 1c 00
+    add byte [bx+si], al                      ; 00 00
+    adc byte [00900h], cl                     ; 10 0e 00 09
     add byte [di], ah                         ; 00 25
     times 0x6f db 0
     db  'XM'
 cpu_reset:                                   ; 0xffff0 LB 0x10
     jmp far 0f000h:0e05bh                     ; ea 5b e0 00 f0
-    db  030h, 036h, 02fh, 032h, 033h, 02fh, 039h, 039h, 000h, 0fch, 0fah
+    db  030h, 036h, 02fh, 032h, 033h, 02fh, 039h, 039h, 000h, 0fch, 0f8h

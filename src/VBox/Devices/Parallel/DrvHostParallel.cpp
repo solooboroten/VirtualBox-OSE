@@ -334,7 +334,7 @@ static uint32_t drvHostWinFindIORangeResource(const DEVINST DevInst)
     LOG_CONF  firstLogConf;
     LOG_CONF  nextLogConf;
     RES_DES   rdPrevResDes;
-    uint32_t  u32ParportAddr;
+    uint32_t  u32ParportAddr = 0;
 
     wHeaderSize = sizeof(IO_DES);
     cmRet = CM_Get_First_Log_Conf(&firstLogConf, DevInst, ALLOC_LOG_CONF);
@@ -350,23 +350,41 @@ static uint32_t drvHostWinFindIORangeResource(const DEVINST DevInst)
         CM_Free_Res_Des_Handle(firstLogConf);
         return 0;
     }
-
+    /* This loop is based on the fact that only one resourece is assigned to
+     * the LPT port. If multiple resources (address range) are assigned to
+     * to LPT port, it will pick and return the last one
+     */
     for (;;)
     {
         u32Size = 0;
-        if ((cmRet = CM_Get_Res_Des_Data_Size((PULONG)(&u32Size), nextLogConf, 0L)) != CR_SUCCESS
-            &&  !(pBuf = (uint8_t *)RTMemAlloc(u32Size + 1))
-            &&   (cmRet = CM_Get_Res_Des_Data(nextLogConf, pBuf, u32Size, 0L)) != CR_SUCCESS
-            )
+        cmRet = CM_Get_Res_Des_Data_Size((PULONG)(&u32Size), nextLogConf, 0L);
+        if (cmRet != CR_SUCCESS)
         {
+            LogFlowFunc(("Failed to get Size \n"));
+            CM_Free_Res_Des_Handle(nextLogConf);
+            break;
+        }
+
+        pBuf = (uint8_t *)RTMemAlloc(u32Size + 1);
+        if (!pBuf)
+        {
+            LogFlowFunc(("Failed to get Buf %d\n", u32Size));
+            CM_Free_Res_Des_Handle(nextLogConf);
+            break;
+        }
+        cmRet = CM_Get_Res_Des_Data(nextLogConf, pBuf, u32Size, 0L);
+        if (cmRet != CR_SUCCESS)
+        {
+            LogFlowFunc(("Failed to get Des Data \n"));
             CM_Free_Res_Des_Handle(nextLogConf);
             if (pBuf)
                 RTMemFree(pBuf);
             break;
-
         }
+
         LogFlowFunc(("call GetIOResource\n"));
-        u32ParportAddr = ((IO_DES *)pBuf)->IOD_Alloc_Base;
+        if (pBuf)
+            u32ParportAddr = ((IO_DES *)pBuf)->IOD_Alloc_Base;
         LogFlowFunc(("called GetIOResource, ret=%#x\n", u32ParportAddr));
         rdPrevResDes = 0;
         cmRet = CM_Get_Next_Res_Des(&rdPrevResDes,
@@ -374,7 +392,8 @@ static uint32_t drvHostWinFindIORangeResource(const DEVINST DevInst)
                                     2,
                                     0L,
                                     0L);
-        RTMemFree(pBuf);
+        if (pBuf)
+            RTMemFree(pBuf);
         if (cmRet != CR_SUCCESS)
            break;
 
@@ -414,16 +433,25 @@ static int drvWinHostGetparportAddr(PDRVHOSTPARALLEL pThis)
 
         while (!SetupDiGetDeviceRegistryProperty(hDevInfo, &DeviceInfoData, SPDRP_FRIENDLYNAME,
                                                  (PDWORD)&dwDataType, (uint8_t *)pBuf,
-                                                 dwBufSize, (PDWORD)&dwBufSize)
-               && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+                                                 dwBufSize, (PDWORD)&dwBufSize))
         {
-            if (pBuf)
-                 RTMemFree(pBuf);
-            /* Max size will never be more than 2048 bytes */
-            pBuf = (uint8_t *)RTMemAlloc(dwBufSize * 2);
+            if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+            {
+                LogFlow(("ERROR_INSUFF_BUFF = %d. dwBufSz = %d\n", GetLastError(), dwBufSize));
+                if (pBuf)
+                    RTMemFree(pBuf);
+                pBuf = (uint8_t *)RTMemAlloc(dwBufSize * 2);
+            }
+            else
+            {
+                /* No need to bother about this error (in most cases its errno=13,
+                 * INVALID_DATA . Just break from here and proceed to next device
+                 * enumerated item
+                 */
+                LogFlow(("GetDevProp Error = %d & dwBufSz = %d\n", GetLastError(), dwBufSize));
+                break;
+            }
         }
-        if(!pBuf)
-            return VERR_NO_MEMORY;
 
         if (RTStrStr((char*)pBuf, "LPT"))
         {
@@ -471,6 +499,8 @@ static int drvWinHostGetparportAddr(PDRVHOSTPARALLEL pThis)
                 pThis->u32LptAddrControl = pThis->u32LptAddr + CTRL_REG_OFFSET;
                 pThis->u32LptAddrStatus  = pThis->u32LptAddr + STATUS_REG_OFFSET;
             }
+            else
+                LogFlowFunc(("u32Parport Addr No Available \n"));
             if (pThis->fParportAvail)
                 break;
         }
@@ -658,9 +688,9 @@ static DECLCALLBACK(int) drvHostParallelSetPortDirection(PPDMIHOSTPARALLELCONNEC
 # else /* VBOX_WITH_WIN_PARPORT_SUP */
     uint64_t u64Data;
     u64Data = (uint8_t)iMode;
-    LogFlowFunc(("calling R0 to write CTRL, data=%#x\n", u64Data));
     if (pThis->fParportAvail)
     {
+        LogFlowFunc(("calling R0 to write CTRL, data=%#x\n", u64Data));
         rc = PDMDrvHlpCallR0(pThis->CTX_SUFF(pDrvIns), DRVHOSTPARALLELR0OP_SETPORTDIRECTION, u64Data);
         AssertRC(rc);
     }
@@ -685,9 +715,9 @@ static DECLCALLBACK(int) drvHostParallelWriteControl(PPDMIHOSTPARALLELCONNECTOR 
 # else /* VBOX_WITH_WIN_PARPORT_SUP */
     uint64_t u64Data;
     u64Data = (uint8_t)fReg;
-    LogFlowFunc(("calling R0 to write CTRL, data=%#x\n", u64Data));
     if (pThis->fParportAvail)
     {
+        LogFlowFunc(("calling R0 to write CTRL, data=%#x\n", u64Data));
         rc = PDMDrvHlpCallR0(pThis->CTX_SUFF(pDrvIns), DRVHOSTPARALLELR0OP_WRITECONTROL, u64Data);
         AssertRC(rc);
     }

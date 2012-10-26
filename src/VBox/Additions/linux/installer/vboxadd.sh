@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions kernel module init script ($Revision: 75649 $)
+# Linux Additions kernel module init script ($Revision: 81678 $)
 #
 
 #
@@ -351,9 +351,11 @@ restart()
 # from the kernel as they may still be in use
 cleanup_modules()
 {
-    begin "Removing existing VirtualBox DKMS kernel modules"
-    $DODKMS uninstall $OLDMODULES > $LOG
-    succ_msg
+    if [ -n "$(which dkms 2>/dev/null)" ]; then
+        begin "Removing existing VirtualBox DKMS kernel modules"
+        $DODKMS uninstall $OLDMODULES > $LOG
+        succ_msg
+    fi
     begin "Removing existing VirtualBox non-DKMS kernel modules"
     for i in $OLDMODULES; do
         find /lib/modules -name $i\* | xargs rm 2>/dev/null
@@ -369,7 +371,8 @@ setup_modules()
     begin "Building the VirtualBox Guest Additions kernel modules"
 
     # Short cut out if a dkms build succeeds
-    if $DODKMS install vboxguest $INSTALL_VER >> $LOG 2>&1; then
+    if [ -n "$(which dkms 2>/dev/null)" ] &&
+       $DODKMS install vboxguest $INSTALL_VER >> $LOG 2>&1; then
         succ_msg
         return 0
     fi

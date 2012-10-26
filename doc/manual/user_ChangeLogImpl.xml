@@ -1,6 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.2.4 (2012-10-26)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>GUI: fixed validation warning on global settings / proxy page
+          (4.2.2 regression, bug #11089)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed crash with multiple guest screens on certain
+          conditions (OS X hosts only)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxBalloonCtrl: fixed command line argument handling of
+         ballooning module</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed occasional crash during a video playback in the
+          guest (bug #11082)</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: fixed broken DMI information (4.2 regression)</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: workaround for booting from Windows 2000 floppy disks</para>
+      </listitem>
+
+      <listitem>
+        <para>EFI: fixed video mode selection loss on VM reboot (#10983)</para>
+      </listitem>
+
+      <listitem>
+        <para>Parallel: fixed parallel port printing failure/ paper queue empty
+          error (Windows hosts only; bug #2226)</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: fixed crash on alias-less DNS responses when host-resolver is used</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang under rare circumstances</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.2.2 (2012-10-18)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -119,9 +175,9 @@
         <para>VBoxManage: fixed wrong output of the HPET setting in <emphasis>showvminfo</emphasis>
           (bug #11065)</para>
       </listitem>
-      
+
       <listitem>
-        <para>VBoxManage: fixed closing the guest session after executing a 
+        <para>VBoxManage: fixed closing the guest session after executing a
           guest process via guest control</para>
       </listitem>
 
@@ -156,7 +212,7 @@
         <para>Windows Additions: fixed automatic screen resize
           issue for NT4 guests</para>
       </listitem>
-      
+
       <listitem>
         <para>OS/2 Additions: fixed shutdown hang</para>
       </listitem>
@@ -8725,4 +8781,4 @@
     </itemizedlist>
 
   </sect1>
-
+ 

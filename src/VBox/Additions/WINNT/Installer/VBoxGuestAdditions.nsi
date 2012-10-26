@@ -233,6 +233,7 @@ Var g_bNoVideoDrv                       ; Cmd line: Do not install the VBoxVideo
 Var g_bNoGuestDrv                       ; Cmd line: Do not install the VBoxGuest driver
 Var g_bNoMouseDrv                       ; Cmd line: Do not install the VBoxMouse driver
 Var g_bWithAutoLogon                    ; Cmd line: Install VBoxGINA / VBoxCredProv for auto logon support
+Var g_bWithVBoxMMR                      ; Cmd line: Install VBoxMMR for media redirection support
 Var g_bWithD3D                          ; Cmd line: Install Direct3D support
 Var g_bOnlyExtract                      ; Cmd line: Only extract all files, do *not* install them. Only valid with param "/D" (target directory)
 Var g_bPostInstallStatus                ; Cmd line: Post the overall installation status to some external program (VBoxTray)
@@ -377,6 +378,12 @@ Function HandleCommandLine
       ${Case} '/with_autologon'
         StrCpy $g_bWithAutoLogon "true"
         ${Break}
+
+!if $%VBOX_WITH_MMR% == "1"
+      ${Case} '/with_vboxmmr'
+        StrCpy $g_bWithVBoxMMR "true"
+        ${Break}
+!endif
 
     !if $%VBOX_WITH_CROGL% == "1"
       ${Case} '/with_d3d'
@@ -1090,6 +1097,7 @@ Function .onInit
   StrCpy $g_bNoGuestDrv "false"
   StrCpy $g_bNoMouseDrv "false"
   StrCpy $g_bWithAutoLogon "false"
+  StrCpy $g_bWithVBoxMMR "false"
   StrCpy $g_bWithD3D "false"
   StrCpy $g_bOnlyExtract "false"
   StrCpy $g_bWithWDDM "false"
