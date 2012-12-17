@@ -1,4 +1,4 @@
-/* $Revision: 66523 $ */
+/* $Revision: 81436 $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Linux.
  */
@@ -99,6 +99,7 @@ static void rtR0MemObjLinuxFreePages(PRTR0MEMOBJLNX pMemLnx);
 struct task_struct *rtR0ProcessToLinuxTask(RTR0PROCESS R0Process)
 {
     /** @todo fix rtR0ProcessToLinuxTask!! */
+    /** @todo many (all?) callers currently assume that we return 'current'! */
     return R0Process == RTR0ProcHandleSelf() ? current : NULL;
 }
 
@@ -164,6 +165,107 @@ static pgprot_t rtR0MemObjLinuxConvertProt(unsigned fProt, bool fKernel)
         case RTMEM_PROT_WRITE | RTMEM_PROT_EXEC | RTMEM_PROT_READ:
             return fKernel ? MY_PAGE_KERNEL_EXEC    : PAGE_SHARED_EXEC;
     }
+}
+
+
+/**
+ * Worker for rtR0MemObjNativeReserveUser and rtR0MemObjNativerMapUser that creates
+ * an empty user space mapping.
+ *
+ * We acquire the mmap_sem of the task!
+ *
+ * @returns Pointer to the mapping.
+ *          (void *)-1 on failure.
+ * @param   R3PtrFixed  (RTR3PTR)-1 if anywhere, otherwise a specific location.
+ * @param   cb          The size of the mapping.
+ * @param   uAlignment  The alignment of the mapping.
+ * @param   pTask       The Linux task to create this mapping in.
+ * @param   fProt       The RTMEM_PROT_* mask.
+ */
+static void *rtR0MemObjLinuxDoMmap(RTR3PTR R3PtrFixed, size_t cb, size_t uAlignment, struct task_struct *pTask, unsigned fProt)
+{
+    unsigned fLnxProt;
+    unsigned long ulAddr;
+
+    Assert((pTask == current)); /* do_mmap */
+
+    /*
+     * Convert from IPRT protection to mman.h PROT_ and call do_mmap.
+     */
+    fProt &= (RTMEM_PROT_NONE | RTMEM_PROT_READ | RTMEM_PROT_WRITE | RTMEM_PROT_EXEC);
+    if (fProt == RTMEM_PROT_NONE)
+        fLnxProt = PROT_NONE;
+    else
+    {
+        fLnxProt = 0;
+        if (fProt & RTMEM_PROT_READ)
+            fLnxProt |= PROT_READ;
+        if (fProt & RTMEM_PROT_WRITE)
+            fLnxProt |= PROT_WRITE;
+        if (fProt & RTMEM_PROT_EXEC)
+            fLnxProt |= PROT_EXEC;
+    }
+
+    if (R3PtrFixed != (RTR3PTR)-1)
+    {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+        ulAddr = vm_mmap(NULL, R3PtrFixed, cb, fLnxProt, MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED, 0);
+#else
+        down_write(&pTask->mm->mmap_sem);
+        ulAddr = do_mmap(NULL, R3PtrFixed, cb, fLnxProt, MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED, 0);
+        up_write(&pTask->mm->mmap_sem);
+#endif
+    }
+    else
+    {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+        ulAddr = vm_mmap(NULL, 0, cb, fLnxProt, MAP_SHARED | MAP_ANONYMOUS, 0);
+#else
+        down_write(&pTask->mm->mmap_sem);
+        ulAddr = do_mmap(NULL, 0, cb, fLnxProt, MAP_SHARED | MAP_ANONYMOUS, 0);
+        up_write(&pTask->mm->mmap_sem);
+#endif
+        if (    !(ulAddr & ~PAGE_MASK)
+            &&  (ulAddr & (uAlignment - 1)))
+        {
+            /** @todo implement uAlignment properly... We'll probably need to make some dummy mappings to fill
+             * up alignment gaps. This is of course complicated by fragmentation (which we might have cause
+             * ourselves) and further by there begin two mmap strategies (top / bottom). */
+            /* For now, just ignore uAlignment requirements... */
+        }
+    }
+
+
+    if (ulAddr & ~PAGE_MASK) /* ~PAGE_MASK == PAGE_OFFSET_MASK */
+        return (void *)-1;
+    return (void *)ulAddr;
+}
+
+
+/**
+ * Worker that destroys a user space mapping.
+ * Undoes what rtR0MemObjLinuxDoMmap did.
+ *
+ * We acquire the mmap_sem of the task!
+ *
+ * @param   pv          The ring-3 mapping.
+ * @param   cb          The size of the mapping.
+ * @param   pTask       The Linux task to destroy this mapping in.
+ */
+static void rtR0MemObjLinuxDoMunmap(void *pv, size_t cb, struct task_struct *pTask)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+    Assert(pTask == current);
+    vm_munmap((unsigned long)pv, cb);
+#elif defined(USE_RHEL4_MUNMAP)
+    down_write(&pTask->mm->mmap_sem);
+    do_munmap(pTask->mm, (unsigned long)pv, cb, 0); /* should it be 1 or 0? */
+    up_write(&pTask->mm->mmap_sem);
+#else
+    down_write(&pTask->mm->mmap_sem);
+    do_munmap(pTask->mm, (unsigned long)pv, cb);
+    up_write(&pTask->mm->mmap_sem);
+#endif
 }
 
 
@@ -409,7 +511,7 @@ static int rtR0MemObjLinuxVMap(PRTR0MEMOBJLNX pMemLnx, bool fExecutable)
 
 
 /**
- * Undos what rtR0MemObjLinuxVMap() did.
+ * Undoes what rtR0MemObjLinuxVMap() did.
  *
  * @param   pMemLnx     The linux memory object.
  */
@@ -477,11 +579,7 @@ int rtR0MemObjNativeFree(RTR0MEMOBJ pMem)
                 struct task_struct *pTask = rtR0ProcessToLinuxTask(pMemLnx->Core.u.Lock.R0Process);
                 Assert(pTask);
                 if (pTask && pTask->mm)
-                {
-                    down_write(&pTask->mm->mmap_sem);
-                    MY_DO_MUNMAP(pTask->mm, (unsigned long)pMemLnx->Core.pv, pMemLnx->Core.cb);
-                    up_write(&pTask->mm->mmap_sem);
-                }
+                    rtR0MemObjLinuxDoMunmap(pMemLnx->Core.pv, pMemLnx->Core.cb, pTask);
             }
             else
             {
@@ -502,11 +600,7 @@ int rtR0MemObjNativeFree(RTR0MEMOBJ pMem)
                 struct task_struct *pTask = rtR0ProcessToLinuxTask(pMemLnx->Core.u.Lock.R0Process);
                 Assert(pTask);
                 if (pTask && pTask->mm)
-                {
-                    down_write(&pTask->mm->mmap_sem);
-                    MY_DO_MUNMAP(pTask->mm, (unsigned long)pMemLnx->Core.pv, pMemLnx->Core.cb);
-                    up_write(&pTask->mm->mmap_sem);
-                }
+                    rtR0MemObjLinuxDoMunmap(pMemLnx->Core.pv, pMemLnx->Core.cb, pTask);
             }
             else
                 vunmap(pMemLnx->Core.pv);
@@ -730,6 +824,99 @@ static int rtR0MemObjLinuxAllocPhysSub(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJTYP
 }
 
 
+/**
+ * Translates a kernel virtual address to a linux page structure by walking the
+ * page tables.
+ *
+ * @note    We do assume that the page tables will not change as we are walking
+ *          them.  This assumption is rather forced by the fact that I could not
+ *          immediately see any way of preventing this from happening.  So, we
+ *          take some extra care when accessing them.
+ *
+ *          Because of this, we don't want to use this function on memory where
+ *          attribute changes to nearby pages is likely to cause large pages to
+ *          be used or split up. So, don't use this for the linear mapping of
+ *          physical memory.
+ *
+ * @returns Pointer to the page structur or NULL if it could not be found.
+ * @param   pv      The kernel virtual address.
+ */
+static struct page *rtR0MemObjLinuxVirtToPage(void *pv)
+{
+    unsigned long   ulAddr = (unsigned long)pv;
+    unsigned long   pfn;
+    struct page    *pPage;
+    pte_t          *pEntry;
+    union
+    {
+        pgd_t       Global;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
+        pud_t       Upper;
+#endif
+        pmd_t       Middle;
+        pte_t       Entry;
+    } u;
+
+    /* Should this happen in a situation this code will be called in?  And if
+     * so, can it change under our feet?  See also
+     * "Documentation/vm/active_mm.txt" in the kernel sources. */
+    if (RT_UNLIKELY(!current->active_mm))
+        return NULL;
+    u.Global = *pgd_offset(current->active_mm, ulAddr);
+    if (RT_UNLIKELY(pgd_none(u.Global)))
+        return NULL;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
+    u.Upper = *pud_offset(&u.Global, ulAddr);
+    if (RT_UNLIKELY(pud_none(u.Upper)))
+        return NULL;
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)
+    if (pud_large(u.Upper))
+    {
+        pPage = pud_page(u.Upper);
+        AssertReturn(pPage, NULL);
+        pfn  = page_to_pfn(pPage);      /* doing the safe way... */
+        pfn += (ulAddr >> PAGE_SHIFT) & ((UINT32_C(1) << (PUD_SHIFT - PAGE_SHIFT)) - 1);
+        return pfn_to_page(pfn);
+    }
+# endif
+
+    u.Middle = *pmd_offset(&u.Upper, ulAddr);
+#else  /* < 2.6.11 */
+    u.Middle = *pmd_offset(&u.Global, ulAddr);
+#endif /* < 2.6.11 */
+    if (RT_UNLIKELY(pmd_none(u.Middle)))
+        return NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
+    if (pmd_large(u.Middle))
+    {
+        pPage = pmd_page(u.Middle);
+        AssertReturn(pPage, NULL);
+        pfn  = page_to_pfn(pPage);      /* doing the safe way... */
+        pfn += (ulAddr >> PAGE_SHIFT) & ((UINT32_C(1) << (PMD_SHIFT - PAGE_SHIFT)) - 1);
+        return pfn_to_page(pfn);
+    }
+#endif
+
+/* As usual, RHEL 3 had pte_offset_map earlier. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 5) || defined(pte_offset_map)
+    pEntry = pte_offset_map(&u.Middle, ulAddr);
+#else
+    pEntry = pte_offset(&u.Middle, ulAddr);
+#endif
+    if (RT_UNLIKELY(!pEntry))
+        return NULL;
+    u.Entry = *pEntry;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 5) || defined(pte_offset_map)
+    pte_unmap(pEntry);
+#endif
+
+    if (RT_UNLIKELY(!pte_present(u.Entry)))
+        return NULL;
+    return pte_page(u.Entry);
+}
+
+
 int rtR0MemObjNativeAllocPhys(PPRTR0MEMOBJINTERNAL ppMem, size_t cb, RTHCPHYS PhysHighest, size_t uAlignment)
 {
     return rtR0MemObjLinuxAllocPhysSub(ppMem, RTR0MEMOBJTYPE_PHYS, cb, uAlignment, PhysHighest);
@@ -873,24 +1060,23 @@ int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, 
     size_t          iPage;
     NOREF(fAccess);
 
+    if (   !RTR0MemKernelIsValidAddr(pv)
+        || !RTR0MemKernelIsValidAddr(pv + cb))
+        return VERR_INVALID_PARAMETER;
+
     /*
-     * Classify the memory and check that we can deal with it.
+     * The lower part of the kernel memory has a linear mapping between
+     * physical and virtual addresses. So we take a short cut here.  This is
+     * assumed to be the cleanest way to handle those addresses (and the code
+     * is well tested, though the test for determining it is not very nice).
+     * If we ever decide it isn't we can still remove it.
      */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
-    fLinearMapping = virt_addr_valid(pvLast)          && virt_addr_valid(pv);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 0)
-    fLinearMapping = VALID_PAGE(virt_to_page(pvLast)) && VALID_PAGE(virt_to_page(pv));
+#if 0
+    fLinearMapping = (unsigned long)pvLast < VMALLOC_START;
 #else
-# error "not supported"
+    fLinearMapping = (unsigned long)pv     >= (unsigned long)__va(0)
+                  && (unsigned long)pvLast <  (unsigned long)high_memory;
 #endif
-    if (!fLinearMapping)
-    {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 19)
-        if (   !RTR0MemKernelIsValidAddr(pv)
-            || !RTR0MemKernelIsValidAddr(pv + cb))
-#endif
-            return VERR_INVALID_PARAMETER;
-    }
 
     /*
      * Allocate the memory object.
@@ -901,17 +1087,16 @@ int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, 
 
     /*
      * Gather the pages.
-     * We ASSUME all kernel pages are non-swappable.
+     * We ASSUME all kernel pages are non-swappable and non-movable.
      */
     rc     = VINF_SUCCESS;
     pbPage = (uint8_t *)pvLast;
     iPage  = cPages;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 19)
     if (!fLinearMapping)
     {
         while (iPage-- > 0)
         {
-            struct page *pPage = vmalloc_to_page(pbPage);
+            struct page *pPage = rtR0MemObjLinuxVirtToPage(pbPage);
             if (RT_UNLIKELY(!pPage))
             {
                 rc = VERR_LOCK_FAILED;
@@ -922,7 +1107,6 @@ int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, 
         }
     }
     else
-#endif
     {
         while (iPage-- > 0)
         {
@@ -1007,62 +1191,6 @@ int rtR0MemObjNativeReserveKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pvFixed, siz
 }
 
 
-/**
- * Worker for rtR0MemObjNativeReserveUser and rtR0MemObjNativerMapUser that creates
- * an empty user space mapping.
- *
- * The caller takes care of acquiring the mmap_sem of the task.
- *
- * @returns Pointer to the mapping.
- *          (void *)-1 on failure.
- * @param   R3PtrFixed  (RTR3PTR)-1 if anywhere, otherwise a specific location.
- * @param   cb          The size of the mapping.
- * @param   uAlignment  The alignment of the mapping.
- * @param   pTask       The Linux task to create this mapping in.
- * @param   fProt       The RTMEM_PROT_* mask.
- */
-static void *rtR0MemObjLinuxDoMmap(RTR3PTR R3PtrFixed, size_t cb, size_t uAlignment, struct task_struct *pTask, unsigned fProt)
-{
-    unsigned fLnxProt;
-    unsigned long ulAddr;
-
-    /*
-     * Convert from IPRT protection to mman.h PROT_ and call do_mmap.
-     */
-    fProt &= (RTMEM_PROT_NONE | RTMEM_PROT_READ | RTMEM_PROT_WRITE | RTMEM_PROT_EXEC);
-    if (fProt == RTMEM_PROT_NONE)
-        fLnxProt = PROT_NONE;
-    else
-    {
-        fLnxProt = 0;
-        if (fProt & RTMEM_PROT_READ)
-            fLnxProt |= PROT_READ;
-        if (fProt & RTMEM_PROT_WRITE)
-            fLnxProt |= PROT_WRITE;
-        if (fProt & RTMEM_PROT_EXEC)
-            fLnxProt |= PROT_EXEC;
-    }
-
-    if (R3PtrFixed != (RTR3PTR)-1)
-        ulAddr = do_mmap(NULL, R3PtrFixed, cb, fLnxProt, MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED, 0);
-    else
-    {
-        ulAddr = do_mmap(NULL, 0, cb, fLnxProt, MAP_SHARED | MAP_ANONYMOUS, 0);
-        if (    !(ulAddr & ~PAGE_MASK)
-            &&  (ulAddr & (uAlignment - 1)))
-        {
-            /** @todo implement uAlignment properly... We'll probably need to make some dummy mappings to fill
-             * up alignment gaps. This is of course complicated by fragmentation (which we might have cause
-             * ourselves) and further by there begin two mmap strategies (top / bottom). */
-            /* For now, just ignore uAlignment requirements... */
-        }
-    }
-    if (ulAddr & ~PAGE_MASK) /* ~PAGE_MASK == PAGE_OFFSET_MASK */
-        return (void *)-1;
-    return (void *)ulAddr;
-}
-
-
 int rtR0MemObjNativeReserveUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3PtrFixed, size_t cb, size_t uAlignment, RTR0PROCESS R0Process)
 {
     PRTR0MEMOBJLNX      pMemLnx;
@@ -1080,18 +1208,14 @@ int rtR0MemObjNativeReserveUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3PtrFixed, 
     /*
      * Let rtR0MemObjLinuxDoMmap do the difficult bits.
      */
-    down_write(&pTask->mm->mmap_sem);
     pv = rtR0MemObjLinuxDoMmap(R3PtrFixed, cb, uAlignment, pTask, RTMEM_PROT_NONE);
-    up_write(&pTask->mm->mmap_sem);
     if (pv == (void *)-1)
         return VERR_NO_MEMORY;
 
     pMemLnx = (PRTR0MEMOBJLNX)rtR0MemObjNew(sizeof(*pMemLnx), RTR0MEMOBJTYPE_RES_VIRT, pv, cb);
     if (!pMemLnx)
     {
-        down_write(&pTask->mm->mmap_sem);
-        MY_DO_MUNMAP(pTask->mm, (unsigned long)pv, cb);
-        up_write(&pTask->mm->mmap_sem);
+        rtR0MemObjLinuxDoMunmap(pv, cb, pTask);
         return VERR_NO_MEMORY;
     }
 
@@ -1276,7 +1400,6 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
          * Allocate user space mapping.
          */
         void *pv;
-        down_write(&pTask->mm->mmap_sem);
         pv = rtR0MemObjLinuxDoMmap(R3PtrFixed, pMemLnxToMap->Core.cb, uAlignment, pTask, fProt);
         if (pv != (void *)-1)
         {
@@ -1289,7 +1412,9 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
             const size_t    cPages = pMemLnxToMap->Core.cb >> PAGE_SHIFT;
             size_t          iPage;
 
-            rc = 0;
+            down_write(&pTask->mm->mmap_sem);
+
+            rc = VINF_SUCCESS;
             if (pMemLnxToMap->cPages)
             {
                 for (iPage = 0; iPage < cPages; iPage++, ulAddrCur += PAGE_SIZE)
@@ -1308,7 +1433,13 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
 
 #if   defined(VBOX_USE_INSERT_PAGE) && LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
                     rc = vm_insert_page(vma, ulAddrCur, pMemLnxToMap->apPages[iPage]);
-                    vma->vm_flags |= VM_RESERVED; /* This flag helps making 100% sure some bad stuff wont happen (swap, core, ++). */
+                    /* Thes flags help making 100% sure some bad stuff wont happen (swap, core, ++).
+                     * See remap_pfn_range() in mm/memory.c */
+#if    LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0)
+                    vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+#else
+                    vma->vm_flags |= VM_RESERVED;
+#endif
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
                     rc = remap_pfn_range(vma, ulAddrCur, page_to_pfn(pMemLnxToMap->apPages[iPage]), PAGE_SIZE, fPg);
 #elif defined(VBOX_USE_PAE_HACK)
@@ -1371,13 +1502,14 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
                     }
                 }
             }
-            if (!rc)
+
+            up_write(&pTask->mm->mmap_sem);
+
+            if (RT_SUCCESS(rc))
             {
-                up_write(&pTask->mm->mmap_sem);
 #ifdef VBOX_USE_PAE_HACK
                 __free_page(pDummyPage);
 #endif
-
                 pMemLnx->Core.pv = pv;
                 pMemLnx->Core.u.Mapping.R0Process = R0Process;
                 *ppMem = &pMemLnx->Core;
@@ -1387,9 +1519,8 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
             /*
              * Bail out.
              */
-            MY_DO_MUNMAP(pTask->mm, (unsigned long)pv, pMemLnxToMap->Core.cb);
+            rtR0MemObjLinuxDoMunmap(pv, pMemLnxToMap->Core.cb, pTask);
         }
-        up_write(&pTask->mm->mmap_sem);
         rtR0MemObjDelete(&pMemLnx->Core);
     }
 #ifdef VBOX_USE_PAE_HACK

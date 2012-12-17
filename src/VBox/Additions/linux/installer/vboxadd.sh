@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions kernel module init script ($Revision: 68828 $)
+# Linux Additions kernel module init script ($Revision: 75653 $)
 #
 
 #
@@ -308,6 +308,12 @@ restart()
 # setup_script
 setup()
 {
+    chcon -t bin_t "$BUILDVBOXGUEST"                         > /dev/null 2>&1
+    chcon -t bin_t "$BUILDVBOXSF"                            > /dev/null 2>&1
+    chcon -t bin_t "$BUILDVBOXVIDEO"                         > /dev/null 2>&1
+    chcon -t bin_t /usr/share/$PACKAGE/test/build_in_tmp     > /dev/null 2>&1
+    chcon -t bin_t /usr/share/$PACKAGE/test_drm/build_in_tmp > /dev/null 2>&1
+    chcon -t bin_t "$DODKMS"                                 > /dev/null 2>&1
     # don't stop the old modules here -- they might be in use
     begin "Uninstalling old VirtualBox DKMS kernel modules"
     $DODKMS uninstall > $LOG

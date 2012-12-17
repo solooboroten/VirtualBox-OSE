@@ -270,7 +270,12 @@ vbi_init(void)
 	modctl_t *genunix_modctl = mod_hold_by_name("genunix");
 	if (genunix_modctl)
 	{
+		/*
+		 * Hold mod_lock as ctf_modopen may update the module with uncompressed CTF data.
+		 */
+		mutex_enter(&mod_lock);
 		ctf_file_t *ctfp = ctf_modopen(genunix_modctl->mod_mp, &err);
+		mutex_exit(&mod_lock);
 		if (ctfp)
 		{
 			do {
@@ -278,6 +283,7 @@ vbi_init(void)
 				err = vbi_get_ctf_member_offset(ctfp, "cpu_t", "cpu_runrun", &off_cpu_runrun); AssertBreak(!err);
 				err = vbi_get_ctf_member_offset(ctfp, "cpu_t", "cpu_kprunrun", &off_cpu_kprunrun); AssertBreak(!err);
 			} while (0);
+			ctf_close(ctfp);
 		}
 
 		mod_release_mod(genunix_modctl);
@@ -352,7 +358,7 @@ vbi_internal_alloc(uint64_t *phys, size_t size, uint64_t alignment, int contig)
 	ptr = contig_alloc(size, &attr, PAGESIZE, 1);
 
 	if (ptr == NULL) {
-		cmn_err(CE_NOTE, "vbi_internal_alloc() failure for %lu bytes", size);
+		cmn_err(CE_NOTE, "vbi_internal_alloc() failure for %lu bytes contig=%d", size, contig);
 		return (NULL);
 	}
 

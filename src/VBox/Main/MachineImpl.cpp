@@ -3746,6 +3746,8 @@ STDMETHODIMP Machine::DiscardSettings()
 
 STDMETHODIMP Machine::DeleteSettings()
 {
+    LogRelFlowThisFuncEnter();
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
@@ -3778,9 +3780,11 @@ STDMETHODIMP Machine::DeleteSettings()
            See the fSafe parameter of xml::XmlFileWriter::write for details. */
         /** @todo Find a way to avoid referring directly to iprt/xml.h here. */
         Utf8Str otherXml = Utf8StrFmt("%s%s", mData->m_strConfigFileFull.c_str(), xml::XmlFileWriter::s_pszTmpSuff);
-        RTFileDelete(otherXml.c_str());
+        vrc = RTFileDelete(otherXml.c_str());
+        LogRelFlowThisFunc(("Deleting %s: %Rrc\n", otherXml.c_str(), vrc));
         otherXml = Utf8StrFmt("%s%s", mData->m_strConfigFileFull.c_str(), xml::XmlFileWriter::s_pszPrevSuff);
-        RTFileDelete(otherXml.c_str());
+        vrc = RTFileDelete(otherXml.c_str());
+        LogRelFlowThisFunc(("Deleting %s: %Rrc\n", otherXml.c_str(), vrc));
 
         /* delete the Logs folder, nothing important should be left
          * there (we don't check for errors because the user might have
@@ -3796,21 +3800,26 @@ STDMETHODIMP Machine::DeleteSettings()
              * files that may have been created by the GUI. */
             Utf8Str log = Utf8StrFmt("%s%cVBox.log",
                                      logFolder.raw(), RTPATH_DELIMITER);
-            RTFileDelete(log.c_str());
+            vrc = RTFileDelete(log.c_str());
+            LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
             log = Utf8StrFmt("%s%cVBox.png",
                              logFolder.raw(), RTPATH_DELIMITER);
-            RTFileDelete(log.c_str());
+            vrc = RTFileDelete(log.c_str());
+            LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
             for (int i = uLogHistoryCount; i > 0; i--)
             {
                 log = Utf8StrFmt("%s%cVBox.log.%d",
                                  logFolder.raw(), RTPATH_DELIMITER, i);
-                RTFileDelete(log.c_str());
+                vrc = RTFileDelete(log.c_str());
+                LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
                 log = Utf8StrFmt("%s%cVBox.png.%d",
                                  logFolder.raw(), RTPATH_DELIMITER, i);
-                RTFileDelete(log.c_str());
+                vrc = RTFileDelete(log.c_str());
+                LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
             }
 
-            RTDirRemove(logFolder.c_str());
+            vrc = RTDirRemove(logFolder.c_str());
+            LogRelFlowThisFunc(("Removing %s: %Rrc\n", logFolder.c_str(), vrc));
         }
 
         /* delete the Snapshots folder, nothing important should be left
@@ -3819,7 +3828,10 @@ STDMETHODIMP Machine::DeleteSettings()
         Utf8Str snapshotFolder(mUserData->mSnapshotFolderFull);
         Assert(snapshotFolder.length());
         if (RTDirExists(snapshotFolder.c_str()))
-            RTDirRemove(snapshotFolder.c_str());
+        {
+            vrc = RTDirRemove(snapshotFolder.c_str());
+            LogRelFlowThisFunc(("Removing %s: %Rrc\n", snapshotFolder.c_str(), vrc));
+        }
 
         /* delete the directory that contains the settings file, but only
          * if it matches the VM name (i.e. a structure created by default in
@@ -3827,9 +3839,14 @@ STDMETHODIMP Machine::DeleteSettings()
         {
             Utf8Str settingsDir;
             if (isInOwnDir(&settingsDir))
-                RTDirRemove(settingsDir.c_str());
+            {
+                vrc = RTDirRemove(settingsDir.c_str());
+                LogRelFlowThisFunc(("Removing %s: %Rrc\n", settingsDir.c_str(), vrc));
+            }
         }
     }
+
+    LogRelFlowThisFuncLeave();
 
     return S_OK;
 }
@@ -4196,7 +4213,9 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
         {
             /** @todo r=bird: Why aren't we leaving the lock here?  The
              *                same code in PushGuestProperty does... */
-            mParent->onGuestPropertyChange(mData->mUuid, aName, aValue, aFlags);
+            mParent->onGuestPropertyChange(mData->mUuid, aName,
+                                           aValue ? aValue : Bstr("").mutableRaw(),
+                                           aFlags ? aFlags : Bstr("").mutableRaw());
         }
     }
     catch (std::bad_alloc &)
@@ -10339,8 +10358,8 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
     using namespace guestProp;
 
     CheckComArgStrNotEmptyOrNull(aName);
-    if (aValue != NULL && (!VALID_PTR(aValue) || !VALID_PTR(aFlags)))
-        return E_POINTER;  /* aValue can be NULL to indicate deletion */
+    CheckComArgNotNull(aValue);
+    CheckComArgNotNull(aFlags);
 
     try
     {
@@ -10998,6 +11017,10 @@ void SessionMachine::unlockMedia()
  * Helper to change the machine state (reimplementation).
  *
  * @note Locks this object for writing.
+ * @note This method must not call saveSettings or SaveSettings, otherwise
+ *       it can cause crashes in random places due to unexpectedly committing
+ *       the current settings. The caller is responsible for that. The call
+ *       to saveStateSettings is fine, because this method does not commit.
  */
 HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
 {
@@ -11188,7 +11211,6 @@ HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
         {
             mData->mCurrentStateModified = TRUE;
             stsFlags |= SaveSTS_CurStateModified;
-            SaveSettings();     // @todo r=dj why the public method? why first SaveSettings and then saveStateSettings?
         }
     }
 #endif

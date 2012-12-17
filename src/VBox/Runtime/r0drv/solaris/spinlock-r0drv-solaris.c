@@ -82,7 +82,7 @@ RTDECL(int)  RTSpinlockCreate(PRTSPINLOCK pSpinlock)
      * Initialize & return.
      */
     pThis->u32Magic = RTSPINLOCK_MAGIC;
-    mutex_init(&pThis->Mtx, "IPRT Spinlock", MUTEX_SPIN, (void *)ipltospl(DISP_LEVEL));
+    mutex_init(&pThis->Mtx, "IPRT Spinlock", MUTEX_SPIN, (void *)ipltospl(PIL_MAX));
     *pSpinlock = pThis;
     return VINF_SUCCESS;
 }
@@ -125,6 +125,15 @@ RTDECL(void) RTSpinlockAcquireNoInts(RTSPINLOCK Spinlock, PRTSPINLOCKTMP pTmp)
     pTmp->uFlags = 0;
 #endif
     mutex_enter(&pThis->Mtx);
+
+    /*
+     * Solaris 10 doesn't preserve the interrupt flag, but since we're at PIL_MAX we should be
+     * fine and not get interrupts while lock is held. Re-disable interrupts to not upset
+     * assertions & assumptions callers might have.
+     */
+#if defined(RT_ARCH_AMD64) || defined(RT_ARCH_X86)
+    ASMIntDisable();
+#endif
 
 #if defined(RT_ARCH_AMD64) || defined(RT_ARCH_X86)
     Assert(!ASMIntAreEnabled());

@@ -110,6 +110,17 @@ typedef struct DRVSCSI
 /** Converts a pointer to DRVSCSI::IPortAsync to a PDRVSCSI. */
 #define PDMIBLOCKASYNCPORT_2_DRVSCSI(pInterface) ( (PDRVSCSI)((uintptr_t)pInterface - RT_OFFSETOF(DRVSCSI, IPortAsync)) )
 
+static int drvscsiIsRedoPossible(int rc)
+{
+    if (   rc == VERR_DISK_FULL
+        || rc == VERR_FILE_TOO_BIG
+        || rc == VERR_BROKEN_PIPE
+        || rc == VERR_NET_CONNECTION_REFUSED)
+        return true;
+
+    return false;
+}
+
 static int drvscsiProcessRequestOne(PDRVSCSI pThis, VSCSIIOREQ hVScsiIoReq)
 {
     int rc = VINF_SUCCESS;
@@ -122,6 +133,10 @@ static int drvscsiProcessRequestOne(PDRVSCSI pThis, VSCSIIOREQ hVScsiIoReq)
         case VSCSIIOREQTXDIR_FLUSH:
         {
             rc = pThis->pDrvBlock->pfnFlush(pThis->pDrvBlock);
+            if (   RT_FAILURE(rc)
+                && pThis->cErrors++ < MAX_LOG_REL_ERRORS)
+                LogRel(("SCSI#%u: Flush returned rc=%Rrc\n",
+                        pThis->pDrvIns->iInstance, rc));
             break;
         }
         case VSCSIIOREQTXDIR_READ:
@@ -150,7 +165,7 @@ static int drvscsiProcessRequestOne(PDRVSCSI pThis, VSCSIIOREQ hVScsiIoReq)
                                                     paSeg->pvSeg, cbProcess);
                     pThis->pLed->Actual.s.fReading = 0;
                     if (RT_FAILURE(rc))
-                        AssertMsgFailed(("%s: Failed to read data %Rrc\n", __FUNCTION__, rc));
+                        break;
                     STAM_REL_COUNTER_ADD(&pThis->StatBytesRead, cbProcess);
                 }
                 else
@@ -160,7 +175,7 @@ static int drvscsiProcessRequestOne(PDRVSCSI pThis, VSCSIIOREQ hVScsiIoReq)
                                                     paSeg->pvSeg, cbProcess);
                     pThis->pLed->Actual.s.fWriting = 0;
                     if (RT_FAILURE(rc))
-                        AssertMsgFailed(("%s: Failed to write data %Rrc\n", __FUNCTION__, rc));
+                        break;
                     STAM_REL_COUNTER_ADD(&pThis->StatBytesWritten, cbProcess);
                 }
 
@@ -171,13 +186,26 @@ static int drvscsiProcessRequestOne(PDRVSCSI pThis, VSCSIIOREQ hVScsiIoReq)
                 cSeg--;
             }
 
+            if (   RT_FAILURE(rc)
+                && pThis->cErrors++ < MAX_LOG_REL_ERRORS)
+                LogRel(("SCSI#%u: %s at offset %llu (%u bytes left) returned rc=%Rrc\n",
+                        pThis->pDrvIns->iInstance,
+                        enmTxDir == VSCSIIOREQTXDIR_READ
+                        ? "Read"
+                        : "Write",
+                        uOffset,
+                        cbTransfer, rc));
+
             break;
         }
         default:
             AssertMsgFailed(("Invalid transfer direction %d\n", enmTxDir));
     }
 
-    VSCSIIoReqCompleted(hVScsiIoReq, rc);
+    if (RT_SUCCESS(rc))
+        VSCSIIoReqCompleted(hVScsiIoReq, rc, false /* fRedoPossible */);
+    else
+        VSCSIIoReqCompleted(hVScsiIoReq, rc, drvscsiIsRedoPossible(rc));
 
     return VINF_SUCCESS;
 }
@@ -206,7 +234,39 @@ static int drvscsiTransferCompleteNotify(PPDMIBLOCKASYNCPORT pInterface, void *p
     else
         AssertMsg(enmTxDir == VSCSIIOREQTXDIR_FLUSH, ("Invalid transfer direction %u\n", enmTxDir));
 
-    VSCSIIoReqCompleted(hVScsiIoReq, rc);
+    if (RT_SUCCESS(rc))
+        VSCSIIoReqCompleted(hVScsiIoReq, rc, false /* fRedoPossible */);
+    else
+    {
+        pThis->cErrors++;
+        if (pThis->cErrors < MAX_LOG_REL_ERRORS)
+        {
+            if (enmTxDir == VSCSIIOREQTXDIR_FLUSH)
+                LogRel(("SCSI#%u: Flush returned rc=%Rrc\n",
+                        pThis->pDrvIns->iInstance, rc));
+            else
+            {
+                uint64_t  uOffset    = 0;
+                size_t    cbTransfer = 0;
+                size_t    cbSeg      = 0;
+                PCRTSGSEG paSeg      = NULL;
+                unsigned  cSeg       = 0;
+
+                VSCSIIoReqParamsGet(hVScsiIoReq, &uOffset, &cbTransfer,
+                                    &cSeg, &cbSeg, &paSeg);
+
+                LogRel(("SCSI#%u: %s at offset %llu (%u bytes left) returned rc=%Rrc\n",
+                        pThis->pDrvIns->iInstance,
+                        enmTxDir == VSCSIIOREQTXDIR_READ
+                        ? "Read"
+                        : "Write",
+                        uOffset,
+                        cbTransfer, rc));
+            }
+        }
+
+        VSCSIIoReqCompleted(hVScsiIoReq, rc, drvscsiIsRedoPossible(rc));
+    }
 
     return VINF_SUCCESS;
 }
@@ -294,7 +354,7 @@ static int drvscsiReqTransferEnqueue(VSCSILUN hVScsiLun,
             else
                 AssertMsg(enmTxDir == VSCSIIOREQTXDIR_FLUSH, ("Invalid transfer direction %u\n", enmTxDir));
 
-            VSCSIIoReqCompleted(hVScsiIoReq, VINF_SUCCESS);
+            VSCSIIoReqCompleted(hVScsiIoReq, VINF_SUCCESS, false);
         }
         else if (rc == VERR_VD_ASYNC_IO_IN_PROGRESS)
             rc = VINF_SUCCESS;
@@ -307,7 +367,7 @@ static int drvscsiReqTransferEnqueue(VSCSILUN hVScsiLun,
             else
                 AssertMsg(enmTxDir == VSCSIIOREQTXDIR_FLUSH, ("Invalid transfer direction %u\n", enmTxDir));
 
-            VSCSIIoReqCompleted(hVScsiIoReq, rc);
+            VSCSIIoReqCompleted(hVScsiIoReq, rc, drvscsiIsRedoPossible(rc));
             rc = VINF_SUCCESS;
         }
         else
@@ -324,14 +384,15 @@ static int drvscsiReqTransferEnqueue(VSCSILUN hVScsiLun,
 }
 
 static void drvscsiVScsiReqCompleted(VSCSIDEVICE hVScsiDevice, void *pVScsiDeviceUser,
-                                     void *pVScsiReqUser, int rcReq)
+                                     void *pVScsiReqUser, int rcScsiCode, bool fRedoPossible,
+                                     int rcReq)
 {
     PDRVSCSI pThis = (PDRVSCSI)pVScsiDeviceUser;
 
     ASMAtomicDecU32(&pThis->StatIoDepth);
 
     pThis->pDevScsiPort->pfnSCSIRequestCompleted(pThis->pDevScsiPort, (PPDMSCSIREQUEST)pVScsiReqUser,
-                                                 rcReq);
+                                                 rcScsiCode, fRedoPossible, rcReq);
 
     if (RT_UNLIKELY(pThis->fDummySignal) && !pThis->StatIoDepth)
         PDMDrvHlpAsyncNotificationCompleted(pThis->pDrvIns);

@@ -348,6 +348,7 @@ sf_lookup(struct inode *parent, struct dentry *dentry
                         goto fail1;
                 }
                 sf_new_i->handle = SHFL_HANDLE_NIL;
+        sf_new_i->force_reread = 0;
 
                 ino = iunique(parent->i_sb, 1);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 25)
@@ -372,7 +373,11 @@ sf_lookup(struct inode *parent, struct dentry *dentry
 
         sf_i->force_restat = 0;
         dentry->d_time = jiffies;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 38)
+        d_set_d_op(dentry, &sf_dentry_ops);
+#else
         dentry->d_op = &sf_dentry_ops;
+#endif
         d_add(dentry, inode);
         return NULL;
 
@@ -425,8 +430,13 @@ sf_instantiate(const char *caller, struct inode *parent,
         SET_INODE_INFO(inode, sf_new_i);
 
         dentry->d_time = jiffies;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 38)
+        d_set_d_op(dentry, &sf_dentry_ops);
+#else
         dentry->d_op = &sf_dentry_ops;
+#endif
         sf_new_i->force_restat = 1;
+    sf_new_i->force_reread = 0;
 
         d_instantiate(dentry, inode);
 
@@ -543,19 +553,23 @@ sf_create_aux(struct inode *parent, struct dentry *dentry, int mode, int fDirect
         return err;
 }
 
-static int
-sf_create(struct inode *parent, struct dentry *dentry, int mode
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
-           , struct nameidata *nd
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0)
+static int sf_create(struct inode *parent, struct dentry *dentry, umode_t mode, struct nameidata *nd)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
+static int sf_create(struct inode *parent, struct dentry *dentry, int mode, struct nameidata *nd)
+#else
+static int sf_create(struct inode *parent, struct dentry *dentry, int mode)
 #endif
-        )
 {
         TRACE();
         return sf_create_aux(parent, dentry, mode, 0);
 }
 
-static int
-sf_mkdir(struct inode *parent, struct dentry *dentry, int mode)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0)
+static int sf_mkdir(struct inode *parent, struct dentry *dentry, umode_t mode)
+#else
+static int sf_mkdir(struct inode *parent, struct dentry *dentry, int mode)
+#endif
 {
         TRACE();
         return sf_create_aux(parent, dentry, mode, 1);

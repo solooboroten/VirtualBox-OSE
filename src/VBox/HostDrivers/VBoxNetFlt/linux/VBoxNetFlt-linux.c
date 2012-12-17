@@ -1440,6 +1440,8 @@ static int vboxNetFltLinuxAttachToInterface(PVBOXNETFLTINS pThis, struct net_dev
     pThis->u.s.PacketType.dev  = pDev;
     pThis->u.s.PacketType.func = vboxNetFltLinuxPacketHandler;
     dev_add_pack(&pThis->u.s.PacketType);
+    ASMAtomicUoWriteBool(&pThis->u.s.fPacketHandler, true);
+    Log(("vboxNetFltLinuxAttachToInterface: this=%p: Packet handler installed.\n", pThis));
 
 #ifdef VBOXNETFLT_WITH_FILTER_HOST2GUEST_SKBS_EXPERIMENT
     vboxNetFltLinuxHookDev(pThis, pDev);
@@ -1464,7 +1466,6 @@ static int vboxNetFltLinuxAttachToInterface(PVBOXNETFLTINS pThis, struct net_dev
         pDev = NULL; /* don't dereference it */
     }
     RTSpinlockReleaseNoInts(pThis->hSpinlock, &Tmp);
-    Log(("vboxNetFltLinuxAttachToInterface: this=%p: Packet handler installed.\n", pThis));
 
     /*
      * If the above succeeded report GSO capabilites,  if not undo and
@@ -1509,6 +1510,7 @@ static int vboxNetFltLinuxAttachToInterface(PVBOXNETFLTINS pThis, struct net_dev
 static int vboxNetFltLinuxUnregisterDevice(PVBOXNETFLTINS pThis, struct net_device *pDev)
 {
     RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
+    bool fRegistered;
 
     Assert(!pThis->fDisconnectedFromHost);
 
@@ -1516,26 +1518,37 @@ static int vboxNetFltLinuxUnregisterDevice(PVBOXNETFLTINS pThis, struct net_devi
     vboxNetFltLinuxUnhookDev(pThis, pDev);
 #endif
 
+    if (ASMAtomicCmpXchgBool(&pThis->u.s.fPacketHandler, false, true))
+    {
+        dev_remove_pack(&pThis->u.s.PacketType);
+        Log(("vboxNetFltLinuxUnregisterDevice: this=%p: packet handler removed.\n", pThis));
+    }
+
     RTSpinlockAcquireNoInts(pThis->hSpinlock, &Tmp);
-    ASMAtomicWriteBool(&pThis->u.s.fRegistered, false);
-    ASMAtomicWriteBool(&pThis->fDisconnectedFromHost, true);
-    ASMAtomicUoWritePtr((void * volatile *)&pThis->u.s.pDev, NULL);
+    fRegistered = ASMAtomicXchgBool(&pThis->u.s.fRegistered, false);
+    if (fRegistered)
+    {
+        ASMAtomicWriteBool(&pThis->fDisconnectedFromHost, true);
+        ASMAtomicUoWritePtr((void * volatile *)&pThis->u.s.pDev, NULL);
+    }
     RTSpinlockReleaseNoInts(pThis->hSpinlock, &Tmp);
 
-    dev_remove_pack(&pThis->u.s.PacketType);
+    if (fRegistered)
+    {
 #ifndef VBOXNETFLT_LINUX_NO_XMIT_QUEUE
-    skb_queue_purge(&pThis->u.s.XmitQueue);
+        skb_queue_purge(&pThis->u.s.XmitQueue);
 #endif
-    Log(("vboxNetFltLinuxUnregisterDevice: this=%p: Packet handler removed, xmit queue purged.\n", pThis));
-    Log(("vboxNetFltLinuxUnregisterDevice: Device %p(%s) released. ref=%d\n",
-         pDev, pDev->name,
+        Log(("vboxNetFltLinuxUnregisterDevice: this=%p: xmit queue purged.\n", pThis));
+        Log(("vboxNetFltLinuxUnregisterDevice: Device %p(%s) released. ref=%d\n",
+             pDev, pDev->name,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
-         netdev_refcnt_read(pDev)
+             netdev_refcnt_read(pDev)
 #else
-         atomic_read(&pDev->refcnt)
+             atomic_read(&pDev->refcnt)
 #endif
-         ));
-    dev_put(pDev);
+           ));
+        dev_put(pDev);
+    }
 
     return NOTIFY_OK;
 }
@@ -1777,7 +1790,11 @@ int vboxNetFltOsDisconnectIt(PVBOXNETFLTINS pThis)
      * Remove packet handler when we get disconnected from internal switch as
      * we don't want the handler to forward packets to disconnected switch.
      */
-    dev_remove_pack(&pThis->u.s.PacketType);
+    if (ASMAtomicCmpXchgBool(&pThis->u.s.fPacketHandler, false, true))
+    {
+        dev_remove_pack(&pThis->u.s.PacketType);
+        Log(("vboxNetFltOsDisconnectIt: this=%p: Packet handler removed.\n", pThis));
+    }
     return VINF_SUCCESS;
 }
 
@@ -1824,7 +1841,7 @@ void vboxNetFltOsDeleteInstance(PVBOXNETFLTINS pThis)
 
     RTSpinlockAcquireNoInts(pThis->hSpinlock, &Tmp);
     pDev = (struct net_device *)ASMAtomicUoReadPtr((void * volatile *)&pThis->u.s.pDev);
-    fRegistered = ASMAtomicUoReadBool(&pThis->u.s.fRegistered);
+    fRegistered = ASMAtomicXchgBool(&pThis->u.s.fRegistered, false);
     RTSpinlockReleaseNoInts(pThis->hSpinlock, &Tmp);
 
     if (fRegistered)
@@ -1834,7 +1851,7 @@ void vboxNetFltOsDeleteInstance(PVBOXNETFLTINS pThis)
 #ifndef VBOXNETFLT_LINUX_NO_XMIT_QUEUE
         skb_queue_purge(&pThis->u.s.XmitQueue);
 #endif
-        Log(("vboxNetFltOsDeleteInstance: this=%p: Packet handler removed, xmit queue purged.\n", pThis));
+        Log(("vboxNetFltOsDeleteInstance: this=%p: xmit queue purged.\n", pThis));
         Log(("vboxNetFltOsDeleteInstance: Device %p(%s) released. ref=%d\n",
              pDev, pDev->name,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
@@ -1881,8 +1898,9 @@ int  vboxNetFltOsPreInitInstance(PVBOXNETFLTINS pThis)
      * Init the linux specific members.
      */
     pThis->u.s.pDev = NULL;
-    pThis->u.s.fRegistered = false;
+    pThis->u.s.fRegistered     = false;
     pThis->u.s.fPromiscuousSet = false;
+    pThis->u.s.fPacketHandler  = false;
     memset(&pThis->u.s.PacketType, 0, sizeof(pThis->u.s.PacketType));
 #ifndef VBOXNETFLT_LINUX_NO_XMIT_QUEUE
     skb_queue_head_init(&pThis->u.s.XmitQueue);

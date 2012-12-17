@@ -1125,8 +1125,8 @@ STDMETHODIMP VirtualBox::CreateMachine(IN_BSTR aName,
                                        BOOL aOverride,
                                        IMachine **aMachine)
 {
-    LogFlowThisFuncEnter();
-    LogFlowThisFunc(("aName=\"%ls\",aOsTypeId =\"%ls\",aBaseFolder=\"%ls\"\n", aName, aOsTypeId, aBaseFolder));
+    LogRelFlowThisFuncEnter();
+    LogRelFlowThisFunc(("aName=\"%ls\",aOsTypeId =\"%ls\",aBaseFolder=\"%ls\"\n", aName, aOsTypeId, aBaseFolder));
 
     CheckComArgStrNotEmptyOrNull(aName);
     /** @todo tighten checks on aId? */
@@ -1185,7 +1185,7 @@ STDMETHODIMP VirtualBox::CreateMachine(IN_BSTR aName,
         AssertComRC(rc);
     }
 
-    LogFlowThisFuncLeave();
+    LogRelFlowThisFuncLeave();
 
     return rc;
 }
@@ -1277,6 +1277,8 @@ STDMETHODIMP VirtualBox::OpenMachine(IN_BSTR aSettingsFile,
 /** @note Locks objects! */
 STDMETHODIMP VirtualBox::RegisterMachine(IMachine *aMachine)
 {
+    LogRelFlowThisFuncEnter();
+
     CheckComArgNotNull(aMachine);
 
     AutoCaller autoCaller(this);
@@ -1299,6 +1301,8 @@ STDMETHODIMP VirtualBox::RegisterMachine(IMachine *aMachine)
     /* fire an event */
     if (SUCCEEDED(rc))
         onMachineRegistered(pMachine->getId(), TRUE);
+
+    LogRelFlowThisFuncLeave();
 
     return rc;
 }
@@ -1374,6 +1378,9 @@ STDMETHODIMP VirtualBox::FindMachine(IN_BSTR aName, IMachine **aMachine)
 STDMETHODIMP VirtualBox::UnregisterMachine(IN_BSTR  aId,
                                            IMachine **aMachine)
 {
+    LogRelFlowThisFuncEnter();
+    LogRelFlowThisFunc(("aId=\"%ls\"\n", aId));
+
     Guid id(aId);
     if (id.isEmpty())
         return E_INVALIDARG;
@@ -1402,6 +1409,8 @@ STDMETHODIMP VirtualBox::UnregisterMachine(IN_BSTR  aId,
 
     /* fire an event */
     onMachineRegistered(id, FALSE);
+
+    LogRelFlowThisFuncLeave();
 
     return rc;
 }

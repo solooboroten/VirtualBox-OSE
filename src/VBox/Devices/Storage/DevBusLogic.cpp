@@ -2012,7 +2012,8 @@ static DECLCALLBACK(int) buslogicMMIOMap(PPCIDEVICE pPciDev, /*unsigned*/ int iR
     return rc;
 }
 
-static DECLCALLBACK(int) buslogicDeviceSCSIRequestCompleted(PPDMISCSIPORT pInterface, PPDMSCSIREQUEST pSCSIRequest, int rcCompletion)
+static DECLCALLBACK(int) buslogicDeviceSCSIRequestCompleted(PPDMISCSIPORT pInterface, PPDMSCSIREQUEST pSCSIRequest,
+                                                            int rcCompletion, bool fRedo, int rcReq)
 {
     int rc;
     PBUSLOGICTASKSTATE pTaskState = (PBUSLOGICTASKSTATE)pSCSIRequest->pvUser;
@@ -2741,7 +2742,7 @@ static DECLCALLBACK(int) buslogicConstruct(PPDMDEVINS pDevIns, int iInstance, PC
         return rc;
 
     /* Register I/O port space in ISA region for BIOS access. */
-    rc = PDMDevHlpIOPortRegister(pDevIns, BUSLOGIC_ISA_IO_PORT, 3, NULL,
+    rc = PDMDevHlpIOPortRegister(pDevIns, BUSLOGIC_ISA_IO_PORT, 4, NULL,
                                  buslogicIsaIOPortWrite, buslogicIsaIOPortRead,
                                  buslogicIsaIOPortWriteStr, buslogicIsaIOPortReadStr,
                                  "BusLogic BIOS");

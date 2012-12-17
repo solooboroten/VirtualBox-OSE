@@ -1547,6 +1547,8 @@ int main()
     GEN_CHECK_OFF(LSILOGICSCSI, pLedsConnector);
     GEN_CHECK_OFF(LSILOGICSCSI, pConfigurationPages);
     GEN_CHECK_OFF(LSILOGICSCSI, fSignalIdle);
+    GEN_CHECK_OFF(LSILOGICSCSI, fRedo);
+    GEN_CHECK_OFF(LSILOGICSCSI, pTasksRedoHead);
 #endif /* VBOX_WITH_LSILOGIC */
 
 #ifdef VBOX_WITH_HPET

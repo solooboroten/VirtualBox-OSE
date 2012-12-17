@@ -1,4 +1,4 @@
-/* $Revision: 65760 $ */
+/* $Revision: 75932 $ */
 /** @file
  * Glue code for dynamically linking to VBoxXPCOMC.
  */
@@ -35,6 +35,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <dlfcn.h>
 
 #include "VBoxXPCOMCGlue.h"
@@ -137,7 +138,7 @@ static int tryLoadOne(const char *pszHome, int fSetAppHome)
     if (g_hVBoxXPCOMC)
     {
         PFNVBOXGETXPCOMCFUNCTIONS pfnGetFunctions;
-        pfnGetFunctions = (PFNVBOXGETXPCOMCFUNCTIONS)
+        pfnGetFunctions = (PFNVBOXGETXPCOMCFUNCTIONS)(uintptr_t)
             dlsym(g_hVBoxXPCOMC, VBOX_GET_XPCOMC_FUNCTIONS_SYMBOL_NAME);
         if (pfnGetFunctions)
         {

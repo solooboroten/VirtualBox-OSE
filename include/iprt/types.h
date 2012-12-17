@@ -101,17 +101,48 @@
 #    include <linux/autoconf.h>
 #   endif
 #  endif
+#  include <linux/compiler.h>
+#  if defined(__cplusplus)
+    /*
+     * Starting with 3.3, <linux/compiler-gcc.h> appends 'notrace' (which
+     * expands to __attribute__((no_instrument_function))) to inline,
+     * __inline and __inline__. Revert that.
+     */
+#   undef inline
+#   define inline inline
+#   undef __inline__
+#   define __inline__ __inline__
+#   undef __inline
+#   define __inline __inline
+#  endif
 #  include <linux/types.h>
 #  include <linux/stddef.h>
+    /*
+     * Starting with 3.4, <linux/stddef.h> defines NULL as '((void*)0)' which
+     * does not work for C++ code.
+     */
+#  undef NULL
 #  undef uintptr_t
+#  ifdef __GNUC__
+#   if (__GNUC__ * 100 + __GNUC_MINOR__) <= 400
+     /*
+      * <linux/compiler-gcc{3,4}.h> does
+      *   #define __inline__  __inline__ __attribute__((always_inline))
+      * in some older Linux kernels. Forcing inlining will fail for some RTStrA*
+      * functions with gcc <= 4.0 due to passing variable argument lists.
+      */
+#    undef __inline__
+#    define __inline__ __inline__
+#   endif
+#  endif
 #  undef false
 #  undef true
 #  undef bool
-
 # else
 #  include <stddef.h>
 #  include <sys/types.h>
 # endif
+
 
 /* Define any types missing from sys/types.h on windows. */
 # ifdef _MSC_VER
@@ -122,6 +153,17 @@
 #else  /* no crt */
 # include <iprt/nocrt/compiler/compiler.h>
 #endif /* no crt */
+
+/** @def NULL
+ * NULL pointer.
+ */
+#ifndef NULL
+# ifdef __cplusplus
+#  define NULL 0
+# else
+#  define NULL ((void*)0)
+# endif
+#endif
 
 
 

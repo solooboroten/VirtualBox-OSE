@@ -26,6 +26,7 @@
  * of the LGPL is applied is otherwise unspecified.
  */
 
+
 #ifndef __WINE_DMUSIC_DLS_H
 #define __WINE_DMUSIC_DLS_H
 

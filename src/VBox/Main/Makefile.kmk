@@ -283,6 +283,7 @@ VBoxSVC_SOURCES = \
 	ApplianceImplImport.cpp \
 	xml/ovfreader.cpp \
 	VFSExplorerImpl.cpp \
+	ServerLogging.cpp \
 	MachineImpl.cpp \
 	SnapshotImpl.cpp \
 	MediumImpl.cpp \
@@ -337,6 +338,11 @@ VBoxSVC_SOURCES.solaris = \
 
 VBoxSVC_SOURCES.freebsd = \
 	freebsd/HostHardwareFreeBSD.cpp
+
+ServerLogging.cpp_DEFS = \
+	VBOX_BUILD_TARGET=\"$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)\" \
+	$(if $(VBOX_BLEEDING_EDGE),VBOX_BLEEDING_EDGE=\"$(VBOX_BLEEDING_EDGE)\",)
+
 
 ifdef VBOX_WITH_USB
  ifdef VBOX_WITH_SYSFS_BY_DEFAULT

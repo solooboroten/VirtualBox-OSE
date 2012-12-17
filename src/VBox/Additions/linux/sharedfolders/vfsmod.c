@@ -209,6 +209,7 @@ sf_read_super_aux(struct super_block *sb, void *data, int flags)
         struct sf_glob_info *sf_g;
         RTFSOBJINFO fsinfo;
         struct vbsf_mount_info_new *info;
+        bool fInodePut = true;
 
         TRACE();
         if (!data) {
@@ -247,6 +248,7 @@ sf_read_super_aux(struct super_block *sb, void *data, int flags)
         sf_i->path->u16Size = 2;
         sf_i->path->String.utf8[0] = '/';
         sf_i->path->String.utf8[1] = 0;
+    sf_i->force_reread = 0;
 
         err = sf_stat(__func__, sf_g, sf_i->path, &fsinfo, 0);
         if (err) {
@@ -299,10 +301,17 @@ sf_read_super_aux(struct super_block *sb, void *data, int flags)
         unlock_new_inode(iroot);
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
+        droot = d_make_root(iroot);
+#else
         droot = d_alloc_root(iroot);
+#endif
         if (!droot) {
                 err = -ENOMEM;  /* XXX */
                 LogFunc(("d_alloc_root failed\n"));
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
+                fInodePut = false;
+#endif
                 goto fail5;
         }
 
@@ -313,7 +322,8 @@ sf_read_super_aux(struct super_block *sb, void *data, int flags)
  fail5:
         sf_done_backing_dev(sf_g);
  fail4:
-        iput(iroot);
+        if (fInodePut)
+            iput(iroot);
  fail3:
         kfree(sf_i->path);
  fail2:
@@ -367,7 +377,11 @@ sf_evict_inode(struct inode *inode)
 
         TRACE();
         truncate_inode_pages(&inode->i_data, 0);
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
+        clear_inode(inode);
+# else
         end_writeback(inode);
+# endif
 
         sf_i = GET_INODE_INFO(inode);
         if (!sf_i)

@@ -1436,7 +1436,7 @@ void XmlFileParser::read(const iprt::MiniString &strFilename,
                                               &context,
                                               pcszFilename,
                                               NULL,       // encoding = auto
-                                              XML_PARSE_NOBLANKS)))
+                                              XML_PARSE_NOBLANKS | XML_PARSE_NONET)))
         throw XmlError(xmlCtxtGetLastError(m->ctxt));
 
     doc.refreshInternals();

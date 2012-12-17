@@ -41,6 +41,13 @@ RT_C_DECLS_BEGIN
  * @{
  */
 
+/**
+ * Host max path (the reasonable value).
+ * @remarks defined both by iprt/param.h and iprt/path.h.
+ */
+#if !defined(___iprt_param_h) || defined(DOXYGEN_RUNNING)
+# define RTPATH_MAX         (4096 + 4)    /* (PATH_MAX + 1) on linux w/ some alignment */
+#endif
 
 /** @def RTPATH_SLASH
  * The preferred slash character.

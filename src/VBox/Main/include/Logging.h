@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -88,6 +88,9 @@
  *          after the error has been fixed.
  */
 #define MyLog(a)            MyLogIt(LOG_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP, a)
+
+int VBoxSVCLogRelCreate(const char *pszLogFile, uint32_t cHistory,
+                        uint32_t uHistoryFileTime, uint64_t uHistoryFileSize);
 
 #endif // ____H_LOGGING
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

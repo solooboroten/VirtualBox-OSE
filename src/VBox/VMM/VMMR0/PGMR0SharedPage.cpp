@@ -48,6 +48,7 @@ VMMR0DECL(int) PGMR0SharedModuleCheck(PVM pVM, PGVM pGVM, VMCPUID idCpu, PGMMSHA
     int                rc = VINF_SUCCESS;
     GMMSHAREDPAGEDESC  PageDesc;
     bool               fFlushTLBs = false;
+    bool               fFlushRemTLBs = false;
     PVMCPU             pVCpu = &pVM->aCpus[idCpu];
 
     Log(("PGMR0SharedModuleCheck: check %s %s base=%RGv size=%x\n", pModule->szName, pModule->szVersion, pModule->Core.Key, pModule->cbModule));
@@ -77,7 +78,9 @@ VMMR0DECL(int) PGMR0SharedModuleCheck(PVM pVM, PGVM pGVM, VMCPUID idCpu, PGMMSHA
                 PPGMPAGE pPage = pgmPhysGetPage(&pVM->pgm.s, GCPhys);
                 Assert(!pPage || !PGM_PAGE_IS_BALLOONED(pPage));
                 if (    pPage
-                    &&  PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_ALLOCATED)
+                    &&  PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_ALLOCATED
+                    &&  PGM_PAGE_GET_READ_LOCKS(pPage) == 0
+                    &&  PGM_PAGE_GET_WRITE_LOCKS(pPage) == 0 )
                 {
                     PageDesc.uHCPhysPageId = PGM_PAGE_GET_PAGEID(pPage);
                     PageDesc.HCPhys        = PGM_PAGE_GET_HCPHYS(pPage);
@@ -90,18 +93,22 @@ VMMR0DECL(int) PGMR0SharedModuleCheck(PVM pVM, PGVM pGVM, VMCPUID idCpu, PGMMSHA
                         if (PageDesc.uHCPhysPageId != NIL_GMM_PAGEID)
                         {
                             Assert(PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_ALLOCATED);
-
                             Log(("PGMR0SharedModuleCheck: shared page gc virt=%RGv phys %RGp host %RHp->%RHp\n", pRegions[idxRegion].GCRegionAddr + idxPage * PAGE_SIZE, PageDesc.GCPhys, PGM_PAGE_GET_HCPHYS(pPage), PageDesc.HCPhys));
+
+                            /* Page was either replaced by an existing shared
+                               version of it or converted into a read-only shared
+                               page, so, clear all references. */
+                            bool fFlush = false;
+                            rc = pgmPoolTrackUpdateGCPhys(pVM, PageDesc.GCPhys, pPage, true /* clear the entries */, &fFlush);
+                            Assert(   rc == VINF_SUCCESS
+                                   || (   VMCPU_FF_ISSET(pVCpu, VMCPU_FF_PGM_SYNC_CR3)
+                                       && (pVCpu->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL)));
+                            if (rc == VINF_SUCCESS)
+                                fFlushTLBs |= fFlush;
+                            fFlushRemTLBs = true;
+
                             if (PageDesc.HCPhys != PGM_PAGE_GET_HCPHYS(pPage))
                             {
-                                bool fFlush = false;
-
-                                /* Page was replaced by an existing shared version of it; clear all references first. */
-                                rc = pgmPoolTrackUpdateGCPhys(pVM, PageDesc.GCPhys, pPage, true /* clear the entries */, &fFlush);
-                                Assert(rc == VINF_SUCCESS || (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_PGM_SYNC_CR3) && (pVCpu->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL)));
-                                if (rc == VINF_SUCCESS)
-                                    fFlushTLBs |= fFlush;
-
                                 /* Update the physical address and page id now. */
                                 PGM_PAGE_SET_HCPHYS(pPage, PageDesc.HCPhys);
                                 PGM_PAGE_SET_PAGEID(pPage, PageDesc.uHCPhysPageId);
@@ -123,11 +130,11 @@ VMMR0DECL(int) PGMR0SharedModuleCheck(PVM pVM, PGVM pGVM, VMCPUID idCpu, PGMMSHA
             }
             else
             {
-                Assert(    rc == VINF_SUCCESS 
+                Assert(    rc == VINF_SUCCESS
                        ||  rc == VERR_PAGE_NOT_PRESENT
                        ||  rc == VERR_PAGE_MAP_LEVEL4_NOT_PRESENT
                        ||  rc == VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT
-                       ||  rc == VERR_PAGE_TABLE_NOT_PRESENT);  
+                       ||  rc == VERR_PAGE_TABLE_NOT_PRESENT);
                 rc = VINF_SUCCESS;  /* ignore error */
             }
 
@@ -138,8 +145,16 @@ VMMR0DECL(int) PGMR0SharedModuleCheck(PVM pVM, PGVM pGVM, VMCPUID idCpu, PGMMSHA
     }
 
     pgmUnlock(pVM);
+
+    /*
+     * Do TLB flushing if necessary.
+     */
     if (fFlushTLBs)
         PGM_INVL_ALL_VCPU_TLBS(pVM);
+
+    if (fFlushRemTLBs)
+        for (VMCPUID idCurCpu = 0; idCurCpu < pVM->cCpus; idCurCpu++)
+            CPUMSetChangedFlags(&pVM->aCpus[idCurCpu], CPUM_CHANGED_GLOBAL_TLB_FLUSH);
 
     return rc;
 }
