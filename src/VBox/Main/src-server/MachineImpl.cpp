@@ -4266,6 +4266,8 @@ STDMETHODIMP Machine::SetExtraData(IN_BSTR aKey, IN_BSTR aValue)
 
 STDMETHODIMP Machine::SaveSettings()
 {
+    LogRelFlowThisFuncEnter();
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
@@ -4317,6 +4319,9 @@ STDMETHODIMP Machine::DiscardSettings()
 STDMETHODIMP Machine::Unregister(CleanupMode_T cleanupMode,
                                  ComSafeArrayOut(IMedium*, aMedia))
 {
+    LogRelFlowThisFuncEnter();
+    LogRelFlowThisFunc(("uUuid=\"%s\"\n", mData->mUuid.toString().c_str()));
+
     // use AutoLimitedCaller because this call is valid on inaccessible machines as well
     AutoLimitedCaller autoCaller(this);
     AssertComRCReturnRC(autoCaller.rc());
@@ -4457,7 +4462,7 @@ struct Machine::DeleteTask
 
 STDMETHODIMP Machine::Delete(ComSafeArrayIn(IMedium*, aMedia), IProgress **aProgress)
 {
-    LogFlowFuncEnter();
+    LogRelFlowThisFuncEnter();
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -4523,7 +4528,7 @@ STDMETHODIMP Machine::Delete(ComSafeArrayIn(IMedium*, aMedia), IProgress **aProg
         return setError(E_FAIL, "Could not create MachineDelete thread (%Rrc)", vrc);
     }
 
-    LogFlowFuncLeave();
+    LogRelFlowThisFuncLeave();
 
     return S_OK;
 }
@@ -4583,8 +4588,8 @@ HRESULT Machine::deleteTaskWorker(DeleteTask &task)
     while (it != task.llFilesToDelete.end())
     {
         const Utf8Str &strFile = *it;
-        LogFunc(("Deleting file %s\n", strFile.c_str()));
-        RTFileDelete(strFile.c_str());
+        int vrc = RTFileDelete(strFile.c_str());
+        LogRelFlowFunc(("Deleting file %s: %Rrc\n", strFile.c_str(), vrc));
 
         ++it;
         if (it == task.llFilesToDelete.end())
@@ -4603,9 +4608,11 @@ HRESULT Machine::deleteTaskWorker(DeleteTask &task)
            See the fSafe parameter of xml::XmlFileWriter::write for details. */
         /** @todo Find a way to avoid referring directly to iprt/xml.h here. */
         Utf8Str otherXml = Utf8StrFmt("%s%s", mData->m_strConfigFileFull.c_str(), xml::XmlFileWriter::s_pszTmpSuff);
-        RTFileDelete(otherXml.c_str());
+        int vrc = RTFileDelete(otherXml.c_str());
+        LogRelFlowThisFunc(("Deleting %s: %Rrc\n", otherXml.c_str(), vrc));
         otherXml = Utf8StrFmt("%s%s", mData->m_strConfigFileFull.c_str(), xml::XmlFileWriter::s_pszPrevSuff);
-        RTFileDelete(otherXml.c_str());
+        vrc = RTFileDelete(otherXml.c_str());
+        LogRelFlowThisFunc(("Deleting %s: %Rrc\n", otherXml.c_str(), vrc));
 
         /* delete the Logs folder, nothing important should be left
          * there (we don't check for errors because the user might have
@@ -4621,21 +4628,26 @@ HRESULT Machine::deleteTaskWorker(DeleteTask &task)
              * files that may have been created by the GUI. */
             Utf8Str log = Utf8StrFmt("%s%cVBox.log",
                                      logFolder.c_str(), RTPATH_DELIMITER);
-            RTFileDelete(log.c_str());
+            vrc = RTFileDelete(log.c_str());
+            LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
             log = Utf8StrFmt("%s%cVBox.png",
                              logFolder.c_str(), RTPATH_DELIMITER);
-            RTFileDelete(log.c_str());
+            vrc = RTFileDelete(log.c_str());
+            LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
             for (int i = uLogHistoryCount; i > 0; i--)
             {
                 log = Utf8StrFmt("%s%cVBox.log.%d",
                                  logFolder.c_str(), RTPATH_DELIMITER, i);
-                RTFileDelete(log.c_str());
+                vrc = RTFileDelete(log.c_str());
+                LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
                 log = Utf8StrFmt("%s%cVBox.png.%d",
                                  logFolder.c_str(), RTPATH_DELIMITER, i);
-                RTFileDelete(log.c_str());
+                vrc = RTFileDelete(log.c_str());
+                LogRelFlowThisFunc(("Deleting %s: %Rrc\n", log.c_str(), vrc));
             }
 
-            RTDirRemove(logFolder.c_str());
+            vrc = RTDirRemove(logFolder.c_str());
+            LogRelFlowThisFunc(("Removing %s: %Rrc\n", logFolder.c_str(), vrc));
         }
 
         /* delete the Snapshots folder, nothing important should be left
@@ -4645,13 +4657,19 @@ HRESULT Machine::deleteTaskWorker(DeleteTask &task)
         calculateFullPath(mUserData->s.strSnapshotFolder, strFullSnapshotFolder);
         Assert(!strFullSnapshotFolder.isEmpty());
         if (RTDirExists(strFullSnapshotFolder.c_str()))
-            RTDirRemove(strFullSnapshotFolder.c_str());
+        {
+            vrc = RTDirRemove(strFullSnapshotFolder.c_str());
+            LogRelFlowThisFunc(("Removing %s: %Rrc\n", strFullSnapshotFolder.c_str(), vrc));
+        }
 
         // delete the directory that contains the settings file, but only
         // if it matches the VM name
         Utf8Str settingsDir;
         if (isInOwnDir(&settingsDir))
-            RTDirRemove(settingsDir.c_str());
+        {
+            vrc = RTDirRemove(settingsDir.c_str());
+            LogRelFlowThisFunc(("Removing %s: %Rrc\n", settingsDir.c_str(), vrc));
+        }
     }
 
     alock.release();
@@ -5005,7 +5023,9 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
         {
             /** @todo r=bird: Why aren't we leaving the lock here?  The
              *                same code in PushGuestProperty does... */
-            mParent->onGuestPropertyChange(mData->mUuid, aName, aValue, aFlags);
+            mParent->onGuestPropertyChange(mData->mUuid, aName,
+                                           aValue ? aValue : Bstr("").raw(),
+                                           aFlags ? aFlags : Bstr("").raw());
         }
     }
     catch (std::bad_alloc &)
@@ -6729,6 +6749,8 @@ HRESULT Machine::checkStateDependency(StateDependency aDepType)
             break;
         }
     }
+
+    LogRelFlowThisFuncLeave();
 
     return S_OK;
 }
@@ -11194,8 +11216,8 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
     using namespace guestProp;
 
     CheckComArgStrNotEmptyOrNull(aName);
-    if (aValue != NULL && (!VALID_PTR(aValue) || !VALID_PTR(aFlags)))
-        return E_POINTER;  /* aValue can be NULL to indicate deletion */
+    CheckComArgNotNull(aValue);
+    CheckComArgNotNull(aFlags);
 
     try
     {
@@ -11942,6 +11964,10 @@ void SessionMachine::unlockMedia()
  * Helper to change the machine state (reimplementation).
  *
  * @note Locks this object for writing.
+ * @note This method must not call saveSettings or SaveSettings, otherwise
+ *       it can cause crashes in random places due to unexpectedly committing
+ *       the current settings. The caller is responsible for that. The call
+ *       to saveStateSettings is fine, because this method does not commit.
  */
 HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
 {
@@ -12133,7 +12159,6 @@ HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
         {
             mData->mCurrentStateModified = TRUE;
             stsFlags |= SaveSTS_CurStateModified;
-            SaveSettings();     // @todo r=dj why the public method? why first SaveSettings and then saveStateSettings?
         }
     }
 #endif

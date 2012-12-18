@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions kernel module init script ($Revision: 75124 $)
+# Linux Additions kernel module init script ($Revision: 75652 $)
 #
 
 #
@@ -371,6 +371,11 @@ setup_modules()
     # don't stop the old modules here -- they might be in use
     cleanup_modules
     begin "Building the VirtualBox Guest Additions kernel modules"
+
+    chcon -t bin_t "$BUILDVBOXGUEST" > /dev/null 2>&1
+    chcon -t bin_t "$BUILDVBOXSF"    > /dev/null 2>&1
+    chcon -t bin_t "$BUILDVBOXVIDEO" > /dev/null 2>&1
+    chcon -t bin_t "$DODKMS"         > /dev/null 2>&1
 
     # Short cut out if a dkms build succeeds
     if $DODKMS install >> $LOG 2>&1; then

@@ -347,6 +347,7 @@ if [ "$ACTION" = "install" ]; then
         chcon -t java_exec_t    $INSTALLATION_DIR/VBoxExtPackHelperApp > /dev/null 2>&1
         chcon -t java_exec_t    $INSTALLATION_DIR/vboxwebsrv > /dev/null 2>&1
         chcon -t java_exec_t    $INSTALLATION_DIR/webtest > /dev/null 2>&1
+        chcon -t bin_t          $INSTALLATION_DIR/src/vboxhost/*/build_in_tmp > /dev/null 2>&1
     fi
 
     # Hardened build: Mark selected binaries set-user-ID-on-execution,

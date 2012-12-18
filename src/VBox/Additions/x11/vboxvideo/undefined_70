@@ -140,11 +140,13 @@ vgaHWDPMSSet
 vgaHWFreeHWRec
 vgaHWGetHWRec
 vgaHWGetIndex
+vgaHWGetIOBase
 vgaHWHandleColormaps
 vgaHWMapMem
 vgaHWRestoreFonts
 vgaHWSaveFonts
 vgaHWSaveScreen
+vgaHWSetStdFuncs
 vgaHWUnmapMem
 write
 xf86AddDriver

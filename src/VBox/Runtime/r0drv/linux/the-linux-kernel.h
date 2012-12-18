@@ -35,7 +35,7 @@
 #define bool linux_bool
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
 # include <generated/autoconf.h>
 #else
 # ifndef AUTOCONF_INCLUDED
@@ -64,6 +64,9 @@
 #  define KBUILD_STR(s) #s
 # endif
 #endif
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0)
+#  include <linux/kconfig.h> /* for macro IS_ENABLED */
+# endif
 #include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
@@ -228,7 +231,7 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 /* accounting. */
 # if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0)
 #  ifdef VM_ACCOUNT
-#   define MY_DO_MUNMAP(a,b,c) do_munmap(a, b, c, 0) /* should it be 1 or 0? */
+#   define USE_RHEL4_MUNMAP
 #  endif
 # endif
 
@@ -254,10 +257,6 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
     } while (0)
 # endif  /* !RT_ARCH_AMD64 */
 #endif /* !NO_REDHAT_HACKS */
-
-#ifndef MY_DO_MUNMAP
-# define MY_DO_MUNMAP(a,b,c) do_munmap(a, b, c)
-#endif
 
 #ifndef MY_CHANGE_PAGE_ATTR
 # ifdef RT_ARCH_AMD64 /** @todo This is a cheap hack, but it'll get around that 'else BUG();' in __change_page_attr().  */

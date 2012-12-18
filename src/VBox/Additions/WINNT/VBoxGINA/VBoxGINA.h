@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,11 +14,8 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-#ifndef ___H_VBOXGINA
-#define ___H_VBOXGINA
-
-#include <iprt/initterm.h>
-#include <VBox/log.h>
+#ifndef __VBOXGINA_H__
+#define __VBOXGINA_H__
 
 /** Handle to Winlogon service */
 extern HANDLE hGinaWlx;
@@ -56,5 +53,5 @@ typedef VOID (WINAPI *PGWLXRECONNECTNOTIFY)(PVOID);
 typedef VOID (WINAPI *PGWLXDISCONNECTNOTIFY)(PVOID);
 /** @}  */
 
-#endif /* !___H_VBOXGINA */
+#endif /* !__VBOXGINA_H__ */
 

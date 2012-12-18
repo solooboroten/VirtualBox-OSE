@@ -1,6 +1,173 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.0.18 (2012-12-18)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: fixed <emphasis>VERR_NOT_SUPPORTED</emphasis> and
+          <emphasis>VERR_RAW_MODE_INVALID_SMP</emphasis> guru meditation
+          due to an invalid reschedule to raw mode (bug #10370)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a potential problem causing to schedule interrupts during
+          <emphasis>sysexit</emphasis> right after <emphasis>STI</emphasis></para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a VM hang after a resume from pause / savestate with SMP
+          guests in rare cases</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a potential guest memory corruption issue in page
+          fusion</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed host freezes with 64-bit guests on 32-bit Linux
+          hosts (bug #10528)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed an interpretion bug for <emphasis>TPR read</emphasis>
+          instructions under rare conditions (AMD-V only)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed handling of task gates if VT-x/AMD-V is disabled</para>
+      </listitem>
+
+      <listitem>
+        <para>Snapshots: fixed a crash when restoring an old
+          snapshot when powering off a VM (bug #10491)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: host interfaces no longer have "defaults" for ip address
+          and network mask attributes</para>
+      </listitem>
+
+      <listitem>
+        <para>Network: fixed the problem with packets larger than MTU-4 when
+          PCnet or PRO/1000 was bridged to certain types of adapters on OS X host
+          (bug #3783)</para>
+      </listitem>
+
+      <listitem>
+        <para>Bridged Networking: fixed the problem with device driver unloading
+          on kernels 3.2.18 and newer due to invalid reference counter (bug
+          #10624)</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: fixed a crash under rare circumstances (Windows hosts only;
+          bug #10128)</para>
+      </listitem>
+
+      <listitem>
+        <para>Virtio-net: fixed the problem with receiving of GSO packets in
+          Windows XP guests causing packet loss in host-to-VM transfers</para>
+      </listitem>
+
+      <listitem>
+        <para>Virtio-net: fixed the problem with network statistics counters
+        in Session Information dialog (GUI)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed a possible data corruption when compacting VDI
+          images with snapshots</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed audio CD passthrough for certain media players</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang in case of unaligned requests and async I/O enabled</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang with newer VHD images (bug #11279)</para>
+      </listitem>
+
+      <listitem>
+        <para>VGA: fixed wrong access check which might cause a crash
+          under certain conditions</para>
+      </listitem>
+
+      <listitem>
+        <para>VGA: fix for double scan text modes</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: don't crash if a USB device is plugged or unplugged when
+          saving or loading the VM state (SMP guests only)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed memory leak when executing and waiting for a
+          guest process</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed converting disks from raw images</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris installer: fixed dependency checking while installing VirtualBox
+          in a zone</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: fixes for Linux 3.3, 3.4, 3.5 and 3.7</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: make 3D passthrough work on OEL/RHEL 6.2 (bug
+           #10010)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed missing implementation when copying shared
+           folder data through kernel high memory (bug #9878)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: make sure all data is written when closing a
+           memory mapped file on a shared folder</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: the guest content was sometimes not properly
+          updated (bug #9887)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris Additions: fixed guest kernel driver to load properly
+          on guest reboot (4.1.8 regression; bug #10113)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris Additions: fixed missing 64-bit OpenGL library VBoxOGL.so
+          (bug #10151)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions, VRDP: fixed occasional corruption of vertical text</para>
+      </listitem>
+
+    </itemizedlist>
+
+  </sect1>
+
+  <sect1>
     <title>Version 4.0.16 (2011-12-21)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -33,7 +200,7 @@
 
       <listitem>
         <para>Main: fixed incorrect framebuffer information after leaving
-          the fullscreen mode with X11 guests, this lead to a scrambled
+          the full screen mode with X11 guests, this lead to a scrambled
           preview window in the GUI for example</para>
       </listitem>
 
@@ -46,10 +213,10 @@
           when using snapshots under rare circumstances (bug #9749)</para>
       </listitem>
 
-      <listitem> 
+      <listitem>
         <para>OVF/OVA: fixed broken disk images on import under rare
-          circumstances</para> 
-      </listitem> 
+          circumstances</para>
+      </listitem>
 
       <listitem>
         <para>Mac OS X hosts: fixed the problem with duplicate packets when
@@ -63,6 +230,11 @@
 
       <listitem>
         <para>Linux guests: fixes for Linux 3.2</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage/iSCSI: fixed crash when using incorrect credentials
+          when authenticating with a LIO target (bug #10173)</para>
       </listitem>
 
     </itemizedlist>
@@ -322,7 +494,7 @@
       </listitem>
 
       <listitem>
-        <para>RDP: fixed screen corruption under rare circumstances (bug #8977)</para>
+        <para>VRDP: fixed screen corruption under rare circumstances (bug #8977)</para>
       </listitem>
 
       <listitem>
@@ -766,7 +938,7 @@
       </listitem>
 
       <listitem>
-        <para>Webservice: use own log file, with log rotation to limit size</para>
+        <para>Web service: use own log file, with log rotation to limit size</para>
       </listitem>
 
     </itemizedlist>
@@ -861,7 +1033,7 @@
       </listitem>
 
       <listitem>
-        <para>Metrics: introduced <emphasis>RAM/VMM</emphasis> base metric.</para>
+        <para>Metrics: introduced <emphasis>RAM/VMM</emphasis> base metric</para>
       </listitem>
 
       <listitem>
@@ -957,17 +1129,17 @@
 
       <listitem>
         <para>X.Org guests: support X.Org Server 1.10 pre-release and Ubuntu
-           11.04 Alpha.</para>
+           11.04 Alpha</para>
       </listitem>
 
       <listitem>
         <para>X.Org guests: Add EDID emulation in the graphics driver to
-          prevent GNOME settings daemon changing the mode on login.</para>
+          prevent GNOME settings daemon changing the mode on login</para>
       </listitem>
 
       <listitem>
         <para>X.Org guests: never send graphics modes to the host that older
-           VirtualBox versions can't handle.</para>
+           VirtualBox versions can't handle</para>
       </listitem>
 
       <listitem>
@@ -1107,7 +1279,7 @@
       </listitem>
 
       <listitem>
-        <para>Webservice: now listens to localhost by default as documented
+        <para>Web service: now listens to localhost by default as documented
           (bug #6067)</para>
       </listitem>
 
@@ -1132,7 +1304,7 @@
       </listitem>
 
       <listitem>
-        <para>Linux hosts: fixed a crash during USB device enumeration.</para>
+        <para>Linux hosts: fixed a crash during USB device enumeration</para>
       </listitem>
 
       <listitem>
@@ -1146,7 +1318,7 @@
       </listitem>
 
       <listitem>
-        <para>Windows Guest Additions: automatic logon on Windows Vista/Windows 7 now supports
+        <para>Windows Additions: automatic logon on Windows Vista/Windows 7 now supports
           unlocking previously locked workstations</para>
       </listitem>
 
@@ -1260,7 +1432,7 @@
       </listitem>
 
       <listitem>
-        <para>Storage: support for resizing VDI and VHD images; see <xref linkend="vboxmanage-modifyvdi" />.</para>
+        <para>Storage: support for resizing VDI and VHD images; see <xref linkend="vboxmanage-modifyvdi" /></para>
       </listitem>
 
      <listitem>
@@ -1307,7 +1479,7 @@
       </listitem>
 
       <listitem>
-        <para>GUI: fixed black fullscreen minitoolbar on KDE4 hosts
+        <para>GUI: fixed black full screen minitoolbar on KDE4 hosts
           (Linux hosts only; bug #5449)</para>
       </listitem>
 
@@ -1776,7 +1948,7 @@
 
       <listitem>
         <para>3D support: fixed broken 3D support when switching to
-          fullscreen/seamless modes (bug #7314)</para>
+          full screen / seamless modes (bug #7314)</para>
       </listitem>
 
       <listitem>
@@ -2020,7 +2192,7 @@
       </listitem>
 
       <listitem>
-        <para>RDP video redirection performance improvements and stability
+        <para>VRDP video redirection performance improvements and stability
           fixes</para>
       </listitem>
 
@@ -2121,7 +2293,7 @@
       </listitem>
 
       <listitem>
-        <para>GUI: fixed quit dialog when used in seamless or fullscreen mode
+        <para>GUI: fixed quit dialog when used in seamless or full screen mode
           (Mac OS X hosts only; bug #6938)</para>
       </listitem>
 
@@ -2132,7 +2304,7 @@
       </listitem>
 
       <listitem>
-        <para>2D Video acceleration: fixed crashes when leaving the fullscreen mode
+        <para>2D Video acceleration: fixed crashes when leaving the full screen mode
           (bug #6768)</para>
       </listitem>
 
@@ -2500,7 +2672,7 @@
       </listitem>
 
       <listitem>
-        <para>Webservice: fixed a rare crash when calling IGuest methods from the webservice</para>
+        <para>Web service: fixed a rare crash when calling IGuest methods from the web service</para>
       </listitem>
 
       <listitem>
@@ -2584,7 +2756,7 @@
       </listitem>
 
       <listitem>
-        <para>RDP video acceleration (see <xref linkend="vrde-videochannel"/>)</para>
+        <para>VRDP video acceleration (see <xref linkend="vrde-videochannel"/>)</para>
       </listitem>
 
       <listitem>
@@ -2913,7 +3085,7 @@
       </listitem>
 
       <listitem>
-        <para>webservice: more structs and array fixes in PHP bindings</para>
+        <para>Web service: more structs and array fixes in PHP bindings</para>
       </listitem>
 
       <listitem>
@@ -3084,11 +3256,11 @@
       </listitem>
 
       <listitem>
-        <para>webservice: vboxwebsrv is now multithreaded</para>
+        <para>Web service: vboxwebsrv is now multithreaded</para>
       </listitem>
 
        <listitem>
-        <para>webservice: fixed handling of structs and arrays in PHP bindings</para>
+        <para>Web service: fixed handling of structs and arrays in PHP bindings</para>
       </listitem>
 
       <listitem>
@@ -3209,7 +3381,7 @@
       </listitem>
 
       <listitem>
-        <para>GUI: fixed guest fullscreen mode after reboot (bug #5372)</para>
+        <para>GUI: fixed guest full screen mode after reboot (bug #5372)</para>
       </listitem>
 
       <listitem>
@@ -3445,13 +3617,13 @@
 
       <listitem>
         <para>Mac OS X hosts: dock &amp; menubar don't disappear in
-          fullscreen when the VM is not running on the primary display (bug
+          full screen when the VM is not running on the primary display (bug
           #1762)</para>
       </listitem>
 
       <listitem>
         <para>Mac OS X hosts: added an option for enabling "Auto show Dock &amp;
-          Menubar in fullscreen" (bug #5636)</para>
+          Menubar in full screen" (bug #5636)</para>
       </listitem>
 
       <listitem>
@@ -3533,7 +3705,7 @@
       </listitem>
 
       <listitem>
-        <para>Windows Guest Additions: fixed uninstallation issues of NT4</para>
+        <para>Windows Additions: fixed uninstallation issues of NT4</para>
       </listitem>
 
       <listitem>
@@ -3731,7 +3903,7 @@
       </listitem>
 
       <listitem>
-        <para>Mac OS X hosts: don't auto show the menu and dock in fullscreen
+        <para>Mac OS X hosts: don't auto show the menu and dock in full screen
           (bug #4866)</para>
       </listitem>
 
@@ -4282,7 +4454,7 @@
 
       <listitem>
         <para>Python WS: fixed issue with certain enumerations constants having
-          wrong values in Python webservices bindings</para>
+          wrong values in Python web services bindings</para>
       </listitem>
 
       <listitem>
@@ -4333,7 +4505,7 @@
       </listitem>
 
       <listitem>
-        <para>Webservice: fixed a severe memory leak, at least on platforms using XPCOM</para>
+        <para>Web service: fixed a severe memory leak, at least on platforms using XPCOM</para>
       </listitem>
 
       <listitem>
@@ -4846,7 +5018,7 @@
       </listitem>
 
       <listitem>
-        <para>GUI: added mini toolbar for fullscreen and seamless mode (Thanks to Huihong Luo)</para>
+        <para>GUI: added mini toolbar for full screen and seamless mode (Thanks to Huihong Luo)</para>
       </listitem>
 
       <listitem>
@@ -7013,5 +7185,4 @@
     </itemizedlist>
 
   </sect1>
-
 

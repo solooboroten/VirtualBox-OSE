@@ -240,6 +240,7 @@ static const char *vgahwSymbols[] = {
     "vgaHWGetIndex",
     "vgaHWSaveScreen",
     "vgaHWDPMSSet",
+    "vgaHWSetStdFuncs",
     NULL
 };
 #endif /* !XORG_7X */
@@ -990,6 +991,10 @@ VBOXScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
     /* VGA hardware initialisation */
     if (!vgaHWGetHWRec(pScrn))
         return FALSE;
+
+    /* Must be called before any VGA registers are saved or restored */
+    vgaHWSetStdFuncs(VGAHWPTR(pScrn));
+    vgaHWGetIOBase(VGAHWPTR(pScrn));
 
     /* We make use of the X11 VBE code to save and restore text mode, in
        order to keep our code simple. */

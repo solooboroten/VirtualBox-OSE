@@ -40,6 +40,7 @@
      */
 RT_C_DECLS_BEGIN
 #  include "xf86_ansic.h"
+#  undef NULL
 RT_C_DECLS_END
 
 # elif defined(RT_OS_DARWIN) && defined(KERNEL)
@@ -109,8 +110,27 @@ RT_C_DECLS_END
 #    include <linux/autoconf.h>
 #   endif
 #  endif
+#  include <linux/compiler.h>
+#  if defined(__cplusplus)
+    /*
+     * Starting with 3.3, <linux/compiler-gcc.h> appends 'notrace' (which
+     * expands to __attribute__((no_instrument_function))) to inline,
+     * __inline and __inline__. Revert that.
+     */
+#   undef inline
+#   define inline inline
+#   undef __inline__
+#   define __inline__ __inline__
+#   undef __inline
+#   define __inline __inline
+#  endif
 #  include <linux/types.h>
 #  include <linux/stddef.h>
+    /*
+     * Starting with 3.4, <linux/stddef.h> defines NULL as '((void*)0)' which
+     * does not work for C++ code.
+     */
+#  undef NULL
 #  undef uintptr_t
 #  ifdef __GNUC__
 #   if (__GNUC__ * 100 + __GNUC_MINOR__) <= 400
@@ -127,7 +147,6 @@ RT_C_DECLS_END
 #  undef false
 #  undef true
 #  undef bool
-
 # else
 #  include <stddef.h>
 #  include <sys/types.h>
@@ -143,6 +162,16 @@ RT_C_DECLS_END
 # include <iprt/nocrt/compiler/compiler.h>
 #endif /* no crt */
 
+/** @def NULL
+ * NULL pointer.
+ */
+#ifndef NULL
+# ifdef __cplusplus
+#  define NULL 0
+# else
+#  define NULL ((void*)0)
+# endif
+#endif
 
 
 /** @defgroup grp_rt_types  IPRT Base Types

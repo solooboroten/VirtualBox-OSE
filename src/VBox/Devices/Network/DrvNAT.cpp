@@ -998,6 +998,48 @@ static DECLCALLBACK(void) drvNATInfo(PPDMDRVINS pDrvIns, PCDBGFINFOHLP pHlp, con
     slirp_info(pThis->pNATState, pHlp, pszArgs);
 }
 
+#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
+static int drvNATConstructDNSMappings(unsigned iInstance, PDRVNAT pThis, PCFGMNODE pMappingsCfg)
+{
+    int rc = VINF_SUCCESS;
+    LogFlowFunc(("ENTER: iInstance:%d\n", iInstance));
+    for (PCFGMNODE pNode = CFGMR3GetFirstChild(pMappingsCfg); pNode; pNode = CFGMR3GetNextChild(pNode))
+    {
+        if (!CFGMR3AreValuesValid(pNode, "HostName\0HostNamePattern\0HostIP\0"))
+            return PDMDRV_SET_ERROR(pThis->pDrvIns, VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES,
+                                    N_("Unknown configuration in dns mapping"));
+        char szHostNameOrPattern[255];
+        /* fMatch = false used for equal matching, and true if regex is used */
+        bool fMatch = false;
+        RT_ZERO(szHostNameOrPattern);
+        GET_STRING(rc, pThis, pNode, "HostName", szHostNameOrPattern[0], sizeof(szHostNameOrPattern));
+        if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+        {
+            GET_STRING(rc, pThis, pNode, "HostNamePattern", szHostNameOrPattern[0], sizeof(szHostNameOrPattern));
+            if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+            {
+                char szNodeName[225];
+                RT_ZERO(szNodeName);
+                CFGMR3GetName(pNode, szNodeName, sizeof(szNodeName));
+                LogRel(("NAT: Neither 'HostName' nor 'HostNamePattern' is specified for mapping %s\n", szNodeName));
+                continue;
+            }
+            fMatch = true;
+        }
+        struct in_addr HostIP;
+        GETIP_DEF(rc, pThis, pNode, HostIP, INADDR_ANY);
+        if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+        {
+            LogRel(("NAT: DNS mapping %s is ignored (address not pointed)\n", szHostNameOrPattern));
+            continue;
+        }
+        slirp_add_host_resolver_mapping(pThis->pNATState, fMatch ? NULL : szHostNameOrPattern, fMatch ? szHostNameOrPattern : NULL, HostIP.s_addr);
+    }
+    LogFlowFunc(("LEAVE: %Rrc\n", rc));
+    return rc;
+}
+#endif /* !VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER */
+
 
 /**
  * Sets up the redirectors.
@@ -1015,6 +1057,13 @@ static int drvNATConstructRedir(unsigned iInstance, PDRVNAT pThis, PCFGMNODE pCf
      */
     for (PCFGMNODE pNode = CFGMR3GetFirstChild(pCfg); pNode; pNode = CFGMR3GetNextChild(pNode))
     {
+#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
+        char szNodeName[32];
+        CFGMR3GetName(pNode, szNodeName, 32);
+        if (   !RTStrICmp(szNodeName, "HostResolverMappings")
+            || !RTStrICmp(szNodeName, "AttachedDriver"))
+            continue;
+#endif
         /*
          * Validate the port forwarding config.
          */
@@ -1147,7 +1196,11 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
                               "\0NextServer\0DNSProxy\0BindIP\0UseHostResolver\0"
                               "SlirpMTU\0AliasMode\0"
                               "SockRcv\0SockSnd\0TcpRcv\0TcpSnd\0"
-                              "ICMPCacheLimit\0"))
+                              "ICMPCacheLimit\0"
+#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
+                              "HostResolverMappings\0"
+#endif
+                            ))
         return PDMDRV_SET_ERROR(pDrvIns, VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES,
                                 N_("Unknown NAT configuration option, only supports PassDomain,"
                                 " TFTPPrefix, BootFile and Network"));
@@ -1278,6 +1331,15 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
 # include "counters.h"
 #endif
 
+#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
+        PCFGMNODE pMappingsCfg = CFGMR3GetChild(pCfg, "HostResolverMappings");
+
+        if (pMappingsCfg)
+        {
+            rc = drvNATConstructDNSMappings(pDrvIns->iInstance, pThis, pMappingsCfg);
+            AssertRC(rc);
+        }
+#endif
         rc = drvNATConstructRedir(pDrvIns->iInstance, pThis, pCfg, Network);
         if (RT_SUCCESS(rc))
         {

@@ -578,6 +578,8 @@ static int handleCtrlExecProgram(HandlerArg *a)
                         progress->Cancel();
                         break;
                     }
+
+                    EventQueue::getMainEventQueue()->processEventQueue(0);
                 }
 
                 /* Undo signal handling */

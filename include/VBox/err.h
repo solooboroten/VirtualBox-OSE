@@ -294,7 +294,7 @@
 /** Internal processing error \#1 in the DBGF stack code. */
 #define VERR_DBGF_STACK_IPE_1               (-1218)
 /** Internal processing error \#2 in the DBGF stack code. */
-#define VERR_DBGF_STACK_IPE_2               (-1218)
+#define VERR_DBGF_STACK_IPE_2               (-1219)
 /** @} */
 
 
@@ -805,11 +805,11 @@
 /** Unexpected unstable VM state. */
 #define VERR_VM_UNEXPECTED_UNSTABLE_STATE       (-1916)
 /** Too many arguments passed to a VM request / request corruption.  */
-#define VERR_VM_REQUEST_TOO_MANY_ARGS_IPE       (-1017)
+#define VERR_VM_REQUEST_TOO_MANY_ARGS_IPE       (-1917)
 /** Fatal EMT wait error. */
-#define VERR_VM_FATAL_WAIT_ERROR                (-1018)
+#define VERR_VM_FATAL_WAIT_ERROR                (-1918)
 /** The VM request was killed at VM termination. */
-#define VERR_VM_REQUEST_KILLED                  (-1019)
+#define VERR_VM_REQUEST_KILLED                  (-1919)
 /** @} */
 
 

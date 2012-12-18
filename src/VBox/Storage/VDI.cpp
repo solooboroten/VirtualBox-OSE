@@ -1075,6 +1075,8 @@ static int vdiOpen(const char *pszFilename, unsigned uOpenFlags,
     rc = vdiOpenImage(pImage, uOpenFlags);
     if (RT_SUCCESS(rc))
         *ppBackendData = pImage;
+    else
+        RTMemFree(pImage);
 
 out:
     LogFlowFunc(("returns %Rrc (pBackendData=%#p)\n", rc, *ppBackendData));
@@ -1350,6 +1352,8 @@ static int vdiWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
                 if (ASMBitFirstSet((volatile void *)pvBuf, (uint32_t)cbToWrite * 8) == -1)
                 {
                     pImage->paBlocks[uBlock] = VDI_IMAGE_BLOCK_ZERO;
+                    *pcbPreRead = 0;
+                    *pcbPostRead = 0;
                     break;
                 }
             }
@@ -2350,7 +2354,7 @@ static int vdiCompact(void *pBackendData, unsigned uPercentStart,
                 }
                 else if (pfnParentRead)
                 {
-                    rc = pfnParentRead(pvParent, i * cbBlock, pvBuf, cbBlock);
+                    rc = pfnParentRead(pvParent, (uint64_t)i * cbBlock, pvBuf, cbBlock);
                     if (RT_FAILURE(rc))
                         break;
                     if (!memcmp(pvTmp, pvBuf, cbBlock))

@@ -1075,15 +1075,19 @@ EMSTATE emR3Reschedule(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     X86EFLAGS EFlags = pCtx->eflags;
     if (HWACCMIsEnabled(pVM))
     {
-        /* Hardware accelerated raw-mode:
+        /*
+         * Hardware accelerated raw-mode:
          *
-         * Typically only 32-bits protected mode, with paging enabled, code is allowed here.
+         * Typically only 32-bits protected mode, with paging enabled, code is
+         * allowed here.
          */
         if (HWACCMR3CanExecuteGuest(pVM, pCtx) == true)
             return EMSTATE_HWACC;
 
-        /* Note: Raw mode and hw accelerated mode are incompatible. The latter turns
-         * off monitoring features essential for raw mode! */
+        /*
+         * Note! Raw mode and hw accelerated mode are incompatible. The latter
+         *       turns off monitoring features essential for raw mode!
+         */
         return EMSTATE_REM;
     }
 
@@ -1276,10 +1280,11 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         {
             rc2 = VMMR3EmtRendezvousFF(pVM, pVCpu);
             UPDATE_RC();
-            /** @todo HACK ALERT! The following test is to make sure EM+TM things the VM is
-             * stopped/reset before the next VM state change is made. We need a better
-             * solution for this, or at least make it possible to do: (rc >= VINF_EM_FIRST
-             * && rc >= VINF_EM_SUSPEND). */
+            /** @todo HACK ALERT! The following test is to make sure EM+TM
+             * thinks the VM is stopped/reset before the next VM state change
+             * is made. We need a better solution for this, or at least make it
+             * possible to do: (rc >= VINF_EM_FIRST && rc <=
+             * VINF_EM_SUSPEND). */
             if (RT_UNLIKELY(rc == VINF_EM_SUSPEND || rc == VINF_EM_RESET || rc == VINF_EM_OFF))
             {
                 Log2(("emR3ForcedActions: returns %Rrc\n", rc));
@@ -1386,10 +1391,11 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         {
             rc2 = VMMR3EmtRendezvousFF(pVM, pVCpu);
             UPDATE_RC();
-            /** @todo HACK ALERT! The following test is to make sure EM+TM things the VM is
-             * stopped/reset before the next VM state change is made. We need a better
-             * solution for this, or at least make it possible to do: (rc >= VINF_EM_FIRST
-             * && rc >= VINF_EM_SUSPEND). */
+            /** @todo HACK ALERT! The following test is to make sure EM+TM
+             * thinks the VM is stopped/reset before the next VM state change
+             * is made. We need a better solution for this, or at least make it
+             * possible to do: (rc >= VINF_EM_FIRST && rc <=
+             * VINF_EM_SUSPEND). */
             if (RT_UNLIKELY(rc == VINF_EM_SUSPEND || rc == VINF_EM_RESET || rc == VINF_EM_OFF))
             {
                 Log2(("emR3ForcedActions: returns %Rrc\n", rc));
@@ -1411,10 +1417,11 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
                 return rc2;
             }
             UPDATE_RC();
-            /** @todo HACK ALERT! The following test is to make sure EM+TM things the VM is
-             * stopped/reset before the next VM state change is made. We need a better
-             * solution for this, or at least make it possible to do: (rc >= VINF_EM_FIRST
-             * && rc >= VINF_EM_SUSPEND). */
+            /** @todo HACK ALERT! The following test is to make sure EM+TM
+             * thinks the VM is stopped/reset before the next VM state change
+             * is made. We need a better solution for this, or at least make it
+             * possible to do: (rc >= VINF_EM_FIRST && rc <=
+             * VINF_EM_SUSPEND). */
             if (RT_UNLIKELY(rc == VINF_EM_SUSPEND || rc == VINF_EM_RESET || rc == VINF_EM_OFF))
             {
                 Log2(("emR3ForcedActions: returns %Rrc\n", rc));
@@ -1462,10 +1469,11 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
                 return rc2;
             }
             UPDATE_RC();
-            /** @todo HACK ALERT! The following test is to make sure EM+TM things the VM is
-             * stopped/reset before the next VM state change is made. We need a better
-             * solution for this, or at least make it possible to do: (rc >= VINF_EM_FIRST
-             * && rc >= VINF_EM_SUSPEND). */
+            /** @todo HACK ALERT! The following test is to make sure EM+TM
+             * thinks the VM is stopped/reset before the next VM state change
+             * is made. We need a better solution for this, or at least make it
+             * possible to do: (rc >= VINF_EM_FIRST && rc <=
+             * VINF_EM_SUSPEND). */
             if (RT_UNLIKELY(rc == VINF_EM_SUSPEND || rc == VINF_EM_RESET || rc == VINF_EM_OFF))
             {
                 Log2(("emR3ForcedActions: returns %Rrc\n", rc));
@@ -1494,31 +1502,33 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
 
         /*
          * The instruction following an emulated STI should *always* be executed!
+         *
+         *
+         * Note! We intentionally don't clear VM_FF_INHIBIT_INTERRUPTS here if
+         *       the eip is the same as the inhibited instr address.  Before we
+         *       are able to execute this instruction in raw mode (iret to
+         *       guest code) an external interrupt might force a world switch
+         *       again.  Possibly allowing a guest interrupt to be dispatched
+         *       in the process.  This could break the guest.  Sounds very
+         *       unlikely, but such timing sensitive problem are not as rare as
+         *       you might think.
          */
         if (    VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS)
             &&  !VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY))
         {
-            Log(("VM_FF_EMULATED_STI at %RGv successor %RGv\n", (RTGCPTR)CPUMGetGuestRIP(pVCpu), EMGetInhibitInterruptsPC(pVCpu)));
-            if (CPUMGetGuestEIP(pVCpu) != EMGetInhibitInterruptsPC(pVCpu))
+            Log(("VMCPU_FF_INHIBIT_INTERRUPTS at %RGv successor %RGv\n", (RTGCPTR)CPUMGetGuestRIP(pVCpu), EMGetInhibitInterruptsPC(pVCpu)));
+            if (CPUMGetGuestRIP(pVCpu) != EMGetInhibitInterruptsPC(pVCpu))
             {
-                /* Note: we intentionally don't clear VM_FF_INHIBIT_INTERRUPTS here if the eip is the same as the inhibited instr address.
-                 *  Before we are able to execute this instruction in raw mode (iret to guest code) an external interrupt might
-                 *  force a world switch again. Possibly allowing a guest interrupt to be dispatched in the process. This could
-                 *  break the guest. Sounds very unlikely, but such timing sensitive problem are not as rare as you might think.
-                 */
                 VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS);
             }
-            if (HWACCMR3IsActive(pVCpu))
-                rc2 = VINF_EM_RESCHEDULE_HWACC;
             else
-                rc2 = PATMAreInterruptsEnabled(pVM) ? VINF_EM_RESCHEDULE_RAW : VINF_EM_RESCHEDULE_REM;
-
-            UPDATE_RC();
+                Log(("Leaving VMCPU_FF_INHIBIT_INTERRUPTS set at %RGv\n", (RTGCPTR)CPUMGetGuestRIP(pVCpu)));
         }
 
         /*
          * Interrupts.
          */
+        bool fWakeupPending = false;
         if (    !VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)
             &&  !VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS)
             &&  (!rc || rc >= VINF_EM_RESCHEDULE_HWACC)
@@ -1536,6 +1546,8 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
                 rcIrq = rc2;
 #endif
                 UPDATE_RC();
+                /* Reschedule required: We must not miss the wakeup below! */
+                fWakeupPending = true;
             }
             /** @todo really ugly; if we entered the hlt state when exiting the recompiler and an interrupt was pending, we previously got stuck in the halted state. */
             else if (REMR3QueryPendingInterrupt(pVM, pVCpu) != REM_NO_PENDING_IRQ)
@@ -1566,7 +1578,8 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         /*
          * EMT Rendezvous (must be serviced before termination).
          */
-        if (VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
+        if (   !fWakeupPending /* don't miss the wakeup from EMSTATE_HALTED! */
+            && VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
         {
             rc2 = VMMR3EmtRendezvousFF(pVM, pVCpu);
             UPDATE_RC();
@@ -1585,7 +1598,8 @@ int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         /*
          * State change request (cleared by vmR3SetStateLocked).
          */
-        if (VM_FF_ISPENDING(pVM, VM_FF_CHECK_VM_STATE))
+        if (   !fWakeupPending /* don't miss the wakeup from EMSTATE_HALTED! */
+            && VM_FF_ISPENDING(pVM, VM_FF_CHECK_VM_STATE))
         {
             VMSTATE enmState = VMR3GetState(pVM);
             switch (enmState)
@@ -1811,7 +1825,10 @@ VMMR3DECL(int) EMR3ExecuteVM(PVM pVM, PVMCPU pVCpu)
                     /* Don't reschedule in the halted or wait for SIPI case. */
                     if (    pVCpu->em.s.enmPrevState == EMSTATE_WAIT_SIPI
                         ||  pVCpu->em.s.enmPrevState == EMSTATE_HALTED)
+                    {
+                        pVCpu->em.s.enmState = pVCpu->em.s.enmPrevState;
                         break;
+                    }
                     /* fall through and get scheduled. */
 
                 /*

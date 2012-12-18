@@ -134,10 +134,12 @@ utimes
 vgaHWFreeHWRec
 vgaHWGetHWRec
 vgaHWGetIndex
+vgaHWGetIOBase
 vgaHWHandleColormaps
 vgaHWMapMem
 vgaHWRestoreFonts
 vgaHWSaveFonts
+vgaHWSetStdFuncs
 vgaHWUnmapMem
 write
 xf86AddDriver

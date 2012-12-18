@@ -4,7 +4,7 @@
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -1261,9 +1261,9 @@ efi-packing:
 # the path where to store the tarball
 TARBALLPATH ?= $(abspath $(PATH_ROOT)/..)
 # the root directory inside the tarball
-TARBALLROOT ?= VirtualBox-$(VBOX_VERSION_STRING)
+TARBALLROOT ?= VirtualBox-$(subst _OSE,,$(VBOX_VERSION_STRING))
 # the name of the tarball file
-TARBALLNAME ?= VirtualBox-$(VBOX_VERSION_STRING).tar.bz2
+TARBALLNAME ?= VirtualBox-$(subst _OSE,,$(VBOX_VERSION_STRING)).tar.bz2
 snapshot-ose:
 	@$(call MSG_L1,Creating tarball $(TARBALLPATH)/$(TARBALLNAME))
 	@if [ -r "$(PATH_ROOT)/src/VBox/RDP/server/server.cpp" ]; then \

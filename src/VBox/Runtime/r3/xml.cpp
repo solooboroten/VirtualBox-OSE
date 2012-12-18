@@ -1495,7 +1495,7 @@ void XmlMemParser::read(const void* pvBuf, size_t cbSize,
                                                   (int)cbSize,
                                                   pcszFilename,
                                                   NULL,       // encoding = auto
-                                                  XML_PARSE_NOBLANKS)))
+                                                  XML_PARSE_NOBLANKS | XML_PARSE_NONET)))
         throw XmlError(xmlCtxtGetLastError(m_ctxt));
 
     doc.refreshInternals();
@@ -1625,7 +1625,7 @@ void XmlFileParser::read(const iprt::MiniString &strFilename,
                                               &context,
                                               pcszFilename,
                                               NULL,       // encoding = auto
-                                              XML_PARSE_NOBLANKS)))
+                                              XML_PARSE_NOBLANKS | XML_PARSE_NONET)))
         throw XmlError(xmlCtxtGetLastError(m_ctxt));
 
     doc.refreshInternals();

@@ -3094,7 +3094,7 @@ static DECLCALLBACK(int) buslogicConstruct(PPDMDEVINS pDevIns, int iInstance, PC
     if (fBootable)
     {
         /* Register I/O port space in ISA region for BIOS access. */
-        rc = PDMDevHlpIOPortRegister(pDevIns, BUSLOGIC_ISA_IO_PORT, 3, NULL,
+        rc = PDMDevHlpIOPortRegister(pDevIns, BUSLOGIC_ISA_IO_PORT, 4, NULL,
                                      buslogicIsaIOPortWrite, buslogicIsaIOPortRead,
                                      buslogicIsaIOPortWriteStr, buslogicIsaIOPortReadStr,
                                      "BusLogic BIOS");

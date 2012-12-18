@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -655,6 +655,7 @@ int handleCloneHardDisk(HandlerArg *a)
             rc = createHardDisk(a, Utf8Str(format).c_str(), pszDst, dstDisk);
             if (FAILED(rc))
                 break;
+            fDstUnknown = true;
         }
 
         ComPtr<IProgress> progress;
@@ -729,14 +730,15 @@ RTEXITCODE handleConvertFromRaw(int argc, char *argv[])
                 break;
 
             case 'm':   // --variant
-                MediumVariant_T DiskVariant;
+            {
+                MediumVariant_T DiskVariant = MediumVariant_Standard;
                 rc = parseDiskVariant(ValueUnion.psz, &DiskVariant);
                 if (RT_FAILURE(rc))
                     return errorArgument("Invalid hard disk variant '%s'", ValueUnion.psz);
                 /// @todo cleaner solution than assuming 1:1 mapping?
                 uImageFlags = (unsigned)DiskVariant;
                 break;
-
+            }
             case VINF_GETOPT_NOT_OPTION:
                 if (!srcfilename)
                 {

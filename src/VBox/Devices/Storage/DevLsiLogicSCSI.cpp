@@ -5242,12 +5242,12 @@ static DECLCALLBACK(int) lsilogicConstruct(PPDMDEVINS pDevIns, int iInstance, PC
     if (fBootable)
     {
         if (pThis->enmCtrlType == LSILOGICCTRLTYPE_SCSI_SPI)
-            rc = PDMDevHlpIOPortRegister(pDevIns, LSILOGIC_ISA_IO_PORT, 3, NULL,
+            rc = PDMDevHlpIOPortRegister(pDevIns, LSILOGIC_ISA_IO_PORT, 4, NULL,
                                          lsilogicIsaIOPortWrite, lsilogicIsaIOPortRead,
                                          lsilogicIsaIOPortWriteStr, lsilogicIsaIOPortReadStr,
                                          "LsiLogic BIOS");
         else if (pThis->enmCtrlType == LSILOGICCTRLTYPE_SCSI_SAS)
-            rc = PDMDevHlpIOPortRegister(pDevIns, LSILOGIC_SAS_ISA_IO_PORT, 3, NULL,
+            rc = PDMDevHlpIOPortRegister(pDevIns, LSILOGIC_SAS_ISA_IO_PORT, 4, NULL,
                                          lsilogicIsaIOPortWrite, lsilogicIsaIOPortRead,
                                          lsilogicIsaIOPortWriteStr, lsilogicIsaIOPortReadStr,
                                          "LsiLogic SAS BIOS");

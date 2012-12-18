@@ -571,6 +571,7 @@ Function ${un}W2K_Uninstall
   ${If} $0 == "VBoxGINA.dll"
     DeleteRegValue HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL"
   ${EndIf}
+  DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon\Notify\VBoxGINA"
 
   ; Delete VBoxTray
   Call ${un}StopVBoxTray

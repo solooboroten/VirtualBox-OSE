@@ -1247,8 +1247,8 @@ STDMETHODIMP VirtualBox::CreateMachine(IN_BSTR aSettingsFile,
                                        BOOL forceOverwrite,
                                        IMachine **aMachine)
 {
-    LogFlowThisFuncEnter();
-    LogFlowThisFunc(("aSettingsFile=\"%ls\", aName=\"%ls\", aOsTypeId =\"%ls\"\n", aSettingsFile, aName, aOsTypeId));
+    LogRelFlowThisFuncEnter();
+    LogRelFlowThisFunc(("aSettingsFile=\"%ls\", aName=\"%ls\", aOsTypeId =\"%ls\"\n", aSettingsFile, aName, aOsTypeId));
 
     CheckComArgStrNotEmptyOrNull(aName);
     /** @todo tighten checks on aId? */
@@ -1301,7 +1301,7 @@ STDMETHODIMP VirtualBox::CreateMachine(IN_BSTR aSettingsFile,
 #endif
     }
 
-    LogFlowThisFuncLeave();
+    LogRelFlowThisFuncLeave();
 
     return rc;
 }
@@ -1340,6 +1340,8 @@ STDMETHODIMP VirtualBox::OpenMachine(IN_BSTR aSettingsFile,
 /** @note Locks objects! */
 STDMETHODIMP VirtualBox::RegisterMachine(IMachine *aMachine)
 {
+    LogRelFlowThisFuncEnter();
+
     CheckComArgNotNull(aMachine);
 
     AutoCaller autoCaller(this);
@@ -1362,6 +1364,8 @@ STDMETHODIMP VirtualBox::RegisterMachine(IMachine *aMachine)
     /* fire an event */
     if (SUCCEEDED(rc))
         onMachineRegistered(pMachine->getId(), TRUE);
+
+    LogRelFlowThisFuncLeave();
 
     return rc;
 }
@@ -2374,8 +2378,24 @@ struct SnapshotEvent : public VirtualBox::CallbackEvent
 
     virtual HRESULT prepareEventDesc(IEventSource* aSource, VBoxEventDesc& aEvDesc)
     {
-        return aEvDesc.init(aSource, VBoxEventType_OnSnapshotTaken,
-                            machineId.toUtf16().raw(), snapshotId.toUtf16().raw());
+
+        switch (mWhat)
+        {
+            case VirtualBoxCallbackRegistration::kOnSnapshotTaken:
+                return aEvDesc.init(aSource, VBoxEventType_OnSnapshotTaken,
+                                    machineId.toUtf16().raw(), snapshotId.toUtf16().raw());
+
+            case VirtualBoxCallbackRegistration::kOnSnapshotDeleted:
+                return aEvDesc.init(aSource, VBoxEventType_OnSnapshotDeleted,
+                                    machineId.toUtf16().raw(), snapshotId.toUtf16().raw());
+
+            case VirtualBoxCallbackRegistration::kOnSnapshotChanged:
+                return aEvDesc.init(aSource, VBoxEventType_OnSnapshotChanged,
+                                    machineId.toUtf16().raw(), snapshotId.toUtf16().raw());
+
+            default:
+                AssertFailedReturn(S_OK);
+         }
     }
 
     Guid machineId;
@@ -3741,6 +3761,8 @@ HRESULT VirtualBox::unregisterMachine(Machine *pMachine,
 
     /* fire an event */
     onMachineRegistered(id, FALSE);
+
+    LogRelFlowThisFuncLeave();
 
     return rc;
 }

@@ -202,6 +202,13 @@
     </listitem>
 
     <listitem>
+      <para><emphasis role="bold">Large-scale deployments.</emphasis> With
+         VirtualBox version 4.0, if the total memory used by running virtual
+         machines passes 150 GB the performance of the machines may start to
+         decrease as total memory usage increases.</para>
+    </listitem>
+
+    <listitem>
       <para><emphasis role="bold">Guest Additions for OS/2.</emphasis> Shared
       folders are not yet supported with OS/2 guests. In addition, seamless
       windows and automatic guest resizing will probably never be implemented

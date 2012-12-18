@@ -705,6 +705,7 @@ int VBoxGuestInitDevExt(PVBOXGUESTDEVEXT pDevExt, uint16_t IOPortBase,
 #endif
     RTListInit(&pDevExt->WokenUpList);
     RTListInit(&pDevExt->FreeList);
+    pDevExt->fLoggingEnabled = false;
     pDevExt->f32PendingEvents = 0;
     pDevExt->u32MousePosChangedSeq = 0;
     pDevExt->SessionSpinlock = NIL_RTSPINLOCK;
@@ -2074,15 +2075,19 @@ static int VBoxGuestCommonIOCtl_DisableVRDPSession(VBOXGUESTDEVEXT pDevExt, PVBO
  *
  * @returns VBox status code.
  *
+ * @param   pDevExt             The device extension.
  * @param   pch                 The log message (need not be NULL terminated).
  * @param   cbData              Size of the buffer.
  * @param   pcbDataReturned     Where to store the amount of returned data. Can be NULL.
  */
-static int VBoxGuestCommonIOCtl_Log(const char *pch, size_t cbData, size_t *pcbDataReturned)
+static int VBoxGuestCommonIOCtl_Log(PVBOXGUESTDEVEXT pDevExt, const char *pch, size_t cbData, size_t *pcbDataReturned)
 {
     NOREF(pch);
     NOREF(cbData);
-    Log(("%.*s", cbData, pch));
+    if (pDevExt->fLoggingEnabled)
+        RTLogBackdoorPrintf("%.*s", cbData, pch);
+    else
+        Log(("%.*s", cbData, pch));
     if (pcbDataReturned)
         *pcbDataReturned = 0;
     return VINF_SUCCESS;
@@ -2198,7 +2203,7 @@ int VBoxGuestCommonIOCtl(unsigned iFunction, PVBOXGUESTDEVEXT pDevExt, PVBOXGUES
     else if (VBOXGUEST_IOCTL_STRIP_SIZE(iFunction) == VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_LOG(0)))
     {
         CHECKRET_MIN_SIZE("LOG", 1);
-        rc = VBoxGuestCommonIOCtl_Log((char *)pvData, cbData, pcbDataReturned);
+        rc = VBoxGuestCommonIOCtl_Log(pDevExt, (char *)pvData, cbData, pcbDataReturned);
     }
     else
     {

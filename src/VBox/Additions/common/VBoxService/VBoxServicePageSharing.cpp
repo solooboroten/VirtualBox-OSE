@@ -548,7 +548,8 @@ static DECLCALLBACK(int) VBoxServicePageSharingOption(const char **ppszShort, in
     NOREF(argc);
     NOREF(argv);
     NOREF(pi);
-    return VINF_SUCCESS;
+
+    return -1;
 }
 
 

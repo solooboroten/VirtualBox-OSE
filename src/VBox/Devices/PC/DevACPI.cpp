@@ -1346,6 +1346,7 @@ static int acpiResetWriteU8(ACPIState *s, uint32_t addr, uint32_t val)
 # ifndef IN_RING3
         rc = VINF_IOM_HC_IOPORT_WRITE;
 # else /* IN_RING3 */
+        LogRel(("Reset initiated by ACPI\n"));
         rc = PDMDevHlpVMReset(s->pDevIns);
 # endif /* !IN_RING3 */
     }

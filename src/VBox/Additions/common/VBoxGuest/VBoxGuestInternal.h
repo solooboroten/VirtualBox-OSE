@@ -151,6 +151,9 @@ typedef struct VBOXGUESTDEVEXT
 #ifdef VBOX_WITH_VRDP_SESSION_HANDLING
     BOOL                        fVRDPEnabled;
 #endif
+    /** Flag indicating whether logging to the release log
+     *  is enabled. */
+    bool                        fLoggingEnabled;
     /** Memory balloon information for RTR0MemObjAllocPhysNC(). */
     VBOXGUESTMEMBALLOON         MemBalloon;
     /** Align the next bit on a 64-byte boundary and make sure it starts at the same

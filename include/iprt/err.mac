@@ -200,6 +200,8 @@
 %define VERR_NO_DATA    (-304)
 %define VERR_PIPE_NOT_CONNECTED    (-305)
 %define VERR_MORE_DATA    (-306)
+%define VERR_PIPE_NOT_READ    (-307)
+%define VERR_PIPE_NOT_WRITE    (-308)
 %define VERR_SEM_ERROR    (-350)
 %define VERR_TOO_MANY_SEMAPHORES    (-351)
 %define VERR_EXCL_SEM_ALREADY_OWNED    (-352)

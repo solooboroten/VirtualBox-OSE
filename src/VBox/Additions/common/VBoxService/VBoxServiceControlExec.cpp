@@ -1187,6 +1187,11 @@ int VBoxServiceControlExecHandleCmdStartProcess(uint32_t u32ClientId, uint32_t u
     if (uNumParms != 11)
         return VERR_INVALID_PARAMETER;
 
+    /* Initialize maximum environment block size -- needed as input
+     * parameter to retrieve the stuff from the host. On output this then
+     * will contain the actual block size. */
+    cbEnv = sizeof(szEnv);
+
     int rc = VbglR3GuestCtrlExecGetHostCmd(u32ClientId,
                                            uNumParms,
                                            &uContextID,
