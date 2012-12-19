@@ -1,6 +1,138 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.1.24 (2012-12-19)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: adapted to changes in Mac OS X 10.8.2 (bug #10965)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: page fusion fixes</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: disable proxy authentication for security reasons</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed occasional crash during a video playback in the guest</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: fixed a memory leak when disabling the NAT engine (bug #10801)</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: fixed a crash under rare circumstances (Windows hosts only;
+          bug #10128)</para>
+      </listitem>
+
+      <listitem>
+        <para>Virtio-net: fixed the problem with network statistics counters
+        in Session Information dialog (GUI)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed a hang during VM reset under certain circumstances
+           (bug #10898)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang under rare circumstances</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang in case of unaligned requests and async I/O enabled
+        </para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang with newer VHD images (bug #11279)</para>
+      </listitem>
+
+      <listitem>
+        <para>VGA: fix for double scan text modes</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed a memory leak when executing and waiting for a
+          guest process (bug 10859)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed converting disks from raw images</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: certain legacy guests (e.g. Windows 95) didn't find the boot
+          device after a warm reboot</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: don't trash the palette in text modes when setting the border
+          color</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: fixed invalid pending request count at the time of service
+          of <emphasis>DEVICE POWER</emphasis> requests (Windows hosts only;
+          bugs #10021, #11056)</para>
+      </listitem>
+
+      <listitem>
+        <para>OVF: fixed importing OVF files cerated by recent VMware
+          products (bug #10905)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: Linux 3.7-rc1 fixes</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: support X.Org Server 1.13</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed a hang when the X server was restarted with
+           old guest kernels</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed a VBoxService crash during CPU hot remove
+          (bug #10964)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed Guest screen automatic resize
+          issue for NT4</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed auto-logon installation for
+          Windows 8</para>
+      </listitem>
+      
+      <listitem>
+        <para>Windows Additions: fixed Guest Additions startup on Windows 2000 
+          guests</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: don't fail if the shared folders host service is not
+          available</para>
+      </listitem>
+
+    </itemizedlist>
+
+  </sect1>
+
+  <sect1>
     <title>Version 4.1.22 (2012-09-07)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -312,6 +444,10 @@
         <para>Solaris Additions: added support for X.org Server 1.11 and 1.12</para>
       </listitem>
 
+      <listitem>
+        <para>Lunix/Solaris Additions: fixed guest memory metrics collection</para>
+      </listitem>
+
     </itemizedlist>
 
   </sect1>
@@ -340,7 +476,7 @@
       </listitem>
 
       <listitem>
-        <para>Windows Guest Additions, VRDP: fixed occasional corruption of vertical text</para>
+        <para>Windows Additions, VRDP: fixed occasional corruption of vertical text</para>
       </listitem>
 
     </itemizedlist>
@@ -382,6 +518,11 @@
       <listitem>
         <para>Audio: fixed a crash in the NUL audio backend (bug #10374;
           4.1.10 regression)</para>
+      </listitem>
+
+      <listitem>
+        <para>USB mouse: ensure that the last mouse event doesn't get lost if no URBs
+          are available</para>
       </listitem>
 
       <listitem>
@@ -2439,7 +2580,7 @@
       </listitem>
 
       <listitem>
-        <para>Windows Guest Additions: automatic logon on Windows Vista/Windows 7 now supports
+        <para>Windows Additions: automatic logon on Windows Vista/Windows 7 now supports
           unlocking previously locked workstations</para>
       </listitem>
 
@@ -4798,12 +4939,12 @@
       </listitem>
 
       <listitem>
-        <para>Linux Guest Additions: fixed installation on RHEL 3.9 guests
+        <para>Linux Additions: fixed installation on RHEL 3.9 guests
            and on some 64bit guests</para>
        </listitem>
 
        <listitem>
-         <para>Linux Guest Additions: prevent SELinux warnings concerning
+         <para>Linux Additions: prevent SELinux warnings concerning
            text relocations in VBoxOGL.so (bug #5690)</para>
        </listitem>
 
@@ -4826,7 +4967,7 @@
       </listitem>
 
       <listitem>
-        <para>Windows Guest Additions: fixed uninstallation issues of NT4</para>
+        <para>Windows Additions: fixed uninstallation issues of NT4</para>
       </listitem>
 
       <listitem>
@@ -5085,7 +5226,7 @@
       </listitem>
 
       <listitem>
-        <para>Linux Additions: added support for uninstalling the Linux Guest
+        <para>Linux Additions: added support for uninstalling the Linux
           Additions (bug #4039)</para>
       </listitem>
 

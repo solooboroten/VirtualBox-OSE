@@ -534,7 +534,7 @@ DECLCALLBACK(int) VBoxServiceAutoMountWorker(bool volatile *pfShutdown)
         if (RT_FAILURE(rc))
             VBoxServiceError("VBoxServiceAutoMountWorker: Error while getting the shared folder mappings, rc = %Rrc\n", rc);
         else if (!cMappings)
-            VBoxServiceVerbose(3, "VBoxServiceAutoMountWorker: No shared folder mappings fouund\n");
+            VBoxServiceVerbose(3, "VBoxServiceAutoMountWorker: No shared folder mappings found\n");
     }
 
     /*

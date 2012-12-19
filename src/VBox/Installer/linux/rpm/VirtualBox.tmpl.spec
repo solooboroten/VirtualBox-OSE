@@ -432,13 +432,13 @@ rm -rf $RPM_BUILD_ROOT
 %{?rpm_suse: /sbin/rcvboxdrv}
 %{?rpm_suse: /sbin/rcvboxballoonctrl-service}
 %{?rpm_suse: /sbin/rcvboxweb-service}
-/lib/modules
 /etc/vbox
-/usr/bin
+/usr/bin/*
 /usr/src/vbox*
 /usr/lib/virtualbox
-/usr/share/applications
-/usr/share/icons
-/usr/share/mime/packages
-/usr/share/pixmaps
+/usr/share/applications/*
+/usr/share/icons/hicolor/*/apps/*
+/usr/share/icons/hicolor/*/mimetypes/*
+/usr/share/mime/packages/*
+/usr/share/pixmaps/*
 /usr/share/virtualbox

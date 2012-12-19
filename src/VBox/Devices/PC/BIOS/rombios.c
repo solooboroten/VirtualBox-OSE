@@ -11537,7 +11537,7 @@ memory_zero_loop:
 memory_cleared:
   mov es, bx
   xor di, di
-  mov cx, #0x3f00
+  mov cx, #0x3ffc
   rep
     stosd
   xor bx, bx
