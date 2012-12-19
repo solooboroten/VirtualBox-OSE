@@ -47,7 +47,8 @@
 # include <mach/mach_init.h>
 # include <mach/mach_host.h>
 #endif
-#if defined(RT_OS_DARWIN) /*|| defined(RT_OS_FREEBSD) - later */ || defined(RT_OS_LINUX) \
+#if defined(RT_OS_DARWIN) /*|| defined(RT_OS_FREEBSD) - later */ \
+ || (defined(RT_OS_LINUX) && !defined(IN_RT_STATIC) /* static + dlsym = trouble */) \
  || defined(IPRT_MAY_HAVE_PTHREAD_SET_NAME_NP)
 # define IPRT_MAY_HAVE_PTHREAD_SET_NAME_NP
 # include <dlfcn.h>

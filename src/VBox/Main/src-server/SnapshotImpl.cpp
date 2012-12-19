@@ -41,6 +41,7 @@
 
 #include <VBox/settings.h>
 
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Snapshot private data definition
@@ -1435,8 +1436,16 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot(IConsole *aInitiator,
     Utf8Str strStateFilePath;
     /* stateFilePath is null when the machine is not online nor saved */
     if (fTakingSnapshotOnline)
-        // creating a new online snapshot: then we need a fresh saved state file
-        composeSavedStateFilename(strStateFilePath);
+    {
+        Bstr value;
+        HRESULT rc = GetExtraData(Bstr("VBoxInternal2/ForceTakeSnapshotWithoutState").raw(),
+                                  value.asOutParam());
+        if (FAILED(rc) || value != "1")
+        {
+            // creating a new online snapshot: we need a fresh saved state file
+            composeSavedStateFilename(strStateFilePath);
+        }
+    }
     else if (mData->mMachineState == MachineState_Saved)
         // taking an online snapshot from machine in "saved" state: then use existing state file
         strStateFilePath = mSSData->strStateFilePath;
@@ -1499,9 +1508,9 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot(IConsole *aInitiator,
         if (FAILED(rc))
             throw rc;
 
-        // if we got this far without an error, then save the media registries
-        // that got modified for the diff images
-        mParent->saveModifiedRegistries();
+        // MUST NOT save the settings or the media registry here, because
+        // this causes trouble with rolling back settings if the user cancels
+        // taking the snapshot after the diff images have been created.
     }
     catch (HRESULT hrc)
     {
@@ -1608,11 +1617,14 @@ STDMETHODIMP SessionMachine::EndTakingSnapshot(BOOL aSuccess)
         /* inform callbacks */
         mParent->onSnapshotTaken(mData->mUuid,
                                  mConsoleTaskData.mSnapshot->getId());
+        machineLock.release();
     }
     else
     {
         /* delete all differencing hard disks created (this will also attach
          * their parents back by rolling back mMediaData) */
+        machineLock.release();
+
         rollbackMedia();
 
         mData->mFirstSnapshot = pOldFirstSnap;      // might have been changed above
@@ -1624,15 +1636,19 @@ STDMETHODIMP SessionMachine::EndTakingSnapshot(BOOL aSuccess)
             // snapshot means that a new saved state file was created, which we must
             // clean up now
             RTFileDelete(mConsoleTaskData.mSnapshot->getStateFilePath().c_str());
+            machineLock.acquire();
+
 
         mConsoleTaskData.mSnapshot->uninit();
+        machineLock.release();
+
     }
 
     /* clear out the snapshot data */
     mConsoleTaskData.mLastState = MachineState_Null;
     mConsoleTaskData.mSnapshot.setNull();
 
-    machineLock.release();
+    /* machineLock has been released already */
 
     mParent->saveModifiedRegistries();
 

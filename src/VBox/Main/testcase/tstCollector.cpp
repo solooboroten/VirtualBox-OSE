@@ -154,6 +154,7 @@ int testNetwork(pm::CollectorHAL *collector)
 
     RTPrintf("tstCollector: TESTING - Network load, sleeping for 5 sec...\n");
 
+    hostRxStart = hostTxStart = 0;
     int rc = collector->preCollect(hints, 0);
     if (RT_FAILURE(rc))
     {
@@ -175,6 +176,8 @@ int testNetwork(pm::CollectorHAL *collector)
         RTPrintf("tstCollector: preCollect() -> %Rrc\n", rc);
         return 1;
     }
+    hostRxStop = hostRxStart;
+    hostTxStop = hostTxStart;
     rc = collector->getRawHostNetworkLoad(NETIFNAME, &hostRxStop, &hostTxStop);
     if (RT_FAILURE(rc))
     {
@@ -221,7 +224,7 @@ int testDisk(pm::CollectorHAL *collector)
     uint64_t diskMsStop, totalMsStop;
 
     std::list<RTCString> disks;
-    int rc = pm::getDiskListByFs(FSNAME, disks);
+    int rc = collector->getDiskListByFs(FSNAME, disks);
     if (RT_FAILURE(rc))
     {
         RTPrintf("tstCollector: getDiskListByFs(%s) -> %Rrc\n", FSNAME, rc);
@@ -233,7 +236,16 @@ int testDisk(pm::CollectorHAL *collector)
         return 1;
     }
 
-    RTPrintf("tstCollector: TESTING - Disk utilization, sleeping for 5 sec...\n");
+    uint64_t diskSize = 0;
+    rc = collector->getHostDiskSize(disks.front().c_str(), &diskSize);
+    RTPrintf("tstCollector: TESTING - Disk size (%s) = %llu\n", disks.front().c_str(), diskSize);
+    if (RT_FAILURE(rc))
+    {
+        RTPrintf("tstCollector: getHostDiskSize() -> %Rrc\n", rc);
+        return 1;
+    }
+
+    RTPrintf("tstCollector: TESTING - Disk utilization (%s), sleeping for 5 sec...\n", disks.front().c_str());
 
     hints.collectHostCpuLoad();
     rc = collector->preCollect(hints, 0);
@@ -245,7 +257,7 @@ int testDisk(pm::CollectorHAL *collector)
     rc = collector->getRawHostDiskLoad(disks.front().c_str(), &diskMsStart, &totalMsStart);
     if (RT_FAILURE(rc))
     {
-        RTPrintf("tstCollector: getRawHostNetworkLoad() -> %Rrc\n", rc);
+        RTPrintf("tstCollector: getRawHostDiskLoad() -> %Rrc\n", rc);
         return 1;
     }
 
@@ -260,7 +272,7 @@ int testDisk(pm::CollectorHAL *collector)
     rc = collector->getRawHostDiskLoad(disks.front().c_str(), &diskMsStop, &totalMsStop);
     if (RT_FAILURE(rc))
     {
-        RTPrintf("tstCollector: getRawHostNetworkLoad() -> %Rrc\n", rc);
+        RTPrintf("tstCollector: getRawHostDiskLoad() -> %Rrc\n", rc);
         return 1;
     }
     RTPrintf("tstCollector: host disk util    = %llu msec (%u.%u %%), total = %llu msec\n\n",

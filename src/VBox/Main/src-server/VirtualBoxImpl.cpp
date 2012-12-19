@@ -1939,6 +1939,7 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
+    Guid id(aLocation);
     ComObjPtr<Medium> pMedium;
 
     // have to get write lock as the whole find/update sequence must be done
@@ -1951,18 +1952,22 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
     switch (deviceType)
     {
         case DeviceType_HardDisk:
-            rc = findHardDiskByLocation(aLocation,
-                                   false, /* aSetError */
-                                   &pMedium);
+            if (!id.isEmpty())
+                rc = findHardDiskById(id, false /* setError */, &pMedium);
+            else
+                rc = findHardDiskByLocation(aLocation,
+                                            false, /* aSetError */
+                                            &pMedium);
         break;
 
         case DeviceType_Floppy:
         case DeviceType_DVD:
-            rc = findDVDOrFloppyImage(deviceType,
-                                 NULL, /* guid */
-                                 aLocation,
-                                 false, /* aSetError */
-                                 &pMedium);
+            if (!id.isEmpty())
+                rc = findDVDOrFloppyImage(deviceType, &id, Utf8Str::Empty,
+                                          false /* setError */, &pMedium);
+            else
+                rc = findDVDOrFloppyImage(deviceType, NULL, aLocation,
+                                          false /* setError */, &pMedium);
 
             // enforce read-only for DVDs even if caller specified ReadWrite
             if (deviceType == DeviceType_DVD)
@@ -1972,7 +1977,6 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
         default:
             return setError(E_INVALIDARG, "Device type must be HardDisk, DVD or Floppy %d", deviceType);
     }
-
 
     if (pMedium.isNull())
     {
@@ -2977,8 +2981,8 @@ struct SnapshotEvent : public VirtualBox::CallbackEvent
 
     virtual HRESULT prepareEventDesc(IEventSource* aSource, VBoxEventDesc& aEvDesc)
     {
-        return aEvDesc.init(aSource, VBoxEventType_OnSnapshotTaken,
-                            machineId.toUtf16().raw(), snapshotId.toUtf16().raw());
+        return aEvDesc.init(aSource, mWhat, machineId.toUtf16().raw(),
+                            snapshotId.toUtf16().raw());
     }
 
     Guid machineId;

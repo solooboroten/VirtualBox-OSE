@@ -245,6 +245,9 @@ binary binary-arch binary-indep: build $(if $(NOMODS),,modules)
 	mv $(archdir)/*.rel $(prefix)/usr/lib/$(package) || true
 	mv $(archdir)/VBoxNetDHCP $(prefix)/usr/lib/$(package)
 	mv $(archdir)/VBoxNetAdpCtl $(prefix)/usr/lib/$(package)
+	if [ -f $(archdir)/VBoxVolInfo ]; then \
+	    mv $(archdir)/VBoxVolInfo $(prefix)/usr/lib/$(package); \
+	fi
 	mv $(archdir)/VBoxXPCOMIPCD $(prefix)/usr/lib/$(package)
 	mv $(archdir)/components $(prefix)/usr/lib/$(package)/components
 	mv $(archdir)/*.so $(prefix)/usr/lib/$(package)
@@ -302,6 +305,8 @@ else
 endif
 	rmdir $(archdir)/additions
 	$(if $(VNC),rmdir $(archdir)/ExtensionPacks)
+	rm -r $(archdir)/helpers
+	rm -r $(archdir)/scripts
 	rmdir $(archdir)
 	rmdir $(prefix)/opt
 	dh_link \

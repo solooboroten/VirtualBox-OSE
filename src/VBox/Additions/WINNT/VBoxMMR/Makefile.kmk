@@ -21,7 +21,9 @@ include $(KBUILD_PATH)/subheader.kmk
 PROGRAMS += VBoxMMR
 VBoxMMR_TEMPLATE = NewVBoxGuestR3Exe
 VBoxMMR_DEFS     = LOG_TO_BACKDOOR VBOX_WITH_HGCM
-VBoxMMR_SOURCES  = startmmr.cpp
+VBoxMMR_SOURCES  = \
+	VBoxMMR.rc \
+	startmmr.cpp
 
 DLLS += VBoxMMRHook
 

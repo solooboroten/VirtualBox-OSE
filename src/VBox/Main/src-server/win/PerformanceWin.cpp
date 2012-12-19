@@ -348,9 +348,4 @@ int CollectorWin::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
     return VINF_SUCCESS;
 }
 
-int getDiskListByFs(const char *name, DiskList& list)
-{
-    return VERR_NOT_IMPLEMENTED;
-}
-
 }

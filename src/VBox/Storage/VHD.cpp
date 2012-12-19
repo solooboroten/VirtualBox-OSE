@@ -792,8 +792,28 @@ static int vhdOpenImage(PVHDIMAGE pImage, unsigned uOpenFlags)
 
     rc = vdIfIoIntFileReadSync(pImage->pIfIo, pImage->pStorage, pImage->uCurrentEndOfFile,
                                &vhdFooter, sizeof(VHDFooter), NULL);
-    if (memcmp(vhdFooter.Cookie, VHD_FOOTER_COOKIE, VHD_FOOTER_COOKIE_SIZE) != 0)
-        return VERR_VD_VHD_INVALID_HEADER;
+    if (RT_SUCCESS(rc))
+    {
+        if (memcmp(vhdFooter.Cookie, VHD_FOOTER_COOKIE, VHD_FOOTER_COOKIE_SIZE) != 0)
+        {
+            /*
+             * There is also a backup header at the beginning in case the image got corrupted.
+             * Such corrupted images are detected here to let the open handler repair it later.
+             */
+            rc = vdIfIoIntFileReadSync(pImage->pIfIo, pImage->pStorage, 0,
+                                       &vhdFooter, sizeof(VHDFooter), NULL);
+            if (RT_SUCCESS(rc))
+            {
+                if (memcmp(vhdFooter.Cookie, VHD_FOOTER_COOKIE, VHD_FOOTER_COOKIE_SIZE) != 0)
+                    rc = VERR_VD_VHD_INVALID_HEADER;
+                else
+                    rc = VERR_VD_IMAGE_CORRUPTED;
+            }
+        }
+    }
+
+    if (RT_FAILURE(rc))
+        return rc;
 
     switch (RT_BE2H_U32(vhdFooter.DiskType))
     {
@@ -1221,13 +1241,26 @@ static int vhdCheckIfValid(const char *pszFilename, PVDINTERFACE pVDIfsDisk,
 
     rc = vdIfIoIntFileReadSync(pIfIo, pStorage, cbFile - sizeof(VHDFooter),
                                &vhdFooter, sizeof(VHDFooter), NULL);
-    if (RT_FAILURE(rc) || (memcmp(vhdFooter.Cookie, VHD_FOOTER_COOKIE, VHD_FOOTER_COOKIE_SIZE) != 0))
-        rc = VERR_VD_VHD_INVALID_HEADER;
-    else
+    if (RT_SUCCESS(rc))
     {
-        *penmType = VDTYPE_HDD;
-        rc = VINF_SUCCESS;
+        if (memcmp(vhdFooter.Cookie, VHD_FOOTER_COOKIE, VHD_FOOTER_COOKIE_SIZE) != 0)
+        {
+            /*
+             * There is also a backup header at the beginning in case the image got corrupted.
+             * Such corrupted images are detected here to let the open handler repair it later.
+             */
+            rc = vdIfIoIntFileReadSync(pIfIo, pStorage, 0,
+                                       &vhdFooter, sizeof(VHDFooter), NULL);
+            if (   RT_FAILURE(rc)
+                || (memcmp(vhdFooter.Cookie, VHD_FOOTER_COOKIE, VHD_FOOTER_COOKIE_SIZE) != 0))
+                   rc = VERR_VD_VHD_INVALID_HEADER;
+        }
+
+        if (RT_SUCCESS(rc))
+            *penmType = VDTYPE_HDD;
     }
+    else
+        rc = VERR_VD_VHD_INVALID_HEADER;
 
     vdIfIoIntFileClose(pIfIo, pStorage);
 
@@ -2450,7 +2483,7 @@ static int vhdAsyncWrite(void *pBackendData, uint64_t uOffset, size_t cbWrite,
                 rc = vdIfIoIntFileWriteMetaAsync(pImage->pIfIo, pImage->pStorage,
                                                  pImage->uCurrentEndOfFile,
                                                  pExpand->au8Bitmap,
-                                                 pImage->cbDataBlockBitmap, pIoCtx,
+                                                 pImage->cDataBlockBitmapSectors * VHD_SECTOR_SIZE, pIoCtx,
                                                  vhdAsyncExpansionDataBlockBitmapComplete,
                                                  pExpand);
                 if (RT_SUCCESS(rc))
@@ -2471,7 +2504,7 @@ static int vhdAsyncWrite(void *pBackendData, uint64_t uOffset, size_t cbWrite,
                  * Write the new block at the current end of the file.
                  */
                 rc = vdIfIoIntFileWriteUserAsync(pImage->pIfIo, pImage->pStorage,
-                                                 pImage->uCurrentEndOfFile + pImage->cbDataBlockBitmap,
+                                                 pImage->uCurrentEndOfFile + pImage->cDataBlockBitmapSectors * VHD_SECTOR_SIZE,
                                                  pIoCtx, cbWrite,
                                                  vhdAsyncExpansionDataComplete,
                                                  pExpand);
@@ -2511,7 +2544,7 @@ static int vhdAsyncWrite(void *pBackendData, uint64_t uOffset, size_t cbWrite,
                  * Set the new end of the file and link the new block into the BAT.
                  */
                 pImage->pBlockAllocationTable[cBlockAllocationTableEntry] = pImage->uCurrentEndOfFile / VHD_SECTOR_SIZE;
-                pImage->uCurrentEndOfFile += pImage->cbDataBlockBitmap + pImage->cbDataBlock;
+                pImage->uCurrentEndOfFile += pImage->cDataBlockBitmapSectors * VHD_SECTOR_SIZE + pImage->cbDataBlock;
 
                 /* Update the footer. */
                 rc = vdIfIoIntFileWriteMetaAsync(pImage->pIfIo, pImage->pStorage,

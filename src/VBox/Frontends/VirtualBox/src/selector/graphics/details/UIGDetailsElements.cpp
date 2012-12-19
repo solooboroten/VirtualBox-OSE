@@ -78,7 +78,7 @@ void UIGDetailsElementInterface::sltUpdateAppearanceFinished(const UITextTable &
     if (text() != newText)
         setText(newText);
     cleanupThread();
-    emit sigElementUpdateDone();
+    emit sigBuildDone();
 }
 
 void UIGDetailsElementInterface::cleanupThread()
@@ -168,10 +168,9 @@ UIGDetailsElementPreview::UIGDetailsElementPreview(UIGDetailsSet *pParent, bool 
 
     /* Prepare variables: */
     int iMargin = data(ElementData_Margin).toInt();
-    int iHeaderHeight = data(ElementData_HeaderSize).toSize().height();
     /* Prepare layout: */
     QGraphicsLinearLayout *pLayout = new QGraphicsLinearLayout;
-    pLayout->setContentsMargins(iMargin, 2 * iMargin + iHeaderHeight, iMargin, iMargin);
+    pLayout->setContentsMargins(iMargin, 2 * iMargin + minimumHeaderHeight(), iMargin, iMargin);
     setLayout(pLayout);
 
     /* Create preview: */
@@ -184,13 +183,12 @@ int UIGDetailsElementPreview::minimumWidthHint() const
 {
     /* Prepare variables: */
     int iMargin = data(ElementData_Margin).toInt();
-    int iHeaderWidth = data(ElementData_HeaderSize).toSize().width();
 
     /* Calculating proposed width: */
     int iProposedWidth = 0;
 
     /* Maximum between header width and preview width: */
-    iProposedWidth += qMax(iHeaderWidth, m_pPreview->minimumSizeHint().toSize().width());
+    iProposedWidth += qMax(minimumHeaderWidth(), m_pPreview->minimumSizeHint().toSize().width());
 
     /* Two margins: */
     iProposedWidth += 2 * iMargin;
@@ -203,7 +201,6 @@ int UIGDetailsElementPreview::minimumHeightHint(bool fClosed) const
 {
     /* Prepare variables: */
     int iMargin = data(ElementData_Margin).toInt();
-    int iHeaderHeight = data(ElementData_HeaderSize).toSize().height();
 
     /* Calculating proposed height: */
     int iProposedHeight = 0;
@@ -212,7 +209,7 @@ int UIGDetailsElementPreview::minimumHeightHint(bool fClosed) const
     iProposedHeight += 2 * iMargin;
 
     /* Header height: */
-    iProposedHeight += iHeaderHeight;
+    iProposedHeight += minimumHeaderHeight();
 
     /* Element is opened? */
     if (!fClosed)
@@ -234,7 +231,7 @@ int UIGDetailsElementPreview::minimumHeightHint(bool fClosed) const
 void UIGDetailsElementPreview::updateAppearance()
 {
     m_pPreview->setMachine(machine());
-    emit sigElementUpdateDone();
+    emit sigBuildDone();
 }
 
 void UIGDetailsElementPreview::updateLayout()
@@ -245,7 +242,7 @@ void UIGDetailsElementPreview::updateLayout()
     /* Show/hide preview: */
     if (closed() && m_pPreview->isVisible())
         m_pPreview->hide();
-    if (opened() && !m_pPreview->isVisible() && !m_fAnimationRunning)
+    if (opened() && !m_pPreview->isVisible() && !isAnimationRunning())
         m_pPreview->show();
 }
 

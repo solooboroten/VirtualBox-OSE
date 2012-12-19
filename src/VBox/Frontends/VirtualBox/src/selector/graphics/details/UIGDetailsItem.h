@@ -46,6 +46,12 @@ class UIGDetailsItem : public QIGraphicsWidget
 {
     Q_OBJECT;
 
+signals:
+
+    /* Notifiers: Build stuff: */
+    void sigBuildStep(QString strStepId, int iStepNumber);
+    void sigBuildDone();
+
 public:
 
     /* Constructor: */
@@ -70,8 +76,16 @@ public:
     virtual void clearItems(UIGDetailsItemType type = UIGDetailsItemType_Any) = 0;
 
     /* API: Layout stuff: */
-    void updateSizeHint();
+    void updateGeometry();
+    virtual int minimumWidthHint() const = 0;
+    virtual int minimumHeightHint() const = 0;
+    QSizeF sizeHint(Qt::SizeHint which, const QSizeF &constraint = QSizeF()) const;
     virtual void updateLayout() = 0;
+
+protected slots:
+
+    /* Handler: Build stuff: */
+    virtual void sltBuildStep(QString strStepId, int iStepNumber);
 
 protected:
 
@@ -79,7 +93,9 @@ protected:
     static void configurePainterShape(QPainter *pPainter, const QStyleOptionGraphicsItem *pOption, int iRadius);
     static void paintFrameRect(QPainter *pPainter, const QRect &rect, int iRadius);
     static void paintPixmap(QPainter *pPainter, const QRect &rect, const QPixmap &pixmap);
-    static void paintText(QPainter *pPainter, const QRect &rect, const QFont &font, const QString &strText, bool fUrl = false);
+    static void paintText(QPainter *pPainter, QPoint point,
+                          const QFont &font, QPaintDevice *pPaintDevice,
+                          const QString &strText, const QColor &color);
 
 private:
 
@@ -87,30 +103,31 @@ private:
     UIGDetailsItem *m_pParent;
 };
 
-/* Allows to prepare item synchronously: */
-class UIPrepareStep : public QObject
+/* Allows to build item content synchronously: */
+class UIBuildStep : public QObject
 {
     Q_OBJECT;
 
 signals:
 
-    /* Notifier: Prepare stuff: */
-    void sigStepDone(QString strStepId);
+    /* Notifier: Build stuff: */
+    void sigStepDone(QString strStepId, int iStepNumber);
 
 public:
 
     /* Constructor: */
-    UIPrepareStep(QObject *pParent, const QString &strStepId = QString());
+    UIBuildStep(QObject *pParent, QObject *pBuildObject, const QString &strStepId, int iStepNumber);
 
 private slots:
 
-    /* Handlers: Prepare stuff: */
+    /* Handler: Build stuff: */
     void sltStepDone();
 
 private:
 
     /* Variables: */
     QString m_strStepId;
+    int m_iStepNumber;
 };
 
 #endif /* __UIGDetailsItem_h__ */

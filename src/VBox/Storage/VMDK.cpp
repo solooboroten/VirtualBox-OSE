@@ -700,7 +700,12 @@ DECLINLINE(int) vmdkFileInflateSync(PVMDKIMAGE pImage, PVMDKEXTENT pExtent,
                 return rc;
         }
         else
+        {
             memcpy(pMarker, pcvMarker, RT_OFFSETOF(VMDKMARKER, uType));
+            /* pcvMarker endianness has already been partially transformed, fix it */
+            pMarker->uSector = RT_H2LE_U64(pMarker->uSector);
+            pMarker->cbSize = RT_H2LE_U32(pMarker->cbSize);
+        }
 
         cbCompSize = RT_LE2H_U32(pMarker->cbSize);
         if (cbCompSize == 0)
@@ -1080,7 +1085,8 @@ static int vmdkReadGrainDirectory(PVMDKIMAGE pImage, PVMDKEXTENT pExtent)
     for (i = 0, pGDTmp = pExtent->pGD; i < pExtent->cGDEntries; i++, pGDTmp++)
         *pGDTmp = RT_LE2H_U32(*pGDTmp);
 
-    if (pExtent->uSectorRGD)
+    if (   pExtent->uSectorRGD
+        && !(pImage->uOpenFlags & VD_OPEN_FLAGS_SKIP_CONSISTENCY_CHECKS))
     {
         /* The VMDK 1.1 spec seems to talk about compressed grain directories,
          * but in reality they are not compressed. */
@@ -6542,12 +6548,13 @@ static int vmdkSetOpenFlags(void *pBackendData, unsigned uOpenFlags)
             rc = VINF_SUCCESS;
         else
             rc = VERR_INVALID_PARAMETER;
-        goto out;
     }
-
-    /* Implement this operation via reopening the image. */
-    vmdkFreeImage(pImage, false);
-    rc = vmdkOpenImage(pImage, uOpenFlags);
+    else
+    {
+        /* Implement this operation via reopening the image. */
+        vmdkFreeImage(pImage, false);
+        rc = vmdkOpenImage(pImage, uOpenFlags);
+    }
 
 out:
     LogFlowFunc(("returns %Rrc\n", rc));

@@ -1119,6 +1119,8 @@ bool UISession::preparePowerUp()
             delete pWizard;
     }
 
+#ifdef VBOX_WITH_NETFLT
+
     /* Skip further checks if VM in saved state */
     if (isSaved())
         return true;
@@ -1179,6 +1181,8 @@ bool UISession::preparePowerUp()
             return false;
         }
     }
+
+#endif
 
     return true;
 }
