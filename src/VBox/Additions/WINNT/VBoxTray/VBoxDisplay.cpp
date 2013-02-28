@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -225,6 +225,8 @@ static BOOL ResizeDisplayDevice(ULONG Id, DWORD Width, DWORD Height, DWORD BitsP
 
     ZeroMemory(&DisplayDevice, sizeof(DisplayDevice));
     DisplayDevice.cb = sizeof(DisplayDevice);
+
+    VBoxDispIfCancelPendingResize(&pCtx->pEnv->dispIf);
 
     /* Find out how many display devices the system has */
     DWORD NumDevices = 0;

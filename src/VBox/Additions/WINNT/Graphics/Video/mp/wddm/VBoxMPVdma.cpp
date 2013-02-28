@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1528,8 +1528,6 @@ int vboxVdmaCreate(PVBOXMP_DEVEXT pDevExt, VBOXVDMAINFO *pInfo
 
 int vboxVdmaDisable (PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo)
 {
-    LOGF(("."));
-
     Assert(pInfo->fEnabled);
     if (!pInfo->fEnabled)
         return VINF_ALREADY_INITIALIZED;
@@ -1547,8 +1545,6 @@ int vboxVdmaDisable (PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo)
 
 int vboxVdmaEnable (PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo)
 {
-    LOGF(("."));
-
     Assert(!pInfo->fEnabled);
     if (pInfo->fEnabled)
         return VINF_ALREADY_INITIALIZED;
@@ -1567,8 +1563,6 @@ int vboxVdmaEnable (PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo)
 #ifdef VBOX_WITH_VDMA
 int vboxVdmaFlush (PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo)
 {
-    LOGF(("."));
-
     Assert(pInfo->fEnabled);
     if (!pInfo->fEnabled)
         return VINF_ALREADY_INITIALIZED;

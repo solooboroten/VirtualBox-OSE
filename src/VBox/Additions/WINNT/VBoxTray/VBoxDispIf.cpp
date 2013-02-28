@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -417,6 +417,436 @@ DWORD VBoxDispIfResize(PCVBOXDISPIF const pIf, ULONG Id, DWORD Width, DWORD Heig
 
 
 #ifdef VBOX_WITH_WDDM
+/**/
+#define VBOXRR_TIMER_ID 1234
+
+typedef struct VBOXRR
+{
+    HANDLE hThread;
+    DWORD idThread;
+    HANDLE hEvent;
+    HWND hWnd;
+    CRITICAL_SECTION CritSect;
+    UINT_PTR idTimer;
+    PCVBOXDISPIF pIf;
+    DISPLAY_DEVICE *paDisplayDevices;
+    DEVMODE *paDeviceModes;
+    UINT cDevModes;
+} VBOXRR, *PVBOXRR;
+
+static VBOXRR g_VBoxRr = {0};
+
+#define VBOX_E_INSUFFICIENT_BUFFER HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER)
+#define VBOX_E_NOT_SUPPORTED HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)
+
+static void vboxRrRetryStopLocked()
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    if (pMon->pIf)
+    {
+        if (pMon->paDisplayDevices)
+        {
+            free(pMon->paDisplayDevices);
+            pMon->paDisplayDevices = NULL;
+        }
+
+        if (pMon->paDeviceModes)
+        {
+            free(pMon->paDeviceModes);
+            pMon->paDeviceModes = NULL;
+        }
+
+        if (pMon->idTimer)
+        {
+            KillTimer(pMon->hWnd, pMon->idTimer);
+            pMon->idTimer = 0;
+        }
+
+        pMon->cDevModes = 0;
+        pMon->pIf = NULL;
+    }
+}
+
+static void VBoxRrRetryStop()
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    EnterCriticalSection(&pMon->CritSect);
+    vboxRrRetryStopLocked();
+    LeaveCriticalSection(&pMon->CritSect);
+}
+
+static DWORD vboxDispIfWddmValidateFixResize(PCVBOXDISPIF const pIf, DISPLAY_DEVICE *paDisplayDevices, DEVMODE *paDeviceModes, UINT cDevModes);
+
+static void vboxRrRetryReschedule()
+{
+}
+
+static void VBoxRrRetrySchedule(PCVBOXDISPIF const pIf, DISPLAY_DEVICE *paDisplayDevices, DEVMODE *paDeviceModes, UINT cDevModes)
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    EnterCriticalSection(&pMon->CritSect);
+    vboxRrRetryStopLocked();
+
+    pMon->pIf = pIf;
+    if (cDevModes)
+    {
+        pMon->paDisplayDevices = (DISPLAY_DEVICE*)malloc(sizeof (*paDisplayDevices) * cDevModes);
+        Assert(pMon->paDisplayDevices);
+        if (!pMon->paDisplayDevices)
+        {
+            Log(("malloc failed!"));
+            vboxRrRetryStopLocked();
+            LeaveCriticalSection(&pMon->CritSect);
+            return;
+        }
+        memcpy(pMon->paDisplayDevices, paDisplayDevices, sizeof (*paDisplayDevices) * cDevModes);
+
+        pMon->paDeviceModes = (DEVMODE*)malloc(sizeof (*paDeviceModes) * cDevModes);
+        Assert(pMon->paDeviceModes);
+        if (!pMon->paDeviceModes)
+        {
+            Log(("malloc failed!"));
+            vboxRrRetryStopLocked();
+            LeaveCriticalSection(&pMon->CritSect);
+            return;
+        }
+        memcpy(pMon->paDeviceModes, paDeviceModes, sizeof (*paDeviceModes) * cDevModes);
+    }
+    pMon->cDevModes = cDevModes;
+
+    pMon->idTimer = SetTimer(pMon->hWnd, VBOXRR_TIMER_ID, 1000, (TIMERPROC)NULL);
+    Assert(pMon->idTimer);
+    if (!pMon->idTimer)
+    {
+        Log(("VBoxTray: SetTimer failed!, err %d\n", GetLastError()));
+        vboxRrRetryStopLocked();
+    }
+
+    LeaveCriticalSection(&pMon->CritSect);
+}
+
+static void vboxRrRetryPerform()
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    EnterCriticalSection(&pMon->CritSect);
+    if (pMon->pIf)
+    {
+        DWORD dwErr = vboxDispIfWddmValidateFixResize(pMon->pIf, pMon->paDisplayDevices, pMon->paDeviceModes, pMon->cDevModes);
+        if (ERROR_RETRY != dwErr)
+            VBoxRrRetryStop();
+        else
+            vboxRrRetryReschedule();
+    }
+    LeaveCriticalSection(&pMon->CritSect);
+}
+
+static LRESULT CALLBACK vboxRrWndProc(HWND hwnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam
+)
+{
+    switch(uMsg)
+    {
+        case WM_DISPLAYCHANGE:
+        {
+            Log(("VBoxTray: WM_DISPLAYCHANGE\n"));
+            VBoxRrRetryStop();
+            return 0;
+        }
+        case WM_TIMER:
+        {
+            if (wParam == VBOXRR_TIMER_ID)
+            {
+                Log(("VBoxTray: VBOXRR_TIMER_ID\n"));
+                vboxRrRetryPerform();
+                return 0;
+            }
+            break;
+        }
+        case WM_CLOSE:
+            Log((__FUNCTION__": got WM_CLOSE for hwnd(0x%x)", hwnd));
+            return 0;
+        case WM_DESTROY:
+            Log((__FUNCTION__": got WM_DESTROY for hwnd(0x%x)", hwnd));
+            return 0;
+        case WM_NCHITTEST:
+            Log((__FUNCTION__": got WM_NCHITTEST for hwnd(0x%x)\n", hwnd));
+            return HTNOWHERE;
+        default:
+            break;
+    }
+
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+#define VBOXRRWND_NAME "VBoxRrWnd"
+
+static HRESULT vboxRrWndCreate(HWND *phWnd)
+{
+    HRESULT hr = S_OK;
+    HINSTANCE hInstance = (HINSTANCE)GetModuleHandle(NULL);
+    /* Register the Window Class. */
+    WNDCLASS wc;
+    if (!GetClassInfo(hInstance, VBOXRRWND_NAME, &wc))
+    {
+        wc.style = 0;//CS_OWNDC;
+        wc.lpfnWndProc = vboxRrWndProc;
+        wc.cbClsExtra = 0;
+        wc.cbWndExtra = 0;
+        wc.hInstance = hInstance;
+        wc.hIcon = NULL;
+        wc.hCursor = NULL;
+        wc.hbrBackground = NULL;
+        wc.lpszMenuName = NULL;
+        wc.lpszClassName = VBOXRRWND_NAME;
+        if (!RegisterClass(&wc))
+        {
+            DWORD winErr = GetLastError();
+            Log((__FUNCTION__": RegisterClass failed, winErr(%d)\n", winErr));
+            hr = E_FAIL;
+        }
+    }
+
+    if (hr == S_OK)
+    {
+        HWND hWnd = CreateWindowEx (WS_EX_TOOLWINDOW,
+                                        VBOXRRWND_NAME, VBOXRRWND_NAME,
+                                        WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_DISABLED,
+                                        -100, -100,
+                                        10, 10,
+                                        NULL, //GetDesktopWindow() /* hWndParent */,
+                                        NULL /* hMenu */,
+                                        hInstance,
+                                        NULL /* lpParam */);
+        Assert(hWnd);
+        if (hWnd)
+        {
+            *phWnd = hWnd;
+        }
+        else
+        {
+            DWORD winErr = GetLastError();
+            Log((__FUNCTION__": CreateWindowEx failed, winErr(%d)\n", winErr));
+            hr = E_FAIL;
+        }
+    }
+
+    return hr;
+}
+
+static HRESULT vboxRrWndDestroy(HWND hWnd)
+{
+    BOOL bResult = DestroyWindow(hWnd);
+    if (bResult)
+        return S_OK;
+
+    DWORD winErr = GetLastError();
+    Log((__FUNCTION__": DestroyWindow failed, winErr(%d) for hWnd(0x%x)\n", winErr, hWnd));
+
+    return HRESULT_FROM_WIN32(winErr);
+}
+
+static HRESULT vboxRrWndInit()
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    return vboxRrWndCreate(&pMon->hWnd);
+}
+
+HRESULT vboxRrWndTerm()
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    HRESULT tmpHr = vboxRrWndDestroy(pMon->hWnd);
+    Assert(tmpHr == S_OK);
+
+    HINSTANCE hInstance = (HINSTANCE)GetModuleHandle(NULL);
+    UnregisterClass(VBOXRRWND_NAME, hInstance);
+
+    return S_OK;
+}
+
+#define WM_VBOXRR_INIT_QUIT (WM_APP+2)
+
+HRESULT vboxRrRun()
+{
+    PVBOXRR pMon = &g_VBoxRr;
+    MSG Msg;
+
+    HRESULT hr = S_FALSE;
+
+    PeekMessage(&Msg,
+            NULL /* HWND hWnd */,
+            WM_USER /* UINT wMsgFilterMin */,
+            WM_USER /* UINT wMsgFilterMax */,
+            PM_NOREMOVE);
+
+    do
+    {
+        BOOL bResult = GetMessage(&Msg,
+            0 /*HWND hWnd*/,
+            0 /*UINT wMsgFilterMin*/,
+            0 /*UINT wMsgFilterMax*/
+            );
+
+        if(!bResult) /* WM_QUIT was posted */
+        {
+            hr = S_FALSE;
+            Log(("VBoxTray: GetMessage returned FALSE\n"));
+            VBoxRrRetryStop();
+            break;
+        }
+
+        if(bResult == -1) /* error occurred */
+        {
+            DWORD winEr = GetLastError();
+            hr = HRESULT_FROM_WIN32(winEr);
+            Assert(0);
+            /* just ensure we never return success in this case */
+            Assert(hr != S_OK);
+            Assert(hr != S_FALSE);
+            if (hr == S_OK || hr == S_FALSE)
+                hr = E_FAIL;
+            Log(("VBoxTray: GetMessage returned -1, err %d\n", winEr));
+            VBoxRrRetryStop();
+            break;
+        }
+
+        switch (Msg.message)
+        {
+            case WM_VBOXRR_INIT_QUIT:
+            case WM_CLOSE:
+            {
+                Log(("VBoxTray: closing Rr %d\n", Msg.message));
+                VBoxRrRetryStop();
+                PostQuitMessage(0);
+                break;
+            }
+            default:
+                TranslateMessage(&Msg);
+                DispatchMessage(&Msg);
+                break;
+        }
+    } while (1);
+    return 0;
+}
+
+static DWORD WINAPI vboxRrRunnerThread(void *pvUser)
+{
+    PVBOXRR pMon = &g_VBoxRr;
+
+    BOOL bRc = SetEvent(pMon->hEvent);
+    if (!bRc)
+    {
+        DWORD winErr = GetLastError();
+        Log((__FUNCTION__": SetEvent failed, winErr = (%d)", winErr));
+        HRESULT tmpHr = HRESULT_FROM_WIN32(winErr);
+        Assert(tmpHr != S_OK);
+    }
+
+    HRESULT hr = vboxRrWndInit();
+    Assert(hr == S_OK);
+    if (hr == S_OK)
+    {
+        hr = vboxRrRun();
+        Assert(hr == S_OK);
+
+        vboxRrWndTerm();
+    }
+
+    return 0;
+}
+
+HRESULT VBoxRrInit()
+{
+    HRESULT hr = E_FAIL;
+    PVBOXRR pMon = &g_VBoxRr;
+    memset(pMon, 0, sizeof (*pMon));
+
+    InitializeCriticalSection(&pMon->CritSect);
+
+    pMon->hEvent = CreateEvent(NULL, /* LPSECURITY_ATTRIBUTES lpEventAttributes*/
+            TRUE, /* BOOL bManualReset*/
+            FALSE, /* BOOL bInitialState */
+            NULL /* LPCTSTR lpName */
+          );
+    if (pMon->hEvent)
+    {
+        pMon->hThread = CreateThread(NULL /* LPSECURITY_ATTRIBUTES lpThreadAttributes */,
+                                              0 /* SIZE_T dwStackSize */,
+                                              vboxRrRunnerThread,
+                                              pMon,
+                                              0 /* DWORD dwCreationFlags */,
+                                              &pMon->idThread);
+        if (pMon->hThread)
+        {
+            DWORD dwResult = WaitForSingleObject(pMon->hEvent, INFINITE);
+            if (dwResult == WAIT_OBJECT_0)
+                return S_OK;
+            else
+            {
+                Log(("WaitForSingleObject failed!"));
+                hr = E_FAIL;
+            }
+        }
+        else
+        {
+            DWORD winErr = GetLastError();
+            Log((__FUNCTION__": CreateThread failed, winErr = (%d)", winErr));
+            hr = HRESULT_FROM_WIN32(winErr);
+            Assert(hr != S_OK);
+        }
+        CloseHandle(pMon->hEvent);
+    }
+    else
+    {
+        DWORD winErr = GetLastError();
+        Log((__FUNCTION__": CreateEvent failed, winErr = (%d)", winErr));
+        hr = HRESULT_FROM_WIN32(winErr);
+        Assert(hr != S_OK);
+    }
+
+    DeleteCriticalSection(&pMon->CritSect);
+
+    return hr;
+}
+
+VOID VBoxRrTerm()
+{
+    HRESULT hr;
+    PVBOXRR pMon = &g_VBoxRr;
+    if (!pMon->hThread)
+        return;
+
+    BOOL bResult = PostThreadMessage(pMon->idThread, WM_VBOXRR_INIT_QUIT, 0, 0);
+    DWORD winErr;
+    if (bResult
+            || (winErr = GetLastError()) == ERROR_INVALID_THREAD_ID) /* <- could be that the thread is terminated */
+    {
+        DWORD dwErr = WaitForSingleObject(pMon->hThread, INFINITE);
+        if (dwErr == WAIT_OBJECT_0)
+        {
+            hr = S_OK;
+        }
+        else
+        {
+            winErr = GetLastError();
+            hr = HRESULT_FROM_WIN32(winErr);
+        }
+    }
+    else
+    {
+        hr = HRESULT_FROM_WIN32(winErr);
+    }
+
+    DeleteCriticalSection(&pMon->CritSect);
+
+    CloseHandle(pMon->hThread);
+    pMon->hThread = 0;
+    CloseHandle(pMon->hEvent);
+    pMon->hThread = 0;
+}
+/**/
+
 typedef struct VBOXDISPIF_WDDM_INTERNAL
 {
     PCVBOXDISPIF pIf;
@@ -537,7 +967,6 @@ static DWORD vboxDispIfWddmValidateFixResize(PCVBOXDISPIF const pIf, DISPLAY_DEV
     if (vboxDispIfWddmValidateResize(paDisplayDevices, paDeviceModes, cDevModes))
         return NO_ERROR;
 
-    DWORD winEr;
     LONG status = DISP_CHANGE_SUCCESSFUL;
 
     /* now try to resize in a "regular" way */
@@ -565,7 +994,6 @@ static DWORD vboxDispIfWddmValidateFixResize(PCVBOXDISPIF const pIf, DISPLAY_DEV
         LONG tmpStatus = pIf->modeData.wddm.pfnChangeDisplaySettingsEx((LPSTR)paDisplayDevices[i].DeviceName,
                                         &paDeviceModes[i], NULL, CDS_NORESET | CDS_UPDATEREGISTRY, NULL);
         Log(("VBoxTray: ResizeDisplayDevice: ChangeDisplaySettingsEx position status %d, err %d\n", tmpStatus, GetLastError ()));
-
         if (tmpStatus != DISP_CHANGE_SUCCESSFUL)
         {
             status = tmpStatus;
@@ -579,24 +1007,42 @@ static DWORD vboxDispIfWddmValidateFixResize(PCVBOXDISPIF const pIf, DISPLAY_DEV
     {
         if (status == DISP_CHANGE_SUCCESSFUL)
         {
+            Log(("VBoxTray: resize succeeded\n"));
             return NO_ERROR;
         }
-        tmpStatus = status;
+    }
+    else
+    {
+        if (status == DISP_CHANGE_SUCCESSFUL)
+            status = tmpStatus;
     }
 
-    winEr = ERROR_GEN_FAILURE;
-    return winEr;
+    if (status == DISP_CHANGE_FAILED)
+    {
+        Log(("VBoxTray: DISP_CHANGE_FAILED, retrying..\n"));
+        return ERROR_RETRY;
+    }
+
+    Log(("VBoxTray: resize failed with status %d\n", status));
+
+    return ERROR_GEN_FAILURE;
 }
 
 static DWORD vboxDispIfWddmInit(PCVBOXDISPIF pIf)
 {
     memset(&g_VBoxDispIfWddm, 0, sizeof (g_VBoxDispIfWddm));
     g_VBoxDispIfWddm.pIf = pIf;
-    return ERROR_SUCCESS;
+    HRESULT hr = VBoxRrInit();
+    if (SUCCEEDED(hr))
+    {
+        return ERROR_SUCCESS;
+    }
+    return ERROR_GEN_FAILURE;
 }
 
 static void vboxDispIfWddmTerm(PCVBOXDISPIF pIf)
 {
+    VBoxRrTerm();
     memset(&g_VBoxDispIfWddm, 0, sizeof (g_VBoxDispIfWddm));
 }
 
@@ -651,6 +1097,13 @@ static DWORD vboxDispIfReninitModesWDDM(PCVBOXDISPIF const pIf, uint8_t *pScreen
 
     DWORD err = vboxDispIfWDDMAdapterOp(pIf, -1 /* iDisplay, -1 means primary */, vboxDispIfReninitModesWDDMOp, &OpData);
     return err;
+}
+
+DWORD vboxDispIfCancelPendingResizeWDDM(PCVBOXDISPIF const pIf)
+{
+    Log(("VBoxTray: cancelling pending resize\n"));
+    VBoxRrRetryStop();
+    return NO_ERROR;
 }
 
 static DWORD vboxDispIfAdjustMode(DISPLAY_DEVICE *pDisplayDevice, DEVMODE *pDeviceMode)
@@ -734,6 +1187,9 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
     DWORD winEr = NO_ERROR;
     UINT i = 0;
 
+    Log(("VBoxTray: vboxDispIfResizeModesWDDM\n"));
+    VBoxRrRetryStop();
+
     for (; i < cDevModes; i++)
     {
         PVBOXWDDM_RECOMMENDVIDPN_SCREEN_INFO pInfo = &pVidPnInfo->aScreenInfos[i];
@@ -742,7 +1198,7 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
         if (!OpenAdapterData.hDc)
         {
             winEr = GetLastError();
-            Log(("WARNING: Failed to get dc for display device %s, winEr %d\n", paDisplayDevices[i].DeviceName, winEr));
+            Log(("VBoxTray: WARNING: Failed to get dc for display device %s, winEr %d\n", paDisplayDevices[i].DeviceName, winEr));
             break;
         }
 
@@ -751,7 +1207,7 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
         if (Status)
         {
             winEr = ERROR_GEN_FAILURE;
-            Log(("WARNING: Failed to open adapter from dc, Status 0x%x\n", Status));
+            Log(("VBoxTray: WARNING: Failed to open adapter from dc, Status 0x%x\n", Status));
             break;
         }
 
@@ -770,7 +1226,7 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
             ClosaAdapterData.hAdapter = OpenAdapterData.hAdapter;
             Status = pIf->modeData.wddm.pfnD3DKMTCloseAdapter(&ClosaAdapterData);
             if (Status)
-                Log(("WARNING: Failed to close adapter, Status 0x%x\n", Status));
+                Log(("VBoxTray: WARNING: Failed to close adapter, Status 0x%x\n", Status));
         }
     }
 
@@ -805,7 +1261,7 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
         ClosaAdapterData.hAdapter = hAdapter;
         Status = pIf->modeData.wddm.pfnD3DKMTCloseAdapter(&ClosaAdapterData);
         if (Status)
-            Log(("WARNING: Failed to close adapter[2], Status 0x%x\n", Status));
+            Log(("VBoxTray: WARNING: Failed to close adapter[2], Status 0x%x\n", Status));
     }
 
 //    for (i = 0; i < cDevModes; i++)
@@ -815,12 +1271,12 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
 
     if (fAbleToInvalidateVidPn)
     {
-        Log(("Invalidating VidPn Worked!\n"));
+        Log(("VBoxTray: Invalidating VidPn Worked!\n"));
         winEr = vboxDispIfWddmValidateFixResize(pIf, paDisplayDevices, paDeviceModes, cDevModes);
     }
     else
     {
-        Log(("Falling back to monitor mode reinit\n"));
+        Log(("VBoxTray: Falling back to monitor mode reinit\n"));
         /* fallback impl needed for display-only driver
          * since D3DKMTInvalidateActiveVidPn is not available for WDDM > 1.0:
          * make the driver invalidate VidPn,
@@ -832,6 +1288,13 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPL
         winEr = vboxDispIfWddmValidateFixResize(pIf, paDisplayDevices, paDeviceModes, cDevModes);
 
         Assert(winEr == NO_ERROR);
+    }
+
+    if (winEr == ERROR_RETRY)
+    {
+        VBoxRrRetrySchedule(pIf, paDisplayDevices, paDeviceModes, cDevModes);
+        /* just pretend everything is fine so far */
+        winEr = NO_ERROR;
     }
 
     return winEr;
@@ -849,6 +1312,24 @@ DWORD VBoxDispIfResizeModes(PCVBOXDISPIF const pIf, UINT iChangedMode, DISPLAY_D
 #ifdef VBOX_WITH_WDDM
         case VBOXDISPIF_MODE_WDDM:
             return vboxDispIfResizeModesWDDM(pIf, iChangedMode, paDisplayDevices, paDeviceModes, cDevModes);
+#endif
+        default:
+            Log((__FUNCTION__": unknown mode (%d)\n", pIf->enmMode));
+            return ERROR_INVALID_PARAMETER;
+    }
+}
+
+DWORD VBoxDispIfCancelPendingResize(PCVBOXDISPIF const pIf)
+{
+    switch (pIf->enmMode)
+    {
+        case VBOXDISPIF_MODE_XPDM_NT4:
+            return NO_ERROR;
+        case VBOXDISPIF_MODE_XPDM:
+            return NO_ERROR;
+#ifdef VBOX_WITH_WDDM
+        case VBOXDISPIF_MODE_WDDM:
+            return vboxDispIfCancelPendingResizeWDDM(pIf);
 #endif
         default:
             Log((__FUNCTION__": unknown mode (%d)\n", pIf->enmMode));
