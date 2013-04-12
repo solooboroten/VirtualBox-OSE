@@ -1,6 +1,166 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.2.12 (2013-04-12)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: fixed a Guru Meditation on putting Linux guest CPU online if
+          nested paging is disabled</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: invalidate TLB entries even for non-present pages</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: Multi-screen support: fixed a crash on visual-mode change</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: Multi-screen support: disabled guest-screens should now remain
+          disabled on visual-mode change</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: Multi-screen support: handle host/guest screen plugging/unplugging
+          in different visual-modes</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: Multi-screen support: seamless mode: fixed a bug when empty seamless
+          screens were represented by fullscreen windows</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: Multi-screen support: each machine window in multi-screen
+          configuration should have correct menu-bar now (Mac OS X hosts)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: Multi-screen support: machine window View menu should
+          have correct content in seamless/fullscreen mode now (Mac OS X hosts)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: VM manager: vertical scroll-bars should be now updated on
+          content/window resize</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: VM settings: fixed crash on machine state-change event</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: don't show warnings about enabled or disabled mouse integration
+          if the VM was restored from a saved state</para>
+      </listitem>
+
+      <listitem>
+        <para>Virtio-net: properly announce that the guest has to handle
+          partial TCP checksums (bug #9380)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: Fixed incorrect alignment of VDI images causing disk size
+          changes when using snapshots (bug #11597)</para>
+      </listitem>
+
+      <listitem>
+        <para>Audio: fixed broken ALSA &amp; PulseAudio on some Linux hosts
+          due to invalid symbol resolution (bug #11615)</para>
+      </listitem>
+
+      <listitem>
+        <para>PS/2 keyboard: re-apply keyboard repeat delay and rate
+          after a VM was restored from a saved state (bug #10933)</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: updated DMI processor information table (type 4):
+          corrected L1 &amp; L2 cache table handles</para>
+      </listitem>
+
+      <listitem>
+        <para>Timekeeping: fix several issues which can lead to incorrect
+          time, Solaris guests sporadically showed time going briefly back
+          to Jan 1 1970</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Metrics: disk metrics are collected properly when software
+          RAID, symbolic links or rootfs are used on Linux hosts</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: don't stay paused after a snapshot was created
+          and the VM was running before</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: introduced <emphasis>controlvm nicpromisc</emphasis>
+          (bug #11423)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: don't crash on <emphasis>controlvm
+            guestmemoryballoon</emphasis> of the VM isn't running (bug #11639)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxHeadless: don't filter guest property events as this would
+          affect all clients (bug #11644)</para>
+      </listitem>
+
+      <listitem>
+        <para>Guest control: prevent double CR in the output generated
+          by guest commands and do NLS conversion</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: fixed build errors on Linux 3.5 and newer
+          kernels if the <emphasis>CONFIG_UIDGID_STRICT_TYPE_CHECKS</emphasis>
+          config option is enabled (bug #11664)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: handle fall-back to VESA driver on RedHat-based
+          guests if vboxvideo cannot be loaded</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: RHEL/OEL/CentOS 6.4 compile fix (bug #11586)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: Debian Linux kernel 3.2.0-4 (3.2.39) compile
+          fix (bug #11634)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: added auto-logon support for Linux guests using
+          LightDM as the display manager</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: Support for multimonitor. Dynamic enable/disable
+          of secondary virtual monitors. Support for XPDM/WDDM based guests
+          (bug #6118)</para>
+      </listitem>
+
+      <listitem>
+        <para>X11 Additions: support X.Org Server 1.14 (bug #11609)</para>
+      </listitem>
+
+     </itemizedlist>
+
+  </sect1>
+
+  <sect1>
     <title>Version 4.2.10 (2013-03-05)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -9,7 +169,7 @@
     <itemizedlist>
 
       <listitem>
-        <para>GUI: fixed keyboard with XQuartz X server (bug #10664)</para> 
+        <para>GUI: fixed keyboard with XQuartz X server (bug #10664)</para>
       </listitem>
 
       <listitem>

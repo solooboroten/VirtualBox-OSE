@@ -24,6 +24,9 @@
 #include <QImageWriter>
 #include <QPainter>
 #include <QTimer>
+#ifdef Q_WS_MAC
+# include <QMenuBar>
+#endif /* Q_WS_MAC */
 
 /* GUI includes: */
 #include "QIFileDialog.h"
@@ -165,11 +168,17 @@ void UIMachineLogic::prepare()
     /* Prepare action connections: */
     prepareActionConnections();
 
+    /* Prepare other connections: */
+    prepareOtherConnections();
+
     /* Prepare handlers: */
     prepareHandlers();
 
     /* Prepare machine window(s): */
     prepareMachineWindows();
+
+    /* Prepare menu: */
+    prepareMenu();
 
 #ifdef Q_WS_MAC
     /* Prepare dock: */
@@ -204,6 +213,9 @@ void UIMachineLogic::cleanup()
     /* Cleanup dock: */
     cleanupDock();
 #endif /* Q_WS_MAC */
+
+    /* Cleanup menu: */
+    cleanupMenu();
 
     /* Cleanup machine window(s): */
     cleanupMachineWindows();
@@ -435,6 +447,20 @@ void UIMachineLogic::sltShowWindows()
 }
 #endif /* Q_WS_MAC */
 
+void UIMachineLogic::sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)
+{
+    /* Deliver event to all machine-windows: */
+    foreach (UIMachineWindow *pMachineWindow, machineWindows())
+        pMachineWindow->handleScreenCountChange();
+}
+
+void UIMachineLogic::sltHostScreenCountChanged(int /*cHostScreenCount*/)
+{
+    /* Deliver event to all machine-windows: */
+    foreach (UIMachineWindow *pMachineWindow, machineWindows())
+        pMachineWindow->handleScreenCountChange();
+}
+
 UIMachineLogic::UIMachineLogic(QObject *pParent, UISession *pSession, UIVisualStateType visualStateType)
     : QIWithRetranslateUI3<QObject>(pParent)
     , m_pSession(pSession)
@@ -452,6 +478,7 @@ UIMachineLogic::UIMachineLogic(QObject *pParent, UISession *pSession, UIVisualSt
     , m_pDbgGuiVT(0)
 #endif /* VBOX_WITH_DEBUGGER_GUI */
 #ifdef Q_WS_MAC
+    , m_pMenuBar(0)
     , m_fIsDockIconEnabled(true)
     , m_pDockIconPreview(0)
     , m_pDockPreviewSelectMonitorGroup(0)
@@ -562,6 +589,14 @@ void UIMachineLogic::prepareSessionConnections()
     /* Show windows: */
     connect(uisession(), SIGNAL(sigShowWindows()), this, SLOT(sltShowWindows()));
 #endif /* Q_WS_MAC */
+
+    /* Guest-monitor-change updater: */
+    connect(uisession(), SIGNAL(sigGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)),
+            this, SLOT(sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)));
+
+    /* Host-screen-change updater: */
+    connect(uisession(), SIGNAL(sigHostScreenCountChanged(int)),
+            this, SLOT(sltHostScreenCountChanged(int)));
 }
 
 void UIMachineLogic::prepareActionGroups()
@@ -697,6 +732,13 @@ void UIMachineLogic::prepareHandlers()
     setMouseHandler(UIMouseHandler::create(this, visualStateType()));
 }
 
+void UIMachineLogic::prepareMenu()
+{
+#ifdef Q_WS_MAC
+    m_pMenuBar = uisession()->newMenuBar();
+#endif /* Q_WS_MAC */
+}
+
 #ifdef Q_WS_MAC
 void UIMachineLogic::prepareDock()
 {
@@ -812,6 +854,14 @@ void UIMachineLogic::cleanupDock()
     }
 }
 #endif /* Q_WS_MAC */
+
+void UIMachineLogic::cleanupMenu()
+{
+#ifdef Q_WS_MAC
+    delete m_pMenuBar;
+    m_pMenuBar = 0;
+#endif /* Q_WS_MAC */
+}
 
 void UIMachineLogic::cleanupHandlers()
 {

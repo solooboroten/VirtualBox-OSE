@@ -1596,6 +1596,77 @@ VMMR0DECL(void) VMXR0LoadMinimalGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 
 
 /**
+ * Sets up TSC offsetting and VMX preemption, if supported/configured/available.
+ *
+ * NOTE: This function reads the host TSC value. Therefore it must be executed very
+ * shortly before a VM entry and execution MUST NOT be rescheduled between a call to
+ * this function and a VM entry without calling this function again.
+ *
+ * @returns VBox status code.
+ * @param   pVM         Pointer to the VM.
+ * @param   pVCpu       Pointer to the VMCPU.
+ */
+VMMR0DECL(int) VMXR0SetupTscOffsetAndPreemption(PVM pVM, PVMCPU pVCpu)
+{
+    int     rc = VINF_SUCCESS;
+    bool    fOffsettedTsc;
+
+    if (pVM->hwaccm.s.vmx.fUsePreemptTimer)
+    {
+        uint64_t cTicksToDeadline = TMCpuTickGetDeadlineAndTscOffset(pVCpu, &fOffsettedTsc, &pVCpu->hwaccm.s.vmx.u64TSCOffset);
+
+        /* Make sure the returned values have sane upper and lower boundaries. */
+        uint64_t u64CpuHz = SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage);
+
+        cTicksToDeadline = RT_MIN(cTicksToDeadline, u64CpuHz / 64);   /* 1/64 of a second */
+        cTicksToDeadline = RT_MAX(cTicksToDeadline, u64CpuHz / 2048); /* 1/2048th of a second */
+
+        cTicksToDeadline >>= pVM->hwaccm.s.vmx.cPreemptTimerShift;
+        uint32_t cPreemptionTickCount = (uint32_t)RT_MIN(cTicksToDeadline, UINT32_MAX - 16);
+        rc = VMXWriteVMCS(VMX_VMCS32_GUEST_PREEMPTION_TIMER_VALUE, cPreemptionTickCount);
+        AssertRC(rc);
+    }
+    else
+        fOffsettedTsc = TMCpuTickCanUseRealTSC(pVCpu, &pVCpu->hwaccm.s.vmx.u64TSCOffset);
+
+    if (fOffsettedTsc)
+    {
+        uint64_t u64CurTSC = ASMReadTSC();
+        if (u64CurTSC + pVCpu->hwaccm.s.vmx.u64TSCOffset > TMCpuTickGetLastSeen(pVCpu))
+        {
+            /* Note: VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT takes precedence over TSC_OFFSET, applies to RDTSCP too. */
+            rc = VMXWriteVMCS64(VMX_VMCS_CTRL_TSC_OFFSET_FULL, pVCpu->hwaccm.s.vmx.u64TSCOffset);
+            AssertRC(rc);
+
+            pVCpu->hwaccm.s.vmx.proc_ctls &= ~VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
+            rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
+            AssertRC(rc);
+            STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTSCOffset);
+        }
+        else
+        {
+            /* Fall back to rdtsc, rdtscp emulation as we would otherwise pass decreasing tsc values to the guest. */
+            LogFlow(("TSC %RX64 offset %RX64 time=%RX64 last=%RX64 (diff=%RX64, virt_tsc=%RX64)\n", u64CurTSC,
+                     pVCpu->hwaccm.s.vmx.u64TSCOffset, u64CurTSC + pVCpu->hwaccm.s.vmx.u64TSCOffset,
+                     TMCpuTickGetLastSeen(pVCpu), TMCpuTickGetLastSeen(pVCpu) - u64CurTSC - pVCpu->hwaccm.s.vmx.u64TSCOffset,
+                     TMCpuTickGet(pVCpu)));
+            pVCpu->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
+            rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
+            AssertRC(rc);
+            STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTSCInterceptOverFlow);
+        }
+    }
+    else
+    {
+        pVCpu->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
+        rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
+        AssertRC(rc);
+        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTSCIntercept);
+    }
+    return rc;
+}
+
+/**
  * Loads the guest state.
  *
  * NOTE: Don't do anything here that can cause a jump back to ring 3!!!!!
@@ -2204,60 +2275,6 @@ VMMR0DECL(int) VMXR0LoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     AssertRC(rc);
 #endif /* VBOX_WITH_AUTO_MSR_LOAD_RESTORE */
 
-    bool fOffsettedTsc;
-    if (pVM->hwaccm.s.vmx.fUsePreemptTimer)
-    {
-        uint64_t cTicksToDeadline = TMCpuTickGetDeadlineAndTscOffset(pVCpu, &fOffsettedTsc, &pVCpu->hwaccm.s.vmx.u64TSCOffset);
-
-        /* Make sure the returned values have sane upper and lower boundaries. */
-        uint64_t u64CpuHz = SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage);
-
-        cTicksToDeadline = RT_MIN(cTicksToDeadline, u64CpuHz / 64);   /* 1/64 of a second */
-        cTicksToDeadline = RT_MAX(cTicksToDeadline, u64CpuHz / 2048); /* 1/2048th of a second */
-
-        cTicksToDeadline >>= pVM->hwaccm.s.vmx.cPreemptTimerShift;
-        uint32_t cPreemptionTickCount = (uint32_t)RT_MIN(cTicksToDeadline, UINT32_MAX - 16);
-        rc = VMXWriteVMCS(VMX_VMCS32_GUEST_PREEMPTION_TIMER_VALUE, cPreemptionTickCount);
-        AssertRC(rc);
-    }
-    else
-        fOffsettedTsc = TMCpuTickCanUseRealTSC(pVCpu, &pVCpu->hwaccm.s.vmx.u64TSCOffset);
-
-    if (fOffsettedTsc)
-    {
-        uint64_t u64CurTSC = ASMReadTSC();
-        if (u64CurTSC + pVCpu->hwaccm.s.vmx.u64TSCOffset >= TMCpuTickGetLastSeen(pVCpu))
-        {
-            /* Note: VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT takes precedence over TSC_OFFSET, applies to RDTSCP too. */
-            rc = VMXWriteVMCS64(VMX_VMCS_CTRL_TSC_OFFSET_FULL, pVCpu->hwaccm.s.vmx.u64TSCOffset);
-            AssertRC(rc);
-
-            pVCpu->hwaccm.s.vmx.proc_ctls &= ~VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
-            rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
-            AssertRC(rc);
-            STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTSCOffset);
-        }
-        else
-        {
-            /* Fall back to rdtsc, rdtscp emulation as we would otherwise pass decreasing tsc values to the guest. */
-            LogFlow(("TSC %RX64 offset %RX64 time=%RX64 last=%RX64 (diff=%RX64, virt_tsc=%RX64)\n", u64CurTSC,
-                     pVCpu->hwaccm.s.vmx.u64TSCOffset, u64CurTSC + pVCpu->hwaccm.s.vmx.u64TSCOffset,
-                     TMCpuTickGetLastSeen(pVCpu), TMCpuTickGetLastSeen(pVCpu) - u64CurTSC - pVCpu->hwaccm.s.vmx.u64TSCOffset,
-                     TMCpuTickGet(pVCpu)));
-            pVCpu->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
-            rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
-            AssertRC(rc);
-            STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTSCInterceptOverFlow);
-        }
-    }
-    else
-    {
-        pVCpu->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
-        rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
-        AssertRC(rc);
-        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTSCIntercept);
-    }
-
     /* Done with the major changes */
     pVCpu->hwaccm.s.fContextUseFlags &= ~HWACCM_CHANGED_ALL_GUEST;
 
@@ -2766,6 +2783,7 @@ VMMR0DECL(int) VMXR0RunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     RTGCUINTPTR intInfo = 0; /* shut up buggy gcc 4 */
     RTGCUINTPTR errCode, instrInfo;
     bool        fSetupTPRCaching = false;
+    bool        fNeedTscSetup = true;
     uint64_t    u64OldLSTAR = 0;
     uint8_t     u8LastTPR = 0;
     RTCCUINTREG uOldEFlags = ~(RTCCUINTREG)0;
@@ -2796,7 +2814,7 @@ VMMR0DECL(int) VMXR0RunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     Log2(("\nE"));
 
     /* This is not ideal, but if we don't clear the event injection in the VMCS right here,
-     * we may end up injecting some stale event into a VM, including injecting an event that 
+     * we may end up injecting some stale event into a VM, including injecting an event that
      * originated before a VM reset *after* the VM has been reset. See @bugref{6220}.
      */
     VMXWriteVMCS(VMX_VMCS_CTRL_ENTRY_IRQ_INFO, 0);
@@ -3125,6 +3143,11 @@ ResumeExecution:
     {
         VMXR0LoadMinimalGuestState(pVM, pVCpu, pCtx);
         STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatLoadMinimal);
+        if (fNeedTscSetup)
+        {
+            VMXR0SetupTscOffsetAndPreemption(pVM, pVCpu);
+            fNeedTscSetup = false;
+        }
     }
     else
     {
@@ -3135,6 +3158,7 @@ ResumeExecution:
             goto end;
         }
         STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatLoadFull);
+        VMXR0SetupTscOffsetAndPreemption(pVM, pVCpu);
     }
 
 #ifndef VBOX_WITH_VMMR0_DISABLE_PREEMPTION
@@ -4162,6 +4186,7 @@ ResumeExecution:
             /* Update EIP and continue execution. */
             Assert(cbInstr == 2);
             pCtx->rip += cbInstr;
+            fNeedTscSetup = true;   /* See @bugref{6634}. */
             goto ResumeExecution;
         }
         rc = VINF_EM_RAW_EMULATE_INSTR;
@@ -4178,6 +4203,7 @@ ResumeExecution:
             /* Update EIP and continue execution. */
             Assert(cbInstr == 3);
             pCtx->rip += cbInstr;
+            fNeedTscSetup = true;   /* See @bugref{6634}. */
             goto ResumeExecution;
         }
         rc = VINF_EM_RAW_EMULATE_INSTR;

@@ -1687,8 +1687,7 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
         {
             return !m_pChooser->isGroupSavingInProgress() &&
                    items.size() == 1 &&
-                   pItem->accessible() &&
-                   !UIVMItem::isItemStuck(pItem);
+                   pItem->reconfigurable();
         }
         case UIActionIndexSelector_Simple_Machine_Clone:
         {

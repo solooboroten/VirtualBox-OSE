@@ -955,13 +955,13 @@ static bool disCode(uint32_t uFlatAddr, uint32_t cb, bool fIs16Bit)
                      && pb[3] == 0xff
                      && pb[4] == 0xff
                     )
-                 || (   pb[0] == 0xa1  /* int1a_function switch */
+                 || (   pb[0] == 0x9b  /* int1a_function switch */
                      && pb[1] == 0x66
-                     && pb[2] == 0xc8
+                     && pb[2] == 0xc2
                      && pb[3] == 0x66
-                     && pb[4] == 0xed
+                     && pb[4] == 0xe7
                      && pb[5] == 0x66
-                     && pb[6] == 0x1f
+                     && pb[6] == 0x19
                      && pb[7] == 0x67
                     )
                  || (   pb[0] == 0x49  /* apm_out_str switch */
