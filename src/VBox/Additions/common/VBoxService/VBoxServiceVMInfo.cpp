@@ -304,13 +304,20 @@ static void vboxServiceFreeLAClientInfo(PVBOXSERVICELACLIENTINFO pClient)
     if (pClient)
     {
         if (pClient->pszName)
+        {
             RTStrFree(pClient->pszName);
+            pClient->pszName = NULL;
+        }
         if (pClient->pszLocation)
+        {
             RTStrFree(pClient->pszLocation);
+            pClient->pszLocation = NULL;
+        }
         if (pClient->pszDomain)
+        {
             RTStrFree(pClient->pszDomain);
-
-        pClient = NULL;
+            pClient->pszDomain = NULL;
+        }
     }
 }
 
@@ -378,7 +385,7 @@ static void vboxserviceVMInfoWriteFixedProperties(void)
 }
 
 #if defined(VBOX_WITH_DBUS) && defined(RT_OS_LINUX) /* Not yet for Solaris/FreeBSB. */
-/* 
+/*
  * Simple wrapper to work around compiler-specific va_list madness.
  */
 static dbus_bool_t vboxService_dbus_message_get_args(DBusMessage *message,
@@ -496,8 +503,8 @@ static int vboxserviceVMInfoWriteUsers(void)
             {
                 char **ppszSessions; int cSessions;
                 if (   (dbus_message_get_type(pMsgSessions) == DBUS_MESSAGE_TYPE_METHOD_CALL)
-                    && vboxService_dbus_message_get_args(pReplySessions, &dbErr, DBUS_TYPE_ARRAY, 
-                                                         DBUS_TYPE_OBJECT_PATH, &ppszSessions, &cSessions, 
+                    && vboxService_dbus_message_get_args(pReplySessions, &dbErr, DBUS_TYPE_ARRAY,
+                                                         DBUS_TYPE_OBJECT_PATH, &ppszSessions, &cSessions,
                                                          DBUS_TYPE_INVALID /* Termination */))
                 {
                     VBoxServiceVerbose(4, "ConsoleKit: retrieved %RU16 session(s)\n", cSessions);
@@ -578,7 +585,7 @@ static int vboxserviceVMInfoWriteUsers(void)
                                         && ppwEntry->pw_uid >= uid_min /* Only respect users, not daemons etc. */
                                         && ppwEntry->pw_name)
                                     {
-                                        VBoxServiceVerbose(4, "ConsoleKit: session '%s' -> %s (uid: %RU32)\n", 
+                                        VBoxServiceVerbose(4, "ConsoleKit: session '%s' -> %s (uid: %RU32)\n",
                                                            *ppszCurSession, ppwEntry->pw_name, uid);
 
                                         bool fFound = false;
@@ -609,7 +616,7 @@ static int vboxserviceVMInfoWriteUsers(void)
                         else
                             VBoxServiceError("ConsoleKit: unable to retrieve user for session '%s' (msg type=%d): %s",
                                              *ppszCurSession, dbus_message_get_type(pMsgUnixUser),
-                                             dbus_error_is_set(&dbErr) ? dbErr.message : "No error information available\n");
+                                             dbus_error_is_set(&dbErr) ? dbErr.message : "No error information available");
 
                         if (pMsgUnixUser)
                             dbus_message_unref(pMsgUnixUser);
@@ -620,8 +627,8 @@ static int vboxserviceVMInfoWriteUsers(void)
                 else
                 {
                     VBoxServiceError("ConsoleKit: unable to retrieve session parameters (msg type=%d): %s",
-                                     dbus_message_get_type(pMsgSessions), 
-                                     dbus_error_is_set(&dbErr) ? dbErr.message : "No error information available\n");
+                                     dbus_message_get_type(pMsgSessions),
+                                     dbus_error_is_set(&dbErr) ? dbErr.message : "No error information available");
                 }
                 dbus_message_unref(pReplySessions);
             }
@@ -638,7 +645,7 @@ static int vboxserviceVMInfoWriteUsers(void)
             if (s_iBitchedAboutConsoleKit++ < 3)
                 VBoxServiceError("Unable to invoke ConsoleKit (%d/3) -- maybe not installed / used? Error: %s\n",
                                  s_iBitchedAboutConsoleKit,
-                                 dbus_error_is_set(&dbErr) ? dbErr.message : "No error information available\n");
+                                 dbus_error_is_set(&dbErr) ? dbErr.message : "No error information available");
         }
 
         if (pMsgSessions)
@@ -649,10 +656,11 @@ static int vboxserviceVMInfoWriteUsers(void)
         static int s_iBitchedAboutDBus = 0;
         if (s_iBitchedAboutDBus++ < 3)
             VBoxServiceError("Unable to connect to system D-Bus (%d/3): %s\n", s_iBitchedAboutDBus,
-                             dbus_error_is_set(&dbErr) ? dbErr.message : "D-Bus not installed\n");
+                             pConnection && dbus_error_is_set(&dbErr) ? dbErr.message : "D-Bus not installed");
     }
 
-    if (dbus_error_is_set(&dbErr))
+    if (   pConnection 
+        && dbus_error_is_set(&dbErr))
         dbus_error_free(&dbErr);
 # endif /* RT_OS_LINUX */
 #endif /* VBOX_WITH_DBUS */
@@ -741,6 +749,8 @@ static int vboxserviceVMInfoWriteUsers(void)
     }
     if (pszUserList)
         RTStrFree(pszUserList);
+
+    VBoxServiceVerbose(4, "Writing users returned with rc=%Rrc\n", rc);
     return rc;
 }
 
@@ -1176,11 +1186,12 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
          * works with VBox (latest) 4.1 and up. */
 
         /* Check for new connection. */
-        char *pszLAClientID;
+        char *pszLAClientID = NULL;
         int rc2 = VBoxServiceReadHostProp(g_uVMInfoGuestPropSvcClientID, g_pszLAActiveClient, true /* Read only */,
                                           &pszLAClientID, NULL /* Flags */, NULL /* Timestamp */);
         if (RT_SUCCESS(rc2))
         {
+            AssertPtr(pszLAClientID);
             if (RTStrICmp(pszLAClientID, "0")) /* Is a client connected? */
             {
                 uint32_t uLAClientID = RTStrToInt32(pszLAClientID);
@@ -1242,6 +1253,8 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
                 && s_iBitchedAboutLAClient++ < 3)
                 VBoxServiceError("VRDP: Querying connected location awareness client failed with rc=%Rrc\n", rc2);
         }
+
+        VBoxServiceVerbose(3, "VRDP: Handling location awareness done\n");
 
         /*
          * Flush all properties if we were restored.

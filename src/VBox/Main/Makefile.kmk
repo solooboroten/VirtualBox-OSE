@@ -551,6 +551,9 @@ VBoxC_DEFS.darwin.x86 = VBOX_WITH_2X_4GB_ADDR_SPACE
 VBoxC_DEFS.win.x86 += _WIN32_WINNT=0x0500
 VBoxC_DEFS.win.amd64 += _WIN32_WINNT=0x0510
 
+# Temporary logs and hacks for bug 16607960
+VBoxC_DEFS += $(if $(VBOX_DEBUG_VRDP_HANG),VBOX_DEBUG_VRDP_HANG,)
+
 VBoxC_INCS          = \
 	include \
 	$(VBoxC_0_OUTDIR) \
