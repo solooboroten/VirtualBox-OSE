@@ -3498,7 +3498,8 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
                                   "GuestCoreDumpEnabled|"
                                   "GuestCoreDumpDir|"
                                   "GuestCoreDumpCount|"
-                                  "TestingEnabled"
+                                  "TestingEnabled|"
+                                  "TestingMMIO"
                                   ,
                                   "");
 
@@ -3556,6 +3557,10 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed querying \"TestingEnabled\" as a boolean"));
+    rc = CFGMR3QueryBoolDef(pCfg, "TestingMMIO", &pThis->fTestingMMIO, false);
+    if (RT_FAILURE(rc))
+        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                N_("Configuration error: Failed querying \"TestingMMIO\" as a boolean"));
     /** @todo image-to-load-filename? */
 #endif
 

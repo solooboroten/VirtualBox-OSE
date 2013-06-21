@@ -949,11 +949,12 @@ static bool disCode(uint32_t uFlatAddr, uint32_t cb, bool fIs16Bit)
                 return disStringData(uFlatAddr, cb);
         }
         /* Work arounds for switch tables and such (disas assertions). */
-        else if (   (   pb[0] == 0x11   /* int13_cdemu switch */
-                     && pb[1] == 0xda
-                     && pb[2] == 0x05
-                     && pb[3] == 0xff
-                     && pb[4] == 0xff
+        else if (   (   pb[0] == 0x64   /* int13_cdemu switch */
+                     && pb[1] == 0x67
+                     && pb[2] == 0x8d
+                     && pb[3] == 0x67
+                     && pb[4] == 0xb2
+                     && pb[5] == 0x67
                     )
                  || (   pb[0] == 0x9b  /* int1a_function switch */
                      && pb[1] == 0x66

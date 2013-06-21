@@ -121,6 +121,10 @@ HRESULT Display::FinalConstruct()
 
     int rc = RTCritSectInit(&mVBVALock);
     AssertRC(rc);
+    
+    rc = RTCritSectInit(&mSaveSeamlessRectLock);
+    AssertRC(rc);
+    
     mfu32PendingVideoAccelDisable = false;
 
 #ifdef VBOX_WITH_HGSMI
@@ -138,6 +142,12 @@ void Display::FinalRelease()
     {
         RTCritSectDelete (&mVBVALock);
         memset (&mVBVALock, 0, sizeof (mVBVALock));
+    }
+    
+    if (RTCritSectIsInitialized(&mSaveSeamlessRectLock))
+    {
+        RTCritSectDelete(&mSaveSeamlessRectLock);
+        memset(&mSaveSeamlessRectLock, 0, sizeof (mSaveSeamlessRectLock));
     }
     BaseFinalRelease();
 }
@@ -500,6 +510,9 @@ HRESULT Display::init(Console *aParent)
 
         maFramebuffers[ul].fDefaultFormat = false;
 
+        maFramebuffers[ul].mcSavedVisibleRegion = 0;
+        maFramebuffers[ul].mpSavedVisibleRegion = NULL;
+
         memset (&maFramebuffers[ul].dirtyRect, 0 , sizeof (maFramebuffers[ul].dirtyRect));
         memset (&maFramebuffers[ul].pendingResize, 0 , sizeof (maFramebuffers[ul].pendingResize));
 #ifdef VBOX_WITH_HGSMI
@@ -854,6 +867,22 @@ void Display::handleResizeCompletedEMT (void)
         }
         LogRelFlow(("[%d]: default format %d\n", uScreenId, pFBInfo->fDefaultFormat));
 
+        /* Handle the case if there are some saved visible region that needs to be 
+         * applied after the resize of the framebuffer is completed 
+         */
+        SaveSeamlessRectLock();
+        PRTRECT pSavedVisibleRegion = pFBInfo->mpSavedVisibleRegion;
+        uint32_t cSavedVisibleRegion = pFBInfo->mcSavedVisibleRegion;
+        pFBInfo->mpSavedVisibleRegion = NULL;
+        pFBInfo->mcSavedVisibleRegion = 0;
+        SaveSeamlessRectUnLock();
+
+        if (pSavedVisibleRegion)
+        {
+            handleSetVisibleRegion(cSavedVisibleRegion, pSavedVisibleRegion);
+            RTMemFree(pSavedVisibleRegion);
+        }
+
 #ifdef DEBUG_sunlover
         if (!stam)
         {
@@ -1115,6 +1144,38 @@ int Display::handleSetVisibleRegion(uint32_t cRect, PRTRECT pRect)
 
         if (!pFBInfo->pFramebuffer.isNull())
         {
+            if (pFBInfo->u32ResizeStatus != ResizeStatus_Void)
+            {
+                /* handle the case where new rectangles are received from the GA
+                 * when framebuffer resizing is in progress.
+                 * Just save the rectangles to be applied for later time when FB resizing is complete
+                 * (from handleResizeCompletedEMT).
+                 * This is done to prevent a race condition where a new rectangles are received
+                 * from the GA after a resize event and framebuffer resizing is still in progress
+                 * As a result the coordinates of the framebuffer are still
+                 * not updated and hence there is no intersection with the new rectangles passed
+                 * for the new region (THis is checked in the above if condition ). With 0 intersection,
+                 * cRectVisibleRegions = 0  is returned to the GUI and if GUI has invalidated its
+                 * earlier region then it draws nothihing and seamless mode doesn't display the 
+                 * guest desktop.
+                 */
+                SaveSeamlessRectLock();
+                RTMemFree(pFBInfo->mpSavedVisibleRegion);
+
+                pFBInfo->mpSavedVisibleRegion = (RTRECT *)RTMemAlloc( RT_MAX(cRect, 1)
+                                                                     * sizeof (RTRECT));
+                if (pFBInfo->mpSavedVisibleRegion)
+                {
+                    memcpy(pFBInfo->mpSavedVisibleRegion, pRect, cRect * sizeof(RTRECT));
+                    pFBInfo->mcSavedVisibleRegion = cRect;
+                }
+                else
+                {
+                    pFBInfo->mcSavedVisibleRegion = 0;
+                }
+                SaveSeamlessRectUnLock();
+                continue;
+            }
             /* Prepare a new array of rectangles which intersect with the framebuffer.
              */
             RTRECT rectFramebuffer;
@@ -1156,7 +1217,6 @@ int Display::handleSetVisibleRegion(uint32_t cRect, PRTRECT pRect)
                     cRectVisibleRegion++;
                 }
             }
-
             pFBInfo->pFramebuffer->SetVisibleRegion((BYTE *)pVisibleRegion, cRectVisibleRegion);
         }
     }
@@ -1394,6 +1454,17 @@ void Display::vbvaUnlock(void)
 {
     RTCritSectLeave(&mVBVALock);
 }
+ 
+int Display::SaveSeamlessRectLock(void)
+{
+    return RTCritSectEnter(&mSaveSeamlessRectLock);
+}
+    
+void Display::SaveSeamlessRectUnLock(void)
+{
+    RTCritSectLeave(&mSaveSeamlessRectLock);
+}
+    
 
 /**
  * @thread EMT

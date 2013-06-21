@@ -1145,6 +1145,7 @@ PGM_BTH_DECL(int, InvalidatePage)(PVMCPU pVCpu, RTGCPTR GCPtrPage)
     {
         Assert(!(pPdptDst->a[iPdpt].u & PGM_PLXFLAGS_MAPPING));
         STAM_COUNTER_INC(&pVCpu->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,InvalidatePageSkipped));
+        PGM_INVL_PG(pVCpu, GCPtrPage);
         return VINF_SUCCESS;
     }
 
@@ -1173,6 +1174,7 @@ PGM_BTH_DECL(int, InvalidatePage)(PVMCPU pVCpu, RTGCPTR GCPtrPage)
     {
         AssertMsg(rc == VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT || rc == VERR_PAGE_MAP_LEVEL4_NOT_PRESENT, ("Unexpected rc=%Rrc\n", rc));
         STAM_COUNTER_INC(&pVCpu->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,InvalidatePageSkipped));
+        PGM_INVL_PG(pVCpu, GCPtrPage);
         return VINF_SUCCESS;
     }
     Assert(pPDDst);
@@ -1183,6 +1185,7 @@ PGM_BTH_DECL(int, InvalidatePage)(PVMCPU pVCpu, RTGCPTR GCPtrPage)
     if (!pPdpeDst->n.u1Present)
     {
         STAM_COUNTER_INC(&pVCpu->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,InvalidatePageSkipped));
+        PGM_INVL_PG(pVCpu, GCPtrPage);
         return VINF_SUCCESS;
     }
 

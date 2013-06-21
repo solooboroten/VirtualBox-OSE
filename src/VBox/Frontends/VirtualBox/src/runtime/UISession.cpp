@@ -66,6 +66,7 @@
 #include "CHostNetworkInterface.h"
 #include "CVRDEServer.h"
 #include "CUSBController.h"
+#include "CSnapshot.h"
 
 UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     : QObject(pMachine)
@@ -287,6 +288,107 @@ void UISession::powerUp()
 
     /* Warn listeners about machine was started: */
     emit sigMachineStarted();
+}
+
+bool UISession::save()
+{
+    /* Prepare the save-state progress: */
+    CMachine machine = m_session.GetMachine();
+    CConsole console = m_session.GetConsole();
+    CProgress progress = console.SaveState();
+    if (console.isOk())
+    {
+        /* Show the save-state progress: */
+        msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_save_90px.png", mainMachineWindow(), true);
+        if (!progress.isOk() || progress.GetResultCode() != 0)
+        {
+            /* Failed in progress: */
+            msgCenter().cannotSaveMachineState(progress);
+            return false;
+        }
+    }
+    else
+    {
+        /* Failed in console: */
+        msgCenter().cannotSaveMachineState(console);
+        return false;
+    }
+    /* Passed: */
+    return true;
+}
+
+bool UISession::shutdown()
+{
+    /* Send ACPI shutdown signal if possible: */
+    CConsole console = m_session.GetConsole();
+    console.PowerButton();
+    if (!console.isOk())
+    {
+        /* Failed in console: */
+        msgCenter().cannotACPIShutdownMachine(console);
+        return false;
+    }
+    /* Passed: */
+    return true;
+}
+
+bool UISession::powerOff(bool fDiscardState, bool &fServerCrashed)
+{
+    /* Prepare the power-off progress: */
+    CMachine machine = m_session.GetMachine();
+    CConsole console = m_session.GetConsole();
+    CProgress progress = console.PowerDown();
+    if (console.isOk())
+    {
+        /* Show the power-off progress: */
+        msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_poweroff_90px.png", mainMachineWindow(), true);
+        if (progress.isOk() && progress.GetResultCode() == 0)
+        {
+            /* Discard the current state if requested: */
+            if (fDiscardState)
+            {
+                /* Prepare the discard-state progress: */
+                CSnapshot snapshot = machine.GetCurrentSnapshot();
+                CProgress progress = console.RestoreSnapshot(snapshot);
+                if (console.isOk())
+                {
+                    /* Show the discard-state progress: */
+                    msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_snapshot_discard_90px.png", mainMachineWindow(), true);
+                    if (!progress.isOk() || progress.GetResultCode() != 0)
+                    {
+                        /* Failed in progress: */
+                        msgCenter().cannotRestoreSnapshot(progress, snapshot.GetName());
+                        return false;
+                    }
+                }
+                else
+                {
+                    /* Failed in console: */
+                    msgCenter().cannotRestoreSnapshot(console, snapshot.GetName());
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            /* Failed in progress: */
+            msgCenter().cannotStopMachine(progress);
+            return false;
+        }
+    }
+    else
+    {
+        /* Failed in console: */
+        COMResult res(console);
+        /* This can happen if VBoxSVC is not running: */
+        if (FAILED_DEAD_INTERFACE(res.rc()))
+            fServerCrashed = true;
+        else
+            msgCenter().cannotStopMachine(console);
+        return false;
+    }
+    /* Passed: */
+    return true;
 }
 
 UIMachineLogic* UISession::machineLogic() const

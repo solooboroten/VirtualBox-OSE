@@ -27,4 +27,6 @@ void VBoxSeamlessInstallHook();
 void VBoxSeamlessRemoveHook();
 void VBoxSeamlessCheckWindows();
 
+void VBoxSeamlessSetSupported(BOOL fSupported);
+
 #endif /* __VBOXSERVICESEAMLESS__H */

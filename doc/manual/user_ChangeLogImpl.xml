@@ -1,6 +1,203 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.2.14 (2013-06-21)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: another TLB invalidation fix for non-present pages</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a performance regression (4.2.8 regression;
+          bug #11674)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed a crash on shutdown</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: prevent stuck keys under certain conditions on Windows
+          hosts (bugs #2613, #6171)</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed a rare crash on the guest screen resize</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: allow to change VRDP parameters (including enabling/disabling the
+          server) if the VM is paused</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: fixed passing through devices on Mac OS X host to a VM
+          with 2 or more virtual CPUs (bug #7462)</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: fixed hang during isochronous transfer with certain
+          devices (4.1 regression; Windows hosts only; bug #11839)</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: properly handle orphaned URBs (bug #11207)</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: fixed function for returning the PCI interrupt routing table
+          (fixes NetWare 6.x guests)</para>
+      </listitem>
+
+      <listitem>
+        <para>BIOS: don't use the <emphasis>ENTER</emphasis> / <emphasis>LEAVE</emphasis>
+          instructions in the BIOS as these don't work in the real mode as set up by
+          certain guests (e.g. Plan 9 and QNX 4)</para>
+      </listitem>
+
+      <listitem>
+        <para>DMI: allow to configure <emphasis>DmiChassisType</emphasis>
+          (bug #11832)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed lost writes if iSCSI is used with snapshots and
+          asynchronous I/O (bug #11479)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed accessing certain VHDX images created by
+          Windows 8 (bug #11502)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang when creating a snapshot using Parallels
+          disk images (bug #9617)</para>
+      </listitem>
+
+      <listitem>
+        <para>3D: seamless + 3D fixes (bug #11723)</para>
+      </listitem>
+
+      <listitem>
+        <para>3D: version 4.2.12 was not able to read saved states of older
+          versions under certain conditions (bug #11718)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Properties: don't create a guest property for non-running
+          VMs if the property does not exist and is about to be removed
+          (bug #11765)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Properties: don't forget to make new guest properties
+          persistent after the VM was terminated (bug #11719)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Display: don't lose seamless regions during screen resize</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/OVF: don't crash during import if the client forgot to call
+          <emphasis>Appliance::interpret()</emphasis> (bug #10845)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/OVF: don't create invalid appliances by stripping the file
+          name if the VM name is very long (bug #11814)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/OVF: don't fail if the appliance contains multiple file references
+          (bug #10689)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Metrics: fixed Solaris file descriptor leak</para>
+      </listitem>
+
+      <listitem>
+        <para>Settings: limit depth of snapshot tree to 250 levels, as more
+          will lead to decreased performance and may trigger crashes</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed setting the parent UUID on diff images using
+          <emphasis>sethdparentuuid</emphasis></para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts: work around for not crashing as a result of
+          automatic NUMA balancing which was introduced in Linux 3.8
+          (bug #11610)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows installer: force the installation of the public certificate
+          in background (i.e. completely prevent user interaction) if the
+          <emphasis>--silent</emphasis> command line option is specified</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed problems with partial install in the
+          unattended case</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed display glitch with the Start button
+          in seamless mode for some themes</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: Seamless mode and auto-resize fixes</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed trying to to retrieve new auto-logon
+          credentials if current ones were not processed yet</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions installer: added the <emphasis>/with_wddm</emphasis>
+          switch to select the experimental WDDM driver by default</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed setting own timed out and aborted texts in
+          information label of the lightdm greeter</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed compilation against Linux 3.2.0 Ubuntu
+          kernels (4.2.12 regression as a side effect of the Debian kernel
+          build fix; bug #11709)</para>
+      </listitem>
+
+      <listitem>
+        <para>X11 Additions: reduced the CPU load of VBoxClient in
+          drag'and'drop mode</para>
+      </listitem>
+
+      <listitem>
+        <para>OS/2 Additions: made the mouse wheel work (bug #6793)</para>
+      </listitem>
+
+      <listitem>
+        <para>Guest Additions: fixed problems copying and pasting between two
+           guests on an X11 host (bug #11792)</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.2.12 (2013-04-12)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -8264,7 +8461,7 @@
       </listitem>
 
       <listitem>
-        <para>VMM: fixed guru meditation when booting Novell Netware 4.11 (VT-x only; bug #2898) </para>
+        <para>VMM: fixed guru meditation when booting Novell NetWare 4.11 (VT-x only; bug #2898) </para>
       </listitem>
 
       <listitem>

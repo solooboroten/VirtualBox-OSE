@@ -402,6 +402,7 @@ public:
                                                     bool fIncludingMachineStateCheck = false);
     static bool shouldWeShowDetails(CMachine &machine,
                                     bool fIncludingMachineGeneralCheck = false);
+    static bool shouldWeAutoMountGuestScreens(CMachine &machine, bool fIncludingSanityCheck = true);
 
 signals:
 

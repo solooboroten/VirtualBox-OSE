@@ -124,8 +124,8 @@ VBoxManage controlvm "Windows 2000" savestate</screen></para>
     </sect2>
   </sect1>
 
-  <sect1>
-    <title id="autologon">Automated guest logons</title>
+  <sect1 id="autologon">
+    <title>Automated guest logons</title>
 
     <para>VirtualBox provides Guest Addition modules for Windows, Linux and
     Solaris to enable automated logons on the guest.</para>
@@ -216,9 +216,9 @@ HKEY_CLASSES_ROOT\CLSID\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}\InprocServer32</s
           </listitem>
 
           <listitem>
-            <para>For <emphasis role="bold">Windows Vista and Windows 7
-            guests,</emphasis> the logon subsystem does not support the
-            so-called Secure Attention Sequence
+            <para>For <emphasis role="bold">Windows Vista, Windows 7
+            and Windows 8 guests,</emphasis> the logon subsystem does not support
+            the so-called Secure Attention Sequence
             (<computeroutput>CTRL+ALT+DEL</computeroutput>). As a result, the
             guest's group policy settings need to be changed to not use the
             Secure Attention Sequence. Also, the user name given is only
@@ -818,14 +818,15 @@ VBoxManage controlvm "VM name" unplugcpu 3</screen></para>
     step is to select the PCI card and attach it to the guest. To figure out
     the list of available PCI devices, use the
     <computeroutput>lspci</computeroutput> command. The output will look like
-    this <screen>
-        01:00.0 VGA compatible controller: ATI Technologies Inc Cedar PRO [Radeon HD 5450]
-        01:00.1 Audio device: ATI Technologies Inc Manhattan HDMI Audio [Mobility Radeon HD 5000 Series]
-        02:00.0 Ethernet controller: Realtek Semiconductor Co., Ltd. RTL8111/8168B PCI Express Gigabit Ethernet controller (rev 03)
-        03:00.0 SATA controller: JMicron Technology Corp. JMB362/JMB363 Serial ATA Controller (rev 03)
-        03:00.1 IDE interface: JMicron Technology Corp. JMB362/JMB363 Serial ATA Controller (rev 03)
-        06:00.0 VGA compatible controller: nVidia Corporation G86 [GeForce 8500 GT] (rev a1)
-      </screen> The first column is a PCI address (in format
+    this:</para>
+    <screen>01:00.0 VGA compatible controller: ATI Technologies Inc Cedar PRO [Radeon HD 5450]
+01:00.1 Audio device: ATI Technologies Inc Manhattan HDMI Audio [Mobility Radeon HD 5000 Series]
+02:00.0 Ethernet controller: Realtek Semiconductor Co., Ltd. RTL8111/8168B PCI Express Gigabit
+        Ethernet controller (rev 03)
+03:00.0 SATA controller: JMicron Technology Corp. JMB362/JMB363 Serial ATA Controller (rev 03)
+03:00.1 IDE interface: JMicron Technology Corp. JMB362/JMB363 Serial ATA Controller (rev 03)
+06:00.0 VGA compatible controller: nVidia Corporation G86 [GeForce 8500 GT] (rev a1)</screen>
+    <para>The first column is a PCI address (in format
     <computeroutput>bus:device.function</computeroutput>). This address could
     be used to identify the device for further operations. For example, to
     attach a PCI network controller on the system listed above to the second
@@ -1127,9 +1128,8 @@ VBoxManage setextradata "VM name"
       desired SATA hard disk port.</para>
     </sect2>
 
-    <sect2>
-      <title id="iscsi-intnet">Access iSCSI targets via Internal
-      Networking</title>
+    <sect2 id="iscsi-intnet">
+      <title>Access iSCSI targets via Internal Networking</title>
 
       <para>As an experimental feature, VirtualBox allows for accessing an
       iSCSI target running in a virtual machine which is configured for using
@@ -1186,7 +1186,7 @@ kernel.sem = 250  32000  32  128</screen></para>
     executing as root:<screen>echo "kernel.sem = 250 32000 32 2048" &gt;&gt; /etc/sysctl.conf
 /sbin/sysctl -p</screen></para>
 
-    <para>The above commands will add the new limits to the config file, thus
+    <para>The above commands will add the new limits to the configuration file, thus
     making the effect persistent across reboots, and will activate the new
     limits into the currently running kernel.</para>
   </sect1>
@@ -1285,7 +1285,7 @@ VBoxManage setextradata "VM name"
     configuration is used on a Windows host, because the Windows named pipe
     syntax is used. Keep in mind that on Windows hosts a named pipe must
     always start with <computeroutput>\\.\pipe\</computeroutput>. On Linux the
-    same config settings apply, except that the path name for the
+    same configuration settings apply, except that the path name for the
     <computeroutput>Location</computeroutput> can be chosen more freely. Local
     domain sockets can be placed anywhere, provided the user running
     VirtualBox has the permission to create a new file in the directory. The
@@ -1503,12 +1503,14 @@ VBoxManage setextradata "VM name"
 VBoxManage setextradata "VM name"
       "VBoxInternal/Devices/pcbios/0/Config/DmiBoardLocInChass"   "Board Location"
 VBoxManage setextradata "VM name"
-      "VBoxInternal/Devices/pcbios/0/Config/DmiBoardType"         10</screen>
+      "VBoxInternal/Devices/pcbios/0/Config/DmiBoardBoardType"    10</screen>
     </sect2>
     <sect2>
       <title>DMI system enclosure or chassis (type 3)</title>
       <screen>VBoxManage setextradata "VM name"
       "VBoxInternal/Devices/pcbios/0/Config/DmiChassisVendor"     "Chassis Vendor"
+VBoxManage setextradata "VM name"
+      "VBoxInternal/Devices/pcbios/0/Config/DmiChassisType"       3
 VBoxManage setextradata "VM name"
       "VBoxInternal/Devices/pcbios/0/Config/DmiChassisVersion"    "Chassis Version"
 VBoxManage setextradata "VM name"
@@ -1990,23 +1992,18 @@ VBoxManage setextradata "VM name" VBoxInternal2/CoreDumpLive 1</screen>At
             <tbody>
               <row>
                 <entry><emphasis role="bold">Action</emphasis></entry>
-                <entry><emphasis role="bold">Default Host Key</emphasis></entry>
+                <entry><emphasis role="bold">Default Key</emphasis></entry>
                 <entry><emphasis role="bold">Action</emphasis></entry>
               </row>
               <row>
-                <entry>SettingsDialog</entry>
-                <entry>S</entry>
-                <entry>open the VM settings dialog</entry>
-              </row>
-              <row>
                 <entry>TakeSnapshot</entry>
-                <entry>S</entry>
+                <entry>T</entry>
                 <entry>take a snapshot</entry>
               </row>
               <row>
-                <entry>InformationsDialog</entry>
-                <entry>N</entry>
-                <entry>show the VM information dialog</entry>
+                <entry>TakeScreenshot</entry>
+                <entry>E</entry>
+                <entry>take a screenshot</entry>
               </row>
               <row>
                 <entry>MouseIntegration</entry>
@@ -2034,9 +2031,19 @@ VBoxManage setextradata "VM name" VBoxInternal2/CoreDumpLive 1</screen>At
                 <entry>(hard) reset the guest</entry>
               </row>
               <row>
+                <entry>Save</entry>
+                <entry></entry>
+                <entry>save the VM state and terminate the VM</entry>
+              </row>
+              <row>
                 <entry>Shutdown</entry>
                 <entry>H</entry>
-                <entry>press the ACPI power button</entry>
+                <entry>press the (virtual) ACPI power button</entry>
+              </row>
+              <row>
+                <entry>PowerOff</entry>
+                <entry></entry>
+                <entry>power the VM off (without saving the state!)</entry>
               </row>
               <row>
                 <entry>Close</entry>
@@ -2059,9 +2066,44 @@ VBoxManage setextradata "VM name" VBoxInternal2/CoreDumpLive 1</screen>At
                 <entry>switch the VM into scale mode</entry>
               </row>
               <row>
+                <entry>GuestAutoResize</entry>
+                <entry>G</entry>
+                <entry>automatically resize the guest window</entry>
+              </row>
+              <row>
+                <entry>WindowAdjust</entry>
+                <entry>A</entry>
+                <entry>immediately resize the guest window</entry>
+              </row>
+              <row>
                 <entry>PopupMenu</entry>
                 <entry>Home</entry>
                 <entry>show popup menu in fullscreen / seamless mode</entry>
+              </row>
+              <row>
+                <entry>SettingsDialog</entry>
+                <entry>S</entry>
+                <entry>open the VM settings dialog</entry>
+              </row>
+              <row>
+                <entry>InformationsDialog</entry>
+                <entry>N</entry>
+                <entry>show the VM information window</entry>
+              </row>
+              <row>
+                <entry>NetworkAdaptersDialog</entry>
+                <entry></entry>
+                <entry>show the VM network adapters dialog</entry>
+              </row>
+              <row>
+                <entry>SharedFoldersDialog</entry>
+                <entry></entry>
+                <entry>show the VM shared folders dialog</entry>
+              </row>
+              <row>
+                <entry>InstallGuestAdditions</entry>
+                <entry>D</entry>
+                <entry>mount the ISO containing the Guest Additions</entry>
               </row>
             </tbody>
           </tgroup>
@@ -2142,7 +2184,7 @@ VBoxManage setextradata "VM name" VBoxInternal2/CoreDumpLive 1</screen>At
       <computeroutput>/etc/default/virtualbox</computeroutput>.
       There is one mandatory parameter, <computeroutput>VBOXWEB_USER</computeroutput>,
       which must be set to the user which will later start the VMs. The
-      paramters in the table below all start with <computeroutput>VBOXWEB_</computeroutput>
+      parameters in the table below all start with <computeroutput>VBOXWEB_</computeroutput>
       (<computeroutput>VBOXWEB_HOST</computeroutput>,
       <computeroutput>VBOXWEB_PORT</computeroutput> etc.):
       <table>
@@ -2553,5 +2595,24 @@ alice = {
       configured see <literal><ulink
       url="http://developer.apple.com/mac/library/documentation/MacOSX/Conceptual/BPSystemStartup/BPSystemStartup.html">http://developer.apple.com/mac/library/documentation/MacOSX/Conceptual/BPSystemStartup/BPSystemStartup.html</ulink></literal>.</para>
     </sect2>
+  </sect1>
+
+  <sect1 id="vboxexpertstoragemgmt">
+    <title>VirtualBox expert storage management</title>
+
+    <para>In case the snapshot model of VirtualBox is not sufficient
+    it is possible to enable a special mode which makes it possible to
+    reconfigure storage attachments while the VM is paused.
+    The user has to make sure that the disk data stays consistent to the guest
+    because unlike with hotplugging the guest is not informed about detached
+    or newly attached media.</para>
+
+    <para>The expert storage management mode can be enabled per VM executing:</para>
+
+    <screen>VBoxManage setextradata vmname "VBoxInternal2/SilentReconfigureWhilePaused" 1
+</screen>
+
+    <para>Storage attachments can be reconfigured while the VM is paused afterwards using:</para>
+    <screen>VBoxManage storageattach ...</screen>
   </sect1>
 </chapter>

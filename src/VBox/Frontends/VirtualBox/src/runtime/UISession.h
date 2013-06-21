@@ -88,6 +88,9 @@ public:
 
     /* Common members: */
     void powerUp();
+    bool save();
+    bool shutdown();
+    bool powerOff(bool fDiscardState, bool &fServerCrashed);
 
     /* Common getters: */
     CSession& session() { return m_session; }
@@ -108,6 +111,7 @@ public:
     bool isRunning() const { return machineState() == KMachineState_Running ||
                                     machineState() == KMachineState_Teleporting ||
                                     machineState() == KMachineState_LiveSnapshotting; }
+    bool isStuck() const { return machineState() == KMachineState_Stuck; }
     bool isFirstTimeStarted() const { return m_fIsFirstTimeStarted; }
     bool isIgnoreRuntimeMediumsChanging() const { return m_fIsIgnoreRuntimeMediumsChanging; }
     bool isGuestResizeIgnored() const { return m_fIsGuestResizeIgnored; }

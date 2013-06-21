@@ -347,7 +347,6 @@ crServerDispatchWindowSize( GLint window, GLint width, GLint height )
 
     if (mural->fRootVrOn)
     {
-    	RTRECT Rect;
         VBOXVR_TEXTURE Tex;
         int rc = VINF_SUCCESS;
         Tex.width = width;
@@ -355,24 +354,10 @@ crServerDispatchWindowSize( GLint window, GLint width, GLint height )
         Tex.target = GL_TEXTURE_2D;
         Tex.hwid = 0;
 
-        rc = CrVrScrCompositorEntryRemove(&mural->RootVrCompositor, &mural->RootVrCEntry);
+        rc = CrVrScrCompositorEntryTexUpdate(&mural->RootVrCompositor, &mural->RootVrCEntry, &Tex);
         if (!RT_SUCCESS(rc))
         {
-            crWarning("CrVrScrCompositorEntryRemove failed, rc %d", rc);
-            return;
-        }
-
-        CrVrScrCompositorEntryInit(&mural->RootVrCEntry, &Tex);
-        /* initially set regions to all visible since this is what some guest assume
-         * and will not post any more visible regions command */
-        Rect.xLeft = 0;
-        Rect.xRight = width;
-        Rect.yTop = 0;
-        Rect.yBottom = height;
-        rc = CrVrScrCompositorEntryRegionsSet(&mural->RootVrCompositor, &mural->RootVrCEntry, NULL, 1, &Rect, NULL);
-        if (!RT_SUCCESS(rc))
-        {
-            crWarning("CrVrScrCompositorEntryRegionsSet failed, rc %d", rc);
+            crWarning("CrVrScrCompositorEntryTexUpdate failed, rc %d", rc);
             return;
         }
 

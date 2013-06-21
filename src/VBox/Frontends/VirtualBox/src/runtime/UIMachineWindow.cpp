@@ -249,8 +249,7 @@ void UIMachineWindow::closeEvent(QCloseEvent *pEvent)
     /* Always ignore close-event: */
     pEvent->ignore();
 
-    /* Should we close application? */
-    bool fCloseApplication = false;
+    /* Depending on machine-state: */
     switch (uisession()->machineState())
     {
         case KMachineState_Running:
@@ -271,265 +270,232 @@ void UIMachineWindow::closeEvent(QCloseEvent *pEvent)
                 return;
             }
 
-            /* Prepare close-dialog: */
-            UIVMCloseDialog *pDlg = new UIVMCloseDialog(this);
+            /* Prepare close-action: */
+            enum CloseAction { CA_Cancel, CA_Save, CA_Shutdown, CA_PowerOff, CA_PowerOffWithStateDiscarding };
+            CloseAction closeAction = CA_Cancel;
 
-            /* Assign close-dialog pixmap: */
-            pDlg->pmIcon->setPixmap(vboxGlobal().vmGuestOSTypeIcon(m.GetOSTypeId()));
-
-            /* Check which close actions are disallowed: */
-            QStringList restictedActionsList = m.GetExtraData(GUI_RestrictedCloseActions).split(',');
-            bool fIsStateSavingAllowed = !restictedActionsList.contains("SaveState", Qt::CaseInsensitive);
-            bool fIsACPIShutdownAllowed = !restictedActionsList.contains("Shutdown", Qt::CaseInsensitive);
-            bool fIsPowerOffAllowed = !restictedActionsList.contains("PowerOff", Qt::CaseInsensitive);
-            bool fIsPowerOffAndRestoreAllowed = fIsPowerOffAllowed && !restictedActionsList.contains("Restore", Qt::CaseInsensitive);
-
-            /* Make Save State button visible/hidden depending on restriction: */
-            pDlg->mRbSave->setVisible(fIsStateSavingAllowed);
-            pDlg->mTxSave->setVisible(fIsStateSavingAllowed);
-            /* Make Save State button enabled/disabled depending on machine state: */
-            pDlg->mRbSave->setEnabled(uisession()->machineState() != KMachineState_Stuck);
-
-            /* Make ACPI shutdown button visible/hidden depending on restriction: */
-            pDlg->mRbShutdown->setVisible(fIsACPIShutdownAllowed);
-            pDlg->mTxShutdown->setVisible(fIsACPIShutdownAllowed);
-            /* Make ACPI shutdown button enabled/disabled depending on ACPI state & machine state: */
-            bool isACPIEnabled = session().GetConsole().GetGuestEnteredACPIMode();
-            pDlg->mRbShutdown->setEnabled(isACPIEnabled && uisession()->machineState() != KMachineState_Stuck);
-
-            /* Make Power Off button visible/hidden depending on restriction: */
-            pDlg->mRbPowerOff->setVisible(fIsPowerOffAllowed);
-            pDlg->mTxPowerOff->setVisible(fIsPowerOffAllowed);
-
-            /* Make the Restore Snapshot checkbox visible/hidden depending on snapshots count & restrictions: */
-            pDlg->mCbDiscardCurState->setVisible(fIsPowerOffAndRestoreAllowed && m.GetSnapshotCount() > 0);
-            if (!m.GetCurrentSnapshot().isNull())
-                pDlg->mCbDiscardCurState->setText(pDlg->mCbDiscardCurState->text().arg(m.GetCurrentSnapshot().GetName()));
-
-            /* Choice string tags for close-dialog: */
-            QString strSave("save");
-            QString strShutdown("shutdown");
-            QString strPowerOff("powerOff");
-            QString strDiscardCurState("discardCurState");
-
-            /* Read the last user's choice for the given VM: */
-            QStringList lastAction = m.GetExtraData(GUI_LastCloseAction).split(',');
-
-            /* Check which button should be initially chosen: */
-            QRadioButton *pRadioButton = 0;
-
-            /* If choosing 'last choice' is possible: */
-            if (lastAction[0] == strSave && fIsStateSavingAllowed)
+            /* If there IS 'default' close-action defined: */
+            QString strDefaultAction = machine().GetExtraData(GUI_DefaultCloseAction);
+            if (!strDefaultAction.isEmpty())
             {
-                pRadioButton = pDlg->mRbSave;
-            }
-            else if (lastAction[0] == strShutdown && fIsACPIShutdownAllowed && isACPIEnabled)
-            {
-                pRadioButton = pDlg->mRbShutdown;
-            }
-            else if (lastAction[0] == strPowerOff && fIsPowerOffAllowed)
-            {
-                pRadioButton = pDlg->mRbPowerOff;
-                if (fIsPowerOffAndRestoreAllowed)
-                    pDlg->mCbDiscardCurState->setChecked(lastAction.count() > 1 && lastAction[1] == strDiscardCurState);
-            }
-            /* Else 'default choice' will be used: */
-            else
-            {
-                if (fIsACPIShutdownAllowed && isACPIEnabled)
-                    pRadioButton = pDlg->mRbShutdown;
-                else if (fIsPowerOffAllowed)
-                    pRadioButton = pDlg->mRbPowerOff;
-                else if (fIsStateSavingAllowed)
-                    pRadioButton = pDlg->mRbSave;
+                /* Parse the close-action which was defined: */
+                if (!strDefaultAction.compare("Save", Qt::CaseInsensitive))
+                    closeAction = CA_Save;
+                else if (!strDefaultAction.compare("Shutdown", Qt::CaseInsensitive))
+                    closeAction = CA_Shutdown;
+                else if (!strDefaultAction.compare("PowerOff", Qt::CaseInsensitive))
+                    closeAction = CA_PowerOff;
+
+                /* If VM is stuck, and the 'default' close-action is not 'power-off',
+                 * we should ask the user about what to do: */
+                if (uisession()->isStuck() && closeAction != CA_PowerOff)
+                    closeAction = CA_Cancel;
+
+                /* If the 'default' close-action is 'power-off',
+                 * we should check if its possible to discard machine-state: */
+                if (closeAction == CA_PowerOff && m.GetSnapshotCount() > 0)
+                    closeAction = CA_PowerOffWithStateDiscarding;
             }
 
-            /* If some radio button was chosen: */
-            if (pRadioButton)
+            /* If the close-action still undefined: */
+            if (closeAction == CA_Cancel)
             {
-                /* Check and focus it: */
-                pRadioButton->setChecked(true);
-                pRadioButton->setFocus();
-            }
-            /* If no one of radio buttons was chosen: */
-            else
-            {
-                /* Just break and leave: */
-                delete pDlg;
-                pDlg = 0;
-                break;
-            }
+                /* Choice string tags for close-dialog: */
+                QString strSave("save");
+                QString strShutdown("shutdown");
+                QString strPowerOff("powerOff");
+                QString strDiscardCurrentState("discardCurState");
 
-            /* This flag will keep the status of every further logical operation: */
-            bool fSuccess = true;
+                /* Is ACPI mode enabled? */
+                bool isACPIEnabled = session().GetConsole().GetGuestEnteredACPIMode();
 
-            /* This flag is set if we must terminate the VM, even if server calls fail */
-            bool fForce = false;
-
-            /* Pause before showing dialog if necessary: */
-            bool fWasPaused = uisession()->isPaused() || uisession()->machineState() == KMachineState_Stuck;
-            if (!fWasPaused)
-                fSuccess = uisession()->pause();
-
-            if (fSuccess)
-            {
-                /* Preventing auto-closure: */
-                machineLogic()->setPreventAutoClose(true);
-
-                /* Show the close-dialog: */
-                bool fDialogAccepted = pDlg->exec() == QDialog::Accepted;
-
-                /* What was the decision? */
-                enum DialogDecision { DD_Cancel, DD_Save, DD_Shutdown, DD_PowerOff };
-                DialogDecision decision;
-                if (!fDialogAccepted)
-                    decision = DD_Cancel;
-                else if (pDlg->mRbSave->isChecked())
-                    decision = DD_Save;
-                else if (pDlg->mRbShutdown->isChecked())
-                    decision = DD_Shutdown;
-                else
-                    decision = DD_PowerOff;
-                bool fDiscardCurState = pDlg->mCbDiscardCurState->isChecked();
-                bool fDiscardCheckboxVisible = pDlg->mCbDiscardCurState->isVisibleTo(pDlg);
-
-                /* Destroy the dialog early: */
-                delete pDlg;
-                pDlg = 0;
-
-                /* Was dialog accepted? */
-                if (fDialogAccepted)
+                /* Prepare close-dialog: */
+                UIVMCloseDialog *pDlg = new UIVMCloseDialog(this);
+                if (pDlg)
                 {
-                    /* Process decision: */
-                    CConsole console = session().GetConsole();
-                    fSuccess = false;
-                    switch (decision)
+                    /* Assign close-dialog pixmap: */
+                    pDlg->pmIcon->setPixmap(vboxGlobal().vmGuestOSTypeIcon(m.GetOSTypeId()));
+
+                    /* Check which close actions are disallowed: */
+                    QStringList restictedActionsList = m.GetExtraData(GUI_RestrictedCloseActions).split(',');
+                    bool fIsStateSavingAllowed = !restictedActionsList.contains("SaveState", Qt::CaseInsensitive);
+                    bool fIsACPIShutdownAllowed = !restictedActionsList.contains("Shutdown", Qt::CaseInsensitive);
+                    bool fIsPowerOffAllowed = !restictedActionsList.contains("PowerOff", Qt::CaseInsensitive);
+                    bool fIsPowerOffAndRestoreAllowed = fIsPowerOffAllowed && !restictedActionsList.contains("Restore", Qt::CaseInsensitive);
+
+                    /* Make Save State button visible/hidden depending on restriction: */
+                    pDlg->mRbSave->setVisible(fIsStateSavingAllowed);
+                    pDlg->mTxSave->setVisible(fIsStateSavingAllowed);
+                    /* Make Save State button enabled/disabled depending on machine state: */
+                    pDlg->mRbSave->setEnabled(uisession()->machineState() != KMachineState_Stuck);
+
+                    /* Make ACPI shutdown button visible/hidden depending on restriction: */
+                    pDlg->mRbShutdown->setVisible(fIsACPIShutdownAllowed);
+                    pDlg->mTxShutdown->setVisible(fIsACPIShutdownAllowed);
+                    /* Make ACPI shutdown button enabled/disabled depending on ACPI state & machine state: */
+                    pDlg->mRbShutdown->setEnabled(isACPIEnabled && uisession()->machineState() != KMachineState_Stuck);
+
+                    /* Make Power Off button visible/hidden depending on restriction: */
+                    pDlg->mRbPowerOff->setVisible(fIsPowerOffAllowed);
+                    pDlg->mTxPowerOff->setVisible(fIsPowerOffAllowed);
+
+                    /* Make the Restore Snapshot checkbox visible/hidden depending on snapshots count & restrictions: */
+                    pDlg->mCbDiscardCurState->setVisible(fIsPowerOffAndRestoreAllowed && m.GetSnapshotCount() > 0);
+                    if (!m.GetCurrentSnapshot().isNull())
+                        pDlg->mCbDiscardCurState->setText(pDlg->mCbDiscardCurState->text().arg(m.GetCurrentSnapshot().GetName()));
+
+                    /* Read the last user's choice for the given VM: */
+                    QStringList lastAction = m.GetExtraData(GUI_LastCloseAction).split(',');
+
+                    /* Check which button should be initially chosen: */
+                    QRadioButton *pRadioButton = 0;
+
+                    /* If choosing 'last choice' is possible: */
+                    if (lastAction[0] == strSave && fIsStateSavingAllowed)
                     {
-                        case DD_Save:
-                        {
-                            /* Prepare the saving progress: */
-                            CProgress progress = console.SaveState();
-                            if (console.isOk())
-                            {
-                                /* Show the saving progress dialog: */
-                                msgCenter().showModalProgressDialog(progress, m.GetName(), ":/progress_state_save_90px.png", 0, true);
-                                if (progress.GetResultCode() == 0)
-                                    fSuccess = true;
-                                else
-                                    msgCenter().cannotSaveMachineState(progress);
-                            }
-                            else
-                                msgCenter().cannotSaveMachineState(console);
-                            if (fSuccess)
-                                fCloseApplication = true;
-                            break;
-                        }
-                        case DD_Shutdown:
-                        {
-                            /* Unpause the VM to let it grab the ACPI shutdown event: */
-                            uisession()->unpause();
-                            /* Prevent the subsequent unpause request: */
-                            fWasPaused = true;
-                            /* Signal ACPI shutdown (if there is no ACPI device, the operation will fail): */
-                            console.PowerButton();
-                            if (console.isOk())
-                                fSuccess = true;
-                            else
-                                msgCenter().cannotACPIShutdownMachine(console);
-                            break;
-                        }
-                        case DD_PowerOff:
-                        {
-                            /* Prepare the power down progress: */
-                            CProgress progress = console.PowerDown();
-                            if (console.isOk())
-                            {
-                                /* Show the power down progress: */
-                                msgCenter().showModalProgressDialog(progress, m.GetName(), ":/progress_poweroff_90px.png", 0, true);
-                                if (progress.GetResultCode() == 0)
-                                    fSuccess = true;
-                                else
-                                    msgCenter().cannotStopMachine(progress);
-                            }
-                            else
-                            {
-                                COMResult res(console);
-                                /* This can happen if VBoxSVC is not running */
-                                if (FAILED_DEAD_INTERFACE(res.rc()))
-                                    fForce = true;
-                                else
-                                    msgCenter().cannotStopMachine(console);
-                            }
-                            if (fSuccess)
-                            {
-                                /* Discard the current state if requested: */
-                                if (fDiscardCurState && fDiscardCheckboxVisible)
-                                {
-                                    /* Prepare the snapshot discard progress: */
-                                    CSnapshot snapshot = m.GetCurrentSnapshot();
-                                    CProgress progress = console.RestoreSnapshot(snapshot);
-                                    if (console.isOk())
-                                    {
-                                        /* Show the snapshot discard progress: */
-                                        msgCenter().showModalProgressDialog(progress, m.GetName(), ":/progress_snapshot_discard_90px.png", 0, true);
-                                        if (progress.GetResultCode() != 0)
-                                            msgCenter().cannotRestoreSnapshot(progress, snapshot.GetName());
-                                    }
-                                    else
-                                        msgCenter().cannotRestoreSnapshot(console, snapshot.GetName());
-                                }
-                            }
-                            if (fSuccess || fForce)
-                                fCloseApplication = true;
-                            break;
-                        }
-                        default:
-                            break;
+                        pRadioButton = pDlg->mRbSave;
+                    }
+                    else if (lastAction[0] == strShutdown && fIsACPIShutdownAllowed && isACPIEnabled)
+                    {
+                        pRadioButton = pDlg->mRbShutdown;
+                    }
+                    else if (lastAction[0] == strPowerOff && fIsPowerOffAllowed)
+                    {
+                        pRadioButton = pDlg->mRbPowerOff;
+                        if (fIsPowerOffAndRestoreAllowed)
+                            pDlg->mCbDiscardCurState->setChecked(lastAction.count() > 1 && lastAction[1] == strDiscardCurrentState);
+                    }
+                    /* Else 'default choice' will be used: */
+                    else
+                    {
+                        if (fIsACPIShutdownAllowed && isACPIEnabled)
+                            pRadioButton = pDlg->mRbShutdown;
+                        else if (fIsPowerOffAllowed)
+                            pRadioButton = pDlg->mRbPowerOff;
+                        else if (fIsStateSavingAllowed)
+                            pRadioButton = pDlg->mRbSave;
                     }
 
-                    if (fSuccess)
+                    /* If some radio button was chosen: */
+                    if (pRadioButton)
                     {
-                        /* Read the last user's choice for the given VM: */
-                        QStringList prevAction = m.GetExtraData(GUI_LastCloseAction).split(',');
-                        /* Memorize the last user's choice for the given VM: */
-                        QString lastAction = strPowerOff;
-                        switch (decision)
-                        {
-                            case DD_Save: lastAction = strSave; break;
-                            case DD_Shutdown: lastAction = strShutdown; break;
-                            case DD_PowerOff:
-                            {
-                                if (prevAction[0] == strShutdown && !isACPIEnabled)
-                                    lastAction = strShutdown;
-                                else
-                                    lastAction = strPowerOff;
-                                break;
-                            }
-                            default: break;
-                        }
-                        /* Memorize additional options for the given VM: */
-                        if (fDiscardCurState)
-                            (lastAction += ",") += strDiscardCurState;
-                        m.SetExtraData(GUI_LastCloseAction, lastAction);
+                        /* Check and focus it: */
+                        pRadioButton->setChecked(true);
+                        pRadioButton->setFocus();
+                    }
+                    /* If no one of radio buttons was chosen: */
+                    else
+                    {
+                        /* Just break and leave: */
+                        delete pDlg;
+                        pDlg = 0;
+                        break;
                     }
                 }
 
-                /* Restore the running state if needed: */
-                if (fSuccess && !fCloseApplication && !fWasPaused && uisession()->machineState() == KMachineState_Paused)
-                    uisession()->unpause();
+                /* This flag will keep the status of every further logical operation: */
+                bool fSuccess = true;
 
-                /* Allowing auto-closure: */
-                machineLogic()->setPreventAutoClose(false);
+                /* Pause before showing dialog if necessary: */
+                bool fWasPaused = uisession()->isPaused() || uisession()->isStuck();
+                if (!fWasPaused)
+                    fSuccess = uisession()->pause();
+
+                /* Let the user choose the close-action: */
+                if (fSuccess)
+                {
+                    /* Prevent auto-closure: */
+                    machineLogic()->setPreventAutoClose(true);
+                    /* Show the close-dialog: */
+                    bool fDialogAccepted = pDlg->exec() == QDialog::Accepted;
+                    /* Allow auto-closure again: */
+                    machineLogic()->setPreventAutoClose(false);
+
+                    /* Parse dialog-result: */
+                    if (!fDialogAccepted)
+                        closeAction = CA_Cancel;
+                    else if (pDlg->mRbSave->isChecked())
+                        closeAction = CA_Save;
+                    else if (pDlg->mRbShutdown->isChecked())
+                        closeAction = CA_Shutdown;
+                    else
+                        closeAction = CA_PowerOff;
+                    bool fDiscardCurState = pDlg->mCbDiscardCurState->isChecked();
+                    bool fDiscardCheckboxVisible = pDlg->mCbDiscardCurState->isVisibleTo(pDlg);
+                    if (closeAction == CA_PowerOff && fDiscardCheckboxVisible && fDiscardCurState)
+                        closeAction = CA_PowerOffWithStateDiscarding;
+                }
+
+                /* Cleanup close-dialog: */
+                delete pDlg;
+                pDlg = 0;
+
+                /* If VM was not paused before but paused now,
+                 * we should resume it if user canceled dialog or chosen shutdown: */
+                if (!fWasPaused && uisession()->isPaused() &&
+                    (closeAction == CA_Cancel || closeAction == CA_Shutdown))
+                    fSuccess = uisession()->unpause();
+
+                if (fSuccess)
+                {
+                    /* Memorize the last user choice: */
+                    QStringList prevAction = m.GetExtraData(GUI_LastCloseAction).split(',');
+                    QString lastCloseAction = strPowerOff;
+                    switch (closeAction)
+                    {
+                        case CA_Save: lastCloseAction = strSave; break;
+                        case CA_Shutdown: lastCloseAction = strShutdown; break;
+                        case CA_PowerOff:
+                        case CA_PowerOffWithStateDiscarding:
+                        {
+                            if (prevAction[0] == strShutdown && !isACPIEnabled)
+                                lastCloseAction = strShutdown;
+                            else
+                                lastCloseAction = strPowerOff;
+                            if (closeAction == CA_PowerOffWithStateDiscarding)
+                                (lastCloseAction += ",") += strDiscardCurrentState;
+                            break;
+                        }
+                        default: break;
+                    }
+                    m.SetExtraData(GUI_LastCloseAction, lastCloseAction);
+                }
+                else
+                {
+                    /* If some of steps failed, close-action will be CA_Cancel: */
+                    closeAction = CA_Cancel;
+                }
+            }
+
+            /* Was some close-action selected? */
+            if (closeAction != CA_Cancel)
+            {
+                switch (closeAction)
+                {
+                    case CA_Save:
+                    {
+                        machineLogic()->save();
+                        break;
+                    }
+                    case CA_Shutdown:
+                    {
+                        machineLogic()->shutdown();
+                        break;
+                    }
+                    case CA_PowerOff:
+                    case CA_PowerOffWithStateDiscarding:
+                    {
+                        machineLogic()->powerOff(closeAction == CA_PowerOffWithStateDiscarding);
+                        break;
+                    }
+                    default:
+                        break;
+                }
             }
             break;
         }
         default:
             break;
-    }
-    if (fCloseApplication)
-    {
-        /* VM has been powered off or saved. We must *safely* close VM window(s): */
-        QTimer::singleShot(0, uisession(), SLOT(sltCloseVirtualSession()));
     }
 }
 
