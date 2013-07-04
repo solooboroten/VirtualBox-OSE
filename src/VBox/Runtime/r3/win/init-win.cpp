@@ -80,6 +80,7 @@ DECLHIDDEN(int) rtR3InitNativeObtrusiveWorker(void)
             rc = VERR_INTERNAL_ERROR_3;
     }
 
+#if 0 // this breaks the Windows style, disable it for now (@bugref 6861)
     typedef BOOL (WINAPI *PFNSETDEFAULTDLLDIRECTORIES)(DWORD);
     PFNSETDEFAULTDLLDIRECTORIES pfnSetDefDllDirs;
     pfnSetDefDllDirs = (PFNSETDEFAULTDLLDIRECTORIES)GetProcAddress(g_hModKernel32, "SetDefaultDllDirectories");
@@ -90,6 +91,7 @@ DECLHIDDEN(int) rtR3InitNativeObtrusiveWorker(void)
         else if (RT_SUCCESS(rc))
             rc = VERR_INTERNAL_ERROR_4;
     }
+#endif
 
     return rc;
 }

@@ -1,3 +1,4 @@
+/* $Id: UISelectorWindow.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -1301,7 +1302,11 @@ void UISelectorWindow::prepareMenuHelp(QMenu *pMenu)
     pMenu->addAction(m_pRegisterAction);
 #endif /* VBOX_WITH_REGISTRATION */
     m_pUpdateAction = gActionPool->action(UIActionIndex_Simple_CheckForUpdates);
-    pMenu->addAction(m_pUpdateAction);
+    CVirtualBox vbox = vboxGlobal().virtualBox();
+    if (VBoxGlobal::shouldWeAllowApplicationUpdate(vbox))
+        pMenu->addAction(m_pUpdateAction);
+    else
+        m_pUpdateAction->setEnabled(false);
 #ifndef Q_WS_MAC
     pMenu->addSeparator();
 #endif /* !Q_WS_MAC */

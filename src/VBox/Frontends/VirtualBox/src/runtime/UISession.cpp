@@ -401,7 +401,7 @@ QWidget* UISession::mainMachineWindow() const
     return machineLogic()->mainMachineWindow();
 }
 
-QMenu* UISession::newMenu(UIMainMenuType fOptions /* = UIMainMenuType_ALL */)
+QMenu* UISession::newMenu(RuntimeMenuType fOptions /* = RuntimeMenuType_ALL */)
 {
     /* Create new menu: */
     QMenu *pMenu = m_pMenuPool->createMenu(fOptions);
@@ -413,7 +413,7 @@ QMenu* UISession::newMenu(UIMainMenuType fOptions /* = UIMainMenuType_ALL */)
     return pMenu;
 }
 
-QMenuBar* UISession::newMenuBar(UIMainMenuType fOptions /* = UIMainMenuType_ALL */)
+QMenuBar* UISession::newMenuBar(RuntimeMenuType fOptions /* = RuntimeMenuType_ALL */)
 {
     /* Create new menubar: */
     QMenuBar *pMenuBar = m_pMenuPool->createMenuBar(fOptions);
@@ -848,7 +848,7 @@ void UISession::prepareFramebuffers()
 
 void UISession::prepareMenuPool()
 {
-    m_pMenuPool = new UIMachineMenuBar;
+    m_pMenuPool = new UIMachineMenuBar(session().GetMachine());
 }
 
 void UISession::loadSessionSettings()

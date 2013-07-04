@@ -1248,24 +1248,24 @@ HRESULT Appliance::importFSOVF(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             throw setError(E_OUTOFMEMORY);
 
         Utf8Str strMfFile = Utf8Str(pTask->locInfo.strPath).stripExt().append(".mf");
+
+        SHASTORAGE storage;
+        RT_ZERO(storage);
+
+        int vrc = VDInterfaceAdd(&pFileIo->Core, "Appliance::IOFile",
+                                 VDINTERFACETYPE_IO, 0, sizeof(VDINTERFACEIO),
+                                 &storage.pVDImageIfaces);
+        if (RT_FAILURE(vrc))
+            throw setError(VBOX_E_IPRT_ERROR, "Creation of the VD interface failed (%Rrc)", vrc);
+
         /* Create the import stack for the rollback on errors. */
         ImportStack stack(pTask->locInfo, m->pReader->m_mapDisks, pTask->pProgress);
 
         if (RTFileExists(strMfFile.c_str()))
         {
-            SHASTORAGE storage;
-            RT_ZERO(storage);
-
             pShaIo = ShaCreateInterface();
             if (!pShaIo)
                 throw setError(E_OUTOFMEMORY);
-
-            storage.fCreateDigest = true;
-            int vrc = VDInterfaceAdd(&pFileIo->Core, "Appliance::IOFile",
-                                     VDINTERFACETYPE_IO, 0, sizeof(VDINTERFACEIO),
-                                     &storage.pVDImageIfaces);
-            if (RT_FAILURE(vrc))
-                throw setError(VBOX_E_IPRT_ERROR, "Creation of the VD interface failed (%Rrc)", vrc);
 
             size_t cbMfSize = 0;
             storage.fCreateDigest = true;
@@ -1280,7 +1280,10 @@ HRESULT Appliance::importFSOVF(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             if (FAILED(rc)) throw rc;
         }
         else
-            importMachines(stack, pFileIo, NULL);
+        {
+            storage.fCreateDigest = false;
+            importMachines(stack, pFileIo, &storage);
+        }
     }
     catch (HRESULT rc2)
     {

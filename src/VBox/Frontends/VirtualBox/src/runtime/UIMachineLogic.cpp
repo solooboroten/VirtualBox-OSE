@@ -371,7 +371,7 @@ void UIMachineLogic::sltMachineStateChanged()
             takeScreenshot(strLogFolder + "/VBox.png", "png");
             /* Warn the user about GURU meditation: */
             if (msgCenter().remindAboutGuruMeditation(QDir::toNativeSeparators(strLogFolder)))
-                powerOff(session().GetMachine().GetSnapshotCount() > 0);
+                powerOff(false /* do NOT restore current snapshot */);
             break;
         }
         case KMachineState_Paused:
@@ -795,7 +795,11 @@ void UIMachineLogic::prepareHandlers()
 void UIMachineLogic::prepareMenu()
 {
 #ifdef Q_WS_MAC
-    m_pMenuBar = uisession()->newMenuBar();
+    /* Prepare native menu-bar: */
+    CMachine machine = session().GetMachine();
+    RuntimeMenuType restrictedMenus = VBoxGlobal::restrictedRuntimeMenuTypes(machine);
+    RuntimeMenuType allowedMenus = static_cast<RuntimeMenuType>(RuntimeMenuType_All ^ restrictedMenus);
+    m_pMenuBar = uisession()->newMenuBar(allowedMenus);
 #endif /* Q_WS_MAC */
 }
 

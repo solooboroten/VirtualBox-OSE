@@ -192,8 +192,8 @@ static void vboxGreeterLog(const char *pszFormat, ...)
  *                                  checked if it only can be read (and *not* written)
  *                                  by the guest.
  * @param   pszValue                Buffer where to store the key's value.
- * @param   cbValue                 Size of buffer (in bytes). 
- * @param   puTimestamp             Timestamp of the value 
+ * @param   cbValue                 Size of buffer (in bytes).
+ * @param   puTimestamp             Timestamp of the value
  *                                  retrieved. Optional.
  */
 static int vbox_read_prop(uint32_t uClientID,
@@ -405,7 +405,7 @@ static int vboxGreeterCheckCreds(PVBOXGREETERCTX pCtx)
 /**
  * Called by LightDM when greeter is not needed anymore.
  *
- * @param   signum                  Signal number. 
+ * @param   signum                  Signal number.
  */
 static void cb_sigterm(int signum)
 {
@@ -512,6 +512,7 @@ static void cb_lightdm_auth_complete(LightDMGreeter *pGreeter)
         gchar *pszSession = g_strdup(lightdm_greeter_get_default_session_hint(pGreeter));
         if (pszSession)
         {
+            vboxGreeterLog("starting session: %s\n", pszSession);
             GError *pError = NULL;
             if (!lightdm_greeter_start_session_sync(pGreeter, pszSession, &pError))
             {
@@ -530,6 +531,8 @@ static void cb_lightdm_auth_complete(LightDMGreeter *pGreeter)
         else
             vboxGreeterError("unable to get default session\n");
     }
+    else
+        vboxGreeterLog("user not authenticated successfully (yet)\n");
 }
 
 /**
@@ -1164,8 +1167,8 @@ int main(int argc, char **argv)
     Fl_Double_Window *pWndMain = new Fl_Double_Window(Fl::w(), Fl::h(), "VirtualBox Guest Additions");
     AssertPtr(pWndMain);
     if (uOptsUI & VBOX_GREETER_UI_USE_THEMING)
-        pWndMain->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uBgColor), 
-                                     VBOX_RGB_COLOR_GREEN(uBgColor),  
+        pWndMain->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uBgColor),
+                                     VBOX_RGB_COLOR_GREEN(uBgColor),
                                      VBOX_RGB_COLOR_BLUE(uBgColor)));
     else /* Default colors. */
         pWndMain->color(fl_rgb_color(0x73, 0x7F, 0x8C));
@@ -1174,18 +1177,18 @@ int main(int argc, char **argv)
     AssertPtr(pWndGreeter);
     pWndGreeter->set_modal();
     if (uOptsUI & VBOX_GREETER_UI_USE_THEMING)
-        pWndGreeter->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgBgColor), 
-                                        VBOX_RGB_COLOR_GREEN(uLogonDlgBgColor),  
+        pWndGreeter->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgBgColor),
+                                        VBOX_RGB_COLOR_GREEN(uLogonDlgBgColor),
                                         VBOX_RGB_COLOR_BLUE(uLogonDlgBgColor)));
     else /* Default colors. */
         pWndGreeter->color(fl_rgb_color(255, 255, 255));
 
     uint32_t uOffsetX = 130;
     /**
-     * For now we're using a simple Y offset for moving all elements 
-     * down if a banner needs to be shown on top of the greeter. Not 
-     * very clean but does the job. Use some more layouting stuff 
-     * when this gets more complex. 
+     * For now we're using a simple Y offset for moving all elements
+     * down if a banner needs to be shown on top of the greeter. Not
+     * very clean but does the job. Use some more layouting stuff
+     * when this gets more complex.
      */
     uint32_t uOffsetY = 80;
 
@@ -1198,7 +1201,7 @@ int main(int argc, char **argv)
     Fl_PNG_Image *pImgBanner = NULL;
     if (uOptsUI & VBOX_GREETER_UI_SHOW_BANNER)
     {
-        pImgBanner = new Fl_PNG_Image(szBannerPath);	
+        pImgBanner = new Fl_PNG_Image(szBannerPath);
         AssertPtr(pImgBanner);
 
         /** @todo Make the banner size configurable via guest
@@ -1211,7 +1214,7 @@ int main(int argc, char **argv)
     }
 # endif
 
-    Fl_Box *pLblHeader = new Fl_Box(FL_NO_BOX, 242, uOffsetY, 300, 20, 
+    Fl_Box *pLblHeader = new Fl_Box(FL_NO_BOX, 242, uOffsetY, 300, 20,
                                     "Desktop Login");
     AssertPtr(pLblHeader);
 
@@ -1225,8 +1228,8 @@ int main(int argc, char **argv)
     pLblHeader->labelfont(FL_BOLD);
     pLblHeader->labelsize(24);
     if (uOptsUI & VBOX_GREETER_UI_USE_THEMING)
-        pLblHeader->labelcolor(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgHdrColor), 
-                                            VBOX_RGB_COLOR_GREEN(uLogonDlgHdrColor),  
+        pLblHeader->labelcolor(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgHdrColor),
+                                            VBOX_RGB_COLOR_GREEN(uLogonDlgHdrColor),
                                             VBOX_RGB_COLOR_BLUE(uLogonDlgHdrColor)));
     else /* Default color. */
         pLblHeader->labelcolor(fl_rgb_color(0x51, 0x5F, 0x77));
@@ -1234,7 +1237,7 @@ int main(int argc, char **argv)
 
     /** @todo Add basic NLS support. */
 
-    Fl_Input *pEdtUsername = new Fl_Input(uOffsetX, uOffsetY, 
+    Fl_Input *pEdtUsername = new Fl_Input(uOffsetX, uOffsetY,
                                           300, 20, "User Name");
     AssertPtr(pEdtUsername);
     pEdtUsername->callback(cb_edt_username, &ctx);
@@ -1242,32 +1245,32 @@ int main(int argc, char **argv)
     Fl::focus(pEdtUsername);
     ctx.pEdtUsername = pEdtUsername;
 
-    Fl_Secret_Input *pEdtPassword = new Fl_Secret_Input(uOffsetX, uOffsetY + 40, 
+    Fl_Secret_Input *pEdtPassword = new Fl_Secret_Input(uOffsetX, uOffsetY + 40,
                                                         300, 20, "Password");
     AssertPtr(pEdtPassword);
     pEdtPassword->callback(cb_edt_password, &ctx);
     pEdtPassword->when(FL_WHEN_ENTER_KEY_ALWAYS);
     ctx.pEdtPassword = pEdtPassword;
 
-    Fl_Button *pBtnLogin = new Fl_Button(uOffsetX, uOffsetY + 70, 
+    Fl_Button *pBtnLogin = new Fl_Button(uOffsetX, uOffsetY + 70,
                                          100, 40, "Log In");
     AssertPtr(pBtnLogin);
     pBtnLogin->callback(cb_btn_login, &ctx);
     if (uOptsUI & VBOX_GREETER_UI_USE_THEMING)
-        pBtnLogin->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgBtnColor), 
-                                      VBOX_RGB_COLOR_GREEN(uLogonDlgBtnColor),  
+        pBtnLogin->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgBtnColor),
+                                      VBOX_RGB_COLOR_GREEN(uLogonDlgBtnColor),
                                       VBOX_RGB_COLOR_BLUE(uLogonDlgBtnColor)));
     else /* Default color. */
         pBtnLogin->color(fl_rgb_color(255, 255, 255));
     ctx.pBtnLogin = pBtnLogin;
 
-    Fl_Menu_Button *pBtnMenu = new Fl_Menu_Button(uOffsetX + 120, uOffsetY + 70, 
+    Fl_Menu_Button *pBtnMenu = new Fl_Menu_Button(uOffsetX + 120, uOffsetY + 70,
                                                   100, 40, "Options");
     AssertPtr(pBtnMenu);
     pBtnMenu->callback(cb_btn_menu, &ctx);
     if (uOptsUI & VBOX_GREETER_UI_USE_THEMING)
-        pBtnMenu->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgBtnColor), 
-                                     VBOX_RGB_COLOR_GREEN(uLogonDlgBtnColor),  
+        pBtnMenu->color(fl_rgb_color(VBOX_RGB_COLOR_RED(uLogonDlgBtnColor),
+                                     VBOX_RGB_COLOR_GREEN(uLogonDlgBtnColor),
                                      VBOX_RGB_COLOR_BLUE(uLogonDlgBtnColor)));
     else /* Default color. */
         pBtnMenu->color(fl_rgb_color(255, 255, 255));
@@ -1286,7 +1289,7 @@ int main(int argc, char **argv)
     ctx.pLblInfo = pLblInfo;
 
     pWndGreeter->end();
-    pWndGreeter->position((Fl::w() - pWndGreeter->w()) / 2, 
+    pWndGreeter->position((Fl::w() - pWndGreeter->w()) / 2,
                           (Fl::h() - pWndGreeter->h()) / 2);
 
     pWndMain->fullscreen();
@@ -1329,7 +1332,7 @@ int main(int argc, char **argv)
     gtk_window_get_default_size(pWndGreeter, &iWndX, &iWndY);
     vboxGreeterLog("greeter is %dx%d\n", iWndX, iWndY);
 
-    gtk_window_move(pWndGreeter, 
+    gtk_window_move(pWndGreeter,
                     (rectScreen.width / 2)  - (iWndX / 2),
                     (rectScreen.height / 2) - (iWndY / 2));
     gtk_widget_show(GTK_WIDGET(pWndGreeter));
@@ -1442,15 +1445,15 @@ int main(int argc, char **argv)
 
 #ifdef VBOX_WITH_FLTK
     /*
-     * Do own GDK main loop processing because FLTK also needs 
-     * to have the chance of processing its events. 
+     * Do own GDK main loop processing because FLTK also needs
+     * to have the chance of processing its events.
      */
     GMainContext *pMainCtx = g_main_context_default();
     AssertPtr(pMainCtx);
 
     while (g_fRunning)
     {
-        g_main_context_iteration(pMainCtx, 
+        g_main_context_iteration(pMainCtx,
                                  FALSE /* No blocking */);
         Fl::check();
         RTThreadYield();
@@ -1464,7 +1467,7 @@ int main(int argc, char **argv)
         delete pImgBanner; /* Call destructor to free bitmap data. */
         pImgBanner = NULL;
     }
-# endif /* VBOX_GREETER_WITH_PNG_SUPPORT */ 
+# endif /* VBOX_GREETER_WITH_PNG_SUPPORT */
 #else /* !VBOX_WITH_FLTK */
     gtk_main();
     /** @todo Never reached so far. LightDM sends a SIGTERM. */

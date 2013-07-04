@@ -1,6 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.2.16 (2013-07-04)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>OVF/OVA: don't crash on import if no manifest is used (4.2.14 regression;
+          bug #11895)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: do not restore the current snapshot if we power-off
+          after a Guru Mediation</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed a crash when hotplugging an empty DVD drive to
+          the VM</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed a crash when a guest read from a DVD drive
+          attached to the SATA controller under certain circumstances</para>
+      </listitem>
+
+      <listitem>
+        <para>EFI: don't fail with 64-bit guests on 32-bit hosts (bug #11456)</para>
+      </listitem>
+
+      <listitem>
+        <para>Autostart: fixed VM startup on OS X</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows hosts: native Windows 8 controls</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows hosts: restore native style on Vista 32</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows hosts / guests: Windows 8.1 adaptions (bug #11899)</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X hosts: after removing VirtualBox with
+          <emphasis>VirtualBox_Uninstall.tool</emphasis>, remove it from the
+          <emphasis>pkgutil --pkgs</emphasis> list as well</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.2.14 (2013-06-21)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
