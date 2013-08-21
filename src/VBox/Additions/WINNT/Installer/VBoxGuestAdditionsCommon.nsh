@@ -4,7 +4,7 @@
 ;
 
 ;
-; Copyright (C) 2006-2012 Oracle Corporation
+; Copyright (C) 2006-2013 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -136,7 +136,7 @@ Function ExtractFiles
       FILE "$%PATH_OUT%\bin\additions\wined3dwddm-x86.dll"
     !endif ; $%VBOX_WITH_CROGL% == "1"
   !endif ; $%BUILD_TARGET_ARCH% == "amd64"
-  
+
   !if $%VBOX_WITH_WDDM_W8% == "1"
   ; WDDM Video driver for Win8
   SetOutPath "$0\VBoxVideoW8"
@@ -246,83 +246,6 @@ Function ExtractFiles
 FunctionEnd
 !endif ; UNINSTALLER_ONLY
 
-!macro EnableLog un
-Function ${un}EnableLog
-
-!ifdef _DEBUG
-  Goto log
-!endif
-
-  StrCmp $g_bLogEnable "true" log
-  Goto exit
-
-log:
-
-  LogSet on
-  LogText "Start logging."
-
-exit:
-
-FunctionEnd
-!macroend
-!insertmacro EnableLog ""
-!insertmacro EnableLog "un."
-
-!macro WriteLogUI un
-Function ${un}WriteLogUI
-
-  IfSilent exit
-
-!ifdef _DEBUG
-  Goto log
-!endif
-
-  StrCmp $g_bLogEnable "true" log
-  Goto exit
-
-log:
-
-  ; Dump log to see what happened
-  StrCpy $0 "$INSTDIR\${un}install_ui.log"
-  Push $0
-  Call ${un}DumpLog
-
-exit:
-
-FunctionEnd
-!macroend
-!insertmacro WriteLogUI ""
-!insertmacro WriteLogUI "un."
-
-!macro WriteLogVBoxTray un
-Function ${un}WriteLogVBoxTray
-
-  ; Pop function parameters off the stack
-  ; in reverse order
-  Exch $1 ; Message type (0=Info, 1=Warning, 2=Error)
-  Exch
-  Exch $0 ; Body string
-
-  ; @todo Add more paramters here!
-!if $%VBOX_WITH_GUEST_INSTALL_HELPER% == "1"
-  ${If} $g_bPostInstallStatus == "true"
-    ; Parameters:
-    ; - String: Description / Body
-    ; - String: Title / Name of application
-    ; - Integer: Type of message: 0 (Info), 1 (Warning), 2 (Error)
-    ; - Integer: Time (in msec) to show the notification
-    VBoxGuestInstallHelper::VBoxTrayShowBallonMsg "$0" "VirtualBox Guest Additions Setup" $1 5000
-    Pop $0 ; Get return value (ignored for now)
-  ${EndIf}
-!endif
-  Pop $0
-  Pop $1
-
-FunctionEnd
-!macroend
-!insertmacro WriteLogVBoxTray ""
-!insertmacro WriteLogVBoxTray "un."
-
 !macro CheckArchitecture un
 Function ${un}CheckArchitecture
 
@@ -353,43 +276,51 @@ FunctionEnd
 !insertmacro CheckArchitecture ""
 !insertmacro CheckArchitecture "un."
 
-!macro GetWindowsVer un
-Function ${un}GetWindowsVer
+;
+; Macro for retrieving the Windows version this installer is running on.
+;
+; @return  Stack: Windows version string. Empty on error /
+;                 if not able to identify.
+;
+!macro GetWindowsVersionEx un
+Function ${un}GetWindowsVersionEx
 
-  ; Check if we are running on w2k or above
-  ; For other windows versions (>XP) it may be necessary to change winver.nsh
+  Push $0
+  Push $1
+
+  ; Check if we are running on Windows 2000 or above
+  ; For other windows versions (> XP) it may be necessary to change winver.nsh
   Call ${un}GetWindowsVersion
-  Pop $R3     ; Windows Version
+  Pop $0         ; Windows Version
 
-  Push $R3    ; The windows version string
-  Push "NT"   ; String to search for. Win 2k family returns no string containing 'NT'
+  Push $0        ; The windows version string
+  Push "NT"      ; String to search for. W2K+ returns no string containing "NT"
   Call ${un}StrStr
-  Pop $R0
-  StrCmp $R0 '' nt5plus       ; Not NT 3.XX or 4.XX
+  Pop $1
 
-  ; Ok we know it is NT. Must be a string like NT X.XX
-  Push $R3    ; The windows version string
-  Push "4."   ; String to search for
-  Call ${un}StrStr
-  Pop $R0
-  StrCmp $R0 "" nt5plus nt4   ; If empty -> not NT 4
+  ${If} $1 == "" ; If empty -> not NT 3.XX or 4.XX
+    ; $0 contains the original version string
+  ${Else}
+    ; Ok we know it is NT. Must be a string like NT X.XX
+    Push $0        ; The windows version string
+    Push "4."      ; String to search for
+    Call ${un}StrStr
+    Pop $1
+    ${If} $1 == "" ; If empty -> not NT 4
+      ;; @todo NT <= 3.x ?
+      ; $0 contains the original version string
+    ${Else}
+      StrCpy $0 "NT4"
+    ${EndIf}
+  ${EndIf}
 
-nt5plus:    ; Windows 2000+ (XP, Vista, ...)
-
-  StrCpy $g_strWinVersion $R3
-  goto exit
-
-nt4:        ; NT 4.0
-
-  StrCpy $g_strWinVersion "NT4"
-  goto exit
-
-exit:
+  Pop $1
+  Exch $0
 
 FunctionEnd
 !macroend
-!insertmacro GetWindowsVer ""
-!insertmacro GetWindowsVer "un."
+!insertmacro GetWindowsVersionEx ""
+!insertmacro GetWindowsVersionEx "un."
 
 !macro GetAdditionsVersion un
 Function ${un}GetAdditionsVersion
@@ -465,22 +396,22 @@ Function ${un}StopVBoxService
   Push $3   ; Safety counter
 
   StrCpy $3 "0" ; Init counter
-  DetailPrint "Stopping VBoxService ..."
+  ${LogVerbose} "Stopping VBoxService ..."
 
 svc_stop:
 
-  LogText "Stopping VBoxService (as service) ..."
+  ${LogVerbose} "Stopping VBoxService via SCM ..."
   ${If} $g_strWinVersion == "NT4"
-   nsExec::Exec '"$SYSDIR\net.exe" stop VBoxService'
+    nsExec::Exec '"$SYSDIR\net.exe" stop VBoxService'
   ${Else}
-   nsExec::Exec '"$SYSDIR\SC.exe" stop VBoxService'
+    nsExec::Exec '"$SYSDIR\SC.exe" stop VBoxService'
   ${EndIf}
   Sleep "1000"           ; Wait a bit
 
 exe_stop:
 
 !ifdef _DEBUG
-  DetailPrint "Stopping VBoxService (as exe) ..."
+  ${LogVerbose} "Stopping VBoxService (as exe) ..."
 !endif
 
 exe_stop_loop:
@@ -488,7 +419,9 @@ exe_stop_loop:
   IntCmp $3 10 exit      ; Only try this loop 10 times max
   IntOp  $3 $3 + 1       ; Increment
 
-  LogText "Try: $3"
+!ifdef _DEBUG
+  ${LogVerbose} "Stopping attempt #$3"
+!endif
 
   ${If} $g_strWinVersion == "NT4"
     StrCpy $2 "VBoxServiceNT.exe"
@@ -500,12 +433,12 @@ exe_stop_loop:
   StrCmp $0 0 0 exit
 
   ${nsProcess::KillProcess} $2 $0
-  Sleep "1000"           ; Wait a bit
+  Sleep "1000" ; Wait a bit
   Goto exe_stop_loop
 
 exit:
 
-  DetailPrint "Stopping VBoxService done."
+  ${LogVerbose} "Stopping VBoxService done"
 
   Pop $3
   Pop $2
@@ -524,7 +457,7 @@ Function ${un}StopVBoxTray
   Push $1   ; Safety counter
 
   StrCpy $1 "0" ; Init counter
-  DetailPrint "Stopping VBoxTray ..."
+  ${LogVerbose} "Stopping VBoxTray ..."
 
 exe_stop:
 
@@ -540,7 +473,7 @@ exe_stop:
 
 exit:
 
-  DetailPrint "Stopping VBoxTray done."
+  ${LogVerbose} "Stopping VBoxTray done"
 
   Pop $1
   Pop $0
@@ -550,6 +483,39 @@ FunctionEnd
 !insertmacro StopVBoxTray ""
 !insertmacro StopVBoxTray "un."
 
+!macro StopVBoxMMR un
+Function ${un}StopVBoxMMR
+
+  Push $0   ; Temp results
+  Push $1   ; Safety counter
+
+  StrCpy $1 "0" ; Init counter
+  DetailPrint "Stopping VBoxMMR ..."
+
+exe_stop:
+
+  IntCmp $1 10 exit      ; Only try this loop 10 times max
+  IntOp  $1 $1 + 1       ; Increment
+
+  ${nsProcess::FindProcess} "VBoxMMR.exe" $0
+  StrCmp $0 0 0 exit
+
+  ${nsProcess::KillProcess} "VBoxMMR.exe" $0
+  Sleep "1000"           ; Wait a bit
+  Goto exe_stop
+
+exit:
+
+  DetailPrint "Stopping VBoxMMR done."
+
+  Pop $1
+  Pop $0
+
+FunctionEnd
+!macroend
+!insertmacro StopVBoxMMR ""
+!insertmacro StopVBoxMMR "un."
+
 !macro WriteRegBinR ROOT KEY NAME VALUE
   WriteRegBin "${ROOT}" "${KEY}" "${NAME}" "${VALUE}"
 !macroend
@@ -557,12 +523,12 @@ FunctionEnd
 !macro AbortShutdown un
 Function ${un}AbortShutdown
 
-  Push $0
-
-  ; Try to abort the shutdown
-  nsExec::ExecToLog '"$g_strSystemDir\shutdown.exe" -a' $0
-
-  Pop $0
+  ${If} ${FileExists} "$g_strSystemDir\shutdown.exe"
+    ; Try to abort the shutdown
+    ${CmdExecute} "$\"$g_strSystemDir\shutdown.exe$\" -a" "true"
+  ${Else}
+    ${LogVerbose} "Shutting down not supported: Binary $\"$g_strSystemDir\shutdown.exe$\" not found"
+  ${EndIf}
 
 FunctionEnd
 !macroend
@@ -574,15 +540,19 @@ Function ${un}CheckForWDDMCapability
 
 !if $%VBOX_WITH_WDDM% == "1"
   ; If we're on a 32-bit Windows Vista / 7 / 8 we can use the WDDM driver
-  ${If} $g_strWinVersion == "Vista"
+  ${If}   $g_strWinVersion == "Vista"
   ${OrIf} $g_strWinVersion == "7"
   ${OrIf} $g_strWinVersion == "8"
+  ${OrIf} $g_strWinVersion == "8_1"
     StrCpy $g_bCapWDDM "true"
+    ${LogVerbose} "OS is WDDM driver capable"
   ${EndIf}
   ; If we're on Windows 8 we *have* to use the WDDM driver, so select it
   ; by default
-  ${If} $g_strWinVersion == "8"
+  ${If}   $g_strWinVersion == "8"
+  ${OrIf} $g_strWinVersion == "8_1"
     StrCpy $g_bWithWDDM "true"
+    ${LogVerbose} "OS needs WDDM driver by default"
   ${EndIf}
 !endif
 
@@ -601,10 +571,12 @@ Function ${un}CheckForCapabilities
   StrCpy $g_iSystemMode $0
 
   ; Does the guest have a DLL cache?
-  ${If} $g_strWinVersion == "Vista"
+  ${If}   $g_strWinVersion == "Vista"
   ${OrIf} $g_strWinVersion == "7"
   ${OrIf} $g_strWinVersion == "8"
+  ${OrIf} $g_strWinVersion == "8_1"
     StrCpy $g_bCapDllCache "true"
+    ${LogVerbose}  "OS has a DLL cache"
   ${EndIf}
 
   ; Check whether this OS is capable of handling WDDM drivers
@@ -803,15 +775,15 @@ FunctionEnd
   Push "${Architecture}"
   Push "${Vendor}"
   Push "${File}"
-  DetailPrint "Verifying file $\"${File}$\" ..."
+  ${LogVerbose} "Verifying file $\"${File}$\" ..."
   Call ${un}VerifyFile
   Pop $0
   ${If} $0 == "0"
-    DetailPrint "Verification of file $\"${File}$\" successful (Vendor: ${Vendor}, Architecture: ${Architecture})"
+    ${LogVerbose} "Verification of file $\"${File}$\" successful (Vendor: ${Vendor}, Architecture: ${Architecture})"
   ${ElseIf} $0 == "1"
-    DetailPrint "Verification of file $\"${File}$\" failed (not Vendor: ${Vendor}, and/or not Architecture: ${Architecture})"
+    ${LogVerbose} "Verification of file $\"${File}$\" failed (not Vendor: ${Vendor}, and/or not Architecture: ${Architecture})"
   ${Else}
-    DetailPrint "Skipping to file $\"${File}$\"; not found"
+    ${LogVerbose} "Skipping to file $\"${File}$\"; not found"
   ${EndIf}
   ; Push result popped off the stack to stack again
   Push $0
@@ -819,7 +791,7 @@ FunctionEnd
 !define VerifyFileEx "!insertmacro VerifyFileEx"
 
 ;
-; Macro for copying a file only if the source file is verified 
+; Macro for copying a file only if the source file is verified
 ; to be from a certain vendor and architecture.
 ; @return  Stack: "0" if copied, "1" if not, "2" on error / not found.
 ; @param   Un/Installer prefix; either "" or "un".
@@ -832,14 +804,14 @@ FunctionEnd
   Push $0
   Push "${Architecture}"
   Push "${Vendor}"
-  Push "${FileSrc}"  
+  Push "${FileSrc}"
   Call ${un}VerifyFile
   Pop $0
   ${If} $0 == "0"
-    DetailPrint "Copying verified file $\"${FileSrc}$\" to $\"${FileDest}$\" ..."
+    ${LogVerbose} "Copying verified file $\"${FileSrc}$\" to $\"${FileDest}$\" ..."
     CopyFiles /SILENT "${FileSrc}" "${FileDest}"
   ${Else}
-    DetailPrint "Skipping to copy file $\"${FileSrc}$\" to $\"${FileDest}$\" (not Vendor: ${Vendor}, Architecture: ${Architecture})"
+    ${LogVerbose} "Skipping to copy file $\"${FileSrc}$\" to $\"${FileDest}$\" (not Vendor: ${Vendor}, Architecture: ${Architecture})"
   ${EndIf}
   ; Push result popped off the stack to stack again
   Push $0
@@ -855,7 +827,7 @@ FunctionEnd
 ; @param   Temporary folder used for exchanging the (locked) lib/DLL after a reboot.
 ;
 !macro InstallFileEx un FileSrc FileDest DirTemp
-  DetailPrint "Installing library $\"${FileSrc}$\" to $\"${FileDest}$\" ..."
+  ${LogVerbose} "Installing library $\"${FileSrc}$\" to $\"${FileDest}$\" ..."
   ; Try the gentle way and replace the file instantly
   !insertmacro InstallLib DLL NOTSHARED NOREBOOT_NOTPROTECTED "${FileSrc}" "${FileDest}" "${DirTemp}"
   ; If the above call didn't help, use a (later) reboot to replace the file
@@ -878,13 +850,13 @@ FunctionEnd
   Push "${Architecture}"
   Push "${Vendor}"
   Push "${FileSrc}"
-  DetailPrint "Verifying library $\"${FileSrc}$\" ..."
+  ${LogVerbose} "Verifying library $\"${FileSrc}$\" ..."
   Call ${un}VerifyFile
   Pop $0
   ${If} $0 == "0"
     ${InstallFileEx} ${un} ${FileSrc} ${FileDest} ${DirTemp}
   ${Else}
-    DetailPrint "File $\"${FileSrc}$\" did not pass verification (Vendor: ${Vendor}, Architecture: ${Architecture})"
+    ${LogVerbose} "File $\"${FileSrc}$\" did not pass verification (Vendor: ${Vendor}, Architecture: ${Architecture})"
   ${EndIf}
   ; Push result popped off the stack to stack again.
   Push $0
@@ -908,8 +880,8 @@ Function ${un}ValidateD3DFiles
 
   ; Note: Not finding a file (like *d3d8.dll) on Windows Vista/7 is fine;
   ;       it simply is not present there.
-  
-  ; Note 2: On 64-bit systems there are no 64-bit *d3d8 DLLs, only 32-bit ones 
+
+  ; Note 2: On 64-bit systems there are no 64-bit *d3d8 DLLs, only 32-bit ones
   ;         in SysWOW64 (or in system32 on 32-bit systems).
 
 !if $%BUILD_TARGET_ARCH% == "x86"
@@ -919,7 +891,7 @@ Function ${un}ValidateD3DFiles
     Goto verify_msd3d
   ${EndIf}
 !endif
-  
+
   ${VerifyFileEx} "${un}" "$SYSDIR\d3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
   Pop $0
   ${If} $0 == "1"

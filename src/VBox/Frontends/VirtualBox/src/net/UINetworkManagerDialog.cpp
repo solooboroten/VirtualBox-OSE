@@ -1,4 +1,4 @@
-/* $Id: UINetworkManagerDialog.cpp 42526 2012-08-02 10:31:28Z vboxsync $ */
+/* $Id: UINetworkManagerDialog.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -33,6 +33,7 @@
 #include "UIIconPool.h"
 #include "VBoxGlobal.h"
 #include "UIMessageCenter.h"
+#include "UIModalWindowManager.h"
 #include "QIDialogButtonBox.h"
 
 void UINetworkManagerDialog::showNormal()
@@ -144,7 +145,7 @@ void UINetworkManagerDialog::removeNetworkRequestWidget(const QUuid &uuid)
 void UINetworkManagerDialog::sltHandleCancelAllButtonPress()
 {
     /* Ask if user wants to cancel all current network-requests: */
-    if (msgCenter().askAboutCancelAllNetworkRequest(this))
+    if (msgCenter().confirmCancelingAllNetworkRequests())
         emit sigCancelNetworkRequests();
 }
 
@@ -167,7 +168,7 @@ void UINetworkManagerDialog::showEvent(QShowEvent *pShowEvent)
     resize(minimumSizeHint());
 
     /* Center according current main application window: */
-    vboxGlobal().centerWidget(this, vboxGlobal().mainWindow(), false);
+    vboxGlobal().centerWidget(this, windowManager().mainWindowShown(), false);
 
     /* Pass event to the base-class: */
     QMainWindow::showEvent(pShowEvent);

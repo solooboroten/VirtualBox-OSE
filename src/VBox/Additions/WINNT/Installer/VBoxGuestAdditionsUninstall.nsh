@@ -4,7 +4,7 @@
 ;
 
 ;
-; Copyright (C) 2006-2012 Oracle Corporation
+; Copyright (C) 2006-2013 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -69,10 +69,10 @@ FunctionEnd
 !macro Uninstall un
 Function ${un}Uninstall
 
-  DetailPrint "Uninstalling system files ..."
+  ${LogVerbose} "Uninstalling system files ..."
 !ifdef _DEBUG
-  DetailPrint "Detected OS version: Windows $g_strWinVersion"
-  DetailPrint "System Directory: $g_strSystemDir"
+  ${LogVerbose} "Detected OS version: Windows $g_strWinVersion"
+  ${LogVerbose} "System Directory: $g_strSystemDir"
 !endif
 
   ; Which OS are we using?
@@ -85,6 +85,7 @@ Function ${un}Uninstall
   StrCmp $g_strWinVersion "Vista" vista ; Windows Vista
   StrCmp $g_strWinVersion "7" vista     ; Windows 7
   StrCmp $g_strWinVersion "8" vista     ; Windows 8
+  StrCmp $g_strWinVersion "8_1" vista   ; Windows 8.1 / Windows Server 2012 R2
 
   ${If} $g_bForceInstall == "true"
     Goto vista ; Assume newer OS than we know of ...
@@ -127,10 +128,10 @@ FunctionEnd
 !macro UninstallInstDir un
 Function ${un}UninstallInstDir
 
-  DetailPrint "Uninstalling directory ..."
+  ${LogVerbose} "Uninstalling directory ..."
 !ifdef _DEBUG
-  DetailPrint "Detected OS version: Windows $g_strWinVersion"
-  DetailPrint "System Directory: $g_strSystemDir"
+  ${LogVerbose} "Detected OS version: Windows $g_strWinVersion"
+  ${LogVerbose} "System Directory: $g_strSystemDir"
 !endif
 
   ; Which OS are we using?
@@ -143,6 +144,7 @@ Function ${un}UninstallInstDir
   StrCmp $g_strWinVersion "Vista" vista ; Windows Vista
   StrCmp $g_strWinVersion "7" vista     ; Windows 7
   StrCmp $g_strWinVersion "8" vista     ; Windows 8
+  StrCmp $g_strWinVersion "8_1" vista   ; Windows 8.1 / Windows Server 2012 R2
 
   ${If} $g_bForceInstall == "true"
     Goto vista ; Assume newer OS than we know of ...

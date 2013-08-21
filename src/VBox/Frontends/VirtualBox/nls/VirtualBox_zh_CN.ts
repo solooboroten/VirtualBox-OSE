@@ -2827,7 +2827,7 @@
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>左 </translation>
@@ -9065,7 +9065,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>总是显示小工具栏</translation>

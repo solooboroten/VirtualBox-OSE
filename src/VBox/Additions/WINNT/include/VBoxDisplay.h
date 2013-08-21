@@ -2,7 +2,7 @@
  *
  * VBoxDisplay - private windows additions display header
  *
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -36,6 +36,7 @@
 # define VBOXESC_CRHGSMICTLCON_GETCLIENTID  0xABCD900F
 # define VBOXESC_REINITVIDEOMODESBYMASK     0xABCD9010
 # define VBOXESC_ADJUSTVIDEOMODES           0xABCD9011
+# define VBOXESC_SETCTXHOSTID               0xABCD9012
 #endif /* #ifdef VBOX_WITH_WDDM */
 
 # define VBOXESC_ISANYX                     0xABCD9200
@@ -77,6 +78,8 @@ typedef struct
     DWORD Width;
     DWORD Height;
     DWORD BitsPerPixel;
+    DWORD PosX;
+    DWORD PosY;
 } VBOXWDDM_RECOMMENDVIDPN_SCREEN_INFO, *PVBOXWDDM_RECOMMENDVIDPN_SCREEN_INFO;
 
 typedef struct

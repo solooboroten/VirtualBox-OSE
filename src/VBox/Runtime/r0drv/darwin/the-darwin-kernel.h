@@ -1,10 +1,10 @@
-/* $Id: the-darwin-kernel.h 37575 2011-06-21 12:40:01Z vboxsync $ */
+/* $Id: the-darwin-kernel.h $ */
 /** @file
  * IPRT - Include all necessary headers for the Darwing kernel.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -83,6 +83,12 @@
 # define AST_PREEMPT    UINT32_C(1)
 # define AST_QUANTUM    UINT32_C(2)
 # define AST_URGENT     UINT32_C(4)
+#endif
+
+/* This flag was added in 10.6, it seems.  Should be harmless in earlier
+   releases... */
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 1060
+# define kIOMemoryMapperNone UINT32_C(0x800)
 #endif
 
 

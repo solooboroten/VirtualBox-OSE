@@ -1,10 +1,11 @@
 #!/bin/sh
-# $Id: vboxconfig.sh 42491 2012-08-01 07:09:11Z vboxsync $
-
-#
+# $Id: vboxconfig.sh $
+## @file
 # VirtualBox Configuration Script, Solaris host.
 #
-# Copyright (C) 2009-2010 Oracle Corporation
+
+#
+# Copyright (C) 2009-2013 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -40,7 +41,7 @@ BIN_DEVFSADM=/usr/sbin/devfsadm
 BIN_BOOTADM=/sbin/bootadm
 BIN_SVCADM=/usr/sbin/svcadm
 BIN_SVCCFG=/usr/sbin/svccfg
-BIN_SVCS=/usr/bin/svcs 
+BIN_SVCS=/usr/bin/svcs
 BIN_IFCONFIG=/sbin/ifconfig
 BIN_SVCS=/usr/bin/svcs
 BIN_ID=/usr/bin/id
@@ -236,27 +237,72 @@ get_sysinfo()
         fi
         if test ! -z "$PKGFMRI"; then
             # The format is "pkg://solaris/system/kernel@0.5.11,5.11-0.161:20110315T070332Z"
+            #            or "pkg://solaris/system/kernel@5.12,5.11-5.12.0.0.0.4.1:20120908T030246Z"
             #            or "pkg://solaris/system/kernel@0.5.11,5.11-0.175.0.0.0.1.0:20111012T032837Z"
-            STR_KERN=`echo "$PKGFMRI" | sed 's/^.*\@//;s/\:.*//;s/.*,//'`
-            if test ! -z "$STR_KERN"; then
-                # The format is "5.11-0.161" or "5.11-0.175.0.0.0.1.0"
-                HOST_OS_MAJORVERSION=`echo "$STR_KERN" | cut -f1 -d'-'`
-                HOST_OS_MINORVERSION=`echo "$STR_KERN" | cut -f2 -d'-' | cut -f2 -d '.'`
+            #            or "pkg://solaris/system/kernel@5.12-5.12.0.0.0.9.1.3.0:20121012T032837Z"
+            STR_KERN_MAJOR=`echo "$PKGFMRI" | sed 's/^.*\@//;s/\,.*//'`
+            if test ! -z "$STR_KERN_MAJOR"; then
+                # The format is "0.5.11" or "5.12"
+                # Let us just hardcode these for now, instead of trying to do things more generically. It's not
+                # worth trying to bring more order to chaos as it's clear that the version numbering is subject to breakage
+                # as it has been seen in the past.
+                if test "$STR_KERN_MAJOR" = "5.12"; then
+                    HOST_OS_MAJORVERSION="12"
+                elif test "$STR_KERN_MAJOR" = "0.5.11" || test "$STR_KERN_MAJOR" = "5.11"; then
+                    HOST_OS_MAJORVERSION="11"
+                else
+                    # This could be the PSARC/2012/240 naming scheme for S12.
+                    # The format is "pkg://solaris/system/kernel@5.12-5.12.0.0.0.9.1.3.0:20121012T032837Z"
+                    # The "5.12" following the "@" is the nominal version which we ignore for now as it is
+                    # not set by most pkg(5) tools...
+                    # STR_KERN_MAJOR is now of the format "5.12-5.12.0.0.0.9.1.3.0:20121012T032837Z" with '9' representing
+                    # the build number.
+                    BRANCH_VERSION=STR_KERN_MAJOR
+                    HOST_OS_MAJORVERSION=`echo "$BRANCH_VERSION" | cut -f2 -d'-' | cut -f1,2 -d'.'`
+                    if test "HOST_OS_MAJORVERSION" = "5.12"; then
+                        HOST_OS_MINORVERSION=`echo "$BRANCH_VERSION" | cut -f2 -d'-' | cut -f6 -d'.'`
+                        return 0
+                    else
+                        errorprint "Failed to parse the Solaris kernel major version."
+                        exit 1
+                    fi
+                fi
+
+                # This applies only to S11 and S12 where the transitional "@5.12," component version is
+                # still part of the pkg(5) package FMRI. The regular S12 will follow the PSARC/2012/240 naming scheme above.
+                STR_KERN_MINOR=`echo "$PKGFMRI" | sed 's/^.*\@//;s/\:.*//;s/.*,//'`
+                if test ! -z "$STR_KERN_MINOR"; then
+                    # The HOST_OS_MINORVERSION is represented as follows:
+                    # For S12 it represents the build numbers. e.g. for 4  :  "5.11-5.12.0.0.0.4.1"
+                    # For S11 as the "nevada" version numbers. e.g. for 175:  "5.11-0.161" or "5.11-0.175.0.0.0.1.0"
+                    if test "$HOST_OS_MAJORVERSION" -eq 12; then
+                        HOST_OS_MINORVERSION=`echo "$STR_KERN_MINOR" | cut -f2 -d'-' | cut -f6 -d'.'`
+                    elif test "$HOST_OS_MAJORVERSION" -eq 11; then
+                        HOST_OS_MINORVERSION=`echo "$STR_KERN_MINOR" | cut -f2 -d'-' | cut -f2 -d'.'`
+                    else
+                        errorprint "Solaris kernel major version $HOST_OS_MAJORVERSION not supported."
+                        exit 1
+                    fi
+                else
+                    errorprint "Failed to parse the Solaris kernel minor version."
+                    exit 1
+                fi
             else
-                errorprint "Failed to parse the Solaris kernel version."
+                errorprint "Failed to parse the Solaris kernel package version."
                 exit 1
-            fi        
+            fi
         else
-            errorprint "Failed to detect the Solaris kernel version."
+            errorprint "Failed to detect the Solaris kernel package FMRI."
             exit 1
         fi
     else
         HOST_OS_MAJORVERSION=`uname -r`
         if test -z "$HOST_OS_MAJORVERSION" || test "$HOST_OS_MAJORVERSION" != "5.10";  then
-            # S11 without 'pkg' ?? Something's wrong... bail.
-            errorprint "Solaris $HOST_OS_MAJOR_VERSION detected without executable $BIN_PKG !? Confused."
+            # S11 without 'pkg'?? Something's wrong... bail.
+            errorprint "Solaris $HOST_OS_MAJORVERSION detected without executable $BIN_PKG !? I are confused."
             exit 1
         fi
+        HOST_OS_MAJORVERSION="10"
         if test "$REMOTEINST" -eq 0; then
             # Use uname to verify it's S10.
             # Major version is S10, Minor version is no longer relevant (or used), use uname -v so it gets something
@@ -273,7 +319,7 @@ get_sysinfo()
 
             REMOTE_S10=`$BIN_PKGCHK -l -p /kernel/amd64/genunix $BASEDIR_PKGOPT 2> /dev/null | grep SUNWckr | tr -d ' \t'`
             if test ! -z "$REMOTE_S10" && test "$REMOTE_S10" = "SUNWckr"; then
-                HOST_OS_MAJORVERSION="5.10"
+                HOST_OS_MAJORVERSION="10"
                 HOST_OS_MINORVERSION=""
             else
                 errorprint "Remote target $PKG_INSTALL_ROOT is not Solaris 10."
@@ -535,9 +581,9 @@ install_drivers()
 {
     if test -f "$DIR_CONF/vboxdrv.conf"; then
         if test -n "_HARDENED_"; then
-            add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0600 root sys'"
+            add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0600 root sys','vboxdrvu 0666 root sys'"
         else
-            add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0666 root sys'"
+            add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0666 root sys','vboxdrvu 0666 root sys'"
         fi
         load_module "drv/$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP"
     else
@@ -545,23 +591,25 @@ install_drivers()
         return 1
     fi
 
-    # Add vboxdrv to devlink.tab
+    ## Add vboxdrv to devlink.tab (KEEP TABS!)
+    # clean up devlink.tab (KEEP TABS!)
     if test -f "$PKG_INSTALL_ROOT/etc/devlink.tab"; then
-        sed -e '/name=vboxdrv/d' "$PKG_INSTALL_ROOT/etc/devlink.tab" > "$PKG_INSTALL_ROOT/etc/devlink.vbox"
-        echo "type=ddi_pseudo;name=vboxdrv	\D" >> "$PKG_INSTALL_ROOT/etc/devlink.vbox"
+        sed -e '/name=vboxdrv/d' -e '/name=vboxdrvu/d' "$PKG_INSTALL_ROOT/etc/devlink.tab" > "$PKG_INSTALL_ROOT/etc/devlink.vbox"
+        #echo "type=ddi_pseudo;name=vboxdrv;minor=vboxdrv	\D"  >> "$PKG_INSTALL_ROOT/etc/devlink.vbox"
+        #echo "type=ddi_pseudo;name=vboxdrv;minor=vboxdrvu	\M0" >> "$PKG_INSTALL_ROOT/etc/devlink.vbox"
         mv -f "$PKG_INSTALL_ROOT/etc/devlink.vbox" "$PKG_INSTALL_ROOT/etc/devlink.tab"
     else
         errorprint "Missing $PKG_INSTALL_ROOT/etc/devlink.tab, aborting install"
         return 1
     fi
 
-    # Create the device link for non-remote installs
+    # Create the device link for non-remote installs (not really relevant any more)
     if test "$REMOTEINST" -eq 0; then
         /usr/sbin/devfsadm -i "$MOD_VBOXDRV"
-        if test $? -ne 0 || test ! -h "/dev/vboxdrv"; then
-            errorprint "Failed to create device link for $MOD_VBOXDRV."
-            exit 1
-        fi
+        #if test $? -ne 0 || test ! -h "/dev/vboxdrv" || test ! -h "/dev/vboxdrvu" ; then
+        #    errorprint "Failed to create device link for $MOD_VBOXDRV."
+        #    exit 1
+        #fi
     fi
 
     # Load VBoxNetAdp
@@ -579,13 +627,14 @@ install_drivers()
 
     # If the force-install files exists, install blindly
     if test -f "$PKG_INSTALL_ROOT/etc/vboxinst_vboxflt"; then
+        subprint "Detected: Force-load file $PKG_INSTALL_ROOT/etc/vboxinst_vboxflt."
         load_vboxflt
     elif test -f "$PKG_INSTALL_ROOT/etc/vboxinst_vboxbow"; then
-        infoprint "here"
+        subprint "Detected: Force-load file $PKG_INSTALL_ROOT/etc/vboxinst_vboxbow."
         load_vboxbow
     else
         # If host is S10 or S11 (< snv_159) or vboxbow isn't shipped, then load vboxflt
-        if test "$HOST_OS_MAJORVERSION" = "5.10" || test "$HOST_OS_MINORVERSION" -lt 159 || test ! -f "$DIR_CONF/vboxbow.conf"; then
+        if test "$HOST_OS_MAJORVERSION" -eq 10 || (test "$HOST_OS_MAJORVERSION" -eq 11 && test "$HOST_OS_MINORVERSION" -lt 159) || test ! -f "$DIR_CONF/vboxbow.conf"; then
             load_vboxflt
         else
             # For S11 snv_159+ load vboxbow
@@ -594,9 +643,9 @@ install_drivers()
     fi
 
     # Load VBoxUSBMon, VBoxUSB
-    if test -f "$DIR_CONF/vboxusbmon.conf" && test "$HOST_OS_MAJORVERSION" != "5.10"; then
-        # For VirtualBox 3.1 the new USB code requires Nevada > 123
-        if test "$HOST_OS_MINORVERSION" -gt 123; then
+    if test -f "$DIR_CONF/vboxusbmon.conf" && test "$HOST_OS_MAJORVERSION" != "10"; then
+        # For VirtualBox 3.1 the new USB code requires Nevada > 123 i.e. S12+ or S11 b124+
+        if test "$HOST_OS_MAJORVERSION" -gt 11 || (test "$HOST_OS_MAJORVERSION" -eq 11 && test "$HOST_OS_MINORVERSION" -gt 123); then
             # Add a group "vboxuser" (8-character limit) for USB access.
             # All users which need host USB-passthrough support will have to be added to this group.
             groupadd vboxuser >/dev/null 2>&1
@@ -629,11 +678,7 @@ install_drivers()
                 load_module "drv/$MOD_VBOXUSB" "$DESC_VBOXUSB" "$FATALOP"
             fi
         else
-            if test -n "$HOST_OS_MINORVERSION"; then
-                warnprint "Solaris 5.11 build 124 or higher required for USB support. Skipped installing USB support."
-            else
-                warnprint "Failed to determine Solaris 5.11 snv version. Skipped installing USB support."
-            fi
+            warnprint "Solaris 11 build 124 or higher required for USB support. Skipped installing USB support."
         fi
     fi
 
@@ -684,6 +729,9 @@ remove_drivers()
     if test -h "$PKG_INSTALL_ROOT/dev/vboxdrv" || test -f "$PKG_INSTALL_ROOT/dev/vboxdrv"; then
         rm -f "$PKG_INSTALL_ROOT/dev/vboxdrv"
     fi
+    if test -h "$PKG_INSTALL_ROOT/dev/vboxdrvu" || test -f "$PKG_INSTALL_ROOT/dev/vboxdrvu"; then
+        rm -f "$PKG_INSTALL_ROOT/dev/vboxdrvu"
+    fi
     if test -h "$PKG_INSTALL_ROOT/dev/vboxusbmon" || test -f "$PKG_INSTALL_ROOT/dev/vboxusbmon"; then
         rm -f "$PKG_INSTALL_ROOT/dev/vboxusbmon"
     fi
@@ -733,6 +781,13 @@ install_python_bindings()
     pythonbin=$1
     pythondesc=$2
     if test -x "$pythonbin"; then
+        # check if python has working distutils
+        $pythonbin -c "from distutils.core import setup" > /dev/null 2>&1
+        if test "$?" -ne 0; then
+            subprint "Skipped: $pythondesc install is unusable"
+            return 0
+        fi
+
         VBOX_INSTALL_PATH="$DIR_VBOXBASE"
         export VBOX_INSTALL_PATH
         cd $DIR_VBOXBASE/sdk/installer
@@ -745,6 +800,24 @@ install_python_bindings()
     return 1
 }
 
+# is_process_running(processname)
+# returns 1 if the process is running, 0 otherwise
+is_process_running()
+{
+    if test -z "$1"; then
+        errorprint "missing argument to is_process_running()"
+        exit 1
+    fi
+
+    procname=$1
+    procpid=`ps -eo pid,fname | grep $procname | grep -v grep | awk '{ print $1 }'`
+    if test ! -z "$procpid" && test "$procpid" -ge 0; then
+        return 1
+    fi
+    return 0
+}
+
+
 # stop_process(processname)
 # failure: depends on [fatal]
 stop_process()
@@ -754,6 +827,7 @@ stop_process()
         exit 1
     fi
 
+    # @todo use is_process_running()
     procname=$1
     procpid=`ps -eo pid,fname | grep $procname | grep -v grep | awk '{ print $1 }'`
     if test ! -z "$procpid" && test "$procpid" -ge 0; then
@@ -884,8 +958,40 @@ cleanup_install()
     done
 
     # Stop our other daemons, non-fatal
-    stop_process VBoxSVC
-    stop_process VBoxNetDHCP
+    stop_process "VBoxNetDHCP"
+    stop_process "VBoxNetNAT"
+
+   # Stop VBoxSVC quickly using SIGUSR1
+    procname="VBoxSVC"
+    procpid=`ps -eo pid,fname | grep $procname | grep -v grep | awk '{ print $1 }'`
+    if test ! -z "$procpid" && test "$procpid" -ge 0; then
+        kill -USR1 $procpid
+
+        # Sleep a while and check if VBoxSVC is still running, if so fail uninstallation.
+        sleep 2
+        is_process_running "VBoxSVC"
+        if test "$?" -eq 1; then
+            errorprint "Cannot uninstall VirtualBox while VBoxSVC (pid $procpid) is still running."
+            errorprint "Please shutdown all VMs and VirtualBox frontends before uninstalling VirtualBox."
+            exit 1
+        fi
+
+        # Some VMs might still be alive after VBoxSVC as they poll less frequently before killing themselves
+        # Just check for VBoxHeadless & VirtualBox frontends for now.
+        is_process_running "VBoxHeadless"
+        if test "$?" -eq 1; then
+            errorprint "Cannot uninstall VirtualBox while VBoxHeadless is still running."
+            errorprint "Please shutdown all VMs and VirtualBox frontends before uninstalling VirtualBox."
+            exit 1
+        fi
+
+        is_process_running "VirtualBox"
+        if test "$?" -eq 1; then
+            errorprint "Cannot uninstall VirtualBox while any VM is still running."
+            errorprint "Please shutdown all VMs and VirtualBox frontends before uninstalling VirtualBox."
+            exit 1
+        fi
+    fi
 }
 
 
@@ -918,8 +1024,8 @@ postinstall()
 
             # plumb and configure vboxnet0 for non-remote installs
             if test "$REMOTEINST" -eq 0; then
-                # S11 175a renames vboxnet0 as 'netX', undo this and rename it back
-                if test "$HOST_OS_MAJORVERSION" = "5.11" && test "$HOST_OS_MINORVERSION" -gt 174; then
+                # S11 175a renames vboxnet0 as 'netX', undo this and rename it back (S12+ or S11 b175+)
+                if test "$HOST_OS_MAJORVERSION" -gt 11 || (test "$HOST_OS_MAJORVERSION" -eq 11 && test "$HOST_OS_MINORVERSION" -gt 174); then
                     vanityname=`dladm show-phys -po link,device | grep vboxnet0 | cut -f1 -d':'`
                     if test $? -eq 0 && test ! -z "$vanityname" && test "$vanityname" != "vboxnet0"; then
                         dladm rename-link "$vanityname" vboxnet0
@@ -950,13 +1056,13 @@ postinstall()
                         sed -e '/#VirtualBox_SectionStart/,/#VirtualBox_SectionEnd/d' $nmaskfile > $nmaskbackupfile
 
                         if test $recreatelink -eq 1; then
-                            # Check after removing our settings if /etc/netmasks is identifcal to /etc/inet/netmasks 
+                            # Check after removing our settings if /etc/netmasks is identifcal to /etc/inet/netmasks
                             anydiff=`diff $nmaskbackupfile "$PKG_INSTALL_ROOT/etc/inet/netmasks"`
                             if test ! -z "$anydiff"; then
                                 # User may have some custom settings in /etc/netmasks, don't overwrite /etc/netmasks!
                                 recreatelink=2
                             fi
-                        fi                        
+                        fi
 
                         echo "#VirtualBox_SectionStart" >> $nmaskbackupfile
                         inst=0
@@ -998,10 +1104,14 @@ postinstall()
             if test "$REMOTEINST" -eq 1; then
                 subprint "Skipped for targetted installs."
             else
-                # Start ZoneAccess service, other services are disabled by default.
+                # Since S11 the way to import a manifest is via restarting manifest-import which is asynchronous and can
+                # take a while to complete, using disable/enable -s doesn't work either. So we restart it, and poll in
+                # 1 second intervals to see if our service has been successfully imported and timeout after 'cmax' seconds.
                 $BIN_SVCADM restart svc:system/manifest-import:default
+
+                # Start ZoneAccess service, other services are disabled by default.
                 start_service "Zone access service" "virtualbox/zoneaccess" "svc:/application/virtualbox/zoneaccess:default" \
-                                "/var/svc/log/application-virtualbox-zoneaccess:default.log"
+                            "/var/svc/log/application-virtualbox-zoneaccess:default.log"
             fi
         fi
 
@@ -1032,7 +1142,7 @@ postinstall()
                         INSTALLEDIT=0
                     fi
                     PYTHONBIN=`which python2.5 2>/dev/null`
-                    install_python_bindings "$PYTHONBIN"  "Python 2.5"
+                    install_python_bindings "$PYTHONBIN" "Python 2.5"
                     if test "$?" -eq 0; then
                         INSTALLEDIT=0
                     fi
@@ -1058,7 +1168,7 @@ postinstall()
         fi
 
         update_boot_archive
-    
+
         return 0
     else
         errorprint "Failed to install drivers"
@@ -1116,12 +1226,17 @@ do
             # Use alternate kernel driver config folder (dev only)
             DIR_CONF="/usr/kernel/drv"
             ;;
+        --sh-trace) # forwarded pkgadd -v 
+            set -x
+            ;;
         --help)
             printusage
             exit 1
             ;;
         *)
-            break
+            # Take a hard line on invalid options.
+            errorprint "Invalid command line option: \"$1\""
+            exit 1;
             ;;
     esac
     shift

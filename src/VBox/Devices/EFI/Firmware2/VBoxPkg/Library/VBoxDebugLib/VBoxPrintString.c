@@ -1,10 +1,10 @@
-/* $Id: VBoxPrintString.c 29085 2010-05-05 14:03:59Z vboxsync $ */
+/* $Id: VBoxPrintString.c $ */
 /** @file
  * VBoxPrintString.c - Implementation of the VBoxPrintString() debug logging routine.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

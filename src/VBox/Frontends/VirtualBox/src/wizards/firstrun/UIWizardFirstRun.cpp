@@ -1,4 +1,4 @@
-/* $Id: UIWizardFirstRun.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: UIWizardFirstRun.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -81,7 +81,7 @@ bool UIWizardFirstRun::insertMedium()
         return true;
     else
     {
-        msgCenter().cannotRemountMedium(this, m_machine, vmedium, true /* mount? */, false /* retry? */);
+        msgCenter().cannotRemountMedium(m_machine, vmedium, true /* mount? */, false /* retry? */, this);
         return false;
     }
 }

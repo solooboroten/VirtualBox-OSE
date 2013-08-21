@@ -1,10 +1,10 @@
-/* $Id: timer-posix.cpp 39093 2011-10-24 14:01:50Z vboxsync $ */
+/* $Id: timer-posix.cpp $ */
 /** @file
  * IPRT - Timer, POSIX.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -57,6 +57,7 @@
 #include <iprt/string.h>
 #include <iprt/once.h>
 #include <iprt/err.h>
+#include <iprt/initterm.h>
 #include <iprt/critsect.h>
 #include "internal/magics.h"
 
@@ -152,14 +153,12 @@ typedef struct RTTIMER
  * RTOnce callback that initializes the critical section.
  *
  * @returns RTCritSectInit return code.
- * @param   pvUser1     NULL, ignored.
- * @param   pvUser2     NULL, ignored.
+ * @param   pvUser      NULL, ignored.
  *
  */
-static DECLCALLBACK(int) rtTimerOnce(void *pvUser1, void *pvUser2)
+static DECLCALLBACK(int) rtTimerOnce(void *pvUser)
 {
-    NOREF(pvUser1);
-    NOREF(pvUser2);
+    NOREF(pvUser);
     return RTCritSectInit(&g_TimerCritSect);
 }
 #endif
@@ -406,6 +405,13 @@ RTDECL(int) RTTimerCreateEx(PRTTIMER *ppTimer, uint64_t u64NanoInterval, uint32_
     if (fFlags & RTTIMER_FLAGS_CPU_SPECIFIC)
         return VERR_NOT_SUPPORTED;
 
+    /*
+     * We need the signal masks to be set correctly, which they won't be in
+     * unobtrusive mode.
+     */
+    if (RTR3InitIsUnobtrusive())
+        return VERR_NOT_SUPPORTED;
+
 #ifndef IPRT_WITH_POSIX_TIMERS
     /*
      * Check if timer is busy.
@@ -539,7 +545,7 @@ RTDECL(int) RTTimerCreateEx(PRTTIMER *ppTimer, uint64_t u64NanoInterval, uint32_
     /*
      * Do the global init first.
      */
-    int rc = RTOnce(&g_TimerOnce, rtTimerOnce, NULL, NULL);
+    int rc = RTOnce(&g_TimerOnce, rtTimerOnce, NULL);
     if (RT_FAILURE(rc))
         return rc;
 

@@ -1,10 +1,10 @@
-/** $Id: VBoxGuestR3LibDaemonize.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/** $Id: VBoxGuestR3LibDaemonize.cpp $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, daemonize a process.
  */
 
 /*
- * Copyright (C) 2007-2009 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -28,10 +28,7 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#if defined(RT_OS_DARWIN)
-# error "PORTME"
-
-#elif defined(RT_OS_OS2)
+#if defined(RT_OS_OS2)
 # define INCL_BASE
 # define INCL_ERRORS
 # include <os2.h>
@@ -73,10 +70,7 @@
  */
 VBGLR3DECL(int) VbglR3Daemonize(bool fNoChDir, bool fNoClose)
 {
-#if defined(RT_OS_DARWIN)
-# error "PORTME"
-
-#elif defined(RT_OS_OS2)
+#if defined(RT_OS_OS2)
     PPIB pPib;
     PTIB pTib;
     DosGetInfoBlocks(&pTib, &pPib);

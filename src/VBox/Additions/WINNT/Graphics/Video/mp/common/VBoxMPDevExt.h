@@ -1,11 +1,11 @@
-/* $Id: VBoxMPDevExt.h 41638 2012-06-09 16:58:09Z vboxsync $ */
+/* $Id: VBoxMPDevExt.h $ */
 
 /** @file
  * VBox Miniport device extension header
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,6 +30,9 @@
 #endif
 
 #ifdef VBOX_WDDM_MINIPORT
+# ifdef VBOX_WDDM_WIN8
+extern DWORD g_VBoxDisplayOnly;
+# endif
 # include "wddm/VBoxMPTypes.h"
 #endif
 
@@ -60,6 +63,8 @@ typedef struct VBOXMP_COMMON
     HGSMIHOSTCOMMANDCONTEXT hostCtx;
     /** Context information needed to submit commands to the host. */
     HGSMIGUESTCOMMANDCONTEXT guestCtx;
+
+    BOOLEAN fAnyX;                      /* Unrestricted horizontal resolution flag. */
 } VBOXMP_COMMON, *PVBOXMP_COMMON;
 
 typedef struct _VBOXMP_DEVEXT
@@ -79,6 +84,11 @@ typedef struct _VBOXMP_DEVEXT
 
    ULONG ulFrameBufferOffset;                  /* The framebuffer position in the VRAM. */
    ULONG ulFrameBufferSize;                    /* The size of the current framebuffer. */
+
+   uint8_t  iInvocationCounter;
+   uint32_t Prev_xres;
+   uint32_t Prev_yres;
+   uint32_t Prev_bpp;
 #endif /*VBOX_XPDM_MINIPORT*/
 
 #ifdef VBOX_WDDM_MINIPORT
@@ -95,7 +105,7 @@ typedef struct _VBOXMP_DEVEXT
    LIST_ENTRY DpcCmdQueue;
    LIST_ENTRY SwapchainList3D;
    /* mutex for context list operations */
-   FAST_MUTEX ContextMutex;
+   KSPIN_LOCK ContextLock;
    KSPIN_LOCK SynchLock;
    volatile uint32_t cContexts3D;
    volatile uint32_t cContexts2D;
@@ -104,7 +114,13 @@ typedef struct _VBOXMP_DEVEXT
    /* this is examined and swicthed by DxgkDdiSubmitCommand only! */
    volatile BOOLEAN fRenderToShadowDisabled;
 
+   BOOLEAN f3DEnabled;
+   BOOLEAN fTexPresentEnabled;
+
+   uint32_t u32CrConDefaultClientID;
+
    VBOXMP_CRCTLCON CrCtlCon;
+   VBOXMP_CRSHGSMITRANSPORT CrHgsmiTransport;
 
    VBOXWDDM_GLOBAL_POINTER_INFO PointerInfo;
 
@@ -166,7 +182,6 @@ typedef struct _VBOXMP_DEVEXT
    } u;
 
    HGSMIAREA areaDisplay;                      /* Entire VRAM chunk for this display device. */
-   BOOLEAN fAnyX;                              /* Unrestricted horizontal resolution flag. */
 } VBOXMP_DEVEXT, *PVBOXMP_DEVEXT;
 
 DECLINLINE(PVBOXMP_DEVEXT) VBoxCommonToPrimaryExt(PVBOXMP_COMMON pCommon)

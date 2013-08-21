@@ -1,4 +1,4 @@
-/* $Id: ldrMach-O.h 43192 2012-09-05 10:05:20Z vboxsync $ */
+/* $Id: ldrMach-O.h $ */
 /** @file
  * IPRT - Mach-O Structures and Constants.
  */

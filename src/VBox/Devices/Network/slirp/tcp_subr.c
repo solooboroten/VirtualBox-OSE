@@ -1,10 +1,10 @@
-/* $Id: tcp_subr.c 42100 2012-07-11 07:19:03Z vboxsync $ */
+/* $Id: tcp_subr.c $ */
 /** @file
  * NAT - TCP support.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

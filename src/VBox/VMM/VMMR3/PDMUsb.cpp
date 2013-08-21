@@ -1,10 +1,10 @@
-/* $Id: PDMUsb.cpp 42139 2012-07-13 09:53:34Z vboxsync $ */
+/* $Id: PDMUsb.cpp $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, USB part.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -28,6 +28,7 @@
 #include <VBox/vmm/vmm.h>
 #include <VBox/sup.h>
 #include <VBox/vmm/vm.h>
+#include <VBox/vmm/uvm.h>
 #include <VBox/version.h>
 #include <VBox/err.h>
 
@@ -225,7 +226,8 @@ static DECLCALLBACK(int) pdmR3UsbReg_Register(PCPDMUSBREGCB pCallbacks, PCPDMUSB
                     &&  pdmR3IsValidName(pReg->szName),
                     ("Invalid name '%.s'\n", sizeof(pReg->szName), pReg->szName),
                     VERR_PDM_INVALID_USB_REGISTRATION);
-    AssertMsgReturn(pReg->fFlags == 0, ("fFlags=%#x\n", pReg->fFlags), VERR_PDM_INVALID_USB_REGISTRATION);
+    AssertMsgReturn((pReg->fFlags & ~(PDM_USBREG_HIGHSPEED_CAPABLE)) == 0,
+                    ("fFlags=%#x\n", pReg->fFlags), VERR_PDM_INVALID_USB_REGISTRATION);
     AssertMsgReturn(pReg->cMaxInstances > 0,
                     ("Max instances %u! (USB Device %s)\n", pReg->cMaxInstances, pReg->szName),
                     VERR_PDM_INVALID_USB_REGISTRATION);
@@ -578,6 +580,7 @@ static int pdmR3UsbCreateDevice(PVM pVM, PPDMUSBHUB pHub, PPDMUSB pUsbDev, int i
     pUsbIns->pszName                        = RTStrDup(pUsbDev->pReg->szName);
     //pUsbIns->fTracing                       = 0;
     pUsbIns->idTracing                      = ++pVM->pdm.s.idTracingOther;
+    pUsbIns->iUsbHubVersion                 = iUsbVersion;
 
     /*
      * Link it into all the lists.
@@ -799,11 +802,15 @@ int pdmR3UsbInstantiateDevices(PVM pVM)
         }
         CFGMR3SetRestrictedRoot(pConfigNode);
 
-        /** @todo
-         * Figure out the USB version from the USB device registration and the configuration.
+        /*
+         * Every device must support USB 1.x hubs; optionally, high-speed USB 2.0 hubs
+         * might be also supported. This determines where to attach the device.
          */
         uint32_t iUsbVersion = VUSB_STDVER_11;
 
+        if (paUsbDevs[i].pUsbDev->pReg->fFlags & PDM_USBREG_HIGHSPEED_CAPABLE)
+            iUsbVersion |= VUSB_STDVER_20;
+        
         /*
          * Find a suitable hub with free ports.
          */
@@ -814,6 +821,12 @@ int pdmR3UsbInstantiateDevices(PVM pVM)
             Log(("pdmR3UsbFindHub failed %Rrc\n", rc));
             return rc;
         }
+
+        /*
+         * This is how we inform the device what speed it's communicating at, and hence
+         * which descriptors it should present to the guest.
+         */
+        iUsbVersion &= pHub->fVersions;
 
         /*
          * Create and attach the device.
@@ -837,7 +850,7 @@ int pdmR3UsbInstantiateDevices(PVM pVM)
  * and try instantiate the proxy device.
  *
  * @returns VBox status code.
- * @param   pVM             Pointer to the VM.
+ * @param   pUVM            The user mode VM handle.
  * @param   pUuid           The UUID to be associated with the device.
  * @param   fRemote         Whether it's a remove or local device.
  * @param   pszAddress      The address string.
@@ -845,12 +858,15 @@ int pdmR3UsbInstantiateDevices(PVM pVM)
  * @param   iUsbVersion     The preferred USB version.
  * @param   fMaskedIfs      The interfaces to hide from the guest.
  */
-VMMR3DECL(int) PDMR3USBCreateProxyDevice(PVM pVM, PCRTUUID pUuid, bool fRemote, const char *pszAddress, void *pvBackend,
+VMMR3DECL(int) PDMR3UsbCreateProxyDevice(PUVM pUVM, PCRTUUID pUuid, bool fRemote, const char *pszAddress, void *pvBackend,
                                          uint32_t iUsbVersion, uint32_t fMaskedIfs)
 {
     /*
      * Validate input.
      */
+    UVM_ASSERT_VALID_EXT_RETURN(pUVM, VERR_INVALID_VM_HANDLE);
+    PVM pVM = pUVM->pVM;
+    VM_ASSERT_VALID_EXT_RETURN(pVM, VERR_INVALID_VM_HANDLE);
     VM_ASSERT_EMT(pVM);
     AssertPtrReturn(pUuid, VERR_INVALID_POINTER);
     AssertPtrReturn(pszAddress, VERR_INVALID_POINTER);
@@ -863,7 +879,7 @@ VMMR3DECL(int) PDMR3USBCreateProxyDevice(PVM pVM, PCRTUUID pUuid, bool fRemote, 
     PPDMUSB pUsbDev = pdmR3UsbLookup(pVM, "USBProxy");
     if (!pUsbDev)
     {
-        LogRel(("PDMR3USBCreateProxyDevice: The USBProxy device class wasn't found\n"));
+        LogRel(("PDMR3UsbCreateProxyDevice: The USBProxy device class wasn't found\n"));
         return VERR_PDM_NO_USBPROXY;
     }
 
@@ -881,7 +897,7 @@ VMMR3DECL(int) PDMR3USBCreateProxyDevice(PVM pVM, PCRTUUID pUuid, bool fRemote, 
     /*
      * Create the CFGM configuration node.
      */
-    PCFGMNODE pConfig = CFGMR3CreateTree(pVM);
+    PCFGMNODE pConfig = CFGMR3CreateTree(pUVM);
     AssertReturn(pConfig, VERR_NO_MEMORY);
     do /* break loop */
     {
@@ -898,12 +914,12 @@ VMMR3DECL(int) PDMR3USBCreateProxyDevice(PVM pVM, PCRTUUID pUuid, bool fRemote, 
     if (RT_FAILURE(rc))
     {
         CFGMR3RemoveNode(pConfig);
-        LogRel(("PDMR3USBCreateProxyDevice: failed to setup CFGM config, rc=%Rrc\n", rc));
+        LogRel(("PDMR3UsbCreateProxyDevice: failed to setup CFGM config, rc=%Rrc\n", rc));
         return rc;
     }
 
     /*
-     * Finally, try create it.
+     * Finally, try to create it.
      */
     rc = pdmR3UsbCreateDevice(pVM, pHub, pUsbDev, -1, pUuid, NULL, &pConfig, iUsbVersion);
     if (RT_FAILURE(rc) && pConfig)
@@ -953,6 +969,9 @@ static void pdmR3UsbDestroyDevice(PVM pVM, PPDMUSBINS pUsbIns)
     TMR3TimerDestroyUsb(pVM, pUsbIns);
     //SSMR3DeregisterUsb(pVM, pUsbIns, NULL, 0);
     pdmR3ThreadDestroyUsb(pVM, pUsbIns);
+#ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
+    pdmR3AsyncCompletionTemplateDestroyUsb(pVM, pUsbIns);
+#endif
 
     /*
      * Unlink it.
@@ -1009,18 +1028,20 @@ static void pdmR3UsbDestroyDevice(PVM pVM, PPDMUSBINS pUsbIns)
  * Detaches and destroys a USB device.
  *
  * @returns VBox status code.
- * @param   pVM             Pointer to the VM.
+ * @param   pUVM            The user mode VM handle.
  * @param   pUuid           The UUID associated with the device to detach.
  * @thread  EMT
  */
-VMMR3DECL(int) PDMR3USBDetachDevice(PVM pVM, PCRTUUID pUuid)
+VMMR3DECL(int) PDMR3UsbDetachDevice(PUVM pUVM, PCRTUUID pUuid)
 {
     /*
      * Validate input.
      */
+    UVM_ASSERT_VALID_EXT_RETURN(pUVM, VERR_INVALID_VM_HANDLE);
+    PVM pVM = pUVM->pVM;
+    VM_ASSERT_VALID_EXT_RETURN(pVM, VERR_INVALID_VM_HANDLE);
     VM_ASSERT_EMT(pVM);
     AssertPtrReturn(pUuid, VERR_INVALID_POINTER);
-    AssertPtrReturn(pVM, VERR_INVALID_POINTER);
 
     /*
      * Search the global list for it.
@@ -1064,10 +1085,13 @@ VMMR3DECL(int) PDMR3USBDetachDevice(PVM pVM, PCRTUUID pUuid)
  * Checks if there are any USB hubs attached.
  *
  * @returns true / false accordingly.
- * @param   pVM     Pointer to the VM.
+ * @param   pUVM        The user mode VM handle.
  */
-VMMR3DECL(bool) PDMR3USBHasHub(PVM pVM)
+VMMR3DECL(bool) PDMR3UsbHasHub(PUVM pUVM)
 {
+    UVM_ASSERT_VALID_EXT_RETURN(pUVM, false);
+    PVM pVM = pUVM->pVM;
+    VM_ASSERT_VALID_EXT_RETURN(pVM, false);
     return pVM->pdm.s.pUsbHubs != NULL;
 }
 
@@ -1440,6 +1464,32 @@ static DECLCALLBACK(void) pdmR3UsbHlp_AsyncNotificationCompleted(PPDMUSBINS pUsb
 }
 
 
+/** @interface_method_impl{PDMUSBHLP,pfnVMGetSuspendReason} */
+static DECLCALLBACK(VMSUSPENDREASON) pdmR3UsbHlp_VMGetSuspendReason(PPDMUSBINS pUsbIns)
+{
+    PDMUSB_ASSERT_USBINS(pUsbIns);
+    PVM pVM = pUsbIns->Internal.s.pVM;
+    VM_ASSERT_EMT(pVM);
+    VMSUSPENDREASON enmReason = VMR3GetSuspendReason(pVM->pUVM);
+    LogFlow(("pdmR3UsbHlp_VMGetSuspendReason: caller='%s'/%d: returns %d\n",
+             pUsbIns->pReg->szName, pUsbIns->iInstance, enmReason));
+    return enmReason;
+}
+
+
+/** @interface_method_impl{PDMUSBHLP,pfnVMGetResumeReason} */
+static DECLCALLBACK(VMRESUMEREASON) pdmR3UsbHlp_VMGetResumeReason(PPDMUSBINS pUsbIns)
+{
+    PDMUSB_ASSERT_USBINS(pUsbIns);
+    PVM pVM = pUsbIns->Internal.s.pVM;
+    VM_ASSERT_EMT(pVM);
+    VMRESUMEREASON enmReason = VMR3GetResumeReason(pVM->pUVM);
+    LogFlow(("pdmR3UsbHlp_VMGetResumeReason: caller='%s'/%d: returns %d\n",
+             pUsbIns->pReg->szName, pUsbIns->iInstance, enmReason));
+    return enmReason;
+}
+
+
 /**
  * The USB device helper structure.
  */
@@ -1463,6 +1513,18 @@ const PDMUSBHLP g_pdmR3UsbHlp =
     pdmR3UsbHlp_ThreadCreate,
     pdmR3UsbHlp_SetAsyncNotification,
     pdmR3UsbHlp_AsyncNotificationCompleted,
+    pdmR3UsbHlp_VMGetSuspendReason,
+    pdmR3UsbHlp_VMGetResumeReason,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
     PDM_USBHLP_VERSION
 };
 

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -347,6 +347,11 @@ typedef PPDMSRVINS *PPPDMSRVINS;
 typedef union PDMCRITSECT *PPDMCRITSECT;
 /** Pointer to a const PDM critical section. */
 typedef const union PDMCRITSECT *PCPDMCRITSECT;
+
+/** Pointer to a PDM read/write critical section. */
+typedef union PDMCRITSECTRW *PPDMCRITSECTRW;
+/** Pointer to a const PDM read/write critical section. */
+typedef union PDMCRITSECTRW const *PCPDMCRITSECTRW;
 
 /** R3 pointer to a timer. */
 typedef R3PTRTYPE(struct TMTIMER *) PTMTIMERR3;

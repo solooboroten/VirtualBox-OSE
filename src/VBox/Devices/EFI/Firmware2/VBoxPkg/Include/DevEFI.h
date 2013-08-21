@@ -1,4 +1,4 @@
-/* $Id: DevEFI.h 43146 2012-09-03 01:41:48Z vboxsync $ */
+/* $Id: DevEFI.h $ */
 /** @file
  * EFI for VirtualBox Common Definitions.
  *
@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -43,7 +43,7 @@
  * @todo Put this in DEVEFIINFO, that's much easier to access. */
 typedef enum
 {
-    EFI_INFO_INDEX_INVALID                    = 0,
+    EFI_INFO_INDEX_INVALID = 0,
     EFI_INFO_INDEX_VOLUME_BASE,
     EFI_INFO_INDEX_VOLUME_SIZE,
     EFI_INFO_INDEX_TEMPMEM_BASE,
@@ -58,9 +58,6 @@ typedef enum
     EFI_INFO_INDEX_GOP_MODE,
     EFI_INFO_INDEX_UGA_HORISONTAL_RESOLUTION,
     EFI_INFO_INDEX_UGA_VERTICAL_RESOLUTION,
-#ifdef VBOX_WITH_OVMF
-
-#endif
     EFI_INFO_INDEX_END
 } EfiInfoIndex;
 
@@ -69,6 +66,7 @@ typedef enum
  * see the EFI_PANIC_CMD_* defines below.
  * Reading from the port has no effect. */
 #define EFI_PANIC_PORT          (EFI_PORT_BASE+0x1)
+
 /** @defgroup grp_devefi_panic_cmd  Panic Commands for EFI_PANIC_PORT
  * @{ */
 /** Used by the EfiThunk.asm to signal ORG inconsistency. */
@@ -113,6 +111,7 @@ typedef enum
 
 #define EFI_VARIABLE_OP_QUERY        0xdead0001
 #define EFI_VARIABLE_OP_QUERY_NEXT   0xdead0002
+#define EFI_VARIABLE_OP_QUERY_REWIND 0xdead0003
 #define EFI_VARIABLE_OP_ADD          0xdead0010
 
 #define EFI_VARIABLE_OP_STATUS_OK         0xcafe0000
@@ -121,20 +120,29 @@ typedef enum
 #define EFI_VARIABLE_OP_STATUS_NOT_WP     0xcafe0003
 #define EFI_VARIABLE_OP_STATUS_BSY        0xcafe0010
 
-#define EFI_VARIABLE_NAME_MAX   1024
-#define EFI_VARIABLE_VALUE_MAX   1024
+/** The max number of variables allowed. */
+#define EFI_VARIABLE_MAX            128
+/** The max variable name length (in bytes, including the zero terminator). */
+#define EFI_VARIABLE_NAME_MAX       1024
+/** The max value length (in bytes). */
+#define EFI_VARIABLE_VALUE_MAX      1024
 
-typedef enum {
+typedef enum
+{
     EFI_VM_VARIABLE_OP_START = 0,
-    EFI_VM_VARIABLE_OP_END,
-    EFI_VM_VARIABLE_OP_INDEX,
+    EFI_VM_VARIABLE_OP_END, /**< @todo r=bird: What's the point of this one? */
+    EFI_VM_VARIABLE_OP_RESERVED_USED_TO_BE_INDEX,
     EFI_VM_VARIABLE_OP_GUID,
     EFI_VM_VARIABLE_OP_ATTRIBUTE,
     EFI_VM_VARIABLE_OP_NAME,
     EFI_VM_VARIABLE_OP_NAME_LENGTH,
     EFI_VM_VARIABLE_OP_VALUE,
     EFI_VM_VARIABLE_OP_VALUE_LENGTH,
-    EFI_VM_VARIABLE_OP_MAX
+    EFI_VM_VARIABLE_OP_ERROR,
+    EFI_VM_VARIABLE_OP_NAME_UTF16,
+    EFI_VM_VARIABLE_OP_NAME_LENGTH_UTF16,
+    EFI_VM_VARIABLE_OP_MAX,
+    EFI_VM_VARIABLE_OP_32BIT_HACK = 0x7fffffff
 } EFIVAROP;
 
 /**

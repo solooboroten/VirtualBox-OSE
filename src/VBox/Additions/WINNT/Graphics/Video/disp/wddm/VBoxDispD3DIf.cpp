@@ -1,11 +1,11 @@
-/* $Id: VBoxDispD3DIf.cpp 42557 2012-08-02 20:31:05Z vboxsync $ */
+/* $Id: VBoxDispD3DIf.cpp $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -27,18 +27,38 @@ void VBoxDispD3DClose(VBOXDISPD3D *pD3D)
     pD3D->hD3DLib = NULL;
 }
 
+/**
+ * Loads a system DLL.
+ *
+ * @returns Module handle or NULL
+ * @param   pszName             The DLL name.
+ */
+static HMODULE loadSystemDll(const char *pszName)
+{
+    char   szPath[MAX_PATH];
+    UINT   cchPath = GetSystemDirectoryA(szPath, sizeof(szPath));
+    size_t cbName  = strlen(pszName) + 1;
+    if (cchPath + 1 + cbName > sizeof(szPath))
+    {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE);
+        return NULL;
+    }
+    szPath[cchPath] = '\\';
+    memcpy(&szPath[cchPath + 1], pszName, cbName);
+    return LoadLibraryA(szPath);
+}
 
 HRESULT VBoxDispD3DOpen(VBOXDISPD3D *pD3D)
 {
 #ifdef VBOX_WDDM_WOW64
-    pD3D->hD3DLib = LoadLibraryW(L"VBoxD3D9wddm-x86.dll");
+    pD3D->hD3DLib = loadSystemDll("VBoxD3D9wddm-x86.dll");
 #else
-    pD3D->hD3DLib = LoadLibraryW(L"VBoxD3D9wddm.dll");
+    pD3D->hD3DLib = loadSystemDll("VBoxD3D9wddm.dll");
 #endif
     if (!pD3D->hD3DLib)
     {
         DWORD winErr = GetLastError();
-        WARN((__FUNCTION__": LoadLibraryW failed, winErr = (%d)", winErr));
+        WARN((__FUNCTION__": LoadLibrary failed, winErr = (%d)", winErr));
         return E_FAIL;
     }
 
@@ -65,6 +85,13 @@ HRESULT VBoxDispD3DOpen(VBOXDISPD3D *pD3D)
             break;
         }
 
+        pD3D->pfnVBoxWineExD3DDev9CreateVolumeTexture = (PFNVBOXWINEEXD3DDEV9_CREATEVOLUMETEXTURE)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9CreateVolumeTexture");
+        if (!pD3D->pfnVBoxWineExD3DDev9CreateVolumeTexture)
+        {
+            WARN(("no VBoxWineExD3DDev9CreateVolumeTexture"));
+            break;
+        }
+
         pD3D->pfnVBoxWineExD3DDev9Flush = (PFNVBOXWINEEXD3DDEV9_FLUSH)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9Flush");
         if (!pD3D->pfnVBoxWineExD3DDev9Flush)
         {
@@ -72,10 +99,31 @@ HRESULT VBoxDispD3DOpen(VBOXDISPD3D *pD3D)
             break;
         }
 
-        pD3D->pfnVBoxWineExD3DDev9Update = (PFNVBOXWINEEXD3DDEV9_UPDATE)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9Update");
-        if (!pD3D->pfnVBoxWineExD3DDev9Update)
+        pD3D->pfnVBoxWineExD3DDev9FlushToHost = (PFNVBOXWINEEXD3DDEV9_FLUSHTOHOST)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9FlushToHost");
+        if (!pD3D->pfnVBoxWineExD3DDev9FlushToHost)
         {
-            WARN(("no VBoxWineExD3DDev9Update"));
+            WARN(("no VBoxWineExD3DDev9FlushToHost"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DDev9Finish = (PFNVBOXWINEEXD3DDEV9_FINISH)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9Finish");
+        if (!pD3D->pfnVBoxWineExD3DDev9Finish)
+        {
+            WARN(("no VBoxWineExD3DDev9Finish"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DDev9VolBlt = (PFNVBOXWINEEXD3DDEV9_VOLBLT)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9VolBlt");
+        if (!pD3D->pfnVBoxWineExD3DDev9VolBlt)
+        {
+            WARN(("no VBoxWineExD3DDev9VolBlt"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DDev9VolTexBlt = (PFNVBOXWINEEXD3DDEV9_VOLTEXBLT)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9VolTexBlt");
+        if (!pD3D->pfnVBoxWineExD3DDev9VolTexBlt)
+        {
+            WARN(("no VBoxWineExD3DDev9VolTexBlt"));
             break;
         }
 
@@ -86,17 +134,38 @@ HRESULT VBoxDispD3DOpen(VBOXDISPD3D *pD3D)
             break;
         }
 
-        pD3D->pfnVBoxWineExD3DRc9SetShRcState = (PFNVBOXWINEEXD3DRC9_SETSHRCSTATE)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DRc9SetShRcState");
-        if (!pD3D->pfnVBoxWineExD3DRc9SetShRcState)
-        {
-            WARN(("no VBoxWineExD3DRc9SetShRcState"));
-            break;
-        }
-
         pD3D->pfnVBoxWineExD3DSwapchain9Present = (PFNVBOXWINEEXD3DSWAPCHAIN9_PRESENT)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DSwapchain9Present");
         if (!pD3D->pfnVBoxWineExD3DSwapchain9Present)
         {
             WARN(("no VBoxWineExD3DSwapchain9Present"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DSurf9GetHostId = (PFNVBOXWINEEXD3DSURF9_GETHOSTID)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DSurf9GetHostId");
+        if (!pD3D->pfnVBoxWineExD3DSurf9GetHostId)
+        {
+            WARN(("no VBoxWineExD3DSurf9GetHostId"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DSurf9SyncToHost = (PFNVBOXWINEEXD3DSURF9_SYNCTOHOST)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DSurf9SyncToHost");
+        if (!pD3D->pfnVBoxWineExD3DSurf9SyncToHost)
+        {
+            WARN(("no VBoxWineExD3DSurf9SyncToHost"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DSwapchain9GetHostWinID = (PFNVBOXWINEEXD3DSWAPCHAIN9_GETHOSTWINID)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DSwapchain9GetHostWinID");
+        if (!pD3D->pfnVBoxWineExD3DSwapchain9GetHostWinID)
+        {
+            WARN(("no VBoxWineExD3DSwapchain9GetHostWinID"));
+            break;
+        }
+
+        pD3D->pfnVBoxWineExD3DDev9GetHostId = (PFNVBOXWINEEXD3DDEV9_GETHOSTID)GetProcAddress(pD3D->hD3DLib, "VBoxWineExD3DDev9GetHostId");
+        if (!pD3D->pfnVBoxWineExD3DDev9GetHostId)
+        {
+            WARN(("no VBoxWineExD3DDev9GetHostId"));
             break;
         }
 
@@ -921,6 +990,56 @@ static HRESULT vboxWddmGetD3D9Caps(PVBOXWDDMDISP_D3D pD3D, D3DCAPS9 *pCaps)
         WARN(("GetDeviceCaps failed hr(0x%x)",hr));
         return hr;
     }
+
+    /* needed for Windows Media Player to work properly */
+    pCaps->Caps |= D3DCAPS_READ_SCANLINE;
+    pCaps->Caps2 |= 0x00080000 /*D3DCAPS2_CANRENDERWINDOWED*/;
+    pCaps->Caps2 |= D3DCAPS2_CANSHARERESOURCE;
+    pCaps->DevCaps |= D3DDEVCAPS_FLOATTLVERTEX /* <- must be set according to the docs */
+            /*| D3DDEVCAPS_HWVERTEXBUFFER | D3DDEVCAPS_HWINDEXBUFFER |  D3DDEVCAPS_SUBVOLUMELOCK */;
+    pCaps->PrimitiveMiscCaps |= D3DPMISCCAPS_INDEPENDENTWRITEMASKS
+            | D3DPMISCCAPS_FOGINFVF
+            | D3DPMISCCAPS_SEPARATEALPHABLEND | D3DPMISCCAPS_MRTINDEPENDENTBITDEPTHS;
+    pCaps->RasterCaps |= D3DPRASTERCAPS_SUBPIXEL | D3DPRASTERCAPS_STIPPLE | D3DPRASTERCAPS_ZBIAS | D3DPRASTERCAPS_COLORPERSPECTIVE /* keep */;
+    pCaps->TextureCaps |= D3DPTEXTURECAPS_TRANSPARENCY | D3DPTEXTURECAPS_TEXREPEATNOTSCALEDBYSIZE;
+    pCaps->TextureAddressCaps |= D3DPTADDRESSCAPS_MIRRORONCE;
+    pCaps->VolumeTextureAddressCaps |= D3DPTADDRESSCAPS_MIRRORONCE;
+    pCaps->StencilCaps |= D3DSTENCILCAPS_TWOSIDED;
+    pCaps->DeclTypes |= D3DDTCAPS_FLOAT16_2 | D3DDTCAPS_FLOAT16_4;
+    pCaps->VertexTextureFilterCaps |= D3DPTFILTERCAPS_MINFPOINT | D3DPTFILTERCAPS_MAGFPOINT;
+    pCaps->GuardBandLeft = -8192.;
+    pCaps->GuardBandTop = -8192.;
+    pCaps->GuardBandRight = 8192.;
+    pCaps->GuardBandBottom = 8192.;
+    pCaps->VS20Caps.DynamicFlowControlDepth = 24;
+    pCaps->VS20Caps.NumTemps = D3DVS20_MAX_NUMTEMPS;
+    pCaps->PS20Caps.DynamicFlowControlDepth = 24;
+    pCaps->PS20Caps.NumTemps = D3DVS20_MAX_NUMTEMPS;
+
+    /* workaround for wine not returning InstructionSlots correctly for  shaders v3.0 */
+    if ((pCaps->VertexShaderVersion & 0xff00) == 0x0300)
+    {
+        pCaps->MaxVertexShader30InstructionSlots = RT_MIN(32768, pCaps->MaxVertexShader30InstructionSlots);
+        pCaps->MaxPixelShader30InstructionSlots = RT_MIN(32768, pCaps->MaxPixelShader30InstructionSlots);
+    }
+#if defined(DEBUG)
+    if ((pCaps->VertexShaderVersion & 0xff00) == 0x0300)
+    {
+        Assert(pCaps->MaxVertexShader30InstructionSlots >= 512);
+        Assert(pCaps->MaxVertexShader30InstructionSlots <= 32768);
+        Assert(pCaps->MaxPixelShader30InstructionSlots >= 512);
+        Assert(pCaps->MaxPixelShader30InstructionSlots <= 32768);
+    }
+    else if ((pCaps->VertexShaderVersion & 0xff00) == 0x0200)
+    {
+        Assert(pCaps->MaxVertexShader30InstructionSlots == 0);
+        Assert(pCaps->MaxPixelShader30InstructionSlots == 0);
+    }
+    else
+    {
+        WARN(("incorect shader caps!"));
+    }
+#endif
 
     vboxDispDumpD3DCAPS9(pCaps);
 

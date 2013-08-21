@@ -3063,7 +3063,7 @@ Acest director este folosit, dacă nu este explicit specificat altfel, atunci c�
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Stânga </translation>
@@ -12689,7 +12689,7 @@ Folosiți meniul contextual sau butaonele din dreapta pentru a adâuga sau șter
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Arată mereu minibara</translation>

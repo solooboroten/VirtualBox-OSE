@@ -1,10 +1,10 @@
-/* $Id: BasePeCoff.c 38952 2011-10-06 05:28:02Z vboxsync $ */
+/* $Id: BasePeCoff.c $ */
 /** @file
  * BasePeCoff.c
  */
 
 /*
- * Copyright (C) 2009-2010 Oracle Corporation
+ * Copyright (C) 2009-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

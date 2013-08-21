@@ -1,10 +1,10 @@
-/* $Id: tstRTDigest.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstRTDigest.cpp $ */
 /** @file
  * IPRT Testcase - RTSha*, RTMd5, RTCrc*.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -159,6 +159,16 @@ int main(int argc, char **argv)
                                  break;
                              }
 
+                             case kDigestType_SHA256:
+                             {
+                                 char *pszDigest;
+                                 int rc = RTSha256DigestFromFile(ValueUnion.psz, &pszDigest, NULL, NULL);
+                                 if (RT_FAILURE(rc))
+                                     return Error("RTSha256Digest(%s,) -> %Rrc\n", ValueUnion.psz, rc);
+                                 RTPrintf("%s  %s\n", pszDigest, ValueUnion.psz);
+                                 RTStrFree(pszDigest);
+                                 break;
+                             }
                              default:
                                  return Error("The file method isn't implemented for this digest\n");
                          }

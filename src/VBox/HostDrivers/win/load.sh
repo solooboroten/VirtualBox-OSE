@@ -4,7 +4,7 @@
 #
 
 #
-# Copyright (C) 2010-2011 Oracle Corporation
+# Copyright (C) 2010-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -14,6 +14,10 @@
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 #
+
+if test -n "$Path" -a test -z "$PATH"; then
+    export PATH="$Path"
+fi
 
 MY_DIR=`cd "${0}/.." && cmd /c cd | kmk_sed -e 's,\\\\,/,g' `
 if [ ! -d "${MY_DIR}" ]; then

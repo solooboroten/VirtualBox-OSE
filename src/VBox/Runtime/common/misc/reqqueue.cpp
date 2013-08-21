@@ -1,4 +1,4 @@
-/* $Id: reqqueue.cpp 39550 2011-12-07 20:28:23Z vboxsync $ */
+/* $Id: reqqueue.cpp $ */
 /** @file
  * IPRT - Request Queue.
  */

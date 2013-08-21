@@ -1,10 +1,10 @@
-/* $Id: USBProxyDevice-solaris.cpp 38736 2011-09-13 13:58:47Z vboxsync $ */
+/* $Id: USBProxyDevice-solaris.cpp $ */
 /** @file
  * USB device proxy - the Solaris backend.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -407,7 +407,7 @@ static void usbProxySolarisClose(PUSBPROXYDEV pProxyDev)
 
     /* Close the device (do not re-enumerate). */
     VBOXUSBREQ_CLOSE_DEVICE CloseReq;
-    CloseReq.ResetLevel = VBOXUSB_RESET_LEVEL_NONE;
+    CloseReq.ResetLevel = VBOXUSB_RESET_LEVEL_CLOSE;
     usbProxySolarisIOCtl(pDevSol, VBOXUSB_IOCTL_CLOSE_DEVICE, &CloseReq, sizeof(CloseReq));
 
     pProxyDev->fDetached = true;
@@ -609,6 +609,7 @@ static int usbProxySolarisUrbQueue(PVUSBURB pUrb)
     UrbReq.enmType      = pUrb->enmType;
     UrbReq.enmDir       = pUrb->enmDir;
     UrbReq.enmStatus    = pUrb->enmStatus;
+    UrbReq.fShortOk     = !pUrb->fShortNotOk;
     UrbReq.cbData       = pUrb->cbData;
     UrbReq.pvData       = pUrb->abData;
     if (pUrb->enmType == VUSBXFERTYPE_ISOC)
@@ -869,6 +870,6 @@ extern const USBPROXYBACK g_USBProxyDeviceHost =
     usbProxySolarisUrbQueue,
     usbProxySolarisUrbCancel,
     usbProxySolarisUrbReap,
-    NULL
+    0
 };
 

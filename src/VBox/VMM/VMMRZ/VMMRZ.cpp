@@ -1,10 +1,10 @@
-/* $Id: VMMRZ.cpp 41976 2012-07-01 14:16:40Z vboxsync $ */
+/* $Id: VMMRZ.cpp $ */
 /** @file
  * VMM - Virtual Machine Monitor, Raw-mode and ring-0 context code.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -52,6 +52,7 @@ VMMRZDECL(int) VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, 
     if (RT_UNLIKELY(    pVCpu->vmm.s.cCallRing3Disabled != 0
                     &&  enmOperation != VMMCALLRING3_VM_R0_ASSERTION))
     {
+#ifndef IN_RING0
         /*
          * In most cases, it's sufficient to return a status code which
          * will then be propagated up the code usually encountering several
@@ -64,6 +65,7 @@ VMMRZDECL(int) VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, 
          */
         if (enmOperation != VMMCALLRING3_REM_REPLAY_HANDLER_NOTIFICATIONS)
             return VERR_VMM_RING3_CALL_DISABLED;
+#endif
 #ifdef IN_RC
         RTStrPrintf(g_szRTAssertMsg1, sizeof(pVM->vmm.s.szRing0AssertMsg1),
                     "VMMRZCallRing3: enmOperation=%d uArg=%#llx idCpu=%#x\n", enmOperation, uArg, pVCpu->idCpu);
@@ -83,6 +85,11 @@ VMMRZDECL(int) VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, 
 #ifdef IN_RC
     pVM->vmm.s.pfnRCToHost(VINF_VMM_CALL_HOST);
 #else
+    if (   pVCpu->vmm.s.pfnCallRing3CallbackR0
+        && enmOperation != VMMCALLRING3_VM_R0_ASSERTION)
+    {
+        pVCpu->vmm.s.pfnCallRing3CallbackR0(pVCpu, enmOperation, pVCpu->vmm.s.pvCallRing3CallbackUserR0);
+    }
     int rc = vmmR0CallRing3LongJmp(&pVCpu->vmm.s.CallRing3JmpBufR0, VINF_VMM_CALL_HOST);
     if (RT_FAILURE(rc))
         return rc;
@@ -170,5 +177,39 @@ VMMRZDECL(bool) VMMRZCallRing3IsEnabled(PVMCPU pVCpu)
     VMCPU_ASSERT_EMT(pVCpu);
     Assert(pVCpu->vmm.s.cCallRing3Disabled <= 16);
     return pVCpu->vmm.s.cCallRing3Disabled == 0;
+}
+
+
+/**
+ * Sets the ring-0 callback before doing the ring-3 call.
+ *
+ * @param   pVCpu         Pointer to the VMCPU.
+ * @param   pfnCallback   Pointer to the callback.
+ * @param   pvUser        The user argument.
+ *
+ * @return VBox status code.
+ */
+VMMRZDECL(int) VMMRZCallRing3SetNotification(PVMCPU pVCpu, R0PTRTYPE(PFNVMMR0CALLRING3NOTIFICATION) pfnCallback, RTR0PTR pvUser)
+{
+    AssertPtrReturn(pVCpu, VERR_INVALID_POINTER);
+    AssertPtrReturn(pfnCallback, VERR_INVALID_POINTER);
+
+    if (pVCpu->vmm.s.pfnCallRing3CallbackR0)
+        return VERR_ALREADY_EXISTS;
+
+    pVCpu->vmm.s.pfnCallRing3CallbackR0    = pfnCallback;
+    pVCpu->vmm.s.pvCallRing3CallbackUserR0 = pvUser;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Removes the ring-0 callback.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ */
+VMMRZDECL(void) VMMRZCallRing3RemoveNotification(PVMCPU pVCpu)
+{
+    pVCpu->vmm.s.pfnCallRing3CallbackR0 = NULL;
 }
 

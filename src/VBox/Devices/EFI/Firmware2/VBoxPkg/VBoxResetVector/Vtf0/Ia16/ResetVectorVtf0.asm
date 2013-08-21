@@ -1,4 +1,4 @@
-; $Id$
+; $Id: ResetVectorVtf0.asm $
 ;; @file
 
 

@@ -1,10 +1,10 @@
-/* $Id: tstRTProcCreateEx.cpp 42973 2012-08-24 12:30:32Z vboxsync $ */
+/* $Id: tstRTProcCreateEx.cpp $ */
 /** @file
  * IPRT Testcase - RTProcCreateEx.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -170,8 +170,6 @@ static void tstRTCreateProcEx5(const char *pszUser, const char *pszPassword)
 
     if (ProcStatus.enmReason != RTPROCEXITREASON_NORMAL || ProcStatus.iStatus != 0)
         RTTestIFailed("enmReason=%d iStatus=%d", ProcStatus.enmReason, ProcStatus.iStatus);
-    else
-        RTTestIPassed(NULL);
 }
 
 
@@ -207,8 +205,6 @@ static void tstRTCreateProcEx4(const char *pszAsUser, const char *pszPassword)
 
     if (ProcStatus.enmReason != RTPROCEXITREASON_NORMAL || ProcStatus.iStatus != 0)
         RTTestIFailed("enmReason=%d iStatus=%d", ProcStatus.enmReason, ProcStatus.iStatus);
-    else
-        RTTestIPassed(NULL);
 }
 
 
@@ -277,8 +273,6 @@ static void tstRTCreateProcEx3(const char *pszAsUser, const char *pszPassword)
     else if (   offOutput != sizeof("works") - 1
              || strcmp(szOutput, "works"))
         RTTestIFailed("wrong output: \"%s\" (len=%u)", szOutput, offOutput);
-    else
-        RTTestIPassed(NULL);
 }
 
 
@@ -344,8 +338,6 @@ static void tstRTCreateProcEx2(const char *pszAsUser, const char *pszPassword)
     else if (   offOutput != sizeof("howdy") - 1
              || strcmp(szOutput, "howdy"))
         RTTestIFailed("wrong output: \"%s\" (len=%u)", szOutput, offOutput);
-    else
-        RTTestIPassed(NULL);
 }
 
 
@@ -411,8 +403,6 @@ static void tstRTCreateProcEx1(const char *pszAsUser, const char *pszPassword)
     else if (   offOutput != sizeof("it works") - 1
              || strcmp(szOutput, "it works"))
         RTTestIFailed("wrong output: \"%s\" (len=%u)", szOutput, offOutput);
-    else
-        RTTestIPassed(NULL);
 }
 
 

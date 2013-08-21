@@ -2864,7 +2864,7 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_LoadTexture(IWineD3DSurface *iface, BO
     }
 #endif
 
-    if (!(This->Flags & SFLAG_DONOTFREE)) {
+    if (!(This->Flags & SFLAG_DONOTFREE) && !This->resource.format_desc->convert) {
         HeapFree(GetProcessHeap(), 0, This->resource.heapMemory);
         This->resource.allocatedMemory = NULL;
         This->resource.heapMemory = NULL;
@@ -2905,7 +2905,7 @@ static void WINAPI IWineD3DSurfaceImpl_BindTexture(IWineD3DSurface *iface, BOOL 
                     struct wined3d_gl_info *gl_info = &This->resource.device->adapter->gl_info;
                     ERR("should not be here!");
                     *name = (GLuint)VBOXSHRC_GET_SHAREHANDLE(This);
-                    GL_EXTCALL(glChromiumParameteriCR(GL_RCUSAGE_TEXTURE_SET_CR, name));
+                    GL_EXTCALL(glChromiumParameteriCR(GL_RCUSAGE_TEXTURE_SET_CR, *name));
                 }
                 else
 #endif

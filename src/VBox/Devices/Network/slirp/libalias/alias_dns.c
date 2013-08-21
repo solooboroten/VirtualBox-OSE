@@ -1,10 +1,10 @@
-/* $Id: alias_dns.c 39861 2012-01-24 17:03:15Z vboxsync $ */
+/* $Id: alias_dns.c $ */
 /** @file
  * libalias helper for using the host resolver instead of dnsproxy.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -142,7 +142,7 @@ static void doanswer(union dnsmsg_header *pHdr, struct dns_meta_data *pReqMeta, 
         off |= (0x3 << 14);
 
         /* add aliases */
-        for (cstr = pHostent->h_aliases; *cstr; cstr++)
+        for (cstr = pHostent->h_aliases; cstr && *cstr; cstr++)
         {
             uint16_t len;
             struct dnsmsg_answer *ans = (struct dnsmsg_answer *)answers;

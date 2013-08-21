@@ -1,4 +1,4 @@
-/* $Id: PATMSSM.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: PATMSSM.cpp $ */
 /** @file
  * PATMSSM - Dynamic Guest OS Patching Manager; Save and load state
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -692,6 +692,16 @@ DECLCALLBACK(int) patmR3Save(PVM pVM, PSSMHANDLE pSSM)
     return VINF_SUCCESS;
 }
 
+
+/**
+ * @callback_method_impl{FNSSMINTLOADEXEC, Dummy load function for HM mode.}
+ */
+DECLCALLBACK(int) patmR3LoadDummy(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
+{
+    return SSMR3SkipToEndOfUnit(pSSM);
+}
+
+
 /**
  * Execute state load operation.
  *
@@ -809,7 +819,7 @@ DECLCALLBACK(int) patmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32
         /* Convert SSM version to memory. */
         patmR3PatchConvertSSM2Mem(pPatchRec, &patch);
 
-        Log(("Restoring patch %RRv -> %RRv\n", pPatchRec->patch.pPrivInstrGC, patmInfo.pPatchMemGC + pPatchRec->patch.pPatchBlockOffset));
+        Log(("Restoring patch %RRv -> %RRv state %x\n", pPatchRec->patch.pPrivInstrGC, patmInfo.pPatchMemGC + pPatchRec->patch.pPatchBlockOffset, pPatchRec->patch.uState));
         bool ret = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pPatchRec->Core);
         Assert(ret);
         if (pPatchRec->patch.uState != PATCH_REFUSED)
@@ -828,7 +838,7 @@ DECLCALLBACK(int) patmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32
         RT_ZERO(cacheRec);
         cacheRec.pPatch = &pPatchRec->patch;
 
-        uint8_t *pPrivInstrHC = PATMGCVirtToHCVirt(pVM, &cacheRec, pPatchRec->patch.pPrivInstrGC);
+        uint8_t *pPrivInstrHC = patmR3GCVirtToHCVirt(pVM, &cacheRec, pPatchRec->patch.pPrivInstrGC);
         /* Can fail due to page or page table not present. */
 
         /*
@@ -894,7 +904,7 @@ DECLCALLBACK(int) patmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32
                 rc = SSMR3GetStructEx(pSSM, &rec, sizeof(rec), SSMSTRUCT_FLAGS_MEM_BAND_AID, &g_aPatmRecPatchToGuest[0], NULL);
                 AssertRCReturn(rc, rc);
 
-                patmr3AddP2GLookupRecord(pVM, &pPatchRec->patch, (uintptr_t)rec.Core.Key + pVM->patm.s.pPatchMemHC, rec.pOrgInstrGC, rec.enmType, rec.fDirty);
+                patmR3AddP2GLookupRecord(pVM, &pPatchRec->patch, (uintptr_t)rec.Core.Key + pVM->patm.s.pPatchMemHC, rec.pOrgInstrGC, rec.enmType, rec.fDirty);
             }
             Assert(pPatchRec->patch.Patch2GuestAddrTree);
         }

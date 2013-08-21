@@ -1,10 +1,10 @@
-/* $Id: ldrELF.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: ldrELF.cpp $ */
 /** @file
  * IPRT - Binary Image Loader, Executable and Linker Format (ELF).
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -48,8 +48,10 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
-/** Finds an ELF string. */
+/** Finds an ELF symbol table string. */
 #define ELF_STR(pHdrs, iStr) ((pHdrs)->pStr + (iStr))
+/** Finds an ELF section header string. */
+#define ELF_SH_STR(pHdrs, iStr) ((pHdrs)->pShStr + (iStr))
 
 
 

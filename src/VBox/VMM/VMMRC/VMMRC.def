@@ -1,9 +1,9 @@
-; $Id: VMMRC.def 41147 2012-05-03 20:15:27Z vboxsync $
+; $Id: VMMRC.def $
 ;; @file
 ; VMM Raw-mode Context DLL - Definition file.
 
 ;
-; Copyright (C) 2006-2009 Oracle Corporation
+; Copyright (C) 2006-2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -75,11 +75,6 @@ EXPORTS
     vmmGCTestTrap8_FaultEIP
     VMSetError
     VMSetErrorV
-    VMXGCStartVM64
-    SVMGCVMRun64
-    HWACCMSaveGuestFPU64
-    HWACCMSaveGuestDebug64
-    HWACCMTestSwitcher64
 
     ; runtime
     nocrt_memchr

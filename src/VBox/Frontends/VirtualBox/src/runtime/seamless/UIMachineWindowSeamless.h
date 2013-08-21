@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010-2012 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -23,7 +23,7 @@
 #include "UIMachineWindow.h"
 
 /* Forward declarations: */
-class VBoxMiniToolBar;
+class UIRuntimeMiniToolBar;
 
 /* Seamless machine-window implementation: */
 class UIMachineWindowSeamless : public UIMachineWindow
@@ -42,18 +42,11 @@ private slots:
     void sltMachineStateChanged();
 #endif /* !Q_WS_MAC */
 
-    /* Places window on screen: */
-    void sltPlaceOnScreen();
+    /* Show in necessary mode: */
+    void sltShowInNecessaryMode() { showInNecessaryMode(); }
 
     /* Popup main menu: */
     void sltPopupMainMenu();
-
-#ifndef RT_OS_DARWIN
-    /* Current Qt on MAC has something broken in moc generation,
-     * so we have to use RT_OS_DARWIN instead of Q_WS_MAC here. */
-    /* Update mini tool-bar mask: */
-    void sltUpdateMiniToolBarMask();
-#endif /* !RT_OS_DARWIN */
 
 private:
 
@@ -63,14 +56,8 @@ private:
 #ifndef Q_WS_MAC
     void prepareMiniToolbar();
 #endif /* !Q_WS_MAC */
-#ifdef Q_WS_MAC
-    void loadSettings();
-#endif /* Q_WS_MAC */
 
     /* Cleanup helpers: */
-#ifdef Q_WS_MAC
-    //void saveSettings() {}
-#endif /* Q_WS_MAC */
 #ifndef Q_WS_MAC
     void cleanupMiniToolbar();
 #endif /* !Q_WS_MAC */
@@ -78,6 +65,7 @@ private:
     void cleanupMenu();
 
     /* Show stuff: */
+    void placeOnScreen();
     void showInNecessaryMode();
 
 #ifndef Q_WS_MAC
@@ -85,24 +73,26 @@ private:
     void updateAppearanceOf(int iElement);
 #endif /* !Q_WS_MAC */
 
-#ifdef Q_WS_MAC
-    /* Event handlers: */
-    bool event(QEvent *pEvent);
-#endif /* Q_WS_MAC */
+#ifdef Q_WS_WIN
+    /* Handler: Translucency stuff: */
+    void showEvent(QShowEvent *pEvent);
+#endif /* Q_WS_WIN */
 
-    /* Helpers: */
+#ifdef Q_WS_X11
+    /* Helper: Masking stuff: */
     void setMask(const QRegion &region);
+#endif /* Q_WS_X11 */
 
     /* Widgets: */
     QMenu *m_pMainMenu;
 #ifndef Q_WS_MAC
-    VBoxMiniToolBar *m_pMiniToolBar;
+    UIRuntimeMiniToolBar *m_pMiniToolBar;
 #endif /* !Q_WS_MAC */
 
-    /* Variables: */
-#ifdef Q_WS_WIN
-    QRegion m_prevRegion;
-#endif /* Q_WS_WIN */
+#ifdef Q_WS_X11
+    /* Variable: Masking stuff: */
+    QRegion m_maskRegion;
+#endif /* Q_WS_X11 */
 
     /* Factory support: */
     friend class UIMachineWindow;

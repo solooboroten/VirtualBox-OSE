@@ -57,6 +57,7 @@ struct VisualInfo {
 static struct VisualInfo *VisualInfoList = NULL;
 
 static void stubXshmUpdateImageRect(Display *dpy, GLXDrawable draw, GLX_Pixmap_t *pGlxPixmap, XRectangle *pRect);
+static void stubInitXDamageExtension(ContextInfo *pContext);
 
 static void
 AddVisualInfo(Display *dpy, int screen, VisualID visualid, int visBits)
@@ -622,6 +623,10 @@ VBOXGLXTAG(glXCreateContext)(Display *dpy, XVisualInfo *vis, GLXContext share, B
     context->dpy = dpy;
     context->visual = vis;
     context->direct = direct;
+
+    /* This means that clients can't hold a server grab during
+     * glXCreateContext! */
+    stubInitXDamageExtension(context);
 
     return (GLXContext) context->id;
 }
@@ -1528,7 +1533,8 @@ VBOXGLXTAG(glXChooseFBConfig)(Display *dpy, int screen, ATTRIB_TYPE *attrib_list
                 break;
 
             case GLX_DRAWABLE_TYPE:
-                if (attrib[1]!=GLX_WINDOW_BIT)
+                if (   !(attrib[1] & GLX_WINDOW_BIT)
+                    && !(attrib[1] & GLX_PIXMAP_BIT))
                     goto err_exit;
                 attrib++;
                 break;
@@ -1817,7 +1823,7 @@ DECLEXPORT(int) VBOXGLXTAG(glXGetFBConfigAttrib)(Display *dpy, GLXFBConfig confi
     switch (attribute)
     {
         case GLX_DRAWABLE_TYPE:
-            *value = GLX_PIXMAP_BIT;
+            *value = GLX_PIXMAP_BIT | GLX_WINDOW_BIT;
             break;
         case GLX_BIND_TO_TEXTURE_TARGETS_EXT:
             *value = GLX_TEXTURE_2D_BIT_EXT;
@@ -2167,7 +2173,7 @@ static void stubInitXSharedMemory(Display *dpy)
 #endif
 }
 
-static void stubInitXDamageExtension(ContextInfo *pContext)
+void stubInitXDamageExtension(ContextInfo *pContext)
 {
     int erb, vma, vmi;
 
@@ -2331,8 +2337,6 @@ static GLX_Pixmap_t* stubInitGlxPixmap(GLX_Pixmap_t* pCreateInfoPixmap, Display 
         pGlxPixmap->hShmPixmap = 0;
     }
     XUNLOCK(dpy);
-
-    stubInitXDamageExtension(pContext);
 
     /* If there's damage extension, then get handle for damage events related to this pixmap */
     if (pContext->damageDpy)

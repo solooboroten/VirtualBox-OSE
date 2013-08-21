@@ -1,10 +1,10 @@
-/* $Id: VBoxNetARP.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxNetARP.cpp $ */
 /** @file
  * VBoxNetARP - IntNet ARP Client Routines.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -43,7 +43,7 @@ bool VBoxNetArpHandleIt(PSUPDRVSESSION pSession, INTNETIFHANDLE hIf, PINTNETBUF 
      */
     PCINTNETHDR pHdr = IntNetRingGetNextFrameToRead(&pBuf->Recv);
     if (   !pHdr
-        || pHdr->u16Type != INTNETHDR_TYPE_FRAME)
+        || pHdr->u8Type != INTNETHDR_TYPE_FRAME)
         return false;
 
     size_t          cbFrame = pHdr->cbFrame;

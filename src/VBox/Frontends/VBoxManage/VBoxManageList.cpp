@@ -1,10 +1,10 @@
-/* $Id: VBoxManageList.cpp 42748 2012-08-10 09:33:34Z vboxsync $ */
+/* $Id: VBoxManageList.cpp $ */
 /** @file
  * VBoxManage - The 'list' command.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -182,7 +182,7 @@ static HRESULT listHostInfo(const ComPtr<IVirtualBox> pVirtualBox)
         if (processorSpeed)
             RTPrintf("Processor#%u speed: %lu MHz\n", i, processorSpeed);
         else
-            RTPrintf("Processor#%u speed: unknown\n", i, processorSpeed);
+            RTPrintf("Processor#%u speed: unknown\n", i);
         CHECK_ERROR(Host, GetProcessorDescription(i, processorDescription.asOutParam()));
         RTPrintf("Processor#%u description: %ls\n", i, processorDescription.raw());
     }
@@ -211,118 +211,33 @@ static HRESULT listHostInfo(const ComPtr<IVirtualBox> pVirtualBox)
  *
  * @returns See produceList.
  * @param   pVirtualBox         Reference to the IVirtualBox smart pointer.
+ * @param   aMedia              Medium objects to list information for.
+ * @param   pszParentUUIDStr    String with the parent UUID string (or "base").
+ * @param   fOptLong            Long (@c true) or short list format.
  */
 static HRESULT listMedia(const ComPtr<IVirtualBox> pVirtualBox,
                          const com::SafeIfaceArray<IMedium> &aMedia,
-                         const char *pszParentUUIDStr)
+                         const char *pszParentUUIDStr,
+                         bool fOptLong)
 {
     HRESULT rc = S_OK;
     for (size_t i = 0; i < aMedia.size(); ++i)
     {
         ComPtr<IMedium> pMedium = aMedia[i];
-        Bstr uuid;
-        pMedium->COMGETTER(Id)(uuid.asOutParam());
-        RTPrintf("UUID:        %s\n", Utf8Str(uuid).c_str());
-        if (pszParentUUIDStr)
-            RTPrintf("Parent UUID: %s\n", pszParentUUIDStr);
-        Bstr format;
-        pMedium->COMGETTER(Format)(format.asOutParam());
-        RTPrintf("Format:      %ls\n", format.raw());
-        Bstr filepath;
-        pMedium->COMGETTER(Location)(filepath.asOutParam());
-        RTPrintf("Location:    %ls\n", filepath.raw());
 
-        MediumState_T enmState;
-        pMedium->RefreshState(&enmState);
-        const char *stateStr = "unknown";
-        switch (enmState)
-        {
-            case MediumState_NotCreated:
-                stateStr = "not created";
-                break;
-            case MediumState_Created:
-                stateStr = "created";
-                break;
-            case MediumState_LockedRead:
-                stateStr = "locked read";
-                break;
-            case MediumState_LockedWrite:
-                stateStr = "locked write";
-                break;
-            case MediumState_Inaccessible:
-                stateStr = "inaccessible";
-                break;
-            case MediumState_Creating:
-                stateStr = "creating";
-                break;
-            case MediumState_Deleting:
-                stateStr = "deleting";
-                break;
-        }
-        RTPrintf("State:       %s\n", stateStr);
+        rc = showMediumInfo(pVirtualBox, pMedium, pszParentUUIDStr, fOptLong);
 
-        MediumType_T type;
-        pMedium->COMGETTER(Type)(&type);
-        const char *typeStr = "unknown";
-        switch (type)
-        {
-            case MediumType_Normal:
-                typeStr = "normal";
-                break;
-            case MediumType_Immutable:
-                typeStr = "immutable";
-                break;
-            case MediumType_Writethrough:
-                typeStr = "writethrough";
-                break;
-            case MediumType_Shareable:
-                typeStr = "shareable";
-                break;
-            case MediumType_Readonly:
-                typeStr = "readonly";
-                break;
-            case MediumType_MultiAttach:
-                typeStr = "multiattach";
-                break;
-        }
-        RTPrintf("Type:        %s\n", typeStr);
-
-        com::SafeArray<BSTR> machineIds;
-        pMedium->COMGETTER(MachineIds)(ComSafeArrayAsOutParam(machineIds));
-        for (size_t j = 0; j < machineIds.size(); ++j)
-        {
-            ComPtr<IMachine> machine;
-            CHECK_ERROR(pVirtualBox, FindMachine(machineIds[j], machine.asOutParam()));
-            ASSERT(machine);
-            Bstr name;
-            machine->COMGETTER(Name)(name.asOutParam());
-            RTPrintf("%s%ls (UUID: %ls)",
-                    j == 0 ? "Usage:       " : "             ",
-                    name.raw(), machineIds[j]);
-            com::SafeArray<BSTR> snapshotIds;
-            pMedium->GetSnapshotIds(machineIds[j],
-                                    ComSafeArrayAsOutParam(snapshotIds));
-            for (size_t k = 0; k < snapshotIds.size(); ++k)
-            {
-                ComPtr<ISnapshot> snapshot;
-                machine->FindSnapshot(snapshotIds[k], snapshot.asOutParam());
-                if (snapshot)
-                {
-                    Bstr snapshotName;
-                    snapshot->COMGETTER(Name)(snapshotName.asOutParam());
-                    RTPrintf(" [%ls (UUID: %ls)]", snapshotName.raw(), snapshotIds[k]);
-                }
-            }
-            RTPrintf("\n");
-        }
         RTPrintf("\n");
 
         com::SafeIfaceArray<IMedium> children;
         CHECK_ERROR(pMedium, COMGETTER(Children)(ComSafeArrayAsOutParam(children)));
         if (children.size() > 0)
         {
+            Bstr uuid;
+            pMedium->COMGETTER(Id)(uuid.asOutParam());
+
             // depth first listing of child media
-            rc = listMedia(pVirtualBox, children, Utf8Str(uuid).c_str());
+            rc = listMedia(pVirtualBox, children, Utf8Str(uuid).c_str(), fOptLong);
         }
     }
 
@@ -353,11 +268,15 @@ static HRESULT listHddBackends(const ComPtr<IVirtualBox> pVirtualBox)
 
         Bstr description;
         CHECK_ERROR(mediumFormats[i],
-                    COMGETTER(Id)(description.asOutParam()));
+                    COMGETTER(Name)(description.asOutParam()));
 
-        ULONG caps;
+        ULONG caps = 0;
+        com::SafeArray <MediumFormatCapabilities_T> mediumFormatCap;
         CHECK_ERROR(mediumFormats[i],
-                    COMGETTER(Capabilities)(&caps));
+                    COMGETTER(Capabilities)(ComSafeArrayAsOutParam(mediumFormatCap)));
+        for (ULONG j = 0; j < mediumFormatCap.size(); j++)
+            caps |= mediumFormatCap[j];
+
 
         RTPrintf("Backend %u: id='%ls' description='%ls' capabilities=%#06x extensions='",
                 i, id.raw(), description.raw(), caps);
@@ -438,7 +357,7 @@ static HRESULT listUsbHost(const ComPtr<IVirtualBox> &pVirtualBox)
     {
         for (size_t i = 0; i < CollPtr.size(); ++i)
         {
-            ComPtr <IHostUSBDevice> dev = CollPtr[i];
+            ComPtr<IHostUSBDevice> dev = CollPtr[i];
 
             /* Query info. */
             Bstr id;
@@ -617,6 +536,8 @@ static HRESULT listSystemProperties(const ComPtr<IVirtualBox> &pVirtualBox)
     RTPrintf("Minimum video RAM size:          %u Megabytes\n", ulValue);
     systemProperties->COMGETTER(MaxGuestVRAM)(&ulValue);
     RTPrintf("Maximum video RAM size:          %u Megabytes\n", ulValue);
+    systemProperties->COMGETTER(MaxGuestMonitors)(&ulValue);
+    RTPrintf("Maximum guest monitor count:     %u\n", ulValue);
     systemProperties->COMGETTER(MinGuestCPUCount)(&ulValue);
     RTPrintf("Minimum guest CPU count:         %u\n", ulValue);
     systemProperties->COMGETTER(MaxGuestCPUCount)(&ulValue);
@@ -673,8 +594,20 @@ static HRESULT listSystemProperties(const ComPtr<IVirtualBox> &pVirtualBox)
     RTPrintf("Maximum Floppy Port count:       %u\n", ulValue);
     systemProperties->GetMaxDevicesPerPortForStorageBus(StorageBus_Floppy, &ulValue);
     RTPrintf("Maximum Devices per Floppy Port: %u\n", ulValue);
+#if 0
+    systemProperties->GetFreeDiskSpaceWarning(&i64Value);
+    RTPrintf("Free disk space warning at:      %u Bytes\n", i64Value);
+    systemProperties->GetFreeDiskSpacePercentWarning(&ulValue);
+    RTPrintf("Free disk space warning at:      %u %%\n", ulValue);
+    systemProperties->GetFreeDiskSpaceError(&i64Value);
+    RTPrintf("Free disk space error at:        %u Bytes\n", i64Value);
+    systemProperties->GetFreeDiskSpacePercentError(&ulValue);
+    RTPrintf("Free disk space error at:        %u %%\n", ulValue);
+#endif
     systemProperties->COMGETTER(DefaultMachineFolder)(str.asOutParam());
     RTPrintf("Default machine folder:          %ls\n", str.raw());
+    systemProperties->COMGETTER(DefaultHardDiskFormat)(str.asOutParam());
+    RTPrintf("Default hard disk format:        %ls\n", str.raw());
     systemProperties->COMGETTER(VRDEAuthLibrary)(str.asOutParam());
     RTPrintf("VRDE auth library:               %ls\n", str.raw());
     systemProperties->COMGETTER(WebServiceAuthLibrary)(str.asOutParam());
@@ -683,6 +616,8 @@ static HRESULT listSystemProperties(const ComPtr<IVirtualBox> &pVirtualBox)
     RTPrintf("Remote desktop ExtPack:          %ls\n", str.raw());
     systemProperties->COMGETTER(LogHistoryCount)(&ulValue);
     RTPrintf("Log history count:               %u\n", ulValue);
+    systemProperties->COMGETTER(DefaultFrontend)(str.asOutParam());
+    RTPrintf("Default frontend:                %ls\n", str.raw());
     systemProperties->COMGETTER(AutostartDatabasePath)(str.asOutParam());
     RTPrintf("Autostart database path:         %ls\n", str.raw());
     systemProperties->COMGETTER(DefaultAdditionsISO)(str.asOutParam());
@@ -798,7 +733,8 @@ enum enmListType
     kListSystemProperties,
     kListDhcpServers,
     kListExtPacks,
-    kListGroups
+    kListGroups,
+    kListNatNetworks
 };
 
 
@@ -1002,7 +938,7 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
         {
             com::SafeIfaceArray<IMedium> hdds;
             CHECK_ERROR(pVirtualBox, COMGETTER(HardDisks)(ComSafeArrayAsOutParam(hdds)));
-            rc = listMedia(pVirtualBox, hdds, "base");
+            rc = listMedia(pVirtualBox, hdds, "base", fOptLong);
             break;
         }
 
@@ -1010,7 +946,7 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
         {
             com::SafeIfaceArray<IMedium> dvds;
             CHECK_ERROR(pVirtualBox, COMGETTER(DVDImages)(ComSafeArrayAsOutParam(dvds)));
-            rc = listMedia(pVirtualBox, dvds, NULL);
+            rc = listMedia(pVirtualBox, dvds, NULL, fOptLong);
             break;
         }
 
@@ -1018,7 +954,7 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
         {
             com::SafeIfaceArray<IMedium> floppies;
             CHECK_ERROR(pVirtualBox, COMGETTER(FloppyImages)(ComSafeArrayAsOutParam(floppies)));
-            rc = listMedia(pVirtualBox, floppies, NULL);
+            rc = listMedia(pVirtualBox, floppies, NULL, fOptLong);
             break;
         }
 
@@ -1072,6 +1008,37 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
             rc = listGroups(pVirtualBox);
             break;
 
+        case kListNatNetworks:
+        {
+            com::SafeIfaceArray<INATNetwork> nets;
+            CHECK_ERROR(pVirtualBox, COMGETTER(NATNetworks)(ComSafeArrayAsOutParam(nets)));
+            for (size_t i = 0; i < nets.size(); ++i)
+            {
+                ComPtr<INATNetwork> net = nets[i];
+                Bstr netName;
+                net->COMGETTER(NetworkName)(netName.asOutParam());
+                RTPrintf("NetworkName:    %ls\n", netName.raw());
+                Bstr gateway;
+                net->COMGETTER(Gateway)(gateway.asOutParam());
+                RTPrintf("IP:             %ls\n", gateway.raw());
+                Bstr network;
+                net->COMGETTER(Network)(network.asOutParam());
+                RTPrintf("Network:        %ls\n", network.raw());
+                BOOL fEnabled;
+                net->COMGETTER(IPv6Enabled)(&fEnabled);
+                RTPrintf("IPv6 Enabled:   %s\n", fEnabled ? "Yes" : "No");
+                Bstr ipv6prefix;
+                net->COMGETTER(Network)(network.asOutParam());
+                RTPrintf("IPv6 Prefix:    %ls\n", ipv6prefix.raw());
+                net->COMGETTER(NeedDhcpServer)(&fEnabled);
+                RTPrintf("DHCP Enabled:   %s\n", fEnabled ? "Yes" : "No");
+                net->COMGETTER(Enabled)(&fEnabled);
+                RTPrintf("Enabled:        %s\n", fEnabled ? "Yes" : "No");
+                RTPrintf("\n");
+            }
+            break;
+        }
+
         /* No default here, want gcc warnings. */
 
     } /* end switch */
@@ -1117,6 +1084,7 @@ int handleList(HandlerArg *a)
         { "dhcpservers",        kListDhcpServers,        RTGETOPT_REQ_NOTHING },
         { "extpacks",           kListExtPacks,           RTGETOPT_REQ_NOTHING },
         { "groups",             kListGroups,             RTGETOPT_REQ_NOTHING },
+        { "natnetworks",        kListNatNetworks,        RTGETOPT_REQ_NOTHING },
     };
 
     int                 ch;
@@ -1160,6 +1128,7 @@ int handleList(HandlerArg *a)
             case kListDhcpServers:
             case kListExtPacks:
             case kListGroups:
+            case kListNatNetworks:
                 enmOptCommand = (enum enmListType)ch;
                 if (fOptMultiple)
                 {

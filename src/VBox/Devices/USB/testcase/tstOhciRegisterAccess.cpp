@@ -1,4 +1,4 @@
-/* $Id: tstOhciRegisterAccess.cpp 39151 2011-10-31 14:17:15Z vboxsync $ */
+/* $Id: tstOhciRegisterAccess.cpp $ */
 /** @file
  * tstOhciRegisterAccess - OHCI Register Access Tests / Experiments.
  */

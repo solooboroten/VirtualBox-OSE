@@ -1,11 +1,11 @@
-/* $Id: OpenGLTestDarwin.cpp 43098 2012-08-30 11:32:06Z vboxsync $ */
+/* $Id: OpenGLTestDarwin.cpp $ */
 
 /** @file
  * VBox host opengl support test
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

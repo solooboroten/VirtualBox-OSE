@@ -1,10 +1,10 @@
-/* $Id: AutostartDb-generic.cpp 42491 2012-08-01 07:09:11Z vboxsync $ */
+/* $Id: AutostartDb-generic.cpp $ */
 /** @file
  * VirtualBox Main - Autostart implementation.
  */
 
 /*
- * Copyright (C) 2009-2010 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -78,7 +78,7 @@ int AutostartDb::autostartModifyDb(bool fAutostart, bool fAddVM)
                     char abBuf[16 + 1]; /* trailing \0 */
                     uint32_t cAutostartVms = 0;
 
-                    memset(abBuf, 0, sizeof(abBuf));
+                    RT_ZERO(abBuf);
 
                     /* Check if the file was just created. */
                     if (cbFile)

@@ -1,11 +1,11 @@
-/* $Id: VBoxHostVersion.cpp 35863 2011-02-07 10:59:08Z vboxsync $ */
+/* $Id: VBoxHostVersion.cpp $ */
 /** @file
  * VBoxHostVersion - Checks the host's VirtualBox version and notifies
  *                   the user in case of an update.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

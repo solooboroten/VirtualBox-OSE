@@ -1,10 +1,10 @@
-/* $Id: MMAll.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: MMAll.cpp $ */
 /** @file
  * MM - Memory Manager - Any Context.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -24,6 +24,7 @@
 #include <VBox/vmm/vmm.h>
 #include "MMInternal.h"
 #include <VBox/vmm/vm.h>
+#include <VBox/vmm/hm.h>
 #include <VBox/log.h>
 #include <iprt/assert.h>
 #include <iprt/string.h>
@@ -256,7 +257,7 @@ DECLINLINE(RTR0PTR) mmHyperLookupCalcR0(PVM pVM, PMMLOOKUPHYPER pLookup, uint32_
             if (pLookup->u.Locked.pvR0)
                 return (RTR0PTR)((RTR0UINTPTR)pLookup->u.Locked.pvR0 + off);
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-            AssertMsg(!VMMIsHwVirtExtForced(pVM), ("%s\n", R3STRING(pLookup->pszDesc)));
+            AssertMsg(!HMIsEnabled(pVM), ("%s\n", R3STRING(pLookup->pszDesc)));
 #else
             AssertMsgFailed(("%s\n", R3STRING(pLookup->pszDesc))); NOREF(pVM);
 #endif
@@ -639,7 +640,7 @@ const char *mmGetTagName(MMTAG enmTag)
 
         TAG2STR(VMM);
 
-        TAG2STR(HWACCM);
+        TAG2STR(HM);
 
         #undef TAG2STR
 

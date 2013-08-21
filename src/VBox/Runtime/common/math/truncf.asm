@@ -1,10 +1,10 @@
-; $Id: truncf.asm 28800 2010-04-27 08:22:32Z vboxsync $
+; $Id: truncf.asm $
 ;; @file
 ; IPRT - No-CRT truncf - AMD64 & X86.
 ;
 
 ;
-; Copyright (C) 2006-2007 Oracle Corporation
+; Copyright (C) 2006-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -42,7 +42,7 @@ BEGINPROC RT_NOCRT(truncf)
     movss   [xSP], xmm0
     fld     dword [xSP]
 %else
-    fld     dword [xBP + xS*2]
+    fld     dword [xBP + xCB*2]
 %endif
 
     ; Make it truncate up by modifying the fpu control word.

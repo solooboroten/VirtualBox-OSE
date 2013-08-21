@@ -161,20 +161,20 @@
     <message>
         <source>not complete</source>
         <comment>value state</comment>
-        <translation>unvollständig</translation>
+        <translation>wurde nicht ausgefüllt</translation>
     </message>
     <message>
         <source>invalid</source>
         <comment>value state</comment>
-        <translation>unzulässig</translation>
+        <translation>hat einen unzulässigen Wert</translation>
     </message>
     <message>
         <source>&lt;qt&gt;The value of the &lt;b&gt;%1&lt;/b&gt; field on the &lt;b&gt;%2&lt;/b&gt; page is %3.&lt;/qt&gt;</source>
-        <translation>&lt;qt&gt;Der Wert des Feldes &lt;b&gt;%1&lt;/b&gt; auf der Seite &lt;b&gt;%2&lt;/b&gt; ist %3.&lt;/qt&gt;</translation>
+        <translation>&lt;qt&gt;Das Eingabefeld &lt;b&gt;%1&lt;/b&gt; auf der Seite &lt;b&gt;%2&lt;/b&gt; %3.&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&lt;qt&gt;One of the values on the &lt;b&gt;%1&lt;/b&gt; page is %2.&lt;/qt&gt;</source>
-        <translation>&lt;qt&gt;Einer der Werte der Seite &lt;b&gt;%1&lt;/b&gt; ist %2.&lt;/qt&gt;</translation>
+        <translation>&lt;qt&gt;Eines der Eingabefelder der Seite &lt;b&gt;%1&lt;/b&gt; %2.&lt;/qt&gt;</translation>
     </message>
 </context>
 <context>
@@ -2020,7 +2020,7 @@
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>&lt;key_%1&gt;</source>
         <translation>&lt;Taste_%1&gt;</translation>
@@ -3761,7 +3761,7 @@
     </message>
     <message>
         <source>Failed to set global VirtualBox properties.</source>
-        <translation>Die globalen Eigenschaften konnten nicht definiert werden.</translation>
+        <translation>Die globalen Einstellungen konnten nicht gespeichert werden.</translation>
     </message>
     <message>
         <source>Failed to access the USB subsystem.</source>
@@ -7237,7 +7237,7 @@
     <message>
         <source>Differencing</source>
         <comment>DiskType</comment>
-        <translation>differetiell</translation>
+        <translation>differentiell</translation>
     </message>
 </context>
 <context>
@@ -7391,7 +7391,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Toolbar immer zeigen</translation>

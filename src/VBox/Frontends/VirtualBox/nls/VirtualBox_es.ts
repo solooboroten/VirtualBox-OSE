@@ -3545,7 +3545,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Izquierda </translation>
@@ -13666,7 +13666,7 @@ volver al idioma por omisión del sistema.&lt;/qt&gt;
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Mostrar siempre la barra de herramientas</translation>

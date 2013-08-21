@@ -1,10 +1,10 @@
-; $Id: tstDisasm-1A.asm 41874 2012-06-22 00:14:56Z vboxsync $
+; $Id: tstDisasm-1A.asm $
 ;; @file
 ; VBox disassembler: Assembler test routines
 ;
 
 ;
-; Copyright (C) 2006-2010 Oracle Corporation
+; Copyright (C) 2006-2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -25,6 +25,10 @@
 ;%include "iprt/x86.mac"
 
 BITS 32
+
+%if __YASM_MAJOR__ > 1 || (__YASM_MAJOR__ == 1 && __YASM_MINOR__ >= 2)
+ %define pmulhrwa pmulhrw
+%endif
 
 
 BEGINCODE

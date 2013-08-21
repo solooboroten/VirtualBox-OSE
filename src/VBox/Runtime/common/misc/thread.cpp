@@ -1,10 +1,10 @@
-/* $Id: thread.cpp 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: thread.cpp $ */
 /** @file
  * IPRT - Threads, common routines.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -183,6 +183,20 @@ DECLHIDDEN(int) rtThreadInit(void)
 #endif
     return rc;
 }
+
+
+#ifdef IN_RING3
+/**
+ * Called when IPRT was first initialized in unobtrusive mode and later changed
+ * to obtrustive.
+ *
+ * This is only applicable in ring-3.
+ */
+DECLHIDDEN(void) rtThreadReInitObtrusive(void)
+{
+    rtThreadNativeReInitObtrusive();
+}
+#endif
 
 
 /**

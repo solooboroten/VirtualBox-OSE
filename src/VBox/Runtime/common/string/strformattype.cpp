@@ -1,10 +1,10 @@
-/* $Id: strformattype.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: strformattype.cpp $ */
 /** @file
  * IPRT - IPRT String Formatter Extensions, Dynamic Types.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -466,9 +466,9 @@ DECLHIDDEN(size_t) rtstrFormatType(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, 
     {
         rtstrFormatTypeReadUnlock();
 
-        cch  = pfnOutput(pvArgOutput, "<missing:%R[", sizeof("<missing:%R[") - 1);
+        cch  = pfnOutput(pvArgOutput, RT_STR_TUPLE("<missing:%R["));
         cch += pfnOutput(pvArgOutput, pszType, pszTypeEnd - pszType);
-        cch += pfnOutput(pvArgOutput, "]>", sizeof("]>") - 1);
+        cch += pfnOutput(pvArgOutput, RT_STR_TUPLE("]>"));
     }
 
     return cch;

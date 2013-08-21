@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,6 +25,7 @@
 
 /* GUI includes: */
 #include "QIWithRetranslateUI.h"
+#include "UIDefs.h"
 #include "UISettingsDefs.h"
 #include "VBoxGlobalSettings.h"
 
@@ -35,7 +36,7 @@
 #include "CSystemProperties.h"
 
 /* Forward declarations: */
-class QIWidgetValidator;
+class UIPageValidator;
 class QShowEvent;
 
 /* Using declarations: */
@@ -77,7 +78,7 @@ class UISettingsPage : public QIWithRetranslateUI<QWidget>
 
 public:
 
-    /* Load data to cashe from corresponding external object(s),
+    /* Load data to cache from corresponding external object(s),
      * this task COULD be performed in other than GUI thread: */
     virtual void loadToCacheFrom(QVariant &data) = 0;
     /* Load data to corresponding widgets from cache,
@@ -92,8 +93,9 @@ public:
     virtual void saveFromCacheTo(QVariant &data) = 0;
 
     /* Validation stuff: */
-    virtual void setValidator(QIWidgetValidator* /* pValidator */) {}
-    virtual bool revalidate(QString& /* strWarningText */, QString& /* strTitle */) { return true; }
+    void setValidator(UIPageValidator *pValidator);
+    void setValidatorBlocked(bool fIsValidatorBlocked) { m_fIsValidatorBlocked = fIsValidatorBlocked; }
+    virtual bool validate(QString& /* strWarningText */, QString& /* strTitle */) { return true; }
 
     /* Navigation stuff: */
     QWidget* firstWidget() const { return m_pFirstWidget; }
@@ -117,6 +119,12 @@ public:
     int id() const { return m_cId; }
     void setId(int cId) { m_cId = cId; }
 
+    /* Page 'name' stuff: */
+    virtual QString internalName() const = 0;
+
+    /* Page 'warning pixmap' stuff: */
+    virtual QPixmap warningPixmap() const = 0;
+
     /* Page 'processed' stuff: */
     bool processed() const { return m_fProcessed; }
     void setProcessed(bool fProcessed) { m_fProcessed = fProcessed; }
@@ -128,6 +136,11 @@ public:
     /* Virtual function to polish page content: */
     virtual void polishPage() {}
 
+public slots:
+
+    /* Handler: Validation stuff: */
+    void revalidate();
+
 protected:
 
     /* Settings page constructor, hidden: */
@@ -135,13 +148,15 @@ protected:
 
 private:
 
-    /* Private variables: */
+    /* Variables: */
     UISettingsPageType m_pageType;
     SettingsDialogType m_dialogType;
     int m_cId;
     bool m_fProcessed;
     bool m_fFailed;
     QWidget *m_pFirstWidget;
+    UIPageValidator *m_pValidator;
+    bool m_fIsValidatorBlocked;
 };
 
 /* Global settings page class: */
@@ -153,6 +168,15 @@ protected:
 
     /* Global settings page constructor, hidden: */
     UISettingsPageGlobal();
+
+    /* Page 'ID' stuff: */
+    GlobalSettingsPageType internalID() const;
+
+    /* Page 'name' stuff: */
+    QString internalName() const;
+
+    /* Page 'warning pixmap' stuff: */
+    QPixmap warningPixmap() const;
 
     /* Fetch data to m_properties & m_settings: */
     void fetchData(const QVariant &data);
@@ -177,6 +201,15 @@ protected:
 
     /* Machine settings page constructor, hidden: */
     UISettingsPageMachine();
+
+    /* Page 'ID' stuff: */
+    MachineSettingsPageType internalID() const;
+
+    /* Page 'name' stuff: */
+    QString internalName() const;
+
+    /* Page 'warning pixmap' stuff: */
+    QPixmap warningPixmap() const;
 
     /* Fetch data to m_machine: */
     void fetchData(const QVariant &data);

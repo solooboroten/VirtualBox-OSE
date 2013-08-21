@@ -1,10 +1,10 @@
-/* $Id: NetIf-linux.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: NetIf-linux.cpp $ */
 /** @file
  * Main - NetIfList, Linux implementation.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -71,14 +71,55 @@ static int getDefaultIfaceName(char *pszName)
     return VERR_INTERNAL_ERROR;
 }
 
+static uint32_t getInterfaceSpeed(const char *pszName)
+{
+    /*
+     * I wish I could do simple ioctl here, but older kernels require root
+     * privileges for any ethtool commands.
+     */
+    char szBuf[256];
+    uint32_t uSpeed = 0;
+    /* First, we try to retrieve the speed via sysfs. */
+    RTStrPrintf(szBuf, sizeof(szBuf), "/sys/class/net/%s/speed", pszName);
+    FILE *fp = fopen(szBuf, "r");
+    if (fp)
+    {
+        if (fscanf(fp, "%u", &uSpeed) != 1)
+            uSpeed = 0;
+        fclose(fp);
+    }
+    if (uSpeed == 10)
+    {
+        /* Check the cable is plugged in at all */
+        unsigned uCarrier = 0;
+        RTStrPrintf(szBuf, sizeof(szBuf), "/sys/class/net/%s/carrier", pszName);
+        fp = fopen(szBuf, "r");
+        if (fp)
+        {
+            if (fscanf(fp, "%u", &uCarrier) != 1 || uCarrier == 0)
+                uSpeed = 0;
+            fclose(fp);
+        }
+    }
+    
+    if (uSpeed == 0)
+    {
+        /* Failed to get speed via sysfs, go to plan B. */
+        int rc = NetIfAdpCtlOut(pszName, "speed", szBuf, sizeof(szBuf));
+        if (RT_SUCCESS(rc))
+            uSpeed = RTStrToUInt32(szBuf);
+    }
+    return uSpeed;
+}
+
 static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
 {
     // Zeroing out pInfo is a bad idea as it should contain both short and long names at
     // this point. So make sure the structure is cleared by the caller if necessary!
     // memset(pInfo, 0, sizeof(*pInfo));
     struct ifreq Req;
-    memset(&Req, 0, sizeof(Req));
-    strncpy(Req.ifr_name, pszName, sizeof(Req.ifr_name) - 1);
+    RT_ZERO(Req);
+    RTStrCopy(Req.ifr_name, sizeof(Req.ifr_name), pszName);
     if (ioctl(iSocket, SIOCGIFHWADDR, &Req) >= 0)
     {
         switch (Req.ifr_hwaddr.sa_family)
@@ -122,7 +163,7 @@ static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
             char szName[30];
             for (;;)
             {
-                memset(szName, 0, sizeof(szName));
+                RT_ZERO(szName);
                 int n = fscanf(fp,
                                "%08x%08x%08x%08x"
                                " %02x %02x %02x %02x %20s\n",
@@ -148,6 +189,14 @@ static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
             }
             fclose(fp);
         }
+        /*
+         * Don't even try to get speed for non-Ethernet interfaces, it only
+         * produces errors.
+         */
+        if (pInfo->enmMediumType == NETIF_T_ETHERNET)
+            pInfo->uSpeedMbits = getInterfaceSpeed(pszName);
+        else
+            pInfo->uSpeedMbits = 0;
     }
     return VINF_SUCCESS;
 }
@@ -221,4 +270,36 @@ int NetIfGetConfigByName(PNETIFINFO pInfo)
     rc = getInterfaceInfo(sock, pInfo->szShortName, pInfo);
     close(sock);
     return rc;
+}
+
+/**
+ * Retrieve the physical link speed in megabits per second. If the interface is
+ * not up or otherwise unavailable the zero speed is returned.
+ *
+ * @returns VBox status code.
+ *
+ * @param   pcszIfName  Interface name.
+ * @param   puMbits     Where to store the link speed.
+ */
+int NetIfGetLinkSpeed(const char *pcszIfName, uint32_t *puMbits)
+{
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0)
+        return VERR_OUT_OF_RESOURCES;
+    struct ifreq Req;
+    RT_ZERO(Req);
+    RTStrCopy(Req.ifr_name, sizeof(Req.ifr_name), pcszIfName);
+    if (ioctl(sock, SIOCGIFHWADDR, &Req) >= 0)
+    {
+        if (ioctl(sock, SIOCGIFFLAGS, &Req) >= 0)
+            if (Req.ifr_flags & IFF_UP)
+            {
+                close(sock);
+                *puMbits = getInterfaceSpeed(pcszIfName);
+                return VINF_SUCCESS;
+            }
+    }
+    close(sock);
+    *puMbits = 0;
+    return VWRN_NOT_FOUND;
 }

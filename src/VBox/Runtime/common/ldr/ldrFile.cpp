@@ -1,10 +1,10 @@
-/* $Id: ldrFile.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: ldrFile.cpp $ */
 /** @file
  * IPRT - Binary Image Loader, The File Oriented Parts.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -253,7 +253,7 @@ RTDECL(int) RTLdrOpen(const char *pszFilename, uint32_t fFlags, RTLDRARCH enmArc
 {
     LogFlow(("RTLdrOpen: pszFilename=%p:{%s} fFlags=%#x enmArch=%d phLdrMod=%p\n",
              pszFilename, pszFilename, fFlags, enmArch, phLdrMod));
-    AssertMsgReturn(!fFlags, ("%#x\n", fFlags), VERR_INVALID_PARAMETER);
+    AssertMsgReturn(!(fFlags & ~RTLDR_O_VALID_MASK), ("%#x\n", fFlags), VERR_INVALID_PARAMETER);
     AssertMsgReturn(enmArch > RTLDRARCH_INVALID && enmArch < RTLDRARCH_END, ("%d\n", enmArch), VERR_INVALID_PARAMETER);
 
     /*
@@ -305,6 +305,7 @@ RTDECL(int) RTLdrOpenkLdr(const char *pszFilename, uint32_t fFlags, RTLDRARCH en
 #ifdef LDR_WITH_KLDR
     LogFlow(("RTLdrOpenkLdr: pszFilename=%p:{%s} fFlags=%#x enmArch=%d phLdrMod=%p\n",
              pszFilename, pszFilename, fFlags, enmArch, phLdrMod));
+    AssertMsgReturn(!(fFlags & ~RTLDR_O_VALID_MASK), ("%#x\n", fFlags), VERR_INVALID_PARAMETER);
 
     /*
      * Resolve RTLDRARCH_HOST.

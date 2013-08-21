@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -461,7 +461,7 @@ void BIOSCALL ata_detect(void)
         if (type == DSK_TYPE_ATA) {
             uint32_t    sectors;
             uint16_t    cylinders, heads, spt, blksize;
-            uint16_t    lcylinders, lheads, lspt;
+            chs_t       lgeo;
             uint8_t     chsgeo_base;
             uint8_t     removable, mode;
 
@@ -500,35 +500,20 @@ void BIOSCALL ata_detect(void)
             case 3:
                 chsgeo_base = 0x70;
                 break;
-            case 4:
-                chsgeo_base = 0x40;
-                break;
-            case 5:
-                chsgeo_base = 0x48;
-                break;
-            case 6:
-                chsgeo_base = 0x50;
-                break;
-            case 7:
-                chsgeo_base = 0x58;
-                break;
             default:
                 chsgeo_base = 0;
             }
-            if (chsgeo_base != 0)
+            if (chsgeo_base)
             {
-                lcylinders = inb_cmos(chsgeo_base) + (inb_cmos(chsgeo_base+1) << 8);
-                lheads = inb_cmos(chsgeo_base+2);
-                lspt = inb_cmos(chsgeo_base+7);
+                lgeo.cylinders = inb_cmos(chsgeo_base) + (inb_cmos(chsgeo_base + 1) << 8);
+                lgeo.heads     = inb_cmos(chsgeo_base + 2);
+                lgeo.spt       = inb_cmos(chsgeo_base + 7);
             }
             else
-            {
-                lcylinders = 0;
-                lheads = 0;
-                lspt = 0;
-            }
+                set_geom_lba(&lgeo, sectors);   /* Default EDD-style translated LBA geometry. */
+
             BX_INFO("ata%d-%d: PCHS=%u/%d/%d LCHS=%u/%u/%u\n", channel, slave,
-                    cylinders,heads, spt, lcylinders, lheads, lspt);
+                    cylinders,heads, spt, lgeo.cylinders, lgeo.heads, lgeo.spt);
 
             bios_dsk->devices[device].device         = DSK_DEVICE_HD;
             bios_dsk->devices[device].removable      = removable;
@@ -538,9 +523,7 @@ void BIOSCALL ata_detect(void)
             bios_dsk->devices[device].pchs.cylinders = cylinders;
             bios_dsk->devices[device].pchs.spt       = spt;
             bios_dsk->devices[device].sectors        = sectors;
-            bios_dsk->devices[device].lchs.heads     = lheads;
-            bios_dsk->devices[device].lchs.cylinders = lcylinders;
-            bios_dsk->devices[device].lchs.spt       = lspt;
+            bios_dsk->devices[device].lchs           = lgeo;
             if (device < 2)
             {
                 uint8_t         sum, i;
@@ -555,8 +538,8 @@ void BIOSCALL ata_detect(void)
                  * to be done at POST time with lots of ugly assembler code, which
                  * isn't worth the effort of converting from AMI to Award CMOS
                  * format. Just do it here. */
-                fdpt->lcyl  = lcylinders;
-                fdpt->lhead = lheads;
+                fdpt->lcyl  = lgeo.cylinders;
+                fdpt->lhead = lgeo.heads;
                 fdpt->sig   = 0xa0;
                 fdpt->spt   = spt;
                 fdpt->cyl   = cylinders;
@@ -773,7 +756,7 @@ uint16_t ata_cmd_data_out(bio_dsk_t __far *bios_dsk, uint16_t command, uint16_t 
     }
     
     if (status & ATA_CB_STAT_ERR) {
-        BX_DEBUG_ATA("%s: read error\n", __func__);
+        BX_DEBUG_ATA("%s: write error\n", __func__);
         // Enable interrupts
         outb(iobase2+ATA_CB_DC, ATA_CB_DC_HD15);
         return 2;
@@ -965,7 +948,7 @@ uint16_t ata_cmd_packet(uint16_t device, uint8_t cmdlen, char __far *cmdbuf,
         if ( !(status & ATA_CB_STAT_BSY) ) break;
     }
     
-    if (status & ATA_CB_STAT_ERR) {
+    if (status & ATA_CB_STAT_CHK) {
         BX_DEBUG_ATA("%s: error, status is %02x\n", __func__, status);
         // Enable interrupts
         outb(iobase2+ATA_CB_DC, ATA_CB_DC_HD15);
@@ -1004,7 +987,7 @@ uint16_t ata_cmd_packet(uint16_t device, uint8_t cmdlen, char __far *cmdbuf,
             if ( (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_DRQ) ) ==0 )
                 break;
             
-            if (status & ATA_CB_STAT_ERR) {
+            if (status & ATA_CB_STAT_CHK) {
                 BX_DEBUG_ATA("%s: error (status %02x)\n", __func__, status);
                 // Enable interrupts
                 outb(iobase2+ATA_CB_DC, ATA_CB_DC_HD15);
@@ -1012,7 +995,7 @@ uint16_t ata_cmd_packet(uint16_t device, uint8_t cmdlen, char __far *cmdbuf,
             }
             
             // Device must be ready to send data
-            if ( (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_RDY | ATA_CB_STAT_DRQ | ATA_CB_STAT_ERR) )
+            if ( (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_RDY | ATA_CB_STAT_DRQ | ATA_CB_STAT_CHK) )
               != (ATA_CB_STAT_RDY | ATA_CB_STAT_DRQ) ) {
                 BX_DEBUG_ATA("%s: not ready (status %02x)\n", __func__, status);
                 // Enable interrupts
@@ -1110,7 +1093,7 @@ uint16_t ata_cmd_packet(uint16_t device, uint8_t cmdlen, char __far *cmdbuf,
     }
     
     // Final check, device must be ready
-    if ( (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_RDY | ATA_CB_STAT_DF | ATA_CB_STAT_DRQ | ATA_CB_STAT_ERR) )
+    if ( (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_RDY | ATA_CB_STAT_DF | ATA_CB_STAT_DRQ | ATA_CB_STAT_CHK) )
       != ATA_CB_STAT_RDY ) {
         BX_DEBUG_ATA("%s: not ready (status %02x)\n", __func__, (unsigned) status);
         // Enable interrupts
@@ -1119,6 +1102,52 @@ uint16_t ata_cmd_packet(uint16_t device, uint8_t cmdlen, char __far *cmdbuf,
     }
     
     // Enable interrupts
+    outb(iobase2+ATA_CB_DC, ATA_CB_DC_HD15);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// ATA/ATAPI driver : reset device; intended for ATAPI devices
+// ---------------------------------------------------------------------------
+      // returns
+      // 0 : no error
+      // 1 : error
+uint16_t ata_soft_reset(uint16_t device)
+{
+    uint16_t        iobase1, iobase2;
+    uint8_t         channel, slave;
+    uint8_t         status;
+    bio_dsk_t __far *bios_dsk;
+
+    bios_dsk = read_word(0x0040, 0x000E) :> &EbdaData->bdisk;
+
+    channel = device / 2;
+    slave   = device % 2;
+
+    iobase1  = bios_dsk->channels[channel].iobase1;
+    iobase2  = bios_dsk->channels[channel].iobase2;
+
+    /* Send a reset command to the device. */
+    outb(iobase2 + ATA_CB_DC, ATA_CB_DC_HD15 | ATA_CB_DC_NIEN);
+    outb(iobase1 + ATA_CB_DH, slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0);
+    outb(iobase1 + ATA_CB_CMD, ATA_CMD_DEVICE_RESET);
+    
+    /* Wait for the device to clear BSY. */
+    while (1) {
+        status = inb(iobase1 + ATA_CB_STAT);
+        if ( !(status & ATA_CB_STAT_BSY) ) break;
+    }
+    
+    /* Final check, device must be ready */
+    if ( (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_RDY | ATA_CB_STAT_DF | ATA_CB_STAT_DRQ | ATA_CB_STAT_CHK) )
+      != ATA_CB_STAT_RDY ) {
+        BX_DEBUG_ATA("%s: not ready (status %02x)\n", __func__, (unsigned) status);
+        /* Enable interrupts */
+        outb(iobase2 + ATA_CB_DC, ATA_CB_DC_HD15);
+        return 1;
+    }
+    
+    /* Enable interrupts */
     outb(iobase2+ATA_CB_DC, ATA_CB_DC_HD15);
     return 0;
 }

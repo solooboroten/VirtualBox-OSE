@@ -1,10 +1,12 @@
-/* $Id: DevSMC.cpp 35353 2010-12-27 17:25:52Z vboxsync $ */
+/* $Id: DevSMC.cpp $ */
 /** @file
  * DevSMC - SMC device emulation.
+ *
+ * @todo Rainy day: Rewrite from scratch!!
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -236,15 +238,14 @@ static bool devR0SmcQueryHostKey(const char *pszName, uint8_t *pbBuf, size_t cbB
  * RTOnce callback that initializes g_fHaveOsk, g_abOsk0 and g_abOsk1.
  *
  * @returns VINF_SUCCESS.
- * @param   pvUser1Ignored  Ignored.
- * @param   pvUser2Ignored  Ignored.
+ * @param   pvUserIgnored     Ignored.
  */
-static DECLCALLBACK(int) devR0SmcInitOnce(void *pvUser1Ignored, void *pvUser2Ignored)
+static DECLCALLBACK(int) devR0SmcInitOnce(void *pvUserIgnored)
 {
     g_fHaveOsk = devR0SmcQueryHostKey("OSK0", &g_abOsk0[0], sizeof(g_abOsk0))
               && devR0SmcQueryHostKey("OSK1", &g_abOsk1[0], sizeof(g_abOsk1));
 
-    NOREF(pvUser1Ignored); NOREF(pvUser2Ignored);
+    NOREF(pvUserIgnored);
     return VINF_SUCCESS;
 }
 
@@ -258,7 +259,7 @@ PDMBOTHCBDECL(int) devR0SmcReqHandler(PPDMDEVINS pDevIns, uint32_t uOperation, u
 
     if (uOperation == SMC_CALLR0_READ_OSK)
     {
-        rc = RTOnce(&g_SmcR0Once, devR0SmcInitOnce, NULL, NULL);
+        rc = RTOnce(&g_SmcR0Once, devR0SmcInitOnce, NULL);
         if (   RT_SUCCESS(rc)
             && g_fHaveOsk)
         {
@@ -598,7 +599,7 @@ const PDMDEVREG g_DeviceSMC =
     NULL,
     /* pfnRelocate */
     NULL,
-    /* pfnIOCtl */
+    /* pfnMemSetup */
     NULL,
     /* pfnPowerOn */
     NULL,

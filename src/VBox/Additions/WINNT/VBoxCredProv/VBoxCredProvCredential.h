@@ -1,4 +1,4 @@
-/* $Id: VBoxCredProvCredential.h 40435 2012-03-12 18:01:39Z vboxsync $ */
+/* $Id: VBoxCredProvCredential.h $ */
 /** @file
  * VBoxCredProvCredential - Class for keeping and handling the passed credentials.
  */
@@ -23,7 +23,6 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <Windows.h>
-#include <intsafe.h>
 #include <NTSecAPI.h>
 #define SECURITY_WIN32
 #include <Security.h>
@@ -110,6 +109,8 @@ private:
     PRTUTF16                              m_apwszCredentials[VBOXCREDPROV_NUM_FIELDS];
     /** Pointer to event handler. */
     ICredentialProviderCredentialEvents  *m_pEvents;
+    /** Flag indicating whether credentials already were retrieved. */
+    bool                                  m_fHaveCreds;
 };
 #endif /* !___VBOX_CREDPROV_CREDENTIAL_H___ */
 

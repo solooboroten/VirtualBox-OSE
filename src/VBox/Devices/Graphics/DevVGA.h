@@ -1,10 +1,10 @@
-/* $Id: DevVGA.h 41636 2012-06-09 12:56:51Z vboxsync $ */
+/* $Id: DevVGA.h $ */
 /** @file
  * DevVGA - VBox VGA/VESA device, internal header.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -259,8 +259,7 @@ typedef struct VGAState {
     PPDMDEVINSRC                pDevInsRC;
     /** Pointer to the GC vram mapping. */
     RCPTRTYPE(uint8_t *)        vram_ptrRC;
-    /** Pointer to vgaGCLFBAccessHandler(). */
-    RTRCPTR                     RCPtrLFBHandler;
+    uint32_t                    PaddingMinus1;
 
     /** Pointer to the device instance - R3 Ptr. */
     PPDMDEVINSR3                pDevInsR3;
@@ -277,6 +276,8 @@ typedef struct VGAState {
 # if defined(VBOX_WITH_HGSMI) && (defined(VBOX_WITH_VIDEOHWACCEL) || defined(VBOX_WITH_CRHGSMI))
     /** LUN\#0: VBVA callbacks interface */
     PDMIDISPLAYVBVACALLBACKS    IVBVACallbacks;
+# elif HC_ARCH_BITS == 32
+    uint32_t                    Padding0;
 # endif
     /** Pointer to base interface of the driver. */
     R3PTRTYPE(PPDMIBASE)        pDrvBase;
@@ -314,8 +315,8 @@ typedef struct VGAState {
 
     /** The physical address the VRAM was assigned. */
     RTGCPHYS                    GCPhysVRAM;
-    /** The critical section. */
-    PDMCRITSECT                 lock;
+    /** The critical section protect the instance data. */
+    PDMCRITSECT                 CritSect;
     /** The PCI device. */
     PCIDEVICE                   Dev;
 

@@ -1,10 +1,10 @@
-/* $Id: HostImpl.h 36615 2011-04-07 12:45:27Z vboxsync $ */
+/* $Id: HostImpl.h $ */
 /** @file
  * Implementation of IHost.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -61,6 +61,9 @@ public:
     STDMETHOD(COMGETTER(USBDevices))(ComSafeArrayOut(IHostUSBDevice *, aUSBDevices));
     STDMETHOD(COMGETTER(USBDeviceFilters))(ComSafeArrayOut(IHostUSBDeviceFilter *, aUSBDeviceFilters));
     STDMETHOD(COMGETTER(NetworkInterfaces))(ComSafeArrayOut(IHostNetworkInterface *, aNetworkInterfaces));
+    STDMETHOD(COMGETTER(NameServers))(ComSafeArrayOut(BSTR, aNameServers));
+    STDMETHOD(COMGETTER(DomainName))(BSTR *aDomainName);
+    STDMETHOD(COMGETTER(SearchStrings))(ComSafeArrayOut(BSTR, aSearchStrings));
     STDMETHOD(COMGETTER(ProcessorCount))(ULONG *count);
     STDMETHOD(COMGETTER(ProcessorOnlineCount))(ULONG *count);
     STDMETHOD(COMGETTER(ProcessorCoreCount))(ULONG *count);
@@ -144,8 +147,17 @@ private:
     bool validateDevice(const char *deviceNode, bool isCDROM);
 #endif
 
+    HRESULT updateNetIfList();
+
+#ifndef RT_OS_WINDOWS
+    HRESULT parseResolvConf();
+#else
+    HRESULT fetchNameResolvingInformation();
+#endif
+
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
     void registerMetrics(PerformanceCollector *aCollector);
+    void registerDiskMetrics(PerformanceCollector *aCollector);
     void unregisterMetrics(PerformanceCollector *aCollector);
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 

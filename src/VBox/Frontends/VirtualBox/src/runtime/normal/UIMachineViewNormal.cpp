@@ -1,4 +1,4 @@
-/* $Id: UIMachineViewNormal.cpp 43022 2012-08-28 06:25:05Z vboxsync $ */
+/* $Id: UIMachineViewNormal.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -64,29 +64,11 @@ UIMachineViewNormal::~UIMachineViewNormal()
 
 void UIMachineViewNormal::sltAdditionsStateChanged()
 {
-    /* Check if we should restrict minimum size: */
-    maybeRestrictMinimumSize();
-
     /* Resend the last resize hint if there was a fullscreen or
      * seamless transition previously.  If we were not in graphical
      * mode initially after the transition this happens when we
      * switch. */
     maybeResendResizeHint();
-}
-
-bool UIMachineViewNormal::event(QEvent *pEvent)
-{
-    switch (pEvent->type())
-    {
-        case ResizeEventType:
-        {
-            return guestResizeEvent(pEvent, false);
-        }
-
-        default:
-            break;
-    }
-    return UIMachineView::event(pEvent);
 }
 
 bool UIMachineViewNormal::eventFilter(QObject *pWatched, QEvent *pEvent)
@@ -109,18 +91,6 @@ bool UIMachineViewNormal::eventFilter(QObject *pWatched, QEvent *pEvent)
                     QTimer::singleShot(300, this, SLOT(sltPerformGuestResize()));
                 break;
             }
-#if defined (Q_WS_WIN32)
-# if defined (VBOX_GUI_USE_DDRAW)
-            case QEvent::Move:
-            {
-                /* Notification from our parent that it has moved. We need this in order
-                 * to possibly adjust the direct screen blitting: */
-                if (frameBuffer())
-                    frameBuffer()->moveEvent(static_cast<QMoveEvent*>(pEvent));
-                break;
-            }
-# endif /* defined (VBOX_GUI_USE_DDRAW) */
-#endif /* defined (Q_WS_WIN32) */
             default:
                 break;
         }
@@ -165,8 +135,10 @@ void UIMachineViewNormal::prepareFilters()
     /* Base class filters: */
     UIMachineView::prepareFilters();
 
-    /* Menu bar filters: */
+#ifdef Q_WS_WIN
+    /* Install menu-bar event-filter: */
     machineWindow()->menuBar()->installEventFilter(this);
+#endif /* Q_WS_WIN */
 }
 
 void UIMachineViewNormal::prepareConsoleConnections()
@@ -214,8 +186,6 @@ void UIMachineViewNormal::setGuestAutoresizeEnabled(bool fEnabled)
     {
         m_bIsGuestAutoresizeEnabled = fEnabled;
 
-        maybeRestrictMinimumSize();
-
         if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
             sltPerformGuestResize();
     }
@@ -225,10 +195,6 @@ void UIMachineViewNormal::normalizeGeometry(bool bAdjustPosition)
 {
 #ifndef VBOX_GUI_WITH_CUSTOMIZATIONS1
     QWidget *pTopLevelWidget = window();
-
-    /* Make no normalizeGeometry in case we are in manual resize mode or main window is maximized: */
-    if (pTopLevelWidget->isMaximized())
-        return;
 
     /* Calculate client window offsets: */
     QRect frameGeo = pTopLevelWidget->frameGeometry();
@@ -258,7 +224,7 @@ void UIMachineViewNormal::normalizeGeometry(bool bAdjustPosition)
             /* Get just a simple available rectangle */
             availableGeo = dwt->availableGeometry(pTopLevelWidget->pos());
 
-        frameGeo = VBoxGlobal::normalizeGeometry(frameGeo, availableGeo, vboxGlobal().vmRenderMode() != SDLMode /* can resize? */);
+        frameGeo = VBoxGlobal::normalizeGeometry(frameGeo, availableGeo);
     }
 
 #if 0
@@ -297,20 +263,5 @@ QSize UIMachineViewNormal::calculateMaxGuestSize() const
      * central widget shouldn't be bigger than the window, but we bound it for
      * sanity (or insanity) reasons. */
     return maximumSize - (windowSize - centralWidgetSize.boundedTo(windowSize));
-}
-
-void UIMachineViewNormal::maybeRestrictMinimumSize()
-{
-    /* Sets the minimum size restriction depending on the auto-resize feature state and the current rendering mode.
-     * Currently, the restriction is set only in SDL mode and only when the auto-resize feature is inactive.
-     * We need to do that because we cannot correctly draw in a scrolled window in SDL mode.
-     * In all other modes, or when auto-resize is in force, this function does nothing. */
-    if (vboxGlobal().vmRenderMode() == SDLMode)
-    {
-        if (!uisession()->isGuestSupportsGraphics() || !m_bIsGuestAutoresizeEnabled)
-            setMinimumSize(sizeHint());
-        else
-            setMinimumSize(0, 0);
-    }
 }
 

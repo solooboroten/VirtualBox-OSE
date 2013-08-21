@@ -1,10 +1,10 @@
-/* $Id: thread.h 39456 2011-11-29 13:31:29Z vboxsync $ */
+/* $Id: thread.h $ */
 /** @file
  * IPRT - Internal RTThread header.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -139,6 +139,16 @@ typedef RTTHREADINT *PRTTHREADINT;
  */
 DECLHIDDEN(int) rtThreadNativeInit(void);
 
+#ifdef IN_RING3
+/**
+ * Called when IPRT was first initialized in unobtrusive mode and later changed
+ * to obtrustive.
+ *
+ * This is only applicable in ring-3.
+ */
+DECLHIDDEN(void) rtThreadNativeReInitObtrusive(void);
+#endif
+
 /**
  * Create a native thread.
  * This creates the thread as described in pThreadInt and stores the thread id in *pThread.
@@ -199,6 +209,9 @@ DECLHIDDEN(void)         rtThreadTerminate(PRTTHREADINT pThread, int rc);
 DECLHIDDEN(PRTTHREADINT) rtThreadGetByNative(RTNATIVETHREAD NativeThread);
 DECLHIDDEN(PRTTHREADINT) rtThreadGet(RTTHREAD Thread);
 DECLHIDDEN(int)          rtThreadInit(void);
+#ifdef IN_RING3
+DECLHIDDEN(void)         rtThreadReInitObtrusive(void);
+#endif
 DECLHIDDEN(void)         rtThreadTerm(void);
 DECLHIDDEN(void)         rtThreadInsert(PRTTHREADINT pThread, RTNATIVETHREAD NativeThread);
 #ifdef IN_RING3

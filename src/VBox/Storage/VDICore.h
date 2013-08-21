@@ -1,10 +1,10 @@
-/* $Id: VDICore.h 40936 2012-04-16 09:28:45Z vboxsync $ */
+/* $Id: VDICore.h $ */
 /** @file
  * Virtual Disk Image (VDI), Core Code Header (internal).
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -236,9 +236,9 @@ typedef struct VDIHEADER
 /**
  * File alignment boundary for both the block array and data area. Should be
  * at least the size of a physical sector on disk for performance reasons.
- * With the growing market share of disks with 4K sectors this needs to be
- * bumped, and maybe again later. */
-#define VDI_DATA_ALIGN _4K
+ * Bumped to 1MB because SSDs tend to have 8kb per page so we don't have to worry
+ * about proper alignment in the near future again. */
+#define VDI_DATA_ALIGN _1M
 
 /** Block 'pointer'. */
 typedef uint32_t    VDIIMAGEBLOCKPOINTER;

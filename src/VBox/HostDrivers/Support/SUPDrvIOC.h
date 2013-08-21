@@ -1,10 +1,10 @@
-/* $Revision: 41783 $ */
+/* $Revision: 83575 $ */
 /** @file
  * VirtualBox Support Driver - IOCtl definitions.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -100,8 +100,8 @@
 
 /** Fast path IOCtl: VMMR0_DO_RAW_RUN */
 #define SUP_IOCTL_FAST_DO_RAW_RUN               SUP_CTL_CODE_FAST(64)
-/** Fast path IOCtl: VMMR0_DO_HWACC_RUN */
-#define SUP_IOCTL_FAST_DO_HWACC_RUN             SUP_CTL_CODE_FAST(65)
+/** Fast path IOCtl: VMMR0_DO_HM_RUN */
+#define SUP_IOCTL_FAST_DO_HM_RUN             SUP_CTL_CODE_FAST(65)
 /** Just a NOP call for profiling the latency of a fast ioctl call to VMMR0. */
 #define SUP_IOCTL_FAST_DO_NOP                   SUP_CTL_CODE_FAST(66)
 
@@ -193,7 +193,7 @@ typedef SUPREQHDR *PSUPREQHDR;
  * @todo Pending work on next major version change:
  *          - Remove RTSpinlockReleaseNoInts.
  */
-#define SUPDRV_IOC_VERSION                              0x001a0004
+#define SUPDRV_IOC_VERSION                              0x001a0005
 
 /** SUP_IOCTL_COOKIE. */
 typedef struct SUPCOOKIE

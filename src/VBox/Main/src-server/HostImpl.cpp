@@ -1,10 +1,10 @@
-/* $Id: HostImpl.cpp 42664 2012-08-07 14:34:48Z vboxsync $ */
+/* $Id: HostImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
 
 /*
- * Copyright (C) 2004-2012 Oracle Corporation
+ * Copyright (C) 2004-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -53,6 +53,11 @@
 #if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
 # include <VBox/VBoxNetCfg-win.h>
 #endif /* #if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT) */
+
+#if defined(RT_OS_DARWIN) && ARCH_BITS == 32
+# include <sys/types.h>
+# include <sys/sysctl.h>
+#endif
 
 #ifdef RT_OS_LINUX
 # include <sys/ioctl.h>
@@ -133,15 +138,17 @@ typedef SOLARISDVD *PSOLARISDVD;
 #include <iprt/env.h>
 #include <iprt/mem.h>
 #include <iprt/system.h>
-#ifdef RT_OS_SOLARIS
+#ifndef RT_OS_WINDOWS
 # include <iprt/path.h>
+#endif
+#ifdef RT_OS_SOLARIS
 # include <iprt/ctype.h>
 #endif
 #ifdef VBOX_WITH_HOSTNETIF_API
 # include "netif.h"
 #endif
 
-/* XXX Solaris: definitions in /usr/include/sys/regset.h clash with hwacc_svm.h */
+/* XXX Solaris: definitions in /usr/include/sys/regset.h clash with hm_svm.h */
 #undef DS
 #undef ES
 #undef CS
@@ -150,13 +157,14 @@ typedef SOLARISDVD *PSOLARISDVD;
 #undef GS
 
 #include <VBox/usb.h>
-#include <VBox/vmm/hwacc_svm.h>
+#include <VBox/vmm/hm_svm.h>
 #include <VBox/err.h>
 #include <VBox/settings.h>
 #include <VBox/sup.h>
 #include <iprt/x86.h>
 
 #include "VBox/com/MultiResult.h"
+#include "VBox/com/array.h"
 
 #include <stdio.h>
 
@@ -178,6 +186,8 @@ struct Host::Data
 
     VirtualBox              *pParent;
 
+    HostNetworkInterfaceList llNetIfs;                  // list of network interfaces
+
 #ifdef VBOX_WITH_USB
     USBDeviceFilterList     llChildren;                 // all USB device filters
     USBDeviceFilterList     llUSBDeviceFilters;         // USB device filters in use by the USB proxy service
@@ -197,18 +207,58 @@ struct Host::Data
     /** Object with information about host drives */
     VBoxMainDriveInfo       hostDrives;
 #endif
-    /* Features that can be queried with GetProcessorFeature */
-    BOOL                    fVTSupported,
+    /** @name Features that can be queried with GetProcessorFeature.
+     * @{ */
+    bool                    fVTSupported,
                             fLongModeSupported,
                             fPAESupported,
-                            fNestedPagingSupported;
+                            fNestedPagingSupported,
+                            fRecheckVTSupported;
 
-    /* 3D hardware acceleration supported? */
-    BOOL                    f3DAccelerationSupported;
+    /** @}  */
+
+    /** 3D hardware acceleration supported? Tristate, -1 meaning not probed. */
+    int                     f3DAccelerationSupported;
 
     HostPowerService        *pHostPowerService;
+
+    /* Name resolving */
+    std::list<com::Bstr>     llNameServers;
+    std::list<com::Bstr>     llSearchStrings;
+    Bstr                     DomainName;
+    /* XXX: we need timestamp when these values were set, on repeate in some 
+     *  (~1h?, 5 min?) period, this values should be refetched from host syetem.
+     */
 };
 
+#ifndef RT_OS_WINDOWS
+static char g_aszResolvConf[RTPATH_MAX];
+
+static inline char *getResolvConfPath()
+{
+    if (!g_aszResolvConf[0]) return g_aszResolvConf;
+# ifdef RT_OS_OS2
+    /*
+     * This was in an old Slirp code:
+     * IBM's "Technical Document # - 16070238", clearly says \MPTN\ETC\RESOLV2 
+     * no redolv.conf (remark to code in old Slirp code)
+     */
+    if (RTEnvExists("ETC"))
+    {
+        RTStrmPrintf(g_aszResolvConf, MAX_PATH, "%/RESOLV2", RTEnvGet("ETC"));
+        int rc = RTFileExists(g_aszResolvConf);
+        if (RT_SUCCESS(rc))
+            return g_aszResolvConf;
+    }
+
+    RT_ZERO(g_aszResolvConf);
+    RTStrmPrintf(g_aszResolvConf, sizeof(g_aszResolvConf), "%/RESOLV2", _PATH_ETC);
+# else
+    RTStrCopy(g_aszResolvConf, sizeof(g_aszResolvConf), "/etc/resolv.conf");
+# endif    
+    return g_aszResolvConf;
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -271,6 +321,8 @@ HRESULT Host::init(VirtualBox *aParent)
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
     registerMetrics(aParent->performanceCollector());
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
+    /* Create the list of network interfaces so their metrics get registered. */
+    updateNetIfList();
 
 #if defined (RT_OS_WINDOWS)
     m->pHostPowerService = new HostPowerServiceWin(m->pParent);
@@ -285,100 +337,104 @@ HRESULT Host::init(VirtualBox *aParent)
     m->fLongModeSupported = false;
     m->fPAESupported = false;
     m->fNestedPagingSupported = false;
+    m->fRecheckVTSupported = false;
 
     if (ASMHasCpuId())
     {
-        uint32_t u32FeaturesECX;
-        uint32_t u32Dummy;
-        uint32_t u32FeaturesEDX;
-        uint32_t u32VendorEBX, u32VendorECX, u32VendorEDX, u32ExtFeatureEDX, u32ExtFeatureECX;
-
-        ASMCpuId(0, &u32Dummy, &u32VendorEBX, &u32VendorECX, &u32VendorEDX);
-        ASMCpuId(1, &u32Dummy, &u32Dummy, &u32FeaturesECX, &u32FeaturesEDX);
-        /* Query Extended features. */
-        ASMCpuId(0x80000001, &u32Dummy, &u32Dummy, &u32ExtFeatureECX, &u32ExtFeatureEDX);
-
-        m->fLongModeSupported = !!(u32ExtFeatureEDX & X86_CPUID_EXT_FEATURE_EDX_LONG_MODE);
-        m->fPAESupported      = !!(u32FeaturesEDX & X86_CPUID_FEATURE_EDX_PAE);
-
-        if (    u32VendorEBX == X86_CPUID_VENDOR_INTEL_EBX
-            &&  u32VendorECX == X86_CPUID_VENDOR_INTEL_ECX
-            &&  u32VendorEDX == X86_CPUID_VENDOR_INTEL_EDX
-           )
+        /* Note! This code is duplicated in SUPDrv.c and other places! */
+        uint32_t uMaxId, uVendorEBX, uVendorECX, uVendorEDX;
+        ASMCpuId(0, &uMaxId, &uVendorEBX, &uVendorECX, &uVendorEDX);
+        if (ASMIsValidStdRange(uMaxId))
         {
-            /* Intel. */
-            if (    (u32FeaturesECX & X86_CPUID_FEATURE_ECX_VMX)
-                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
-                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
-               )
-            {
-                int rc = SUPR3QueryVTxSupported();
-                if (RT_SUCCESS(rc))
-                    m->fVTSupported = true;
-            }
-        }
-        else
-        if (    u32VendorEBX == X86_CPUID_VENDOR_AMD_EBX
-            &&  u32VendorECX == X86_CPUID_VENDOR_AMD_ECX
-            &&  u32VendorEDX == X86_CPUID_VENDOR_AMD_EDX
-           )
-        {
-            /* AMD. */
-            if (   (u32ExtFeatureECX & X86_CPUID_AMD_FEATURE_ECX_SVM)
-                && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
-                && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
-               )
-            {
-                uint32_t u32SVMFeatureEDX;
+            /* PAE? */
+            uint32_t uDummy, fFeaturesEcx, fFeaturesEdx;
+            ASMCpuId(1, &uDummy, &uDummy, &fFeaturesEcx, &fFeaturesEdx);
+            m->fPAESupported = RT_BOOL(fFeaturesEdx & X86_CPUID_FEATURE_EDX_PAE);
 
-                m->fVTSupported = true;
+            /* Long Mode? */
+            uint32_t uExtMaxId, fExtFeaturesEcx, fExtFeaturesEdx;
+            ASMCpuId(0x80000000, &uExtMaxId, &uDummy, &uDummy, &uDummy);
+            ASMCpuId(0x80000001, &uDummy, &uDummy, &fExtFeaturesEcx, &fExtFeaturesEdx);
+            m->fLongModeSupported = ASMIsValidExtRange(uExtMaxId)
+                                 && (fExtFeaturesEdx & X86_CPUID_EXT_FEATURE_EDX_LONG_MODE);
 
-                /* Query AMD features. */
-                ASMCpuId(0x8000000A, &u32Dummy, &u32Dummy, &u32Dummy, &u32SVMFeatureEDX);
-                if (u32SVMFeatureEDX & AMD_CPUID_SVM_FEATURE_EDX_NESTED_PAGING)
-                    m->fNestedPagingSupported = true;
-            }
-        }
-        else
-        if (    u32VendorEBX == X86_CPUID_VENDOR_VIA_EBX
-            &&  u32VendorECX == X86_CPUID_VENDOR_VIA_ECX
-            &&  u32VendorEDX == X86_CPUID_VENDOR_VIA_EDX
-           )
-        {
-            /* VIA. */
-            if (    (u32FeaturesECX & X86_CPUID_FEATURE_ECX_VMX)
-                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
-                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
-               )
-            {
-                int rc = SUPR3QueryVTxSupported();
-                if (RT_SUCCESS(rc))
-                    m->fVTSupported = true;
-            }
-        }
-    }
-
-#if 0 /* needs testing */
-    if (m->fVTSupported)
-    {
-        uint32_t u32Caps = 0;
-
-        int rc = SUPR3QueryVTCaps(&u32Caps);
-        if (RT_SUCCESS(rc))
-        {
-            if (u32Caps & SUPVTCAPS_NESTED_PAGING)
-                m->fNestedPagingSupported = true;
-        }
-        /* else @todo; report BIOS trouble in some way. */
-    }
+#if defined(RT_OS_DARWIN) && ARCH_BITS == 32 /* darwin.x86 has some optimizations of 64-bit on 32-bit. */
+            int     f64bitCapable = 0;
+            size_t  cbParameter   = sizeof(f64bitCapable);
+            if (sysctlbyname("hw.cpu64bit_capable", &f64bitCapable, &cbParameter, NULL, NULL) != -1)
+                m->fLongModeSupported = f64bitCapable != 0;
 #endif
 
-    /* Test for 3D hardware acceleration support */
-    m->f3DAccelerationSupported = false;
+            /* VT-x? */
+            if (   ASMIsIntelCpuEx(uVendorEBX, uVendorECX, uVendorEDX)
+                || ASMIsViaCentaurCpuEx(uVendorEBX, uVendorECX, uVendorEDX))
+            {
+                if (    (fFeaturesEcx & X86_CPUID_FEATURE_ECX_VMX)
+                     && (fFeaturesEdx & X86_CPUID_FEATURE_EDX_MSR)
+                     && (fFeaturesEdx & X86_CPUID_FEATURE_EDX_FXSR)
+                   )
+                {
+                    int rc = SUPR3QueryVTxSupported();
+                    if (RT_SUCCESS(rc))
+                        m->fVTSupported = true;
+                }
+            }
+            /* AMD-V */
+            else if (ASMIsAmdCpuEx(uVendorEBX, uVendorECX, uVendorEDX))
+            {
+                if (   (fExtFeaturesEcx & X86_CPUID_AMD_FEATURE_ECX_SVM)
+                    && (fFeaturesEdx    & X86_CPUID_FEATURE_EDX_MSR)
+                    && (fFeaturesEdx    & X86_CPUID_FEATURE_EDX_FXSR)
+                    && ASMIsValidExtRange(uExtMaxId)
+                   )
+                {
+                    m->fVTSupported = true;
+
+                    /* Query AMD features. */
+                    if (uExtMaxId >= 0x8000000a)
+                    {
+                        uint32_t fSVMFeaturesEdx;
+                        ASMCpuId(0x8000000a, &uDummy, &uDummy, &uDummy, &fSVMFeaturesEdx);
+                        if (fSVMFeaturesEdx & AMD_CPUID_SVM_FEATURE_EDX_NESTED_PAGING)
+                            m->fNestedPagingSupported = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Check with SUPDrv if VT-x and AMD-V are really supported (may fail). */
+    if (m->fVTSupported)
+    {
+        int rc = SUPR3InitEx(false /*fUnrestricted*/, NULL);
+        if (RT_SUCCESS(rc))
+        {
+            uint32_t fVTCaps;
+            rc = SUPR3QueryVTCaps(&fVTCaps);
+            if (RT_SUCCESS(rc))
+            {
+                Assert(fVTCaps & (SUPVTCAPS_AMD_V | SUPVTCAPS_VT_X));
+                if (fVTCaps & SUPVTCAPS_NESTED_PAGING)
+                    m->fNestedPagingSupported = true;
+                else
+                    Assert(m->fNestedPagingSupported == false);
+            }
+            else
+            {
+                LogRel(("SUPR0QueryVTCaps -> %Rrc\n", rc));
+                m->fVTSupported = m->fNestedPagingSupported = false;
+            }
+        }
+        else
+            m->fRecheckVTSupported = true; /* Try again later when the driver is loaded. */
+    }
 
 #ifdef VBOX_WITH_CROGL
-    m->f3DAccelerationSupported = VBoxOglIs3DAccelerationSupported();
-#endif /* VBOX_WITH_CROGL */
+    /* Test for 3D hardware acceleration support later when (if ever) need. */
+    m->f3DAccelerationSupported = -1;
+#else
+    m->f3DAccelerationSupported = false;
+#endif
 
 #if defined (RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD)
     /* Extract the list of configured host-only interfaces */
@@ -436,8 +492,15 @@ void Host::uninit()
         return;
 
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
-    unregisterMetrics (m->pParent->performanceCollector());
+    PerformanceCollector *aCollector = m->pParent->performanceCollector();
+    unregisterMetrics (aCollector);
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
+    /*
+     * Note that unregisterMetrics() has unregistered all metrics associated
+     * with Host including network interface ones. We can destroy network
+     * interface objects now.
+     */
+    m->llNetIfs.clear();
 
 #ifdef VBOX_WITH_USB
     /* wait for USB proxy service to terminate before we uninit all USB
@@ -536,7 +599,7 @@ static int vboxNetWinAddComponent(std::list< ComObjPtr<HostNetworkInterface> > *
     HRESULT hr;
     int rc = VERR_GENERAL_FAILURE;
 
-    hr = pncc->GetDisplayName( &lpszName );
+    hr = pncc->GetDisplayName(&lpszName);
     Assert(hr == S_OK);
     if (hr == S_OK)
     {
@@ -583,15 +646,21 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    std::list<ComObjPtr<HostNetworkInterface> > list;
-
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 # ifdef VBOX_WITH_HOSTNETIF_API
-    int rc = NetIfList(list);
+    int rc = updateNetIfList();
     if (rc)
     {
         Log(("Failed to get host network interface list with rc=%Rrc\n", rc));
     }
+
+    SafeIfaceArray<IHostNetworkInterface> networkInterfaces (m->llNetIfs);
+    networkInterfaces.detachTo(ComSafeArrayOutArg(aNetworkInterfaces));
+
+    return S_OK;
+
 # else
+    std::list<ComObjPtr<HostNetworkInterface> > list;
 
 #  if defined(RT_OS_DARWIN)
     PDARWINETHERNIC pEtherNICs = DarwinGetEthernetControllers();
@@ -623,10 +692,10 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
     INetCfgBindingInterface *pBi;
 
     /* we are using the INetCfg API for getting the list of miniports */
-    hr = VBoxNetCfgWinQueryINetCfg( FALSE,
-                       VBOX_APP_NAME,
-                       &pNc,
-                       &lpszApp );
+    hr = VBoxNetCfgWinQueryINetCfg(FALSE,
+                                   VBOX_APP_NAME,
+                                   &pNc,
+                                   &lpszApp);
     Assert(hr == S_OK);
     if (hr == S_OK)
     {
@@ -649,24 +718,24 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
         {
             hr = VBoxNetCfgWinGetBindingPathEnum(pTcpIpNcc, EBP_BELOW, &pEnumBp);
             Assert(hr == S_OK);
-            if ( hr == S_OK )
+            if (hr == S_OK)
             {
                 hr = VBoxNetCfgWinGetFirstBindingPath(pEnumBp, &pBp);
                 Assert(hr == S_OK || hr == S_FALSE);
-                while( hr == S_OK )
+                while (hr == S_OK)
                 {
                     /* S_OK == enabled, S_FALSE == disabled */
                     if (pBp->IsEnabled() == S_OK)
                     {
                         hr = VBoxNetCfgWinGetBindingInterfaceEnum(pBp, &pEnumBi);
                         Assert(hr == S_OK);
-                        if ( hr == S_OK )
+                        if (hr == S_OK)
                         {
                             hr = VBoxNetCfgWinGetFirstBindingInterface(pEnumBi, &pBi);
                             Assert(hr == S_OK);
-                            while(hr == S_OK)
+                            while (hr == S_OK)
                             {
-                                hr = pBi->GetLowerComponent( &pMpNcc );
+                                hr = pBi->GetLowerComponent(&pMpNcc);
                                 Assert(hr == S_OK);
                                 if (hr == S_OK)
                                 {
@@ -680,7 +749,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
                                             vboxNetWinAddComponent(&list, pMpNcc);
                                         }
                                     }
-                                    VBoxNetCfgWinReleaseRef( pMpNcc );
+                                    VBoxNetCfgWinReleaseRef(pMpNcc);
                                 }
                                 VBoxNetCfgWinReleaseRef(pBi);
 
@@ -738,19 +807,13 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
         close(sock);
     }
 #  endif /* RT_OS_LINUX */
-# endif
-
-    std::list <ComObjPtr<HostNetworkInterface> >::iterator it;
-    for (it = list.begin(); it != list.end(); ++it)
-    {
-        (*it)->setVirtualBox(m->pParent);
-    }
 
     SafeIfaceArray<IHostNetworkInterface> networkInterfaces (list);
     networkInterfaces.detachTo(ComSafeArrayOutArg(aNetworkInterfaces));
 
     return S_OK;
 
+# endif
 #else
     /* Not implemented / supported on this platform. */
     ReturnComNotImplemented();
@@ -783,6 +846,43 @@ STDMETHODIMP Host::COMGETTER(USBDevices)(ComSafeArrayOut(IHostUSBDevice*, aUSBDe
     ReturnComNotImplemented();
 #endif
 }
+
+
+/**
+ * This method return the list of registered name servers 
+ */
+STDMETHODIMP Host::COMGETTER(NameServers)(ComSafeArrayOut(BSTR, aNameServers))
+{
+    NOREF(aNameServers);
+#ifndef RT_OS_WINDOWS
+    NOREF(aNameServersSize);
+#endif
+    return E_NOTIMPL;
+}
+
+
+/**
+ * This method returns the domain name of the host
+ */
+STDMETHODIMP Host::COMGETTER(DomainName)(BSTR *aDomainName)
+{
+    NOREF(aDomainName);
+    return E_NOTIMPL;
+}
+
+
+/**
+ * This method returns the search string.
+ */
+STDMETHODIMP Host::COMGETTER(SearchStrings)(ComSafeArrayOut(BSTR, aSearchStrings))
+{
+    NOREF(aSearchStrings);
+#ifndef RT_OS_WINDOWS
+    NOREF(aSearchStringsSize);
+#endif
+    return E_NOTIMPL;
+}
+
 
 STDMETHODIMP Host::COMGETTER(USBDeviceFilters)(ComSafeArrayOut(IHostUSBDeviceFilter*, aUSBDeviceFilters))
 {
@@ -902,34 +1002,82 @@ STDMETHODIMP Host::GetProcessorDescription(ULONG aCpuId, BSTR *aDescription)
  */
 STDMETHODIMP Host::GetProcessorFeature(ProcessorFeature_T aFeature, BOOL *aSupported)
 {
+    /* Validate input. */
     CheckComArgOutPointerValid(aSupported);
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
     switch (aFeature)
     {
         case ProcessorFeature_HWVirtEx:
-            *aSupported = m->fVTSupported;
-            break;
-
         case ProcessorFeature_PAE:
-            *aSupported = m->fPAESupported;
-            break;
-
         case ProcessorFeature_LongMode:
-            *aSupported = m->fLongModeSupported;
-            break;
-
         case ProcessorFeature_NestedPaging:
-            *aSupported = m->fNestedPagingSupported;
             break;
-
         default:
-            ReturnComNotImplemented();
+            return setError(E_INVALIDARG, tr("The aFeature value %d (%#x) is out of range."), (int)aFeature, (int)aFeature);
     }
-    return S_OK;
+
+    /* Do the job. */
+    AutoCaller autoCaller(this);
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+        if (   m->fRecheckVTSupported
+            && (   aFeature == ProcessorFeature_HWVirtEx
+                || aFeature == ProcessorFeature_NestedPaging)
+           )
+        {
+            alock.release();
+
+            /* Perhaps the driver is available now... */
+            int rc = SUPR3InitEx(false /*fUnrestricted*/, NULL);
+            if (RT_SUCCESS(rc))
+            {
+                uint32_t fVTCaps;
+                rc = SUPR3QueryVTCaps(&fVTCaps);
+
+                AutoWriteLock wlock(this COMMA_LOCKVAL_SRC_POS);
+                if (RT_SUCCESS(rc))
+                {
+                    Assert(fVTCaps & (SUPVTCAPS_AMD_V | SUPVTCAPS_VT_X));
+                    if (fVTCaps & SUPVTCAPS_NESTED_PAGING)
+                        m->fNestedPagingSupported = true;
+                    else
+                        Assert(m->fNestedPagingSupported == false);
+                }
+                else
+                {
+                    LogRel(("SUPR0QueryVTCaps -> %Rrc\n", rc));
+                    m->fVTSupported = m->fNestedPagingSupported = true;
+                }
+            }
+
+            alock.acquire();
+        }
+
+        switch (aFeature)
+        {
+            case ProcessorFeature_HWVirtEx:
+                *aSupported = m->fVTSupported;
+                break;
+
+            case ProcessorFeature_PAE:
+                *aSupported = m->fPAESupported;
+                break;
+
+            case ProcessorFeature_LongMode:
+                *aSupported = m->fLongModeSupported;
+                break;
+
+            case ProcessorFeature_NestedPaging:
+                *aSupported = m->fNestedPagingSupported;
+                break;
+
+            default:
+                AssertFailed();
+        }
+    }
+    return hrc;
 }
 
 /**
@@ -981,15 +1129,12 @@ STDMETHODIMP Host::COMGETTER(MemorySize)(ULONG *aSize)
     CheckComArgOutPointerValid(aSize);
     // no locking required
 
-    /* @todo This is an ugly hack. There must be a function in IPRT for that. */
-    pm::CollectorHAL *hal = pm::createHAL();
-    if (!hal)
+    uint64_t cb;
+    int rc = RTSystemQueryTotalRam(&cb);
+    if (RT_FAILURE(rc))
         return E_FAIL;
-    ULONG tmp;
-    int rc = hal->getHostMemoryUsage(aSize, &tmp, &tmp);
-    *aSize /= 1024;
-    delete hal;
-    return rc;
+    *aSize = (ULONG)(cb / _1M);
+    return S_OK;
 }
 
 /**
@@ -1003,15 +1148,12 @@ STDMETHODIMP Host::COMGETTER(MemoryAvailable)(ULONG *aAvailable)
     CheckComArgOutPointerValid(aAvailable);
     // no locking required
 
-    /* @todo This is an ugly hack. There must be a function in IPRT for that. */
-    pm::CollectorHAL *hal = pm::createHAL();
-    if (!hal)
+    uint64_t cb;
+    int rc = RTSystemQueryAvailableRam(&cb);
+    if (RT_FAILURE(rc))
         return E_FAIL;
-    ULONG tmp;
-    int rc = hal->getHostMemoryUsage(&tmp, &tmp, aAvailable);
-    *aAvailable /= 1024;
-    delete hal;
-    return rc;
+    *aAvailable = (ULONG)(cb / _1M);
+    return S_OK;
 }
 
 /**
@@ -1090,17 +1232,33 @@ STDMETHODIMP Host::COMGETTER(Acceleration3DAvailable)(BOOL *aSupported)
 {
     CheckComArgOutPointerValid(aSupported);
     AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+        if (m->f3DAccelerationSupported != -1)
+            *aSupported = m->f3DAccelerationSupported;
+        else
+        {
+            alock.release();
+#ifdef VBOX_WITH_CROGL
+            bool fSupported = VBoxOglIs3DAccelerationSupported();
+#else
+            bool fSupported = false; /* shoudn't get here, but just in case. */
+#endif
+            AutoWriteLock alock2(this COMMA_LOCKVAL_SRC_POS);
+            m->f3DAccelerationSupported = fSupported;
+            alock2.release();
 
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    *aSupported = m->f3DAccelerationSupported;
+            *aSupported = fSupported;
+        }
+    }
 
 #ifdef DEBUG_misha
     AssertMsgFailed(("should not be here any more!\n"));
 #endif
 
-    return S_OK;
+    return hrc;
 }
 
 STDMETHODIMP Host::CreateHostOnlyNetworkInterface(IHostNetworkInterface **aHostNetworkInterface,
@@ -1390,17 +1548,18 @@ STDMETHODIMP Host::FindHostNetworkInterfaceByName(IN_BSTR name, IHostNetworkInte
     if (!networkInterface)
         return E_POINTER;
 
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
     *networkInterface = NULL;
     ComObjPtr<HostNetworkInterface> found;
-    std::list <ComObjPtr<HostNetworkInterface> > list;
-    int rc = NetIfList(list);
+    int rc = updateNetIfList();
     if (RT_FAILURE(rc))
     {
         Log(("Failed to get host network interface list with rc=%Rrc\n", rc));
         return E_FAIL;
     }
-    std::list <ComObjPtr<HostNetworkInterface> >::iterator it;
-    for (it = list.begin(); it != list.end(); ++it)
+    HostNetworkInterfaceList::iterator it;
+    for (it = m->llNetIfs.begin(); it != m->llNetIfs.end(); ++it)
     {
         Bstr n;
         (*it)->COMGETTER(Name) (n.asOutParam());
@@ -1412,8 +1571,6 @@ STDMETHODIMP Host::FindHostNetworkInterfaceByName(IN_BSTR name, IHostNetworkInte
         return setError(E_INVALIDARG,
                         HostNetworkInterface::tr("The host network interface with the given name could not be found"));
 
-    found->setVirtualBox(m->pParent);
-
     return found.queryInterfaceTo(networkInterface);
 #endif
 }
@@ -1423,22 +1580,23 @@ STDMETHODIMP Host::FindHostNetworkInterfaceById(IN_BSTR id, IHostNetworkInterfac
 #ifndef VBOX_WITH_HOSTNETIF_API
     return E_NOTIMPL;
 #else
-    if (Guid(id).isEmpty())
+    if (!Guid(id).isValid())
         return E_INVALIDARG;
     if (!networkInterface)
         return E_POINTER;
 
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
     *networkInterface = NULL;
     ComObjPtr<HostNetworkInterface> found;
-    std::list <ComObjPtr<HostNetworkInterface> > list;
-    int rc = NetIfList(list);
+    int rc = updateNetIfList();
     if (RT_FAILURE(rc))
     {
         Log(("Failed to get host network interface list with rc=%Rrc\n", rc));
         return E_FAIL;
     }
-    std::list <ComObjPtr<HostNetworkInterface> >::iterator it;
-    for (it = list.begin(); it != list.end(); ++it)
+    HostNetworkInterfaceList::iterator it;
+    for (it = m->llNetIfs.begin(); it != m->llNetIfs.end(); ++it)
     {
         Bstr g;
         (*it)->COMGETTER(Id) (g.asOutParam());
@@ -1450,8 +1608,6 @@ STDMETHODIMP Host::FindHostNetworkInterfaceById(IN_BSTR id, IHostNetworkInterfac
         return setError(E_INVALIDARG,
                         HostNetworkInterface::tr("The host network interface with the given GUID could not be found"));
 
-    found->setVirtualBox(m->pParent);
-
     return found.queryInterfaceTo(networkInterface);
 #endif
 }
@@ -1460,15 +1616,16 @@ STDMETHODIMP Host::FindHostNetworkInterfacesOfType(HostNetworkInterfaceType_T ty
                                                    ComSafeArrayOut(IHostNetworkInterface *, aNetworkInterfaces))
 {
 #ifdef VBOX_WITH_HOSTNETIF_API
-    std::list <ComObjPtr<HostNetworkInterface> > allList;
-    int rc = NetIfList(allList);
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    int rc = updateNetIfList();
     if (RT_FAILURE(rc))
         return E_FAIL;
 
-    std::list <ComObjPtr<HostNetworkInterface> > resultList;
+    HostNetworkInterfaceList resultList;
 
-    std::list <ComObjPtr<HostNetworkInterface> >::iterator it;
-    for (it = allList.begin(); it != allList.end(); ++it)
+    HostNetworkInterfaceList::iterator it;
+    for (it = m->llNetIfs.begin(); it != m->llNetIfs.end(); ++it)
     {
         HostNetworkInterfaceType_T t;
         HRESULT hr = (*it)->COMGETTER(InterfaceType)(&t);
@@ -1476,10 +1633,7 @@ STDMETHODIMP Host::FindHostNetworkInterfacesOfType(HostNetworkInterfaceType_T ty
             return hr;
 
         if (t == type)
-        {
-            (*it)->setVirtualBox(m->pParent);
             resultList.push_back (*it);
-        }
     }
 
     SafeIfaceArray<IHostNetworkInterface> filteredNetworkInterfaces (resultList);
@@ -1530,7 +1684,7 @@ STDMETHODIMP Host::FindUSBDeviceById(IN_BSTR aId,
                                      IHostUSBDevice **aDevice)
 {
 #ifdef VBOX_WITH_USB
-    CheckComArgExpr(aId, Guid (aId).isEmpty() == false);
+    CheckComArgExpr(aId, Guid (aId).isValid());
     CheckComArgOutPointerValid(aDevice);
 
     *aDevice = NULL;
@@ -1861,7 +2015,7 @@ HRESULT Host::findHostDriveByNameOrId(DeviceType_T mediumType,
     AutoWriteLock wlock(m->pParent->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
 
     Guid uuid(strNameOrId);
-    if (!uuid.isEmpty())
+    if (uuid.isValid() && !uuid.isZero())
         return findHostDriveById(mediumType, uuid, true /* fRefresh */, pMedium);
 
     // string is not a syntactically valid UUID: try a name then
@@ -2221,7 +2375,7 @@ static int solarisWalkDeviceNodeForDVD(di_node_t Node, void *pvArg)
                             {
                                 char *pszSlice = solarisGetSliceFromPath(pszDevLinkPath);
                                 if (   pszSlice && !strcmp(pszSlice, "s2")
-                                    && !strncmp(pszDevLinkPath, "/dev/rdsk", sizeof("/dev/rdsk") - 1))   /* We want only raw disks */
+                                    && !strncmp(pszDevLinkPath, RT_STR_TUPLE("/dev/rdsk")))   /* We want only raw disks */
                                 {
                                     /*
                                      * We've got a fully qualified DVD drive. Add it to the list.
@@ -2673,9 +2827,9 @@ void Host::parseMountTable(char *mountTable, std::list< ComObjPtr<Medium> > &lis
             {
                 // skip devices we are not interested in
                 if ((*mountName && mountName[0] == '/') &&                      // skip 'fake' devices (like -hosts, proc, fd, swap)
-                    (*mountFSType && (strncmp(mountFSType, "devfs", 5) != 0 &&  // skip devfs (i.e. /devices)
-                                      strncmp(mountFSType, "dev", 3) != 0 &&    // skip dev (i.e. /dev)
-                                      strncmp(mountFSType, "lofs", 4) != 0)))   // skip loop-back file-system (lofs)
+                    (*mountFSType && (strncmp(mountFSType, RT_STR_TUPLE("devfs")) != 0 &&  // skip devfs (i.e. /devices)
+                                      strncmp(mountFSType, RT_STR_TUPLE("dev")) != 0 &&    // skip dev (i.e. /dev)
+                                      strncmp(mountFSType, RT_STR_TUPLE("lofs")) != 0)))   // skip loop-back file-system (lofs)
                 {
                     char *rawDevName = getfullrawname((char *)mountName);
                     if (validateDevice(rawDevName, true))
@@ -2810,7 +2964,167 @@ HRESULT Host::checkUSBProxyService()
 }
 #endif /* VBOX_WITH_USB */
 
+HRESULT Host::updateNetIfList()
+{
+#ifdef VBOX_WITH_HOSTNETIF_API
+    AssertReturn(AutoCaller(this).state() == InInit ||
+                 isWriteLockOnCurrentThread(), E_FAIL);
+
+    HostNetworkInterfaceList list, listCopy;
+    int rc = NetIfList(list);
+    if (rc)
+    {
+        Log(("Failed to get host network interface list with rc=%Rrc\n", rc));
+        return E_FAIL;
+    }
+    AssertReturn(m->pParent, E_FAIL);
+    /* Make a copy as the original may be partially destroyed later. */
+    listCopy = list;
+    HostNetworkInterfaceList::iterator itOld, itNew;
+# ifdef VBOX_WITH_RESOURCE_USAGE_API
+    PerformanceCollector *aCollector = m->pParent->performanceCollector();
+# endif
+    for (itOld = m->llNetIfs.begin(); itOld != m->llNetIfs.end(); ++itOld)
+    {
+        bool fGone = true;
+        Bstr nameOld;
+        (*itOld)->COMGETTER(Name) (nameOld.asOutParam());
+        for (itNew = listCopy.begin(); itNew != listCopy.end(); ++itNew)
+        {
+            Bstr nameNew;
+            (*itNew)->COMGETTER(Name) (nameNew.asOutParam());
+            if (nameNew == nameOld)
+            {
+                fGone = false;
+                listCopy.erase(itNew);
+                break;
+            }
+        }
+        if (fGone)
+        {
+# ifdef VBOX_WITH_RESOURCE_USAGE_API
+            (*itOld)->unregisterMetrics(aCollector, this);
+# endif
+        }
+    }
+    /*
+     * Need to set the references to VirtualBox object in all interface objects
+     * (see @bugref{6439}).
+     */
+    for (itNew = list.begin(); itNew != list.end(); ++itNew)
+        (*itNew)->setVirtualBox(m->pParent);
+    /* At this point listCopy will contain newly discovered interfaces only. */
+    for (itNew = listCopy.begin(); itNew != listCopy.end(); ++itNew)
+    {
+        HostNetworkInterfaceType_T t;
+        HRESULT hr = (*itNew)->COMGETTER(InterfaceType)(&t);
+        if (FAILED(hr))
+        {
+            Bstr n;
+            (*itNew)->COMGETTER(Name) (n.asOutParam());
+            LogRel(("Host::updateNetIfList: failed to get interface type for %ls\n", n.raw()));
+        }
+        else if (t == HostNetworkInterfaceType_Bridged)
+        {
+# ifdef VBOX_WITH_RESOURCE_USAGE_API
+            (*itNew)->registerMetrics(aCollector, this);
+# endif
+        }
+    }
+    m->llNetIfs = list;
+    return S_OK;
+#else
+    return E_NOTIMPL;
+#endif
+}
+
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
+
+void Host::registerDiskMetrics(PerformanceCollector *aCollector)
+{
+    pm::CollectorHAL *hal = aCollector->getHAL();
+    /* Create sub metrics */
+    Utf8StrFmt fsNameBase("FS/{%s}/Usage", "/");
+    //Utf8StrFmt fsNameBase("Filesystem/[root]/Usage");
+    pm::SubMetric *fsRootUsageTotal  = new pm::SubMetric(fsNameBase + "/Total",
+        "Root file system size.");
+    pm::SubMetric *fsRootUsageUsed   = new pm::SubMetric(fsNameBase + "/Used",
+        "Root file system space currently occupied.");
+    pm::SubMetric *fsRootUsageFree   = new pm::SubMetric(fsNameBase + "/Free",
+        "Root file system space currently empty.");
+
+    pm::BaseMetric *fsRootUsage = new pm::HostFilesystemUsage(hal, this,
+                                                              fsNameBase, "/",
+                                                              fsRootUsageTotal,
+                                                              fsRootUsageUsed,
+                                                              fsRootUsageFree);
+    aCollector->registerBaseMetric (fsRootUsage);
+
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageTotal, 0));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageTotal,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageTotal,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageTotal,
+                                              new pm::AggregateMax()));
+
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageUsed, 0));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageUsed,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageUsed,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageUsed,
+                                              new pm::AggregateMax()));
+
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageFree, 0));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageFree,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageFree,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(fsRootUsage, fsRootUsageFree,
+                                              new pm::AggregateMax()));
+
+    /* For now we are concerned with the root file system only. */
+    pm::DiskList disksUsage, disksLoad;
+    int rc = hal->getDiskListByFs("/", disksUsage, disksLoad);
+    if (RT_FAILURE(rc))
+        return;
+    pm::DiskList::iterator it;
+    for (it = disksLoad.begin(); it != disksLoad.end(); ++it)
+    {
+        Utf8StrFmt strName("Disk/%s", it->c_str());
+        pm::SubMetric *fsLoadUtil   = new pm::SubMetric(strName + "/Load/Util",
+            "Percentage of time disk was busy serving I/O requests.");
+        pm::BaseMetric *fsLoad  = new pm::HostDiskLoadRaw(hal, this, strName + "/Load",
+                                                         *it, fsLoadUtil);
+        aCollector->registerBaseMetric (fsLoad);
+
+        aCollector->registerMetric(new pm::Metric(fsLoad, fsLoadUtil, 0));
+        aCollector->registerMetric(new pm::Metric(fsLoad, fsLoadUtil,
+                                                  new pm::AggregateAvg()));
+        aCollector->registerMetric(new pm::Metric(fsLoad, fsLoadUtil,
+                                                  new pm::AggregateMin()));
+        aCollector->registerMetric(new pm::Metric(fsLoad, fsLoadUtil,
+                                                  new pm::AggregateMax()));
+    }
+    for (it = disksUsage.begin(); it != disksUsage.end(); ++it)
+    {
+        Utf8StrFmt strName("Disk/%s", it->c_str());
+        pm::SubMetric *fsUsageTotal = new pm::SubMetric(strName + "/Usage/Total",
+            "Disk size.");
+        pm::BaseMetric *fsUsage = new pm::HostDiskUsage(hal, this, strName + "/Usage",
+                                                        *it, fsUsageTotal);
+        aCollector->registerBaseMetric (fsUsage);
+
+        aCollector->registerMetric(new pm::Metric(fsUsage, fsUsageTotal, 0));
+        aCollector->registerMetric(new pm::Metric(fsUsage, fsUsageTotal,
+                                                  new pm::AggregateAvg()));
+        aCollector->registerMetric(new pm::Metric(fsUsage, fsUsageTotal,
+                                                  new pm::AggregateMin()));
+        aCollector->registerMetric(new pm::Metric(fsUsage, fsUsageTotal,
+                                                  new pm::AggregateMax()));
+    }
+}
 
 void Host::registerMetrics(PerformanceCollector *aCollector)
 {
@@ -2841,20 +3155,17 @@ void Host::registerMetrics(PerformanceCollector *aCollector)
 
 
     /* Create and register base metrics */
-    IUnknown *objptr;
-    ComObjPtr<Host> tmp = this;
-    tmp.queryInterfaceTo(&objptr);
-    pm::BaseMetric *cpuLoad = new pm::HostCpuLoadRaw(hal, objptr, cpuLoadUser, cpuLoadKernel,
+    pm::BaseMetric *cpuLoad = new pm::HostCpuLoadRaw(hal, this, cpuLoadUser, cpuLoadKernel,
                                           cpuLoadIdle);
     aCollector->registerBaseMetric (cpuLoad);
-    pm::BaseMetric *cpuMhz = new pm::HostCpuMhz(hal, objptr, cpuMhzSM);
+    pm::BaseMetric *cpuMhz = new pm::HostCpuMhz(hal, this, cpuMhzSM);
     aCollector->registerBaseMetric (cpuMhz);
-    pm::BaseMetric *ramUsage = new pm::HostRamUsage(hal, objptr,
+    pm::BaseMetric *ramUsage = new pm::HostRamUsage(hal, this,
                                                     ramUsageTotal,
                                                     ramUsageUsed,
                                                     ramUsageFree);
     aCollector->registerBaseMetric (ramUsage);
-    pm::BaseMetric *ramVmm = new pm::HostRamVmm(aCollector->getGuestManager(), objptr,
+    pm::BaseMetric *ramVmm = new pm::HostRamVmm(aCollector->getGuestManager(), this,
                                                 ramVMMUsed,
                                                 ramVMMFree,
                                                 ramVMMBallooned,
@@ -2948,6 +3259,7 @@ void Host::registerMetrics(PerformanceCollector *aCollector)
                                               new pm::AggregateMin()));
     aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMShared,
                                               new pm::AggregateMax()));
+    registerDiskMetrics(aCollector);
 }
 
 void Host::unregisterMetrics (PerformanceCollector *aCollector)
@@ -2955,6 +3267,8 @@ void Host::unregisterMetrics (PerformanceCollector *aCollector)
     aCollector->unregisterMetricsFor(this);
     aCollector->unregisterBaseMetricsFor(this);
 }
+
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 
 /* static */
@@ -2970,7 +3284,5 @@ void Host::generateMACAddress(Utf8Str &mac)
     mac = Utf8StrFmt("080027%02X%02X%02X",
                      guid.raw()->au8[0], guid.raw()->au8[1], guid.raw()->au8[2]);
 }
-
-#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

@@ -1,4 +1,4 @@
-/* $Id: SnapshotImpl.h 42887 2012-08-20 17:12:19Z vboxsync $ */
+/* $Id: SnapshotImpl.h $ */
 
 /** @file
  *
@@ -99,6 +99,8 @@ public:
     const ComObjPtr<Snapshot> getFirstChild() const;
 
     const Utf8Str& getStateFilePath() const;
+
+    uint32_t getDepth();
 
     ULONG getChildrenCount();
     ULONG getAllChildrenCount();

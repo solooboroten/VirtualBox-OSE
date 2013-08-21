@@ -1,10 +1,10 @@
-/* $Id: RTProcDaemonize-generic.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: RTProcDaemonize-generic.cpp $ */
 /** @file
  * IPRT - RTProcDaemonize, generic implementation.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -80,7 +80,8 @@ RTR3DECL(int) RTProcDaemonize(const char * const *papszArgs, const char *pszDaem
         {
             hStdOutAndErr.enmType = RTHANDLETYPE_FILE;
 
-            rc = RTProcCreateEx(szExecPath, papszNewArgs, RTENV_DEFAULT, RTPROC_FLAGS_DETACHED,
+            rc = RTProcCreateEx(szExecPath, papszNewArgs, RTENV_DEFAULT,
+                                RTPROC_FLAGS_DETACHED | RTPROC_FLAGS_SAME_CONTRACT,
                                 &hStdIn, &hStdOutAndErr, &hStdOutAndErr,
                                 NULL /*pszAsUser*/,  NULL /*pszPassword*/, NULL /*phProcess*/);
 

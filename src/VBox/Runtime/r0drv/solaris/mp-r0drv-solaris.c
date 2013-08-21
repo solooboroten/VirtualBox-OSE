@@ -1,10 +1,10 @@
-/* $Id: mp-r0drv-solaris.c 40968 2012-04-17 17:35:53Z vboxsync $ */
+/* $Id: mp-r0drv-solaris.c $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Solaris.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -136,9 +136,9 @@ RTDECL(RTCPUID) RTMpGetOnlineCount(void)
 /**
  * Wrapper to Solaris IPI infrastructure.
  *
- * @param    pCpuSet        Pointer to Solaris CPU set.
- * @param    pfnSolWorker     Function to execute on target CPU(s).
- * @param     pArgs            Pointer to RTMPARGS to pass to @a pfnSolWorker.
+ * @param   pCpuSet        Pointer to Solaris CPU set.
+ * @param   pfnSolWorker   Function to execute on target CPU(s).
+ * @param   pArgs          Pointer to RTMPARGS to pass to @a pfnSolWorker.
  *
  * @returns Solaris error code.
  */

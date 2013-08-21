@@ -1,10 +1,10 @@
-/* $Id: uniread.cpp 41167 2012-05-04 13:33:33Z vboxsync $ */
+/* $Id: uniread.cpp $ */
 /** @file
  * IPRT - Unicode Specification Reader.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -919,7 +919,7 @@ static int Stream1Printf(const char *pszFormat, ...)
     if (!g_fQuiet)
         cch = vfprintf(stdout, pszFormat, va);
     else
-        cch = strlen(pszFormat);
+        cch = (int)strlen(pszFormat);
     va_end(va);
     return cch;
 }

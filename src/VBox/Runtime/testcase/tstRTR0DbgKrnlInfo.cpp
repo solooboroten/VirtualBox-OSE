@@ -1,4 +1,4 @@
-/* $Id: tstRTR0DbgKrnlInfo.cpp 41947 2012-06-28 06:29:36Z vboxsync $ */
+/* $Id: tstRTR0DbgKrnlInfo.cpp $ */
 /** @file
  * IPRT R0 Testcase - Debug kernel information.
  */

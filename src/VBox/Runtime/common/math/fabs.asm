@@ -1,10 +1,10 @@
-; $Id: fabs.asm 28800 2010-04-27 08:22:32Z vboxsync $
+; $Id: fabs.asm $
 ;; @file
 ; IPRT - No-CRT fabs - AMD64 & X86.
 ;
 
 ;
-; Copyright (C) 2006-2007 Oracle Corporation
+; Copyright (C) 2006-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -48,7 +48,7 @@ BEGINPROC RT_NOCRT(fabs)
     movsd   xmm0, [xSP]
 
 %else
-    fld     qword [xBP + xS*2]
+    fld     qword [xBP + xCB*2]
     fabs
 %endif
 

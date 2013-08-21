@@ -1,4 +1,4 @@
-/* $Id: UIWizardNewVDPageBasic2.cpp 41587 2012-06-06 04:19:03Z vboxsync $ */
+/* $Id: UIWizardNewVDPageBasic2.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -144,7 +144,12 @@ void UIWizardNewVDPageBasic2::initializePage()
 
     /* Setup visibility: */
     CMediumFormat mediumFormat = field("mediumFormat").value<CMediumFormat>();
-    ULONG uCapabilities = mediumFormat.GetCapabilities();
+    ULONG uCapabilities = 0;
+    QVector<KMediumFormatCapabilities> capabilities;
+    capabilities = mediumFormat.GetCapabilities();
+    for (int i = 0; i < capabilities.size(); i++)
+        uCapabilities |= capabilities[i];
+
     bool fIsCreateDynamicPossible = uCapabilities & KMediumFormatCapabilities_CreateDynamic;
     bool fIsCreateFixedPossible = uCapabilities & KMediumFormatCapabilities_CreateFixed;
     bool fIsCreateSplitPossible = uCapabilities & KMediumFormatCapabilities_CreateSplit2G;

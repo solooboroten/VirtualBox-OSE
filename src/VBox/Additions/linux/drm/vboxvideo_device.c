@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_device.c 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo_device.c $
  *
  * VirtualBox Additions Linux kernel video driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -44,19 +44,95 @@
 
 #include <linux/version.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
-
 #include "the-linux-kernel.h"
 
 #include "vboxvideo_drv.h"
 
 #include <VBox/VBoxVideoGuest.h>
 
+static int vboxvideo_vram_init(struct vboxvideo_device *gdev)
+{
+    unsigned size;
+    int ret;
+    int rc = VINF_SUCCESS;
+    uint32_t offVRAMBaseMapping, offGuestHeapMemory, cbGuestHeapMemory;
+    void *pvGuestHeapMemory;
+
+    /* set accessible VRAM */
+    gdev->mc.vram_base = pci_resource_start(gdev->ddev->pdev, 1);
+    gdev->mc.vram_size = pci_resource_len(gdev->ddev->pdev, 1);
+
+    gdev->fAnyX        = VBoxVideoAnyWidthAllowed();
+    gdev->mc.vram_size = VBoxVideoGetVRAMSize();
+
+    if (!request_region(gdev->mc.vram_base, gdev->mc.vram_size, "vboxvideofb_vram")) {
+        VBOXVIDEO_ERROR("can't region_reserve VRAM\n");
+        return -ENXIO;
+    }
+
+    ret = drm_addmap(gdev->ddev, gdev->mc.vram_base, gdev->mc.vram_size,
+        _DRM_FRAME_BUFFER, _DRM_WRITE_COMBINING,
+        &gdev->framebuffer);
+    if (!pVBox->fHaveHGSMI)
+        return 0;
+    VBoxHGSMIGetBaseMappingInfo(gdev->mc.vram_size, &offVRAMBaseMapping,
+                                NULL, &offGuestHeapMemory, &cbGuestHeapMemory,
+                                NULL);
+    pvGuestHeapMemory =   ((uint8_t *)gdev->framebuffer->handle)
+                        + offVRAMBaseMapping + offGuestHeapMemory;
+    rc = VBoxHGSMISetupGuestContext(&gdev->Ctx, pvGuestHeapMemory,
+                                    cbGuestHeapMemory,
+                                    offVRAMBaseMapping + offGuestHeapMemory);
+    if (RT_FAILURE(rc))
+    {
+        gdev->fHaveHGSMI = false;
+        return 0;
+    }
+    gdev->offViewInfo = offVRAMBaseMapping;
+    return 0;
+}
+
+static void vboxvideo_vram_fini(struct vboxvideo_device *gdev)
+{
+    if (gdev->framebuffer)
+        drm_rmmap(gdev->ddev, gdev->framebuffer);
+    if (gdev->mc.vram_base)
+        release_region(gdev->mc.vram_base, gdev->mc.vram_size);
+}
+
+static int vboxvideo_command_buffers_init(struct vboxvideo_device *gdev)
+{
+    unsigned i;
+    gdev->offCommandBuffers =   gdev->offViewInfo
+                              - gdev->num_crtc * VBVA_MIN_BUFFER_SIZE;
+    for (i = 0; i < gdev->num_crtc; ++i)
+    {
+        gdev->offCommandBuffers -= VBVA_MIN_BUFFER_SIZE;
+        VBoxVBVASetupBufferContext(&pVBox->aVbvaCtx[i],
+                                   pVBox->aoffVBVABuffer[i],
+                                   VBVA_MIN_BUFFER_SIZE);
+    }
+    TRACE_LOG("Maximum framebuffer size: %lu (0x%lx)\n",
+              (unsigned long) pVBox->cbFBMax,
+              (unsigned long) pVBox->cbFBMax);
+    rc = VBoxHGSMISendViewInfo(&pVBox->guestCtx, pVBox->cScreens,
+                               vboxFillViewInfo, (void *)pVBox);
+    if (RT_FAILURE(rc))
+    {
+        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to send the view information to the host, rc=%d\n", rc);
+        return FALSE;
+    }
+    return TRUE;
+
+}
+
 int vboxvideo_device_init(struct vboxvideo_device *gdev,
               struct drm_device *ddev,
               struct pci_dev *pdev,
               uint32_t flags)
 {
+    int ret;
+
     gdev->dev      = &pdev->dev;
     gdev->ddev     = ddev;
     gdev->pdev     = pdev;
@@ -66,14 +142,23 @@ int vboxvideo_device_init(struct vboxvideo_device *gdev,
     /** @todo hardware initialisation goes here once we start doing more complex
      *        stuff.
      */
-    gdev->fAnyX        = VBoxVideoAnyWidthAllowed();
-    gdev->mc.vram_size = VBoxVideoGetVRAMSize();
-
+    gdev->fHaveHGSMI = VBoxHGSMIIsSupported();
+    ret = vboxvideo_vram_init(gdev);
+    if (ret)
+        return ret;
+    if (!gdev->fHaveHGSMI)
+        return 0;
+    gdev->num_crtc = VBoxHGSMIGetMonitorCount(&gdev->Ctx);
+    ret = vboxvideo_command_buffers_init(gdev);
+    if (ret)
+    {
+        gdev->fHaveHGSMI = false;
+        return ret;
+    }
     return 0;
 }
 
 void vboxvideo_device_fini(struct vboxvideo_device *gdev)
 {
-
+    vboxvideo_vram_fini(gdev);
 }
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27) */

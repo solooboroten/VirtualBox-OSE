@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -307,7 +307,7 @@ DECLINLINE(int) vdIfErrorMessage(PVDINTERFACEERROR pIfError, const char *pszForm
     int rc = VINF_SUCCESS;
     va_list va;
     va_start(va, pszFormat);
-    if (pIfError)
+    if (pIfError && pIfError->pfnMessage)
         rc = pIfError->pfnMessage(pIfError->Core.pvUser, pszFormat, va);
     va_end(va);
     return rc;
@@ -603,6 +603,24 @@ DECLINLINE(int) vdIfIoFileFlushSync(PVDINTERFACEIO pIfIo, void *pStorage)
 {
     return pIfIo->pfnFlushSync(pIfIo->Core.pvUser, pStorage);
 }
+
+/**
+ * Create a VFS stream handle around a VD I/O interface.
+ *
+ * The I/O interface will not be closed or free by the stream, the caller will
+ * do so after it is done with the stream and has released the instances of the
+ * I/O stream object returned by this API.
+ *
+ * @return  VBox status code.
+ * @param   pVDIfsIo        Pointer to the VD I/O interface.
+ * @param   pvStorage       The storage argument to pass to the interface
+ *                          methods.
+ * @param   fFlags          RTFILE_O_XXX, access mask requied.
+ * @param   phVfsIos        Where to return the VFS I/O stream handle on
+ *                          success.
+ */
+VBOXDDU_DECL(int) VDIfCreateVfsStream(PVDINTERFACEIO pVDIfsIo, void *pvStorage, uint32_t fFlags, PRTVFSIOSTREAM phVfsIos);
+
 
 /**
  * Callback which provides progress information about a currently running

@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -132,5 +132,9 @@ struct VBOXTLSREFDATA_DUMMY
             } \
         } \
     } while (0)
+
+
+/* host 3D->Fe[/Qt] notification mechanism defines */
+#define VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA 2
 
 #endif /* #ifndef ___VBox_VBoxVideo3D_h */

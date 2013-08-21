@@ -1,10 +1,10 @@
-/* $Id: ldr.h 38581 2011-08-31 12:43:26Z vboxsync $ */
+/* $Id: ldr.h $ */
 /** @file
  * IPRT - Loader Internals.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -296,12 +296,30 @@ typedef struct RTLDROPS
      * @returns IPRT status code.
      *
      * @param   pMod            Pointer to the loader module structure.
-     * @param   iSeg            The segment index.
-     * @param   offSeg          The segment offset.
-     * @param   pRva            Where to return the RVA.
+     * @param   Rva             The RVA to convert.
+     * @param   piSeg           Where to return the segment index.
+     * @param   poffSeg         Where to return the segment offset.
      * @remark  This is an optional entry point that can be NULL.
      */
     DECLCALLBACKMEMBER(int, pfnRvaToSegOffset)(PRTLDRMODINTERNAL pMod, RTLDRADDR Rva, uint32_t *piSeg, PRTLDRADDR poffSeg);
+
+    /**
+     * Reads a debug info part (section) from the image.
+     *
+     * This is primarily needed for getting DWARF sections in ELF image with fixups
+     * applied and won't be required by most other loader backends.
+     *
+     * @returns IPRT status code.
+     *
+     * @param   pvBuf           The buffer to read into.
+     * @param   iDbgInfo        The debug info ordinal number if the request
+     *                          corresponds exactly to a debug info part from
+     *                          pfnEnumDbgInfo.  Otherwise, pass UINT32_MAX.
+     * @param   off             The offset into the image file.
+     * @param   cb              The number of bytes to read.
+     * @param   pMod            Pointer to the loader module structure.
+     */
+    DECLCALLBACKMEMBER(int, pfnReadDbgInfo)(PRTLDRMODINTERNAL pMod, uint32_t iDbgInfo, RTFOFF off, size_t cb, void *pvBuf);
 
     /** Dummy entry to make sure we've initialized it all. */
     RTUINT uDummy;
@@ -402,6 +420,16 @@ typedef struct RTLDRMODINTERNAL
     RTLDRSTATE              eState;
     /** Loader ops. */
     PCRTLDROPS              pOps;
+    /** Pointer to the reader instance. This is NULL for native image. */
+    PRTLDRREADER            pReader;
+    /** Image format.  */
+    RTLDRFMT                enmFormat;
+    /** Image type.  */
+    RTLDRTYPE               enmType;
+    /** Image endianness.  */
+    RTLDRENDIAN             enmEndian;
+    /** Image target architecture.  */
+    RTLDRARCH               enmArch;
 } RTLDRMODINTERNAL;
 
 
@@ -430,7 +458,11 @@ typedef struct RTLDRMODNATIVE
     RTLDRMODINTERNAL    Core;
     /** The native handle. */
     uintptr_t           hNative;
-} RTLDRMODNATIVE, *PRTLDRMODNATIVE;
+    /** The load flags (RTLDRLOAD_FLAGS_XXX). */
+    uint32_t            fFlags;
+} RTLDRMODNATIVE;
+/** Pointer to a native module. */
+typedef RTLDRMODNATIVE *PRTLDRMODNATIVE;
 
 /** @copydoc RTLDROPS::pfnGetSymbol */
 DECLCALLBACK(int) rtldrNativeGetSymbol(PRTLDRMODINTERNAL pMod, const char *pszSymbol, void **ppvValue);
@@ -443,10 +475,21 @@ DECLCALLBACK(int) rtldrNativeClose(PRTLDRMODINTERNAL pMod);
  * @returns iprt status code.
  * @param   pszFilename     The image filename.
  * @param   phHandle        Where to store the module handle on success.
- * @param   fFlags          See RTLDRFLAGS_.
+ * @param   fFlags          RTLDRLOAD_FLAGS_XXX.
  * @param   pErrInfo        Where to return extended error information. Optional.
  */
 int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, uint32_t fFlags, PRTERRINFO pErrInfo);
+
+/**
+ * Load a system library.
+ *
+ * @returns iprt status code.
+ * @param   pszFilename     The image filename.
+ * @param   pszExt          Extension to add. NULL if none.
+ * @param   fFlags          RTLDRLOAD_FLAGS_XXX.
+ * @param   phLdrMod        Where to return the module handle on success.
+ */
+int rtldrNativeLoadSystem(const char *pszFilename, const char *pszExt, uint32_t fFlags, PRTLDRMOD phLdrMod);
 
 int rtldrPEOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, RTFOFF offNtHdrs, PRTLDRMOD phLdrMod);
 int rtldrELFOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, PRTLDRMOD phLdrMod);
@@ -454,6 +497,8 @@ int rtldrkLdrOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, PRTL
 /*int rtldrLXOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, RTFOFF offLX, PRTLDRMOD phLdrMod);
 int rtldrMachoOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, RTFOFF offSomething, PRTLDRMOD phLdrMod);*/
 
+
+DECLHIDDEN(int) rtLdrReadAt(RTLDRMOD hLdrMod, void *pvBuf, uint32_t iDbgInfo, RTFOFF off, size_t cb);
 
 RT_C_DECLS_END
 

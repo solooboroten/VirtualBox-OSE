@@ -38,6 +38,9 @@ template<class X> QColor toColor(const X & /* xobject */) { Assert(0); return QC
 /* Converts passed 'Object X' to QPixmap.
  * This function returns null QPixmap for any object type until re-determined for specific one. */
 template<class X> QPixmap toPixmap(const X & /* xobject */) { Assert(0); return QPixmap(); }
+/* Converts passed 'Object X' to QPixmap.
+ * This function returns null QPixmap for any object type until re-determined for specific one. */
+template<class X> QPixmap toWarningPixmap(const X & /* xobject */) { Assert(0); return QPixmap(); }
 
 /* Converts passed 'Object of type X' to QString.
  * This function returns null QString for any object type until re-determined for specific one. */
@@ -55,7 +58,13 @@ template<class X> X fromInternalString(const QString & /* strData */) { Assert(0
 
 /* Declare global canConvert specializations: */
 template<> bool canConvert<StorageSlot>();
+template<> bool canConvert<RuntimeMenuType>();
+template<> bool canConvert<UIVisualStateType>();
 template<> bool canConvert<DetailsElementType>();
+template<> bool canConvert<GlobalSettingsPageType>();
+template<> bool canConvert<MachineSettingsPageType>();
+template<> bool canConvert<IndicatorType>();
+template<> bool canConvert<MachineCloseAction>();
 
 /* Declare COM canConvert specializations: */
 template<> bool canConvert<KMachineState>();
@@ -63,6 +72,7 @@ template<> bool canConvert<KSessionState>();
 template<> bool canConvert<KDeviceType>();
 template<> bool canConvert<KClipboardMode>();
 template<> bool canConvert<KDragAndDropMode>();
+template<> bool canConvert<KPointingHIDType>();
 template<> bool canConvert<KMediumType>();
 template<> bool canConvert<KMediumVariant>();
 template<> bool canConvert<KNetworkAttachmentType>();
@@ -82,10 +92,24 @@ template<> bool canConvert<KNATProtocol>();
 /* Declare global conversion specializations: */
 template<> QString toString(const StorageSlot &storageSlot);
 template<> StorageSlot fromString<StorageSlot>(const QString &strStorageSlot);
+template<> QString toInternalString(const RuntimeMenuType &runtimeMenuType);
+template<> RuntimeMenuType fromInternalString<RuntimeMenuType>(const QString &strRuntimeMenuType);
+template<> QString toInternalString(const UIVisualStateType &visualStateType);
+template<> UIVisualStateType fromInternalString<UIVisualStateType>(const QString &strVisualStateType);
 template<> QString toString(const DetailsElementType &detailsElementType);
 template<> DetailsElementType fromString<DetailsElementType>(const QString &strDetailsElementType);
 template<> QString toInternalString(const DetailsElementType &detailsElementType);
 template<> DetailsElementType fromInternalString<DetailsElementType>(const QString &strDetailsElementType);
+template<> QString toInternalString(const GlobalSettingsPageType &globalSettingsPageType);
+template<> GlobalSettingsPageType fromInternalString<GlobalSettingsPageType>(const QString &strGlobalSettingsPageType);
+template<> QPixmap toWarningPixmap(const GlobalSettingsPageType &globalSettingsPageType);
+template<> QString toInternalString(const MachineSettingsPageType &machineSettingsPageType);
+template<> MachineSettingsPageType fromInternalString<MachineSettingsPageType>(const QString &strMachineSettingsPageType);
+template<> QPixmap toWarningPixmap(const MachineSettingsPageType &machineSettingsPageType);
+template<> QString toInternalString(const IndicatorType &indicatorType);
+template<> IndicatorType fromInternalString<IndicatorType>(const QString &strIndicatorType);
+template<> QString toInternalString(const MachineCloseAction &machineCloseAction);
+template<> MachineCloseAction fromInternalString<MachineCloseAction>(const QString &strMachineCloseAction);
 
 /* Declare COM conversion specializations: */
 template<> QColor toColor(const KMachineState &state);
@@ -95,6 +119,7 @@ template<> QString toString(const KSessionState &state);
 template<> QString toString(const KDeviceType &type);
 template<> QString toString(const KClipboardMode &mode);
 template<> QString toString(const KDragAndDropMode &mode);
+template<> QString toString(const KPointingHIDType &type);
 template<> QString toString(const KMediumType &type);
 template<> QString toString(const KMediumVariant &variant);
 template<> QString toString(const KNetworkAttachmentType &type);

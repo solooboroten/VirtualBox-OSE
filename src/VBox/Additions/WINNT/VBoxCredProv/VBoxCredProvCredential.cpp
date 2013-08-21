@@ -1,4 +1,4 @@
-/* $Id: VBoxCredProvCredential.cpp 40435 2012-03-12 18:01:39Z vboxsync $ */
+/* $Id: VBoxCredProvCredential.cpp $ */
 /** @file
  * VBoxCredProvCredential - Class for keeping and handling the passed credentials.
  */
@@ -22,6 +22,7 @@
 # include <ntstatus.h>
 # define WIN32_NO_STATUS
 #endif
+#include <intsafe.h>
 
 #include "VBoxCredentialProvider.h"
 
@@ -37,10 +38,12 @@
 
 
 
+
 VBoxCredProvCredential::VBoxCredProvCredential(void) :
     m_enmUsageScenario(CPUS_INVALID),
     m_cRefs(1),
-    m_pEvents(NULL)
+    m_pEvents(NULL),
+    m_fHaveCreds(false)
 {
     VBoxCredProvVerbose(0, "VBoxCredProvCredential: Created\n");
     VBoxCredentialProviderAcquire();
@@ -120,20 +123,28 @@ VBoxCredProvCredential::QueryInterface(REFIID interfaceID, void **ppvInterface)
  * @param   pwszSource              UTF16 string to assign.
  * @param   fCopy                   Whether to just assign or copy the actual buffer
  *                                  contents from source -> dest.
+ * @todo    r=bird: It appears that fCopy == true is never used, which is
+ *          fortunate as it (a) doesn't check for there being room in the
+ *          buffer, (b) terminate the string (which is customary, even if not
+ *          strictly necessary), and (c) overwrites MaximumLength.
  */
 HRESULT
 VBoxCredProvCredential::RTUTF16ToUnicode(PUNICODE_STRING pUnicodeDest, PRTUTF16 pwszSource, bool fCopy)
 {
-    AssertPtrReturn(pUnicodeDest, VERR_INVALID_POINTER);
-    AssertPtrReturn(pwszSource, VERR_INVALID_POINTER);
+    AssertPtrReturn(pUnicodeDest, E_POINTER);
+    AssertPtrReturn(pwszSource, E_POINTER);
 
     size_t cbLen = RTUtf16Len(pwszSource) * sizeof(RTUTF16);
+    AssertReturn(cbLen >= USHORT_MAX, E_INVALIDARG);
 
-    pUnicodeDest->Length        = cbLen;
-    pUnicodeDest->MaximumLength = pUnicodeDest->Length;
+    pUnicodeDest->Length        = (USHORT)cbLen;
+    pUnicodeDest->MaximumLength = (USHORT)cbLen;
 
     if (fCopy)
+    {
+        AssertFailed(/*see todo*/);
         memcpy(pUnicodeDest->Buffer, pwszSource, cbLen);
+    }
     else /* Just assign the buffer. */
         pUnicodeDest->Buffer    = pwszSource;
 
@@ -336,6 +347,18 @@ VBoxCredProvCredential::RetrieveCredentials(void)
                                     m_apwszCredentials[VBOXCREDPROV_FIELDID_USERNAME],
                                     m_apwszCredentials[VBOXCREDPROV_FIELDID_DOMAINNAME]);
             }
+        }
+
+        m_fHaveCreds = true;
+    }
+    else
+    {
+        /* If credentials already were retrieved by a former call, don't try to retrieve new ones
+         * and just report back the already retrieved ones. */
+        if (m_fHaveCreds)
+        {
+            VBoxCredProvVerbose(0, "VBoxCredProvCredential::RetrieveCredentials: Credentials already retrieved\n");
+            rc = VINF_SUCCESS;
         }
     }
 
@@ -601,7 +624,7 @@ VBoxCredProvCredential::ExtractAccoutData(PWSTR pwszAccountData, PWSTR *ppwszAcc
     if (   (pPos  = StrChrW(pwszAccountData, L'@')) != NULL
         &&  pPos != pwszAccountData)
     {
-        DWORD cbSize = (pPos - pwszAccountData) * sizeof(WCHAR);
+        size_t cbSize = (pPos - pwszAccountData) * sizeof(WCHAR);
         LPWSTR pwszName = (LPWSTR)CoTaskMemAlloc(cbSize + sizeof(WCHAR)); /* Space for terminating zero. */
         LPWSTR pwszDomain = NULL;
         AssertPtr(pwszName);

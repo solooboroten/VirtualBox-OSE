@@ -1,10 +1,10 @@
-/* $Id: DMG.cpp 41783 2012-06-16 19:24:15Z vboxsync $ */
+/* $Id: DMG.cpp $ */
 /** @file
  * VBoxDMG - Interpreter for Apple Disk Images (DMG).
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -437,7 +437,7 @@ static DECLCALLBACK(int) dmgFileInflateHelper(void *pvUser, void *pvBuf, size_t 
     int rc = vdIfIoIntFileReadSync(pInflateState->pImage->pIfIo,
                                    pInflateState->pImage->pStorage,
                                    pInflateState->uFileOffset,
-                                   pvBuf, cbBuf, NULL);
+                                   pvBuf, cbBuf);
     if (RT_FAILURE(rc))
         return rc;
     pInflateState->uFileOffset += cbBuf;
@@ -740,7 +740,7 @@ static int dmgFreeImage(PDMGIMAGE pThis, bool fDelete)
             if (!fDelete)
                 dmgFlushImage(pThis);
 
-            vdIfIoIntFileClose(pThis->pIfIo, pThis->pStorage);
+            rc = vdIfIoIntFileClose(pThis->pIfIo, pThis->pStorage);
             pThis->pStorage = NULL;
         }
 
@@ -1393,7 +1393,7 @@ static int dmgOpenImage(PDMGIMAGE pThis, unsigned uOpenFlags)
         return VERR_VD_DMG_INVALID_HEADER;
     rc = vdIfIoIntFileReadSync(pThis->pIfIo, pThis->pStorage,
                                pThis->cbFile - sizeof(pThis->Ftr),
-                               &pThis->Ftr, sizeof(pThis->Ftr), NULL);
+                               &pThis->Ftr, sizeof(pThis->Ftr));
     if (RT_FAILURE(rc))
         return rc;
     dmgUdifFtrFile2HostEndian(&pThis->Ftr);
@@ -1424,7 +1424,7 @@ static int dmgOpenImage(PDMGIMAGE pThis, unsigned uOpenFlags)
     if (!pszXml)
         return VERR_NO_MEMORY;
     rc = vdIfIoIntFileReadSync(pThis->pIfIo, pThis->pStorage, pThis->Ftr.offXml,
-                               pszXml, cchXml, NULL);
+                               pszXml, cchXml);
     if (RT_SUCCESS(rc))
     {
         pszXml[cchXml] = '\0';
@@ -1495,7 +1495,7 @@ static int dmgCheckIfValid(const char *pszFilename, PVDINTERFACE pVDIfsDisk,
     LogFlowFunc(("pszFilename=\"%s\" pVDIfsDisk=%#p pVDIfsImage=%#p penmType=%#p\n",
                  pszFilename, pVDIfsDisk, pVDIfsImage, penmType));
     int rc;
-    PVDIOSTORAGE pStorage;
+    PVDIOSTORAGE pStorage = NULL;
     uint64_t cbFile, offFtr = 0;
     DMGUDIF Ftr;
 
@@ -1514,13 +1514,10 @@ static int dmgCheckIfValid(const char *pszFilename, PVDINTERFACE pVDIfsDisk,
     if (RT_SUCCESS(rc))
     {
         offFtr = cbFile - sizeof(Ftr);
-        rc = vdIfIoIntFileReadSync(pIfIo, pStorage, offFtr, &Ftr, sizeof(Ftr), NULL);
+        rc = vdIfIoIntFileReadSync(pIfIo, pStorage, offFtr, &Ftr, sizeof(Ftr));
     }
     else
-    {
-        vdIfIoIntFileClose(pIfIo, pStorage);
         rc = VERR_VD_DMG_INVALID_HEADER;
-    }
 
     if (RT_SUCCESS(rc))
     {
@@ -1547,7 +1544,8 @@ static int dmgCheckIfValid(const char *pszFilename, PVDINTERFACE pVDIfsDisk,
             rc = VERR_VD_DMG_INVALID_HEADER;
     }
 
-    vdIfIoIntFileClose(pIfIo, pStorage);
+    if (pStorage)
+        vdIfIoIntFileClose(pIfIo, pStorage);
 
     LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
@@ -1659,10 +1657,11 @@ static int dmgClose(void *pBackendData, bool fDelete)
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnRead */
-static int dmgRead(void *pBackendData, uint64_t uOffset, void *pvBuf,
-                   size_t cbToRead, size_t *pcbActuallyRead)
+static int dmgRead(void *pBackendData, uint64_t uOffset,  size_t cbToRead,
+                   PVDIOCTX pIoCtx, size_t *pcbActuallyRead)
 {
-    LogFlowFunc(("pBackendData=%#p uOffset=%llu pvBuf=%#p cbToRead=%zu pcbActuallyRead=%#p\n", pBackendData, uOffset, pvBuf, cbToRead, pcbActuallyRead));
+    LogFlowFunc(("pBackendData=%#p uOffset=%llu pIoCtx=%#p cbToRead=%zu pcbActuallyRead=%#p\n",
+                 pBackendData, uOffset, pIoCtx, cbToRead, pcbActuallyRead));
     PDMGIMAGE pThis = (PDMGIMAGE)pBackendData;
     PDMGEXTENT pExtent = NULL;
     int rc = VINF_SUCCESS;
@@ -1691,14 +1690,14 @@ static int dmgRead(void *pBackendData, uint64_t uOffset, void *pvBuf,
         {
             case DMGEXTENTTYPE_RAW:
             {
-                rc = vdIfIoIntFileReadSync(pThis->pIfIo, pThis->pStorage,
+                rc = vdIfIoIntFileReadUser(pThis->pIfIo, pThis->pStorage,
                                            pExtent->offFileStart + DMG_BLOCK2BYTE(uExtentRel),
-                                           pvBuf, cbToRead, NULL);
+                                           pIoCtx, cbToRead);
                 break;
             }
             case DMGEXTENTTYPE_ZERO:
             {
-                memset(pvBuf, 0, cbToRead);
+                vdIfIoIntIoCtxSet(pThis->pIfIo, pIoCtx, 0, cbToRead);
                 break;
             }
             case DMGEXTENTTYPE_COMP_ZLIB:
@@ -1728,7 +1727,9 @@ static int dmgRead(void *pBackendData, uint64_t uOffset, void *pvBuf,
                 }
 
                 if (RT_SUCCESS(rc))
-                    memcpy(pvBuf, (uint8_t *)pThis->pvDecompExtent + DMG_BLOCK2BYTE(uExtentRel), cbToRead);
+                    vdIfIoIntIoCtxCopyTo(pThis->pIfIo, pIoCtx,
+                                         (uint8_t *)pThis->pvDecompExtent + DMG_BLOCK2BYTE(uExtentRel),
+                                         cbToRead);
                 break;
             }
             default:
@@ -1747,12 +1748,12 @@ out:
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnWrite */
-static int dmgWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
-                    size_t cbToWrite, size_t *pcbWriteProcess,
-                    size_t *pcbPreRead, size_t *pcbPostRead, unsigned fWrite)
+static int dmgWrite(void *pBackendData, uint64_t uOffset, size_t cbToWrite,
+                    PVDIOCTX pIoCtx, size_t *pcbWriteProcess, size_t *pcbPreRead,
+                    size_t *pcbPostRead, unsigned fWrite)
 {
-    LogFlowFunc(("pBackendData=%#p uOffset=%llu pvBuf=%#p cbToWrite=%zu pcbWriteProcess=%#p pcbPreRead=%#p pcbPostRead=%#p\n",
-                 pBackendData, uOffset, pvBuf, cbToWrite, pcbWriteProcess, pcbPreRead, pcbPostRead));
+    LogFlowFunc(("pBackendData=%#p uOffset=%llu pIoCtx=%#p cbToWrite=%zu pcbWriteProcess=%#p pcbPreRead=%#p pcbPostRead=%#p\n",
+                 pBackendData, uOffset, pIoCtx, cbToWrite, pcbWriteProcess, pcbPreRead, pcbPostRead));
     PDMGIMAGE pThis = (PDMGIMAGE)pBackendData;
     int rc = VERR_NOT_IMPLEMENTED;
 
@@ -1774,7 +1775,7 @@ out:
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnFlush */
-static int dmgFlush(void *pBackendData)
+static int dmgFlush(void *pBackendData, PVDIOCTX pIoCtx)
 {
     LogFlowFunc(("pBackendData=%#p\n", pBackendData));
     PDMGIMAGE pThis = (PDMGIMAGE)pBackendData;
@@ -1996,7 +1997,9 @@ static int dmgSetOpenFlags(void *pBackendData, unsigned uOpenFlags)
     int rc;
 
     /* Image must be opened and the new flags must be valid. */
-    if (!pThis || (uOpenFlags & ~(VD_OPEN_FLAGS_READONLY | VD_OPEN_FLAGS_INFO | VD_OPEN_FLAGS_SHAREABLE | VD_OPEN_FLAGS_SEQUENTIAL)))
+    if (!pThis || (uOpenFlags & ~(  VD_OPEN_FLAGS_READONLY | VD_OPEN_FLAGS_INFO
+                                  | VD_OPEN_FLAGS_SHAREABLE | VD_OPEN_FLAGS_SEQUENTIAL
+                                  | VD_OPEN_FLAGS_SKIP_CONSISTENCY_CHECKS)))
     {
         rc = VERR_INVALID_PARAMETER;
         goto out;
@@ -2266,6 +2269,8 @@ VBOXHDDBACKEND g_DmgBackend =
     dmgWrite,
     /* pfnFlush */
     dmgFlush,
+    /* pfnDiscard */
+    NULL,
     /* pfnGetVersion */
     dmgGetVersion,
     /* pfnGetSize */
@@ -2318,12 +2323,6 @@ VBOXHDDBACKEND g_DmgBackend =
     NULL,
     /* pfnSetParentFilename */
     NULL,
-    /* pfnAsyncRead */
-    NULL,
-    /* pfnAsyncWrite */
-    NULL,
-    /* pfnAsyncFlush */
-    NULL,
     /* pfnComposeLocation */
     genericFileComposeLocation,
     /* pfnComposeName */
@@ -2331,10 +2330,6 @@ VBOXHDDBACKEND g_DmgBackend =
     /* pfnCompact */
     NULL,
     /* pfnResize */
-    NULL,
-    /* pfnDiscard */
-    NULL,
-    /* pfnAsyncDiscard */
     NULL,
     /* pfnRepair */
     NULL

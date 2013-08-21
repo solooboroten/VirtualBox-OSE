@@ -1,10 +1,10 @@
-/* $Id: symlink-posix.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
+/* $Id: symlink-posix.cpp $ */
 /** @file
  * IPRT - Symbolic Links, POSIX.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

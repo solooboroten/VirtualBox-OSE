@@ -1,10 +1,10 @@
-/* $Id: tstR0ThreadPreemption.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: tstR0ThreadPreemption.h $ */
 /** @file
  * IPRT R0 Testcase - Thread Preemption, common header.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -36,7 +36,9 @@ typedef enum TSTR0THREADPREMEPTION
     TSTR0THREADPREMEPTION_SANITY_OK = 1,
     TSTR0THREADPREMEPTION_SANITY_FAILURE,
     TSTR0THREADPREMEPTION_BASIC,
+    TSTR0THREADPREMEPTION_IS_TRUSTY,
     TSTR0THREADPREMEPTION_IS_PENDING,
-    TSTR0THREADPREMEPTION_NESTED
+    TSTR0THREADPREMEPTION_NESTED,
+    TSTR0THREADPREEMPTION_CTXHOOKS
 } TSTR0THREADPREMEPTION;
 

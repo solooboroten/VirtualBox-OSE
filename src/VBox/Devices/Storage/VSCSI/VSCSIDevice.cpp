@@ -1,10 +1,10 @@
-/* $Id: VSCSIDevice.cpp 38680 2011-09-08 07:52:08Z vboxsync $ */
+/* $Id: VSCSIDevice.cpp $ */
 /** @file
  * Virtual SCSI driver: Device handling
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -101,7 +101,11 @@ static bool vscsiDeviceReqProcess(PVSCSIDEVICEINT pVScsiDevice, PVSCSIREQINT pVS
         }
         case SCSI_TEST_UNIT_READY:
         {
-            *prcReq = vscsiReqSenseOkSet(&pVScsiDevice->VScsiSense, pVScsiReq);
+            if (   vscsiDeviceLunIsPresent(pVScsiDevice, pVScsiReq->iLun)
+                && pVScsiDevice->papVScsiLun[pVScsiReq->iLun]->fReady)
+                *prcReq = vscsiReqSenseOkSet(&pVScsiDevice->VScsiSense, pVScsiReq);
+            else
+                fProcessed = false; /* The LUN (if present) will provide details. */
             break;
         }
         case SCSI_REQUEST_SENSE:
@@ -111,6 +115,7 @@ static bool vscsiDeviceReqProcess(PVSCSIDEVICEINT pVScsiDevice, PVSCSIREQINT pVS
                 *prcReq = vscsiReqSenseErrorSet(&pVScsiDevice->VScsiSense, pVScsiReq, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ASC_INV_FIELD_IN_CMD_PACKET, 0x00);
             else
                 *prcReq = vscsiReqSenseCmd(&pVScsiDevice->VScsiSense, pVScsiReq);
+            break;
         }
         default:
             fProcessed = false;
@@ -343,4 +348,3 @@ VBOXDDU_DECL(int) VSCSIDeviceReqCreate(VSCSIDEVICE hVScsiDevice, PVSCSIREQ phVSc
 
     return VINF_SUCCESS;
 }
-

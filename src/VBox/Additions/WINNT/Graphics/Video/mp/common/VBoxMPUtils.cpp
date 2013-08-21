@@ -1,11 +1,11 @@
-/* $Id: VBoxMPUtils.cpp 42151 2012-07-13 16:45:06Z vboxsync $ */
+/* $Id: VBoxMPUtils.cpp $ */
 
 /** @file
  * VBox Miniport utils
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -61,7 +61,9 @@ vboxWinVersion_t VBoxQueryWinVersion()
 
     if(major == 6)
     {
-        if (minor == 2)
+        if (minor == 3)
+            s_WinVersion = WIN81;
+        else if (minor == 2)
             s_WinVersion = WIN8;
         else if (minor == 1)
             s_WinVersion = WIN7;

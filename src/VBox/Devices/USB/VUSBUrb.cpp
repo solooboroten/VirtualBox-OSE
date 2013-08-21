@@ -1,10 +1,10 @@
-/* $Id: VUSBUrb.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: VUSBUrb.cpp $ */
 /** @file
  * Virtual USB - URBs.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -759,6 +759,7 @@ void vusbUrbTrace(PVUSBURB pUrb, const char *pszMsg, bool fComplete)
         &&  ((pSetup->bmRequestType >> 5) & 0x3) >= 2 /* vendor */
         &&  (fComplete || !(pSetup->bmRequestType >> 7))
         &&  pDev
+        &&  pDev->pDescCache
         &&  pDev->pDescCache->pDevice
         &&  pDev->pDescCache->pDevice->idVendor == 0x046d
         &&  (   pDev->pDescCache->pDevice->idProduct == 0x8f6
@@ -988,6 +989,7 @@ static int vusbUrbErrorRh(PVUSBURB pUrb)
 {
     PVUSBDEV pDev = pUrb->VUsb.pDev;
     PVUSBROOTHUB pRh = vusbDevGetRh(pDev);
+    AssertPtrReturn(pRh, VERR_VUSB_DEVICE_NOT_ATTACHED);
     LogFlow(("%s: vusbUrbErrorRh: pDev=%p[%s] rh=%p\n", pUrb->pszDesc, pDev, pDev->pUsbIns ? pDev->pUsbIns->pszName : "", pRh));
     return pRh->pIRhPort->pfnXferError(pRh->pIRhPort, pUrb);
 }
@@ -1010,6 +1012,7 @@ void vusbUrbCompletionRh(PVUSBURB pUrb)
      * Total and per-type submit statistics.
      */
     PVUSBROOTHUB pRh = vusbDevGetRh(pUrb->VUsb.pDev);
+    AssertPtrReturnVoid(pRh);
     if (pUrb->enmType != VUSBXFERTYPE_MSG)
     {
         Assert(pUrb->enmType >= 0 && pUrb->enmType < (int)RT_ELEMENTS(pRh->aTypes));
@@ -1113,6 +1116,7 @@ void vusbUrbCompletionRh(PVUSBURB pUrb)
 #endif
 #ifndef VBOX_WITH_STATISTICS
     PVUSBROOTHUB pRh = vusbDevGetRh(pUrb->VUsb.pDev);
+    AssertPtrReturnVoid(pRh);
 #endif
 
     /** @todo explain why we do this pDev change. */
@@ -1472,7 +1476,7 @@ static bool vusbMsgSetup(PVUSBPIPE pPipe, const void *pvBuf, uint32_t cbBuf)
     pSetup->wIndex          = RT_LE2H_U16(pSetupIn->wIndex);
     pSetup->wLength         = RT_LE2H_U16(pSetupIn->wLength);
 
-    LogFlow(("vusbMsgSetup(%p,,%d): bmRequestType=%#04x bRequest=%#04x wValue=%#06x wIndex=%#06x wLength=%d\n",
+    LogFlow(("vusbMsgSetup(%p,,%d): bmRequestType=%#04x bRequest=%#04x wValue=%#06x wIndex=%#06x wLength=0x%.4x\n",
              pPipe, cbBuf, pSetup->bmRequestType, pSetup->bRequest, pSetup->wValue, pSetup->wIndex, pSetup->wLength));
     return true;
 }
@@ -1960,7 +1964,14 @@ void vusbUrbDoReapAsync(PVUSBURB pHead, RTMSINTERVAL cMillies)
              * Reap most URBs pending on a single device.
              */
             PVUSBURB pRipe;
-            while ((pRipe = pDev->pUsbIns->pReg->pfnUrbReap(pDev->pUsbIns, cMillies)) != NULL)
+
+            /**
+             * This is workaround for race(should be fixed) detach on one EMT thread and frame boundary timer on other
+             * and leaked URBs (shouldn't be affected by leaked URBs).
+             */
+            Assert(pDev->pUsbIns);
+            while (   pDev->pUsbIns
+                   && ((pRipe = pDev->pUsbIns->pReg->pfnUrbReap(pDev->pUsbIns, cMillies)) != NULL))
             {
                 vusbUrbAssert(pRipe);
                 if (pRipe == pUrbNext)

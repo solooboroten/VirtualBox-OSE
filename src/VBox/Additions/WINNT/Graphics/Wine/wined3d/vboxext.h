@@ -1,9 +1,9 @@
-/* $Id: vboxext.h 42408 2012-07-26 12:28:23Z vboxsync $ */
+/* $Id: vboxext.h $ */
 /** @file
  *
  * VBox extension to Wine D3D
  *
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

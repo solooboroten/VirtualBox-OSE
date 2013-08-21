@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 41844 2012-06-20 13:08:28Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-makefile for the Linux host driver helper scripts.
 #

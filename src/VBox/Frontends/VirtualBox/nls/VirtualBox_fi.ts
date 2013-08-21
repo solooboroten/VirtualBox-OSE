@@ -2885,7 +2885,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Vasen </translation>
@@ -11681,7 +11681,7 @@ Version %1</source>
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation type="unfinished"></translation>

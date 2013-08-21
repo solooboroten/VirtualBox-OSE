@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -242,7 +242,7 @@ HGCMService::HGCMService ()
 #endif
     m_hExtension (NULL)
 {
-    memset (&m_fntable, 0, sizeof (m_fntable));
+    RT_ZERO(m_fntable);
 }
 
 
@@ -289,7 +289,7 @@ int HGCMService::loadServiceDLL (void)
 
         if (RT_SUCCESS(rc))
         {
-            memset (&m_fntable, 0, sizeof (m_fntable));
+            RT_ZERO(m_fntable);
 
             m_fntable.cbSize     = sizeof (m_fntable);
             m_fntable.u32Version = VBOX_HGCM_SVC_VERSION;
@@ -345,7 +345,7 @@ void HGCMService::unloadServiceDLL (void)
         RTLdrClose (m_hLdrMod);
     }
 
-    memset (&m_fntable, 0, sizeof (m_fntable));
+    RT_ZERO(m_fntable);
     m_pfnLoad = NULL;
     m_hLdrMod = NIL_RTLDRMOD;
 }

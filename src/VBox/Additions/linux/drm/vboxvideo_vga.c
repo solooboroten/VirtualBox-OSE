@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_vga.c 42784 2012-08-12 20:31:36Z vboxsync $
+/** @file $Id: vboxvideo_vga.c $
  *
  * VirtualBox Additions Linux kernel video driver, VGA functions
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -43,7 +43,6 @@
  */
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
 
 #include "vboxvideo_drv.h"
 #include "drm/drm_crtc_helper.h"
@@ -81,7 +80,11 @@ struct drm_encoder *vboxvideo_connector_best_encoder(struct drm_connector
 }
 
 static enum drm_connector_status vboxvideo_vga_detect(struct drm_connector
-                                                            *connector)
+                                                            *connector
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)
+                                                      , bool force
+#endif
+                                                      )
 {
     return connector_status_connected;
 }
@@ -126,5 +129,3 @@ struct drm_connector *vboxvideo_vga_init(struct drm_device *dev)
 
     return connector;
 }
-
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27) */

@@ -1,10 +1,10 @@
-/* $Id: VBoxManageMisc.cpp 43041 2012-08-28 13:58:40Z vboxsync $ */
+/* $Id: VBoxManageMisc.cpp $ */
 /** @file
  * VBoxManage - VirtualBox's command-line interface.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,8 +26,6 @@
 # include <VBox/com/array.h>
 # include <VBox/com/ErrorInfo.h>
 # include <VBox/com/errorprint.h>
-# include <VBox/com/EventQueue.h>
-
 # include <VBox/com/VirtualBox.h>
 #endif /* !VBOX_ONLY_DOCS */
 
@@ -161,7 +159,7 @@ int handleUnregisterVM(HandlerArg *a)
     if (fDelete)
     {
         ComPtr<IProgress> pProgress;
-        CHECK_ERROR_RET(machine, Delete(ComSafeArrayAsInParam(aMedia), pProgress.asOutParam()),
+        CHECK_ERROR_RET(machine, DeleteConfig(ComSafeArrayAsInParam(aMedia), pProgress.asOutParam()),
                         RTEXITCODE_FAILURE);
 
         rc = showProgress(pProgress);
@@ -485,7 +483,7 @@ int handleStartVM(HandlerArg *a)
 {
     HRESULT rc = S_OK;
     std::list<const char *> VMs;
-    Bstr sessionType = "gui";
+    Bstr sessionType;
 
     static const RTGETOPTDEF s_aStartVMOptions[] =
     {
@@ -870,6 +868,13 @@ int handleSetProperty(HandlerArg *a)
         else
             CHECK_ERROR(systemProperties, COMSETTER(AutostartDatabasePath)(Bstr(a->argv[1]).raw()));
     }
+    else if (!strcmp(a->argv[0], "defaultfrontend"))
+    {
+        Bstr bstrDefaultFrontend(a->argv[1]);
+        if (!strcmp(a->argv[1], "default"))
+            bstrDefaultFrontend.setNull();
+        CHECK_ERROR(systemProperties, COMSETTER(DefaultFrontend)(bstrDefaultFrontend.raw()));
+    }
     else
         return errorSyntax(USAGE_SETPROPERTY, "Invalid parameter '%s'", a->argv[0]);
 
@@ -950,7 +955,7 @@ int handleSharedFolder(HandlerArg *a)
 
         if (fTransient)
         {
-            ComPtr <IConsole> console;
+            ComPtr<IConsole> console;
 
             /* open an existing session for the VM */
             CHECK_ERROR_RET(machine, LockMachine(a->session, LockType_Shared), 1);
@@ -1016,7 +1021,7 @@ int handleSharedFolder(HandlerArg *a)
 
         if (fTransient)
         {
-            ComPtr <IConsole> console;
+            ComPtr<IConsole> console;
 
             /* open an existing session for the VM */
             CHECK_ERROR_RET(machine, LockMachine(a->session, LockType_Shared), 1);

@@ -1,10 +1,10 @@
-/* $Revision: 40901 $ */
+/* $Revision: 84902 $ */
 /** @file
  * VBoxGuestLib - Host-Guest Communication Manager internal functions, implemented by VBoxGuest
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -49,9 +49,10 @@
 #define VBGLR0_MAX_HGCM_USER_PARM       (24*_1M)
 /** The max parameter buffer size for a kernel request. */
 #define VBGLR0_MAX_HGCM_KERNEL_PARM     (16*_1M)
-#ifdef RT_OS_LINUX
+#if defined(RT_OS_LINUX) || (defined(RT_OS_DARWIN) && defined(RT_ARCH_X86))
 /** Linux needs to use bounce buffers since RTR0MemObjLockUser has unwanted
- *  side effects. */
+ * side effects.
+ * Darwin 32bit also needs this because of 4GB/4GB user/kernel space. */
 # define USE_BOUNCE_BUFFERS
 #endif
 

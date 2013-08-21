@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2009-2010 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -91,17 +91,17 @@ public:
     /* Constructor: */
     UIHostInterfaceItem();
 
-    /* Get/return data to/form items: */
+    /* API: Get/return data to/form items: */
     void fetchNetworkData(const UIHostNetworkData &data);
     void uploadNetworkData(UIHostNetworkData &data);
 
-    /* Validation stuff: */
-    bool revalidate(QString &strWarning, QString &strTitle);
+    /* API: Validation stuff: */
+    bool validate(QString &strWarning, QString &strTitle);
 
-    /* Helpers: */
+    /* API: Update stuff: */
     QString updateInfo();
 
-    /* Network item getters: */
+    /* API: Network item getters: */
     QString name() const { return m_data.m_interface.m_strName; }
     bool isDhcpClientEnabled() const { return m_data.m_interface.m_fDhcpClientEnabled; }
     QString interfaceAddress() const { return m_data.m_interface.m_strInterfaceAddress; }
@@ -116,7 +116,7 @@ public:
     QString dhcpLowerAddress() const { return m_data.m_dhcpserver.m_strDhcpLowerAddress; }
     QString dhcpUpperAddress() const { return m_data.m_dhcpserver.m_strDhcpUpperAddress; }
 
-    /* Network item setters */
+    /* API: Network item setters */
     void setDhcpClientEnabled(bool fEnabled) { m_data.m_interface.m_fDhcpClientEnabled = fEnabled; }
     void setInterfaceAddress (const QString &strValue) { m_data.m_interface.m_strInterfaceAddress = strValue; }
     void setInterfaceMask (const QString &strValue) { m_data.m_interface.m_strInterfaceMask = strValue; }
@@ -148,7 +148,7 @@ public:
 
 protected:
 
-    /* Load data to cashe from corresponding external object(s),
+    /* Load data to cache from corresponding external object(s),
      * this task COULD be performed in other than GUI thread: */
     void loadToCacheFrom(QVariant &data);
     /* Load data to corresponding widgets from cache,
@@ -162,9 +162,8 @@ protected:
      * this task COULD be performed in other than GUI thread: */
     void saveFromCacheTo(QVariant &data);
 
-    /* Validation stuff: */
-    void setValidator(QIWidgetValidator *pValidator);
-    bool revalidate(QString &strWarning, QString &strTitle);
+    /* API: Validation stuff: */
+    bool validate(QString &strWarning, QString &strTitle);
 
     /* Navigation stuff: */
     void setOrderAfter (QWidget *aWidget);
@@ -188,9 +187,6 @@ private:
     void removeCacheItem(const QString &strInterfaceName);
     void appendListItem(const UIHostNetworkData &data, bool fChooseItem = false);
     void removeListItem(UIHostInterfaceItem *pItem);
-
-    /* Validator: */
-    QIWidgetValidator *m_pValidator;
 
     /* Helper actions: */
     QAction *m_pAddAction;

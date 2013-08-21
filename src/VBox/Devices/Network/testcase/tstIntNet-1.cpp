@@ -1,10 +1,10 @@
-/* $Id: tstIntNet-1.cpp 41414 2012-05-23 12:37:28Z vboxsync $ */
+/* $Id: tstIntNet-1.cpp $ */
 /** @file
  * VBox - Testcase for internal networking, simple NetFlt trunk creation.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -462,7 +462,7 @@ static void doPacketSniffing(INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, PINTNE
         PINTNETHDR pHdr;
         while ((pHdr = IntNetRingGetNextFrameToRead(pRingBuf)))
         {
-            if (pHdr->u16Type == INTNETHDR_TYPE_FRAME)
+            if (pHdr->u8Type == INTNETHDR_TYPE_FRAME)
             {
                 size_t      cbFrame = pHdr->cbFrame;
                 const void *pvFrame = IntNetHdrGetFramePtr(pHdr, pBuf);
@@ -539,7 +539,7 @@ static void doPacketSniffing(INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, PINTNE
                     }
                 }
             }
-            else if (pHdr->u16Type == INTNETHDR_TYPE_GSO)
+            else if (pHdr->u8Type == INTNETHDR_TYPE_GSO)
             {
                 PCPDMNETWORKGSO pGso    = IntNetHdrGetGsoContext(pHdr, pBuf);
                 size_t          cbFrame = pHdr->cbFrame;
@@ -567,9 +567,9 @@ static void doPacketSniffing(INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, PINTNE
                     g_cErrors++;
                 }
             }
-            else if (pHdr->u16Type != INTNETHDR_TYPE_PADDING)
+            else if (pHdr->u8Type != INTNETHDR_TYPE_PADDING)
             {
-                RTPrintf("tstIntNet-1: Unknown frame type %d\n", pHdr->u16Type);
+                RTPrintf("tstIntNet-1: Unknown frame type %d\n", pHdr->u8Type);
                 STAM_REL_COUNTER_INC(&pBuf->cStatBadFrames);
                 g_cErrors++;
             }
@@ -749,7 +749,7 @@ int main(int argc, char **argv)
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: 41414 $\n");
+                RTPrintf("$Revision: 86899 $\n");
                 return 0;
 
             default:
@@ -891,14 +891,14 @@ int main(int argc, char **argv)
                         if (   fXmitTest
                             && !g_fDhcpReply)
                         {
-                            RTPrintf("tstIntNet-1: Error! The DHCP server didn't reply... (Perhaps you don't have one?)\n", rc);
+                            RTPrintf("tstIntNet-1: Error! The DHCP server didn't reply... (Perhaps you don't have one?)\n");
                             g_cErrors++;
                         }
 
                         if (   fPingTest
                             && !g_fPingReply)
                         {
-                            RTPrintf("tstIntNet-1: Error! No reply for ping request...\n", rc);
+                            RTPrintf("tstIntNet-1: Error! No reply for ping request...\n");
                             g_cErrors++;
                         }
                     }

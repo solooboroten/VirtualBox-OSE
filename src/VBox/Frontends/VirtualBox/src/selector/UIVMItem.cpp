@@ -1,4 +1,4 @@
-/* $Id: UIVMItem.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: UIVMItem.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -197,7 +197,7 @@ QString UIVMItem::toolTipText() const
             .arg(toolTip)
             .arg(gpConverter->toString(m_machineState))
             .arg(dateTime)
-            .arg(gpConverter->toString(m_sessionState));
+            .arg(gpConverter->toString(m_sessionState).toLower());
     }
     else
     {
@@ -255,6 +255,13 @@ bool UIVMItem::recache()
             mWinId = FindWindowIdFromPid(m_pid);
 #endif
         }
+
+        /* Should we allow reconfiguration for this item? */
+        m_fReconfigurable = m_machineState != KMachineState_Stuck &&
+                            VBoxGlobal::shouldWeAllowMachineReconfiguration(m_machine);
+
+        /* Should we show details for this item? */
+        m_fHasDetails = VBoxGlobal::shouldWeShowDetails(m_machine);
     }
     else
     {
@@ -278,6 +285,12 @@ bool UIVMItem::recache()
 #if 0
         mWinId = (WId) ~0;
 #endif
+
+        /* Should we allow reconfiguration for this item? */
+        m_fReconfigurable = false;
+
+        /* Should we show details for this item? */
+        m_fHasDetails = true;
     }
 
     return needsResort;
@@ -412,6 +425,71 @@ bool UIVMItem::switchTo()
 #endif
 
 #endif
+}
+
+/* static */
+bool UIVMItem::isItemEditable(UIVMItem *pItem)
+{
+    return pItem->accessible() &&
+           pItem->sessionState() == KSessionState_Unlocked;
+}
+
+/* static */
+bool UIVMItem::isItemSaved(UIVMItem *pItem)
+{
+    if (pItem->accessible() &&
+        pItem->machineState() == KMachineState_Saved)
+        return true;
+    return false;
+}
+
+/* static */
+bool UIVMItem::isItemPoweredOff(UIVMItem *pItem)
+{
+    if (pItem->accessible() &&
+        (pItem->machineState() == KMachineState_PoweredOff ||
+         pItem->machineState() == KMachineState_Saved ||
+         pItem->machineState() == KMachineState_Teleported ||
+         pItem->machineState() == KMachineState_Aborted))
+        return true;
+    return false;
+}
+
+/* static */
+bool UIVMItem::isItemStarted(UIVMItem *pItem)
+{
+    return isItemRunning(pItem) || isItemPaused(pItem);
+}
+
+/* static */
+bool UIVMItem::isItemRunning(UIVMItem *pItem)
+{
+    if (pItem->accessible() &&
+        (pItem->machineState() == KMachineState_Running ||
+         pItem->machineState() == KMachineState_Teleporting ||
+         pItem->machineState() == KMachineState_LiveSnapshotting))
+        return true;
+    return false;
+}
+
+/* static */
+bool UIVMItem::isItemPaused(UIVMItem *pItem)
+{
+    if (pItem->accessible() &&
+        (pItem->machineState() == KMachineState_Paused ||
+         pItem->machineState() == KMachineState_TeleportingPausedVM))
+        return true;
+    return false;
+
+}
+
+/* static */
+bool UIVMItem::isItemStuck(UIVMItem *pItem)
+{
+    if (pItem->accessible() &&
+        pItem->machineState() == KMachineState_Stuck)
+        return true;
+    return false;
 }
 
 QString UIVMItemMimeData::m_type = "application/org.virtualbox.gui.vmselector.uivmitem";

@@ -1,10 +1,10 @@
-/* $Id: VBoxDbgConsole.h 38813 2011-09-21 12:28:27Z vboxsync $ */
+/* $Id: VBoxDbgConsole.h $ */
 /** @file
  * VBox Debugger GUI - Console.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -117,8 +117,6 @@ private slots:
     void returnPressed();
 
 protected:
-    /** The current blank entry. */
-    int m_iBlankItem;
     /** The handle to the GUI thread. */
     RTNATIVETHREAD m_hGUIThread;
 };

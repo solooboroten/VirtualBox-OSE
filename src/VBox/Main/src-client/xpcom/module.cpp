@@ -48,7 +48,6 @@
 #include "MouseImpl.h"
 #include "NATEngineImpl.h"
 #include "NetworkAdapterImpl.h"
-#include "ProgressCombinedImpl.h"
 #include "ProgressImpl.h"
 #include "RemoteUSBDeviceImpl.h"
 #include "SessionImpl.h"
@@ -84,8 +83,6 @@ NS_DECL_CLASSINFO(MachineDebugger)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(MachineDebugger, IMachineDebugger)
 NS_DECL_CLASSINFO(Progress)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Progress, IProgress)
-NS_DECL_CLASSINFO(CombinedProgress)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(CombinedProgress, IProgress)
 NS_DECL_CLASSINFO(OUSBDevice)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(OUSBDevice, IUSBDevice)
 NS_DECL_CLASSINFO(RemoteUSBDevice)
@@ -95,8 +92,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SharedFolder, ISharedFolder)
 NS_DECL_CLASSINFO(VRDEServerInfo)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(VRDEServerInfo, IVRDEServerInfo)
 #ifdef VBOX_WITH_EXTPACK
-NS_DECL_CLASSINFO(ExtPackFile)
-NS_IMPL_THREADSAFE_ISUPPORTS2_CI(ExtPackFile, IExtPackFile, IExtPackBase)
+// deliberately omit ExtPackFile as it's unusable in the client context
+// NS_DECL_CLASSINFO(ExtPackFile)
+// NS_IMPL_THREADSAFE_ISUPPORTS2_CI(ExtPackFile, IExtPackFile, IExtPackBase)
 NS_DECL_CLASSINFO(ExtPack)
 NS_IMPL_THREADSAFE_ISUPPORTS2_CI(ExtPack, IExtPack, IExtPackBase)
 NS_DECL_CLASSINFO(ExtPackManager)

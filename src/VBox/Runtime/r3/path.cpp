@@ -1,10 +1,10 @@
-/* $Id: path.cpp 35225 2010-12-17 13:54:46Z vboxsync $ */
+/* $Id: path.cpp $ */
 /** @file
  * IPRT - Path Manipulation.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

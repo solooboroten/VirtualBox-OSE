@@ -1,11 +1,11 @@
 # !kmk_ash
-# $Id: gen-slickedit-workspace.sh 41828 2012-06-19 14:34:32Z vboxsync $
+# $Id: gen-slickedit-workspace.sh $
 ## @file
 # Script for generating a SlickEdit workspace.
 #
 
 #
-# Copyright (C) 2009-2011 Oracle Corporation
+# Copyright (C) 2009-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -49,6 +49,8 @@ out/win.amd64/debug \
 out/win.x86/debug \
 out/darwin.amd64/debug \
 out/darwin.x86/debug \
+out/haiku.amd64/debug \
+out/haiku.x86/debug \
 out/solaris.amd64/debug \
 out/solaris.x86/debug";
 
@@ -63,6 +65,7 @@ MY_WS_NAME="VirtualBox.vpw"
 MY_DBG=""
 MY_WINDOWS_HOST=""
 MY_OPT_MINIMAL=""
+MY_OPT_USE_WILDCARDS="yes"
 
 #MY_KBUILD_PATH="${KBUILD_PATH}"
 #test -z "${MY_KBUILD_PATH}" && MY_KBUILD_PATH="${PATH_KBUILD}"
@@ -110,6 +113,7 @@ my_get_name()
 #
 # @param    $1      The output file name base.
 # @param    $2      The file name.
+# @param    $3      Optional folder override.
 my_file()
 {
     # sort and filter by file type.
@@ -125,7 +129,7 @@ my_file()
             ;;
 
         # by extension.
-        *.c|*.cpp|*.m|*.mm|*.pl|*.py|*.as|*.c.h|*.cpp.h)
+        *.c|*.cpp|*.m|*.mm|*.pl|*.py|*.as|*.c.h|*.cpp.h|*.java)
             MY_FOLDER="$1-Sources.lst"
             ;;
 
@@ -141,6 +145,10 @@ my_file()
             MY_FOLDER="$1-Others.lst"
             ;;
     esac
+    if test -n "$3"; 
+    then
+        MY_FOLDER="$1-$3.lst"
+    fi
 
     ## @todo only files which are in subversion.
 #    if ${MY_SVN} info "${2}" > /dev/null 2>&1; then
@@ -150,10 +158,22 @@ my_file()
 }
 
 ##
+# Generate file entry for the specified file if it was found to be of interest.
+#
+# @param    $1      The output file name base.
+# @param    $2      The wildcard spec.
+my_wildcard()
+{
+    EXCLUDES="*.log;*.kup;*~;*.pyc;*.exe;*.sys;*.dll;*.o;*.obj;*.lib;*.a;*.ko;*.class;.svn/*"
+    echo '        <F N="'"${2}"'/*" Recurse="1" Excludes="'"${EXCLUDES}"'"/>' >> "$1-All.lst"
+}
+
+##
 # Generate file entries for the specified sub-directory tree.
 #
 # @param    $1      The output filename.
 # @param    $2      The sub-directory.
+# @param    $3      Optional folder override.
 my_sub_tree()
 {
     if test -n "$MY_DBG"; then echo "dbg: my_sub_tree: ${2}"; fi
@@ -170,9 +190,9 @@ my_sub_tree()
     do
         if test -d "${f}";
         then
-            my_sub_tree "${1}" "${f}"
+            my_sub_tree "${1}" "${f}" "${3}"
         else
-            my_file "${1}" "${f}"
+            my_file "${1}" "${f}" "${3}"
         fi
     done
     return 0;
@@ -190,6 +210,7 @@ my_generate_folder()
     shift
 
     # Zap existing file collections.
+    > "${MY_FILE}-All.lst"
     > "${MY_FILE}-Sources.lst"
     > "${MY_FILE}-Headers.lst"
     > "${MY_FILE}-Assembly.lst"
@@ -203,7 +224,18 @@ my_generate_folder()
         do
             if test -d "${f}";
             then
-                my_sub_tree "${MY_FILE}" "${f}"
+                if test -z "${MY_OPT_USE_WILDCARDS}"; 
+                then
+                    my_sub_tree "${MY_FILE}" "${f}"
+                else
+                    case "${f}" in
+                        ${MY_ROOT_DIR}/include*) 
+                            my_sub_tree "${MY_FILE}" "${f}" "Headers"
+                            ;;
+                        *)  my_wildcard "${MY_FILE}" "${f}" 
+                            ;;
+                    esac
+                fi
             else
                 my_file "${MY_FILE}" "${f}"
             fi
@@ -212,6 +244,10 @@ my_generate_folder()
     done
 
     # Generate the folders.
+    if test -s "${MY_FILE}-All.lst";
+    then
+        ${MY_SORT} "${MY_FILE}-All.lst"   | ${MY_SED} -e 's/<!-- sortkey: [^>]*>/          /' >> "${MY_FILE}"
+    fi
     if test -s "${MY_FILE}-Sources.lst";
     then
         echo '        <Folder Name="Sources"  Filters="*.c;*.cpp;*.cpp.h;*.c.h;*.m;*.mm;*.pl;*.py;*.as">' >> "${MY_FILE}"
@@ -220,7 +256,12 @@ my_generate_folder()
     fi
     if test -s "${MY_FILE}-Headers.lst";
     then
-        echo '        <Folder Name="Headers"  Filters="*.h;*.hpp">' >> "${MY_FILE}"
+        if test -z "${MY_OPT_USE_WILDCARDS}"; 
+        then
+            echo '        <Folder Name="Headers"  Filters="*.h;*.hpp">' >> "${MY_FILE}"
+        else
+            echo '        <Folder Name="Headers"  Filters="">' >> "${MY_FILE}"
+        fi
         ${MY_SORT} "${MY_FILE}-Headers.lst"   | ${MY_SED} -e 's/<!-- sortkey: [^>]*>/          /' >> "${MY_FILE}"
         echo '        </Folder>' >> "${MY_FILE}"
     fi
@@ -244,7 +285,8 @@ my_generate_folder()
     fi
 
     # Cleanup
-    ${MY_RM}  "${MY_FILE}-Sources.lst" "${MY_FILE}-Headers.lst" "${MY_FILE}-Assembly.lst" "${MY_FILE}-Testcases.lst" "${MY_FILE}-Others.lst"
+    ${MY_RM}  "${MY_FILE}-All.lst" "${MY_FILE}-Sources.lst" "${MY_FILE}-Headers.lst" "${MY_FILE}-Assembly.lst" \
+        "${MY_FILE}-Testcases.lst" "${MY_FILE}-Others.lst"
 }
 
 
@@ -773,7 +815,7 @@ my_generate_project "VMM"           "src/VBox/VMM"                          --be
     "include/VBox/vmm/em.h" \
     "include/VBox/vmm/gmm.*" \
     "include/VBox/vmm/gvm.*" \
-    "include/VBox/vmm/hw*.*" \
+    "include/VBox/vmm/hm*.*" \
     "include/VBox/vmm/iom.h" \
     "include/VBox/vmm/mm.h" \
     "include/VBox/vmm/patm.*" \
@@ -805,6 +847,7 @@ my_generate_project "Add-freebsd"   "src/VBox/Additions/freebsd"            --be
 my_generate_project "Add-linux"     "src/VBox/Additions/linux"              --begin-incs "include" "src/VBox/Additions/linux"               --end-includes "src/VBox/Additions/linux"
 my_generate_project "Add-os2"       "src/VBox/Additions/os2"                --begin-incs "include" "src/VBox/Additions/os2"                 --end-includes "src/VBox/Additions/os2"
 my_generate_project "Add-solaris"   "src/VBox/Additions/solaris"            --begin-incs "include" "src/VBox/Additions/solaris"             --end-includes "src/VBox/Additions/solaris"
+my_generate_project "Add-haiku"     "src/VBox/Additions/haiku"              --begin-incs "include" "src/VBox/Additions/haiku"               --end-includes "src/VBox/Additions/haiku"
 my_generate_project "Add-win"       "src/VBox/Additions/WINNT"              --begin-incs "include" "src/VBox/Additions/WINNT"               --end-includes "src/VBox/Additions/WINNT"
 test -z "$MY_OPT_MINIMAL" && \
 my_generate_project "Add-x11"       "src/VBox/Additions/x11"                --begin-incs "include" "src/VBox/Additions/x11"                 --end-includes "src/VBox/Additions/x11"
@@ -906,7 +949,7 @@ my_generate_project "bldprogs"      "src/bldprogs"                          --be
 my_generate_project "zlib"          "src/libs/zlib-1.2.6"                   --begin-incs "include"                                          --end-includes "src/libs/zlib-1.2.6/*.c" "src/libs/zlib-1.2.6/*.h"
 my_generate_project "liblzf"        "src/libs/liblzf-3.4"                   --begin-incs "include"                                          --end-includes "src/libs/liblzf-3.4"
 my_generate_project "libpng"        "src/libs/libpng-1.2.8"                 --begin-incs "include"                                          --end-includes "src/libs/libpng-1.2.8/*.c" "src/libs/libpng-1.2.8/*.h"
-my_generate_project "openssl"       "src/libs/openssl-0.9.8t"               --begin-incs "include" "src/libs/openssl-0.9.8t/crypto"         --end-includes "src/libs/openssl-0.9.8t"
+my_generate_project "openssl"       "src/libs/openssl-0.9.8y"               --begin-incs "include" "src/libs/openssl-0.9.8y/crypto"         --end-includes "src/libs/openssl-0.9.8y"
 my_generate_project "kStuff"        "src/libs/kStuff"                       --begin-incs "include" "src/libs/kStuff/kStuff/include"         --end-includes "src/libs/kStuff"
 
 
@@ -935,6 +978,8 @@ for d in \
     "out/linux.x86/debug/bin/sdk/bindings/xpcom" \
     "out/darwin.amd64/debug/dist/sdk/bindings/xpcom" \
     "out/darwin.x86/debug/bin/dist/bindings/xpcom" \
+    "out/haiku.amd64/debug/bin/sdk/bindings/xpcom" \
+    "out/haiku.x86/debug/bin/sdk/bindings/xpcom" \
     "out/solaris.amd64/debug/bin/sdk/bindings/xpcom" \
     "out/solaris.x86/debug/bin/sdk/bindings/xpcom";
 do

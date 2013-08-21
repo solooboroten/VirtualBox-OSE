@@ -1,10 +1,10 @@
-/* $Id: VBoxWatchdog.cpp 42211 2012-07-18 14:24:58Z vboxsync $ */
+/* $Id: VBoxWatchdog.cpp $ */
 /** @file
  * VBoxWatchdog.cpp - VirtualBox Watchdog.
  */
 
 /*
- * Copyright (C) 2011-2012 Oracle Corporation
+ * Copyright (C) 2011-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -27,7 +27,7 @@
 # include <VBox/com/ErrorInfo.h>
 # include <VBox/com/errorprint.h>
 
-# include <VBox/com/EventQueue.h>
+# include <VBox/com/NativeEventQueue.h>
 # include <VBox/com/listeners.h>
 # include <VBox/com/VirtualBox.h>
 #endif /* !VBOX_ONLY_DOCS */
@@ -131,7 +131,7 @@ static ComPtr<IVirtualBoxClient> g_pVirtualBoxClient = NULL;
 static ComPtr<IEventSource>      g_pEventSource = NULL;
 static ComPtr<IEventSource>      g_pEventSourceClient = NULL;
 static ComPtr<IEventListener>    g_pVBoxEventListener = NULL;
-static EventQueue               *g_pEventQ = NULL;
+static NativeEventQueue         *g_pEventQ = NULL;
 
 /* Prototypes. */
 static int machineAdd(const Bstr &strUuid);
@@ -296,7 +296,7 @@ static void signalHandler(int iSignal)
     NOREF(iSignal);
     ASMAtomicWriteBool(&g_fCanceled, true);
 
-    if (!g_pEventQ)
+    if (g_pEventQ)
     {
         int rc = g_pEventQ->interruptEventQueueProcessing();
         if (RT_FAILURE(rc))
@@ -462,7 +462,7 @@ static int machineDestroy(const Bstr &strUuid)
                                itGroup->first.c_str(), vecMembers.size()));
             if (!vecMembers.size())
             {
-                serviceLogVerbose(("Deleteting group \"%s\n", itGroup->first.c_str()));
+                serviceLogVerbose(("Deleting group \"%s\"\n", itGroup->first.c_str()));
                 g_mapGroup.erase(itGroup);
             }
 
@@ -684,7 +684,7 @@ static RTEXITCODE watchdogMain(HandlerArg *a)
     do
     {
         /* Initialize global weak references. */
-        g_pEventQ = com::EventQueue::getMainEventQueue();
+        g_pEventQ = com::NativeEventQueue::getMainEventQueue();
 
         /*
          * Install signal handlers.
@@ -751,7 +751,7 @@ static RTEXITCODE watchdogMain(HandlerArg *a)
              * Process pending events, then wait for new ones. Note, this
              * processes NULL events signalling event loop termination.
              */
-            g_pEventQ->processEventQueue(500 / 10);
+            g_pEventQ->processEventQueue(50);
 
             if (g_fCanceled)
             {
@@ -1035,11 +1035,18 @@ int main(int argc, char *argv[])
 
                     for (unsigned j = 0; !fFound && j < RT_ELEMENTS(g_aModules); j++)
                     {
-                        rc = g_aModules[j].pDesc->pfnOption(1 /* Current value only. */,
-                                                            &argv[GetState.iNext - 1]);
+                        int iArgCnt = argc - GetState.iNext + 1;
+                        int iArgIndex = GetState.iNext - 1;
+                        int iConsumed = 0;
+                        rc = g_aModules[j].pDesc->pfnOption(iArgCnt,
+                                                            &argv[iArgIndex],
+                                                            &iConsumed);
                         fFound = rc == 0;
                         if (fFound)
+                        {
+                            GetState.iNext += iConsumed;
                             break;
+                        }
                         if (rc != -1)
                             return rc;
                     }
@@ -1140,7 +1147,7 @@ int main(int argc, char *argv[])
     HandlerArg handlerArg = { argc, argv };
     RTEXITCODE rcExit = watchdogMain(&handlerArg);
 
-    EventQueue::getMainEventQueue()->processEventQueue(0);
+    NativeEventQueue::getMainEventQueue()->processEventQueue(0);
 
     watchdogShutdown();
 

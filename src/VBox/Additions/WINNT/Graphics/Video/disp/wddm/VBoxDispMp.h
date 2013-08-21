@@ -1,11 +1,11 @@
-/* $Id: VBoxDispMp.h 41374 2012-05-21 18:04:03Z vboxsync $ */
+/* $Id: VBoxDispMp.h $ */
 
 /** @file
  * VBoxVideo Display external interface
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,6 +25,7 @@
 #include <d3dhal.h>
 #include "../../common/wddm/VBoxMPIf.h"
 
+#if 0
 typedef struct VBOXDISPMP_REGIONS
 {
     HWND hWnd;
@@ -80,5 +81,5 @@ typedef struct VBOXDISPMP_CALLBACKS
  */
 typedef VBOXDISPMP_DECL(HRESULT) FNVBOXDISPMP_GETCALLBACKS(uint32_t u32Version, PVBOXDISPMP_CALLBACKS pCallbacks);
 typedef FNVBOXDISPMP_GETCALLBACKS *PFNVBOXDISPMP_GETCALLBACKS;
-
+#endif /* 0 */
 #endif /* #ifndef ___VBoxDispMp_h___ */

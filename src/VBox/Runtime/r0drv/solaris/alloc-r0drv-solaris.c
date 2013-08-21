@@ -1,10 +1,10 @@
-/* $Id: alloc-r0drv-solaris.c 40968 2012-04-17 17:35:53Z vboxsync $ */
+/* $Id: alloc-r0drv-solaris.c $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver, Solaris.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -73,7 +73,7 @@ DECLHIDDEN(int) rtR0MemAllocEx(size_t cb, uint32_t fFlags, PRTMEMHDR *ppHdr)
 #ifdef RT_ARCH_AMD64
     if (fFlags & RTMEMHDR_FLAG_EXEC)
     {
-        AssertReturn(!(fFlags & RTMEMHDR_FLAG_ANY_CTX), NULL);
+        AssertReturn(!(fFlags & RTMEMHDR_FLAG_ANY_CTX), VERR_NOT_SUPPORTED);
         cbAllocated = RT_ALIGN_Z(cb + sizeof(*pHdr), PAGE_SIZE) - sizeof(*pHdr);
         pHdr = (PRTMEMHDR)segkmem_alloc(heaptext_arena, cbAllocated + sizeof(*pHdr), KM_SLEEP);
     }

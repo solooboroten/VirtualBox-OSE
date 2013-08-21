@@ -1,10 +1,10 @@
-/* $Id: PDMBlkCacheInternal.h 39515 2011-12-02 13:41:07Z vboxsync $ */
+/* $Id: PDMBlkCacheInternal.h $ */
 /** @file
  * PDM Block Cache.
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

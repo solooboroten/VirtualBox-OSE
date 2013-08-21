@@ -1,4 +1,4 @@
-/* $Id: QIFileDialog.cpp 38478 2011-08-16 13:50:27Z vboxsync $ */
+/* $Id: QIFileDialog.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,6 +19,8 @@
 
 /* VBox includes */
 #include "VBoxGlobal.h"
+#include "UIModalWindowManager.h"
+#include "UIMessageCenter.h"
 #include "QIFileDialog.h"
 
 #if defined Q_WS_WIN
@@ -264,7 +266,7 @@ QString QIFileDialog::getExistingDirectory (const QString &aDir,
         {
             QString result;
 
-            QWidget *topParent = mParent ? mParent->window() : vboxGlobal().mainWindow();
+            QWidget *topParent = windowManager().realParentWindow(mParent ? mParent : windowManager().mainWindowShown());
             QString title = mCaption.isNull() ? tr ("Select a directory") : mCaption;
 
             TCHAR path [MAX_PATH];
@@ -404,6 +406,16 @@ QString QIFileDialog::getSaveFileName (const QString &aStartWith,
 {
 #if defined Q_WS_WIN
 
+    /* Further code (WinAPI call to GetSaveFileName() in other thread)
+     * seems not necessary any more since the MS COM issue has been fixed,
+     * we can just call for the default QFileDialog::getSaveFileName(): */
+    Q_UNUSED(aResolveSymlinks);
+    QFileDialog::Options o;
+    if (!fConfirmOverwrite)
+        o |= QFileDialog::DontConfirmOverwrite;
+    return QFileDialog::getSaveFileName(aParent, aCaption, aStartWith,
+                                        aFilters, aSelectedFilter, o);
+
     /**
      *  QEvent class reimplementation to carry Win32 API native dialog's
      *  result folder information
@@ -455,7 +467,7 @@ QString QIFileDialog::getSaveFileName (const QString &aStartWith,
 
             QString title = mCaption.isNull() ? tr ("Select a file") : mCaption;
 
-            QWidget *topParent = mParent ? mParent->window() : vboxGlobal().mainWindow();
+            QWidget *topParent = windowManager().realParentWindow(mParent ? mParent : windowManager().mainWindowShown());
             QString winFilters = winFilter (mFilters);
             AssertCompile (sizeof (TCHAR) == sizeof (QChar));
             TCHAR buf [1024];
@@ -704,7 +716,7 @@ QStringList QIFileDialog::getOpenFileNames (const QString &aStartWith,
 
             QString title = mCaption.isNull() ? tr ("Select a file") : mCaption;
 
-            QWidget *topParent = mParent ? mParent->window() : vboxGlobal().mainWindow();
+            QWidget *topParent = windowManager().realParentWindow(mParent ? mParent : windowManager().mainWindowShown());
             QString winFilters = winFilter (mFilters);
             AssertCompile (sizeof (TCHAR) == sizeof (QChar));
             TCHAR buf [1024];

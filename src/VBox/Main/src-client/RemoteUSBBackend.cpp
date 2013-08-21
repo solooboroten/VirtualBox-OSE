@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -900,7 +900,7 @@ bool RemoteUSBBackend::addUUID (const Guid *pUuid)
     unsigned i;
     for (i = 0; i < RT_ELEMENTS(aGuids); i++)
     {
-        if (aGuids[i].isEmpty ())
+        if (aGuids[i].isZero())
         {
             aGuids[i] = *pUuid;
             return true;
@@ -961,7 +961,7 @@ RemoteUSBBackend::RemoteUSBBackend(Console *console, ConsoleVRDPServer *server, 
     if (RT_FAILURE(rc))
     {
         AssertFailed ();
-        memset (&mCritsect, 0, sizeof (mCritsect));
+        RT_ZERO(mCritsect);
     }
 
     mCallback.pInstance           = (PREMOTEUSBBACKEND)this;

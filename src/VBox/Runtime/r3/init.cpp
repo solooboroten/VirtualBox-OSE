@@ -1,10 +1,10 @@
-/* $Id: init.cpp 40317 2012-03-01 21:32:56Z vboxsync $ */
+/* $Id: init.cpp $ */
 /** @file
  * IPRT - Init Ring-3.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -66,10 +66,10 @@
 #endif
 #include <stdlib.h>
 
+#include "init.h"
 #include "internal/alignmentchecks.h"
 #include "internal/path.h"
 #include "internal/process.h"
-#include "internal/thread.h"
 #include "internal/thread.h"
 #include "internal/time.h"
 
@@ -91,6 +91,9 @@ DECLHIDDEN(size_t)          g_cchrtProcExePath;
 DECLHIDDEN(size_t)          g_cchrtProcDir;
 /** The offset of the process name into g_szrtProcExePath. */
 DECLHIDDEN(size_t)          g_offrtProcName;
+
+/** The IPRT init flags. */
+static uint32_t             g_fInitFlags;
 
 /** The argument count of the program.  */
 static int                  g_crtArgs = -1;
@@ -136,6 +139,15 @@ DECLHIDDEN(bool volatile)   g_frtAtExitCalled = false;
  * This is set if the environment variable IPRT_ALIGNMENT_CHECKS is 1.
  */
 RTDATADECL(bool) g_fRTAlignmentChecks = false;
+#endif
+
+
+#if defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD) || defined(RT_OS_HAIKU) \
+ || defined(RT_OS_LINUX)  || defined(RT_OS_OS2)     || defined(RT_OS_SOLARIS) /** @todo add host init hooks everywhere. */
+/* Stubs */
+DECLHIDDEN(int)  rtR3InitNativeFirst(uint32_t fFlags) { return VINF_SUCCESS; }
+DECLHIDDEN(int)  rtR3InitNativeFinal(uint32_t fFlags) { return VINF_SUCCESS; }
+DECLHIDDEN(void) rtR3InitNativeObtrusive(void) { }
 #endif
 
 
@@ -228,7 +240,7 @@ static int rtR3InitProgramPath(const char *pszProgramPath)
      * Parse the name.
      */
     ssize_t offName;
-    g_cchrtProcExePath = RTPathParse(g_szrtProcExePath, &g_cchrtProcDir, &offName, NULL);
+    g_cchrtProcExePath = RTPathParseSimple(g_szrtProcExePath, &g_cchrtProcDir, &offName, NULL);
     g_offrtProcName = offName;
     return VINF_SUCCESS;
 }
@@ -272,17 +284,48 @@ static int rtR3InitArgv(uint32_t fFlags, int cArgs, char ***ppapszArgs)
         if (!papszArgs)
             return VERR_NO_MEMORY;
 
-        for (int i = 0; i < cArgs; i++)
+#ifdef RT_OS_WINDOWS
+        /* HACK ALERT! Try convert from unicode versions if possible.
+           Unfortunately for us, __wargv is only initialized if we have a
+           unicode main function.  So, we have to use CommandLineToArgvW to get
+           something similar. It should do the same conversion... :-) */
+        int    cArgsW     = -1;
+        PWSTR *papwszArgs = NULL;
+        if (   papszOrgArgs == __argv
+            && cArgs        == __argc
+            && (papwszArgs = CommandLineToArgvW(GetCommandLineW(), &cArgsW)) != NULL )
         {
-            int rc = RTStrCurrentCPToUtf8(&papszArgs[i], papszOrgArgs[i]);
-            if (RT_FAILURE(rc))
+            AssertMsg(cArgsW == cArgs, ("%d vs %d\n", cArgsW, cArgs));
+            for (int i = 0; i < cArgs; i++)
             {
-                while (i--)
-                    RTStrFree(papszArgs[i]);
-                RTMemFree(papszArgs);
-                return rc;
+                int rc = RTUtf16ToUtf8(papwszArgs[i], &papszArgs[i]);
+                if (RT_FAILURE(rc))
+                {
+                    while (i--)
+                        RTStrFree(papszArgs[i]);
+                    RTMemFree(papszArgs);
+                    LocalFree(papwszArgs);
+                    return rc;
+                }
+            }
+            LocalFree(papwszArgs);
+        }
+        else
+#endif
+        {
+            for (int i = 0; i < cArgs; i++)
+            {
+                int rc = RTStrCurrentCPToUtf8(&papszArgs[i], papszOrgArgs[i]);
+                if (RT_FAILURE(rc))
+                {
+                    while (i--)
+                        RTStrFree(papszArgs[i]);
+                    RTMemFree(papszArgs);
+                    return rc;
+                }
             }
         }
+
         papszArgs[cArgs] = NULL;
 
         g_papszrtOrgArgs = papszOrgArgs;
@@ -316,6 +359,19 @@ static void rtR3SigChildHandler(int iSignal)
 static int rtR3InitBody(uint32_t fFlags, int cArgs, char ***papszArgs, const char *pszProgramPath)
 {
     /*
+     * Early native initialization.
+     */
+    int rc = rtR3InitNativeFirst(fFlags);
+    AssertMsgRCReturn(rc, ("rtR3InitNativeFirst failed with %Rrc\n", rc), rc);
+
+    /*
+     * Disable error popups.
+     */
+#if defined(RT_OS_OS2) /** @todo move to private code. */
+    DosError(FERR_DISABLEHARDERR);
+#endif
+
+    /*
      * Init C runtime locale before we do anything that may end up converting
      * paths or we'll end up using the "C" locale for path conversion.
      */
@@ -331,14 +387,9 @@ static int rtR3InitBody(uint32_t fFlags, int cArgs, char ***papszArgs, const cha
 #endif
 
     /*
-     * Disable error popups.
+     * Save the init flags.
      */
-#ifdef RT_OS_WINDOWS
-    UINT fOldErrMode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | fOldErrMode);
-#elif defined(RT_OS_OS2)
-    DosError(FERR_DISABLEHARDERR);
-#endif
+    g_fInitFlags |= fFlags;
 
 #if !defined(IN_GUEST) && !defined(RT_NO_GIP)
 # ifdef VBOX
@@ -363,7 +414,7 @@ static int rtR3InitBody(uint32_t fFlags, int cArgs, char ***papszArgs, const cha
      * This must be done before everything else or else we'll call into threading
      * without having initialized TLS entries and suchlike.
      */
-    int rc = rtThreadInit();
+    rc = rtThreadInit();
     AssertMsgRCReturn(rc, ("Failed to initialize threads, rc=%Rrc!\n", rc), rc);
 
 #if !defined(IN_GUEST) && !defined(RT_NO_GIP)
@@ -465,6 +516,12 @@ static int rtR3InitBody(uint32_t fFlags, int cArgs, char ***papszArgs, const cha
         IPRT_ALIGNMENT_CHECKS_ENABLE();
 #endif
 
+    /*
+     * Final native initialization.
+     */
+    rc = rtR3InitNativeFinal(fFlags);
+    AssertMsgRCReturn(rc, ("rtR3InitNativeFinal failed with %Rrc\n", rc), rc);
+
     return VINF_SUCCESS;
 }
 
@@ -483,7 +540,9 @@ static int rtR3InitBody(uint32_t fFlags, int cArgs, char ***papszArgs, const cha
 static int rtR3Init(uint32_t fFlags, int cArgs, char ***papszArgs, const char *pszProgramPath)
 {
     /* no entry log flow, because prefixes and thread may freak out. */
-    Assert(!(fFlags & ~(RTR3INIT_FLAGS_DLL | RTR3INIT_FLAGS_SUPLIB)));
+    Assert(!(fFlags & ~(  RTR3INIT_FLAGS_DLL
+                        | RTR3INIT_FLAGS_SUPLIB
+                        | RTR3INIT_FLAGS_UNOBTRUSIVE)));
     Assert(!(fFlags & RTR3INIT_FLAGS_DLL) || cArgs == 0);
 
     /*
@@ -499,12 +558,23 @@ static int rtR3Init(uint32_t fFlags, int cArgs, char ***papszArgs, const char *p
         Assert(!g_fInitializing);
 #if !defined(IN_GUEST) && !defined(RT_NO_GIP)
         if (fFlags & RTR3INIT_FLAGS_SUPLIB)
+        {
             SUPR3Init(NULL);
+            g_fInitFlags |= RTR3INIT_FLAGS_SUPLIB;
+        }
 #endif
-        if (!pszProgramPath)
-            return VINF_SUCCESS;
 
-        int rc = rtR3InitProgramPath(pszProgramPath);
+        if (   !(fFlags      & RTR3INIT_FLAGS_UNOBTRUSIVE)
+            && (g_fInitFlags & RTR3INIT_FLAGS_UNOBTRUSIVE))
+        {
+            g_fInitFlags &= ~RTR3INIT_FLAGS_UNOBTRUSIVE;
+            rtR3InitNativeObtrusive();
+            rtThreadReInitObtrusive();
+        }
+
+        int rc = VINF_SUCCESS;
+        if (pszProgramPath)
+            rc = rtR3InitProgramPath(pszProgramPath);
         if (RT_SUCCESS(rc))
             rc = rtR3InitArgv(fFlags, cArgs, papszArgs);
         return rc;
@@ -557,6 +627,10 @@ RTR3DECL(int) RTR3InitEx(uint32_t iVersion, uint32_t fFlags, int cArgs, char ***
     return rtR3Init(fFlags, cArgs, papszArgs, pszProgramPath);
 }
 
+RTR3DECL(bool) RTR3InitIsUnobtrusive(void)
+{
+    return RT_BOOL(g_fInitFlags & RTR3INIT_FLAGS_UNOBTRUSIVE);
+}
 
 #if 0 /** @todo implement RTR3Term. */
 RTR3DECL(void) RTR3Term(void)

@@ -1,10 +1,10 @@
-; $Id: ntdll-mini-implib.def 35020 2010-12-13 14:53:16Z vboxsync $
+; $Id: ntdll-mini-implib.def $
 ;; @file
 ; IPRT - Minimal NTDLL import library defintion file.
 ;
 
 ;
-; Copyright (C) 2010 Oracle Corporation
+; Copyright (C) 2010-2013 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -28,8 +28,13 @@ LIBRARY ntdll.dll
 EXPORTS
     RtlNtStatusToDosError
     NtQueryTimerResolution
+    NtQueryDirectoryFile
     NtQueryInformationFile
+    NtQueryInformationProcess
     NtSetInformationFile
     NtSetTimerResolution
     NtQueryVolumeInformationFile
-
+    NtQueryVirtualMemory
+    NtCreateFile
+    NtClose
+    NtOpenDirectoryObject

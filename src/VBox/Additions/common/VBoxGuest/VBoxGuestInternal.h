@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestInternal.h 41722 2012-06-14 19:49:31Z vboxsync $ */
+/* $Id: VBoxGuestInternal.h $ */
 /** @file
  * VBoxGuest - Guest Additions Driver.
  */
@@ -107,7 +107,6 @@ typedef struct VBOXGUESTMEMBALLOON
 /** Pointer to a memory balloon. */
 typedef VBOXGUESTMEMBALLOON *PVBOXGUESTMEMBALLOON;
 
-
 /**
  * VBox guest device (data) extension.
  */
@@ -180,17 +179,12 @@ typedef struct VBOXGUESTDEVEXT
     uint32_t volatile           cISR;
     /** Callback and user data for a kernel mouse handler. */
     VBoxGuestMouseSetNotifyCallback MouseNotifyCallback;
-
-    /** Windows part. */
-    union
-    {
-#ifdef ___VBoxGuest_win_h
-        VBOXGUESTDEVEXTWIN          s;
-#else
-        uint32_t                    dummy;
-#endif
-    } win;
-
+    /* list of caps used in acquire mode */
+    uint32_t                    u32AcquireModeGuestCaps;
+    /* list of caps used in set mode */
+    uint32_t                    u32SetModeGuestCaps;
+    /* currently acquired (and reported) guest caps */
+    uint32_t                    u32GuestCaps;
 } VBOXGUESTDEVEXT;
 /** Pointer to the VBoxGuest driver data. */
 typedef VBOXGUESTDEVEXT *PVBOXGUESTDEVEXT;
@@ -205,7 +199,7 @@ typedef VBOXGUESTDEVEXT *PVBOXGUESTDEVEXT;
  */
 typedef struct VBOXGUESTSESSION
 {
-#if defined(RT_OS_OS2) || defined(RT_OS_FREEBSD) || defined(RT_OS_SOLARIS)
+#if defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD) || defined(RT_OS_OS2) || defined(RT_OS_SOLARIS)
     /** Pointer to the next session with the same hash. */
     PVBOXGUESTSESSION           pNextHash;
 #endif
@@ -234,7 +228,14 @@ typedef struct VBOXGUESTSESSION
     /** Mouse features supported.  A feature enabled in any guest session will
      * be enabled for the host. */
     uint32_t volatile           fMouseStatus;
-
+#ifdef RT_OS_DARWIN
+    /** Pointer to the associated org_virtualbox_VBoxGuestClient object. */
+    void                       *pvVBoxGuestClient;
+    /** Whether this session has been opened or not. */
+    bool                        fOpened;
+#endif
+    /* Guest Caps Acquired & Reported by this session */
+    uint32_t                    u32AquiredGuestCaps;
 } VBOXGUESTSESSION;
 
 RT_C_DECLS_BEGIN
@@ -273,6 +274,11 @@ DECLVBGL(int)    VBoxGuestNativeServiceCall(void *pvOpaque, unsigned int iCmd, v
  * @param   pDevExt     The device extension.
  */
 void VBoxGuestNativeISRMousePollEvent(PVBOXGUESTDEVEXT pDevExt);
+
+
+#ifdef VBOX_WITH_DPC_LATENCY_CHECKER
+int VbgdNtIOCtl_DpcLatencyChecker(void);
+#endif
 
 RT_C_DECLS_END
 

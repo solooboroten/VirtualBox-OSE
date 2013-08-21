@@ -1,10 +1,10 @@
-/* $Id: RTLogWriteDebugger-r0drv-solaris.c 40966 2012-04-17 16:43:28Z vboxsync $ */
+/* $Id: RTLogWriteDebugger-r0drv-solaris.c $ */
 /** @file
  * IPRT - Log To Debugger, Ring-0 Driver, Solaris.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -37,6 +37,7 @@
 # include <iprt/asm-amd64-x86.h>
 #endif
 #include <iprt/assert.h>
+#include <iprt/thread.h>
 
 
 
@@ -44,6 +45,8 @@ RTDECL(void) RTLogWriteDebugger(const char *pch, size_t cb)
 {
     if (pch[cb] != '\0')
         AssertBreakpoint();
+    if (!RTThreadPreemptIsEnabled(NIL_RTTHREAD))    /** @todo this will change when preemptions hook are implemented. */
+        return;
     if (    !g_frtSolSplSetsEIF
 #if defined(RT_ARCH_AMD64) || defined(RT_ARCH_X86)
         ||  ASMIntAreEnabled()

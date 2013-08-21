@@ -1,10 +1,10 @@
-/* $Id: tstHelp.h 36931 2011-05-03 13:34:43Z vboxsync $ */
+/* $Id: tstHelp.h $ */
 /** @file
  * VMM testcase - Helper stuff.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -67,7 +67,7 @@ RT_C_DECLS_END
     { \
         if (RT_OFFSETOF(strct, member) & ((align) - 1) ) \
         { \
-            printf("error! %s::%s offset=%#x (%u) expected alignment %x, meaning %#x (%u) off\n", \
+            printf("error! %s::%s offset=%#x (%u) expected alignment %#x, meaning %#x (%u) off\n", \
                    #strct, #member, \
                    (unsigned)RT_OFFSETOF(strct, member), \
                    (unsigned)RT_OFFSETOF(strct, member), \

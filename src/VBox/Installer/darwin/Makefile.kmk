@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 43247 2012-09-07 15:03:32Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Install misc stuff and create dist packages for Mac OS X.
 #
@@ -407,10 +407,11 @@ VBOX_DI_VBAPP_DYLIBS = \
 	MacOS/VBoxDDU.dylib \
 	MacOS/VBoxREM.dylib \
 	MacOS/VBoxRT.dylib \
-	MacOS/VBoxSharedFolders.dylib \
-	MacOS/VBoxSharedClipboard.dylib \
-	MacOS/VBoxDragAndDropSvc.dylib \
-	MacOS/VBoxGuestPropSvc.dylib \
+	$(if $(VBOX_WITH_SHARED_FOLDERS),MacOS/VBoxSharedFolders.dylib,) \
+	$(if $(VBOX_WITH_SHARED_CLIPBOARD),MacOS/VBoxSharedClipboard.dylib,) \
+	$(if $(VBOX_WITH_DRAG_AND_DROP),MacOS/VBoxDragAndDropSvc.dylib,) \
+	$(if $(VBOX_WITH_GUEST_PROPS),MacOS/VBoxGuestPropSvc.dylib,) \
+	MacOS/VBoxHostChannel.dylib \
 	MacOS/VBoxVMM.dylib \
 	MacOS/VBoxXPCOM.dylib \
 	MacOS/VBoxXPCOMC.dylib \
@@ -418,14 +419,11 @@ VBOX_DI_VBAPP_DYLIBS = \
 	MacOS/components/VBoxSVCM.dylib \
 	MacOS/components/VBoxXPCOMIPCC.dylib \
 	MacOS/VBoxAuth.dylib \
-	MacOS/VBoxAuthSimple.dylib
+	MacOS/VBoxAuthSimple.dylib \
+	$(if $(VBOX_WITH_GUEST_CONTROL),MacOS/VBoxGuestControlSvc.dylib,)
 ifneq ($(wildcard $(VBOX_PATH_DIST)/VirtualBox.app/Contents/MacOS/accessible/libqtaccessiblewidgets.dylib),)
  VBOX_DI_VBAPP_DYLIBS += \
 	MacOS/accessible/libqtaccessiblewidgets.dylib
-endif
-ifdef VBOX_WITH_GUEST_CONTROL
- VBOX_DI_VBAPP_DYLIBS += \
-	MacOS/VBoxGuestControlSvc.dylib
 endif
 if defined(VBOX_WITH_VRDP) && !defined(VBOX_WITH_EXTPACK_PUEL)
  VBOX_DI_VBAPP_DYLIBS += \
@@ -446,6 +444,7 @@ ifdef VBOX_WITH_HARDENING
  VBOX_DI_VBAPP_DYLIBS += \
  	MacOS/VirtualBox.dylib \
  	MacOS/VBoxNetDHCP.dylib \
+	MacOS/VBoxNetNAT.dylib \
  	MacOS/VBoxHeadless.dylib
 endif
 ifdef VBOX_WITH_HDDPARALLELS_INSTALL
@@ -497,6 +496,7 @@ VBOX_DI_VBAPP_PROGS = \
 	MacOS/VirtualBoxVM \
 	MacOS/VBoxNetAdpCtl \
 	MacOS/VBoxNetDHCP \
+	MacOS/VBoxNetNAT \
 	MacOS/VBoxExtPackHelperApp \
 	MacOS/VBoxBalloonCtrl \
 	MacOS/VBoxAutostart
@@ -678,7 +678,7 @@ ifdef VBOX_WITH_WEBSERVICES
 endif
 	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxballoonctrl.plist $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
 	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/org.virtualbox.vboxautostart.plist $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
-	$(INSTALL) -m 0644 $(VBOX_PATH_DI_SRC)/VirtualBox/VBoxAutostartDarwin.sh $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
+	$(INSTALL) -m 0755 $(VBOX_PATH_DI_SRC)/VirtualBox/VBoxAutostartDarwin.sh $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/
 	@# Install the python stuff
 ifdef VBOX_WITH_PYTHON
 	$(foreach f,$(VBOX_DI_VBAPP_PYTHON_FILES) \
@@ -828,12 +828,12 @@ endif
 ifdef VBOX_WITH_HARDENING
  ifdef VBOX_WITH_COMBINED_PACKAGE
 	sudo chmod u+s \
-		$(foreach bin,VBoxHeadless VirtualBox VirtualBoxVM VBoxNetAdpCtl VBoxNetDHCP,\
+		$(foreach bin,VBoxHeadless VirtualBox VirtualBoxVM VBoxNetAdpCtl VBoxNetDHCP VBoxNetNAT,\
 			$(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/$(bin)-x86 \
 			$(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/$(bin)-amd64)
  else
 	sudo chmod u+s \
-		$(foreach bin,VBoxHeadless VirtualBox VirtualBoxVM VBoxNetAdpCtl VBoxNetDHCP,\
+		$(foreach bin,VBoxHeadless VirtualBox VirtualBoxVM VBoxNetAdpCtl VBoxNetDHCP VBoxNetNAT,\
 			$(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.root/Applications/VirtualBox.app/Contents/MacOS/$(bin)-$(KBUILD_TARGET_ARCH))
  endif
 endif
@@ -849,6 +849,7 @@ endif
 		--output $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.desc/PkgBuildComponent.plist \
 		$(VBOX_PATH_DI_SRC)/VirtualBox/PkgBuildComponent.plist
 	@# Copy the resources.
+	$(INSTALL) -m 0755 $(VBOX_PATH_DI_SRC)/VirtualBox/preflight                         $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.res/
 	$(INSTALL) -m 0755 $(VBOX_PATH_DI_SRC)/VirtualBox/postflight                        $(VBOX_PATH_PACK_TMP)/VirtualBox.pkg.res/
 	@# Build the package.
 	$(VBOX_PKGBUILD) \
@@ -897,22 +898,22 @@ $(VBOX_PATH_PACK_TMP)/Packages/VirtualBoxCLI.pkg: \
 		$(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr \
 		$(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin
 	@# Generate the wrapper scripts.
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VirtualBox '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VirtualBox 'exec /Applications/VirtualBox.app/Contents/MacOS/VirtualBox "$$@"'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxManage '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxManage 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxManage "$$@"'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxVRDP   '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxVRDP   'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxHeadless "$$@"'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxHeadless '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxHeadless 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxHeadless "$$@"'
+	$(APPEND) -tn  $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VirtualBox \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/VirtualBox "$$@"'
+	$(APPEND) -tn  $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxManage \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxManage "$$@"'
+	$(APPEND)  -tn $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxVRDP \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxHeadless "$$@"'
+	$(APPEND) -tn $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxHeadless \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxHeadless "$$@"'
 ifdef VBOX_WITH_WEBSERVICES
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/vboxwebsrv '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/vboxwebsrv 'exec /Applications/VirtualBox.app/Contents/MacOS/vboxwebsrv "$$@"'
+	$(APPEND) -tn $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/vboxwebsrv \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/vboxwebsrv "$$@"'
 endif
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxBalloonCtrl '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxBalloonCtrl 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxBalloonCtrl "$$@"'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxAutostart '#!/bin/bash'
-	$(APPEND) $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxAutostart 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxAutostart "$$@"'
+	$(APPEND) -tn $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxBalloonCtrl \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxBalloonCtrl "$$@"'
+	$(APPEND) -tn $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/VBoxAutostart \
+		'#!/bin/bash' 'exec /Applications/VirtualBox.app/Contents/MacOS/VBoxAutostart "$$@"'
 	@# Set the correct owners and file permissions.
 	sudo chmod 0755 $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root/usr/bin/*
 	sudo chown    root:admin $(VBOX_PATH_PACK_TMP)/VirtualBoxCLI.pkg.root

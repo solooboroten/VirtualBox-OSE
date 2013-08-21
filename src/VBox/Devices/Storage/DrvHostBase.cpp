@@ -1,10 +1,10 @@
-/* $Id: DrvHostBase.cpp 37780 2011-07-05 12:55:13Z vboxsync $ */
+/* $Id: DrvHostBase.cpp $ */
 /** @file
  * DrvHostBase - Host base drive access driver.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1560,7 +1560,7 @@ static DECLCALLBACK(int) drvHostBaseMediaThread(RTTHREAD ThreadSelf, void *pvUse
         memset(&s_classDeviceChange, 0, sizeof(s_classDeviceChange));
         s_classDeviceChange.lpfnWndProc   = DeviceChangeWindowProc;
         s_classDeviceChange.lpszClassName = "VBOX_DeviceChangeClass";
-        s_classDeviceChange.hInstance     = GetModuleHandle("VBOXDD.DLL");
+        s_classDeviceChange.hInstance     = GetModuleHandle("VBoxDD.dll");
         Assert(s_classDeviceChange.hInstance);
         s_hAtomDeviceChange = RegisterClassA(&s_classDeviceChange);
         Assert(s_hAtomDeviceChange);
@@ -1877,6 +1877,7 @@ int DRVHostBaseInitData(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, PDMBLOCKTYPE enmType
 #endif
     pThis->enmType                          = enmType;
     //pThis->cErrors                          = 0;
+    pThis->fAttachFailError                 = true; /* It's an error until we've read the config. */
 
     pThis->pfnGetMediaSize                  = drvHostBaseGetMediaSize;
 
@@ -2078,6 +2079,8 @@ int DRVHostBaseInitFinish(PDRVHOSTBASE pThis)
         case PDMBLOCKTYPE_FLOPPY_1_20:
         case PDMBLOCKTYPE_FLOPPY_1_44:
         case PDMBLOCKTYPE_FLOPPY_2_88:
+        case PDMBLOCKTYPE_FLOPPY_FAKE_15_6:
+        case PDMBLOCKTYPE_FLOPPY_FAKE_63_5:
             if (uDriveType != DRIVE_REMOVABLE)
             {
                 AssertMsgFailed(("Configuration error: '%s' is not a floppy (type=%d)\n",

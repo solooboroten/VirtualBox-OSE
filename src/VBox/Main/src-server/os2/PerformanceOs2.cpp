@@ -1,4 +1,4 @@
-/* $Id: PerformanceOs2.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: PerformanceOs2.cpp $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

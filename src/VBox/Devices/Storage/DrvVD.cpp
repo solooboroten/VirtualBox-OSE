@@ -1,10 +1,10 @@
-/* $Id: DrvVD.cpp 42073 2012-07-10 07:41:06Z vboxsync $ */
+/* $Id: DrvVD.cpp $ */
 /** @file
  * DrvVD - Generic VBox disk media driver.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,9 +40,13 @@
 #ifdef VBOX_WITH_INIP
 /* All lwip header files are not C++ safe. So hack around this. */
 RT_C_DECLS_BEGIN
+#include <lwip/opt.h>
 #include <lwip/inet.h>
 #include <lwip/tcp.h>
 #include <lwip/sockets.h>
+# ifdef VBOX_WITH_NEW_LWIP
+#  include <lwip/inet6.h>
+# endif
 RT_C_DECLS_END
 #endif /* VBOX_WITH_INIP */
 
@@ -615,10 +619,17 @@ static int drvvdCfgQuery(void *pvUser, const char *pszName, char *pszString, siz
 *   VD TCP network stack interface implementation - INIP case                  *
 *******************************************************************************/
 
+/**
+ * vvl: this structure duplicate meaning of sockaddr, 
+ * perhaps it'd be better to get rid of it.
+ */
 typedef union INIPSOCKADDRUNION
 {
     struct sockaddr     Addr;
     struct sockaddr_in  Ipv4;
+#ifdef VBOX_WITH_NEW_LWIP
+    struct sockaddr_in6 Ipv6;
+#endif
 } INIPSOCKADDRUNION;
 
 typedef struct INIPSOCKET
@@ -665,7 +676,12 @@ static DECLCALLBACK(int) drvvdINIPClientConnect(VDSOCKET Sock, const char *pszAd
 {
     int rc = VINF_SUCCESS;
     PINIPSOCKET pSocketInt = (PINIPSOCKET)Sock;
-
+    int iInetFamily = PF_INET;
+    struct in_addr ip;
+#ifdef VBOX_WITH_NEW_LWIP 
+    ip6_addr_t ip6;
+#endif
+    
     /* Check whether lwIP is set up in this VM instance. */
     if (!DevINIPConfigured())
     {
@@ -674,21 +690,43 @@ static DECLCALLBACK(int) drvvdINIPClientConnect(VDSOCKET Sock, const char *pszAd
     }
     /* Resolve hostname. As there is no standard resolver for lwIP yet,
      * just accept numeric IP addresses for now. */
-    struct in_addr ip;
-    if (!lwip_inet_aton(pszAddress, &ip))
+#ifdef VBOX_WITH_NEW_LWIP
+    if (inet6_aton(pszAddress, &ip6))
+        iInetFamily = PF_INET6;
+    else /* concatination with if */ 
+#endif    
+      if (!lwip_inet_aton(pszAddress, &ip))
     {
         LogRelFunc(("cannot resolve IP %s\n", pszAddress));
         return VERR_NET_HOST_UNREACHABLE;
     }
     /* Create socket and connect. */
-    int iSock = lwip_socket(PF_INET, SOCK_STREAM, 0);
+    int iSock = lwip_socket(iInetFamily, SOCK_STREAM, 0);
     if (iSock != -1)
     {
-        struct sockaddr_in InAddr = {0};
-        InAddr.sin_family = AF_INET;
-        InAddr.sin_port = htons(uPort);
-        InAddr.sin_addr = ip;
-        if (!lwip_connect(iSock, (struct sockaddr *)&InAddr, sizeof(InAddr)))
+        struct sockaddr *pSockAddr = NULL;
+        if (iInetFamily == PF_INET)
+        {
+            struct sockaddr_in InAddr = {0};
+            InAddr.sin_family = AF_INET;
+            InAddr.sin_port = htons(uPort);
+            InAddr.sin_addr = ip;
+            InAddr.sin_len = sizeof(InAddr);
+            pSockAddr = (struct sockaddr *)&InAddr;
+        }
+#ifdef VBOX_WITH_NEW_LWIP
+        else
+        {
+            struct sockaddr_in6 In6Addr = {0};
+            In6Addr.sin6_family = AF_INET6;
+            In6Addr.sin6_port = htons(uPort);
+            memcpy(&In6Addr.sin6_addr, &ip6, sizeof(ip6));
+            In6Addr.sin6_len = sizeof(In6Addr);
+            pSockAddr = (struct sockaddr *)&In6Addr;
+        }
+#endif
+        if (   pSockAddr
+            && !lwip_connect(iSock, pSockAddr, pSockAddr->sa_len))
         {
             pSocketInt->hSock = iSock;
             return VINF_SUCCESS;
@@ -882,6 +920,16 @@ static DECLCALLBACK(int) drvvdINIPGetLocalAddress(VDSOCKET Sock, PRTNETADDR pAdd
             pAddr->uPort        = RT_N2H_U16(u.Ipv4.sin_port);
             pAddr->uAddr.IPv4.u = u.Ipv4.sin_addr.s_addr;
         }
+#ifdef VBOX_WITH_NEW_LWIP
+        else if (   cbAddr == sizeof(struct sockaddr_in6)
+            && u.Addr.sa_family == AF_INET6)
+        {
+            RT_ZERO(*pAddr);
+            pAddr->enmType      = RTNETADDRTYPE_IPV6;
+            pAddr->uPort        = RT_N2H_U16(u.Ipv6.sin6_port);
+            memcpy(&pAddr->uAddr.IPv6, &u.Ipv6.sin6_addr, sizeof(RTNETADDRIPV6));
+        }
+#endif
         else
             return VERR_NET_ADDRESS_FAMILY_NOT_SUPPORTED;
         return VINF_SUCCESS;
@@ -909,6 +957,16 @@ static DECLCALLBACK(int) drvvdINIPGetPeerAddress(VDSOCKET Sock, PRTNETADDR pAddr
             pAddr->uPort        = RT_N2H_U16(u.Ipv4.sin_port);
             pAddr->uAddr.IPv4.u = u.Ipv4.sin_addr.s_addr;
         }
+#ifdef VBOX_WITH_NEW_LWIP
+        else if (   cbAddr == sizeof(struct sockaddr_in6)
+                 && u.Addr.sa_family == AF_INET6)
+        {
+            RT_ZERO(*pAddr);
+            pAddr->enmType      = RTNETADDRTYPE_IPV6;
+            pAddr->uPort        = RT_N2H_U16(u.Ipv6.sin6_port);
+            memcpy(&pAddr->uAddr.IPv6, &u.Ipv6.sin6_addr, sizeof(RTNETADDRIPV6));
+        }
+#endif
         else
             return VERR_NET_ADDRESS_FAMILY_NOT_SUPPORTED;
         return VINF_SUCCESS;
@@ -1557,6 +1615,16 @@ static DECLCALLBACK(uint64_t) drvvdGetSize(PPDMIMEDIA pInterface)
     return cb;
 }
 
+/** @copydoc PDMIMEDIA::pfnGetSectorSize */
+static DECLCALLBACK(uint32_t) drvvdGetSectorSize(PPDMIMEDIA pInterface)
+{
+    LogFlowFunc(("\n"));
+    PVBOXDISK pThis = PDMIMEDIA_2_VBOXDISK(pInterface);
+    uint32_t cb = 512;
+    LogFlowFunc(("returns %u\n", cb));
+    return cb;
+}
+
 /** @copydoc PDMIMEDIA::pfnIsReadOnly */
 static DECLCALLBACK(bool) drvvdIsReadOnly(PPDMIMEDIA pInterface)
 {
@@ -2010,9 +2078,9 @@ static DECLCALLBACK(void) drvvdReset(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(void) drvvdDestruct(PPDMDRVINS pDrvIns)
 {
+    PDMDRV_CHECK_VERSIONS_RETURN_VOID(pDrvIns);
     PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
     LogFlowFunc(("\n"));
-    PDMDRV_CHECK_VERSIONS_RETURN_VOID(pDrvIns);
 
     RTSEMFASTMUTEX mutex;
     ASMAtomicXchgHandle(&pThis->MergeCompleteMutex, NIL_RTSEMFASTMUTEX, &mutex);
@@ -2029,13 +2097,13 @@ static DECLCALLBACK(void) drvvdDestruct(PPDMDRVINS pDrvIns)
         AssertRC(rc);
     }
 
-    if (VALID_PTR(pThis->pBlkCache))
+    if (RT_VALID_PTR(pThis->pBlkCache))
     {
         PDMR3BlkCacheRelease(pThis->pBlkCache);
         pThis->pBlkCache = NULL;
     }
 
-    if (VALID_PTR(pThis->pDisk))
+    if (RT_VALID_PTR(pThis->pDisk))
     {
         VDDestroy(pThis->pDisk);
         pThis->pDisk = NULL;
@@ -2049,7 +2117,10 @@ static DECLCALLBACK(void) drvvdDestruct(PPDMDRVINS pDrvIns)
         pThis->MergeLock = NIL_RTSEMRW;
     }
     if (pThis->pbData)
+    {
         RTMemFree(pThis->pbData);
+        pThis->pbData = NULL;
+    }
     if (pThis->pszBwGroup)
     {
         MMR3HeapFree(pThis->pszBwGroup);
@@ -2062,11 +2133,10 @@ static DECLCALLBACK(void) drvvdDestruct(PPDMDRVINS pDrvIns)
  *
  * @copydoc FNPDMDRVCONSTRUCT
  */
-static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
-                                        PCFGMNODE pCfg,
-                                        uint32_t fFlags)
+static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uint32_t fFlags)
 {
     LogFlowFunc(("\n"));
+    PDMDRV_CHECK_VERSIONS_RETURN(pDrvIns);
     PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
     int rc = VINF_SUCCESS;
     char *pszName = NULL;        /**< The path of the disk image file. */
@@ -2076,7 +2146,6 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     bool fReadOnly;              /**< True if the media is read-only. */
     bool fMaybeReadOnly;         /**< True if the media may or may not be read-only. */
     bool fHonorZeroWrites;       /**< True if zero blocks should be written. */
-    PDMDRV_CHECK_VERSIONS_RETURN(pDrvIns);
 
     /*
      * Init the static parts.
@@ -2089,6 +2158,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     pThis->fShareable                   = false;
     pThis->fMergePending                = false;
     pThis->MergeCompleteMutex           = NIL_RTSEMFASTMUTEX;
+    pThis->MergeLock                    = NIL_RTSEMRW;
     pThis->uMergeSource                 = VD_LAST_IMAGE;
     pThis->uMergeTarget                 = VD_LAST_IMAGE;
 
@@ -2098,6 +2168,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     pThis->IMedia.pfnFlush              = drvvdFlush;
     pThis->IMedia.pfnMerge              = drvvdMerge;
     pThis->IMedia.pfnGetSize            = drvvdGetSize;
+    pThis->IMedia.pfnGetSectorSize      = drvvdGetSectorSize;
     pThis->IMedia.pfnIsReadOnly         = drvvdIsReadOnly;
     pThis->IMedia.pfnBiosGetPCHSGeometry = drvvdBiosGetPCHSGeometry;
     pThis->IMedia.pfnBiosSetPCHSGeometry = drvvdBiosSetPCHSGeometry;
@@ -2141,6 +2212,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     bool        fUseBlockCache = false;
     bool        fDiscard = false;
     bool        fInformAboutZeroBlocks = false;
+    bool        fSkipConsistencyChecks = false;
     unsigned    iLevel = 0;
     PCFGMNODE   pCurNode = pCfg;
     VDTYPE      enmType = VDTYPE_HDD;
@@ -2158,7 +2230,8 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
                                           "ReadOnly\0MaybeReadOnly\0TempReadOnly\0Shareable\0HonorZeroWrites\0"
                                           "HostIPStack\0UseNewIo\0BootAcceleration\0BootAccelerationBuffer\0"
                                           "SetupMerge\0MergeSource\0MergeTarget\0BwGroup\0Type\0BlockCache\0"
-                                          "CachePath\0CacheFormat\0Discard\0InformAboutZeroBlocks\0");
+                                          "CachePath\0CacheFormat\0Discard\0InformAboutZeroBlocks\0"
+                                          "SkipConsistencyChecks\0");
         }
         else
         {
@@ -2300,6 +2373,13 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
                                       N_("DrvVD: Configuration error: Querying \"InformAboutZeroBlocks\" as boolean failed"));
                 break;
             }
+            rc = CFGMR3QueryBoolDef(pCurNode, "SkipConsistencyChecks", &fSkipConsistencyChecks, true);
+            if (RT_FAILURE(rc))
+            {
+                rc = PDMDRV_SET_ERROR(pDrvIns, rc,
+                                      N_("DrvVD: Configuration error: Querying \"SKipConsistencyChecks\" as boolean failed"));
+                break;
+            }
 
             char *psz;
             rc = CFGMR3QueryStringAlloc(pCfg, "Type", &psz);
@@ -2404,6 +2484,8 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
 
     if (pThis->pDrvMediaAsyncPort && fUseNewIo)
         pThis->fAsyncIOSupported = true;
+
+    uint64_t tsStart = RTTimeNanoTS();
 
     unsigned iImageIdx = 0;
     while (pCurNode && RT_SUCCESS(rc))
@@ -2602,6 +2684,9 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             uOpenFlags |= VD_OPEN_FLAGS_DISCARD;
         if (fInformAboutZeroBlocks)
             uOpenFlags |= VD_OPEN_FLAGS_INFORM_ABOUT_ZERO_BLOCKS;
+        if (   (uOpenFlags & VD_OPEN_FLAGS_READONLY)
+            && fSkipConsistencyChecks)
+            uOpenFlags |= VD_OPEN_FLAGS_SKIP_CONSISTENCY_CHECKS;
 
         /* Try to open backend in async I/O mode first. */
         rc = VDOpen(pThis->pDisk, pszFormat, pszName, uOpenFlags, pImage->pVDIfsImage);
@@ -2662,9 +2747,11 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
         pCurNode = CFGMR3GetParent(pCurNode);
     }
 
+    LogRel(("VD: Opening the disk took %lld ns\n", RTTimeNanoTS() - tsStart));
+
     /* Open the cache image if set. */
     if (   RT_SUCCESS(rc)
-        && VALID_PTR(pszCachePath))
+        && RT_VALID_PTR(pszCachePath))
     {
         /* Insert the custom I/O interface only if we're told to use new IO.
          * Since the I/O interface is per image we could make this more
@@ -2697,9 +2784,9 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             rc = PDMDRV_SET_ERROR(pDrvIns, rc, N_("DrvVD: Could not open cache image"));
     }
 
-    if (VALID_PTR(pszCachePath))
+    if (RT_VALID_PTR(pszCachePath))
         MMR3HeapFree(pszCachePath);
-    if (VALID_PTR(pszCacheFormat))
+    if (RT_VALID_PTR(pszCacheFormat))
         MMR3HeapFree(pszCacheFormat);
 
     if (   RT_SUCCESS(rc)
@@ -2791,9 +2878,9 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
 
     if (RT_FAILURE(rc))
     {
-        if (VALID_PTR(pszName))
+        if (RT_VALID_PTR(pszName))
             MMR3HeapFree(pszName);
-        if (VALID_PTR(pszFormat))
+        if (RT_VALID_PTR(pszFormat))
             MMR3HeapFree(pszFormat);
         /* drvvdDestruct does the rest. */
     }

@@ -1,10 +1,10 @@
-/* $Id: PATMRC.cpp 42706 2012-08-09 08:04:59Z vboxsync $ */
+/* $Id: PATMRC.cpp $ */
 /** @file
  * PATM - Dynamic Guest OS Patching Manager - Raw-mode Context.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -75,7 +75,7 @@ VMMRCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pReg
  * @param   cbWrite     Nr of bytes to write
  *
  */
-VMMRCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RTRCPTR GCPtr, uint32_t cbWrite)
+VMMRC_INT_DECL(int) PATMRCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RTRCPTR GCPtr, uint32_t cbWrite)
 {
     RTGCUINTPTR          pWritePageStart, pWritePageEnd;
     PPATMPATCHPAGE       pPatchPage;
@@ -147,14 +147,15 @@ VMMRCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RTR
  * @param   pVM         Pointer to the VM.
  * @param   pCtxCore    The relevant core context.
  */
-VMMDECL(int) PATMRCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
+VMMRC_INT_DECL(int) PATMRCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
 {
     PPATMPATCHREC pRec;
     PVMCPU pVCpu = VMMGetCpu0(pVM);
     int rc;
 
     /* Very important check -> otherwise we have a security leak. */
-    AssertReturn(!pRegFrame->eflags.Bits.u1VM && (pRegFrame->ss.Sel & X86_SEL_RPL) == 1, VERR_ACCESS_DENIED);
+    AssertReturn(!pRegFrame->eflags.Bits.u1VM && (pRegFrame->ss.Sel & X86_SEL_RPL) <= (EMIsRawRing1Enabled(pVM) ? 2U : 1U),
+                 VERR_ACCESS_DENIED);
     Assert(PATMIsPatchGCAddr(pVM, pRegFrame->eip));
 
     /* OP_ILLUD2 in PATM generated code? */
@@ -185,13 +186,13 @@ VMMDECL(int) PATMRCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
 
                 Log(("PATMRC: lookup %x jump table=%x\n", pRegFrame->edx, pRegFrame->edi));
 
-                pRec = PATMQueryFunctionPatch(pVM, (RTRCPTR)(pRegFrame->edx));
+                pRec = patmQueryFunctionPatch(pVM, (RTRCPTR)pRegFrame->edx);
                 if (pRec)
                 {
                     if (pRec->patch.uState == PATCH_ENABLED)
                     {
                         RTGCUINTPTR pRelAddr = pRec->patch.pPatchBlockOffset;   /* make it relative */
-                        rc = PATMAddBranchToLookupCache(pVM, (RTRCPTR)pRegFrame->edi, (RTRCPTR)pRegFrame->edx, pRelAddr);
+                        rc = patmAddBranchToLookupCache(pVM, (RTRCPTR)pRegFrame->edi, (RTRCPTR)pRegFrame->edx, pRelAddr);
                         if (rc == VINF_SUCCESS)
                         {
                             Log(("Patch block %RRv called as function\n", pRec->patch.pPrivInstrGC));
@@ -449,12 +450,14 @@ VMMDECL(int) PATMRCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
  * @param   pVM         Pointer to the VM.
  * @param   pCtxCore    The relevant core context.
  */
-VMMRCDECL(int) PATMRCHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
+VMMRC_INT_DECL(int) PATMRCHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
 {
     PPATMPATCHREC pRec;
     int rc;
 
-    AssertReturn(!pRegFrame->eflags.Bits.u1VM && (pRegFrame->ss.Sel & X86_SEL_RPL) == 1, VERR_ACCESS_DENIED);
+    AssertReturn(!pRegFrame->eflags.Bits.u1VM
+                 && (   (pRegFrame->ss.Sel & X86_SEL_RPL) == 1
+                     || (EMIsRawRing1Enabled(pVM) && (pRegFrame->ss.Sel & X86_SEL_RPL) == 2)), VERR_ACCESS_DENIED);
 
     /* Int 3 in PATM generated code? (most common case) */
     if (PATMIsPatchGCAddr(pVM, pRegFrame->eip))
@@ -489,6 +492,10 @@ VMMRCDECL(int) PATMRCHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
             {
             case OP_CPUID:
             case OP_IRET:
+#ifdef VBOX_WITH_RAW_RING1
+            case OP_SMSW:
+            case OP_MOV:     /* mov xx, CS  */
+#endif
                 break;
 
             case OP_STR:
@@ -497,7 +504,9 @@ VMMRCDECL(int) PATMRCHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
             case OP_SIDT:
             case OP_LSL:
             case OP_LAR:
+#ifndef VBOX_WITH_RAW_RING1
             case OP_SMSW:
+#endif
             case OP_VERW:
             case OP_VERR:
             default:

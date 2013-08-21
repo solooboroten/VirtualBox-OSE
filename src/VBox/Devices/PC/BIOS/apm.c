@@ -1,4 +1,4 @@
-/* $Id: apm.c 42935 2012-08-23 10:10:57Z vboxsync $ */
+/* $Id: apm.c $ */
 /** @file
  * APM BIOS support. Implements APM version 1.2.
  */

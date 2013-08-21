@@ -1,10 +1,10 @@
-/* $Id: VBoxMPWddm.h 42158 2012-07-16 11:28:07Z vboxsync $ */
+/* $Id: VBoxMPWddm.h $ */
 /** @file
  * VBox WDDM Miniport driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,9 +40,6 @@
 #define VBOXWDDM_CFG_LOG_UM_DBGPRINT 0x00000002
 #define VBOXWDDM_CFG_STR_LOG_UM L"VBoxLogUm"
 extern DWORD g_VBoxLogUm;
-#ifdef VBOX_WDDM_WIN8
-extern DWORD g_VBoxDisplayOnly;
-#endif
 
 RT_C_DECLS_BEGIN
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING RegistryPath);
@@ -104,7 +101,7 @@ DECLINLINE(VBOXVIDEOOFFSET) vboxWddmVramAddrToOffset(PVBOXMP_DEVEXT pDevExt, PHY
 #ifdef VBOXWDDM_RENDER_FROM_SHADOW
 DECLINLINE(void) vboxWddmAssignShadow(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE pSource, PVBOXWDDM_ALLOCATION pAllocation, D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId)
 {
-    if (pSource->pShadowAllocation == pAllocation)
+    if (pSource->pShadowAllocation == pAllocation && pSource->fGhSynced > 0)
     {
         Assert(pAllocation->bAssigned);
         return;
@@ -132,11 +129,14 @@ DECLINLINE(void) vboxWddmAssignShadow(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE p
         pAllocation->bVisible = pSource->bVisible;
 
         if(!vboxWddmAddrVramEqual(&pSource->AllocData.Addr, &pAllocation->AllocData.Addr))
-            pSource->bGhSynced = FALSE; /* force guest->host notification */
+            pSource->fGhSynced = 0; /* force guest->host notification */
         pSource->AllocData.Addr = pAllocation->AllocData.Addr;
     }
 
     pSource->pShadowAllocation = pAllocation;
+
+    Assert(!pSource->AllocData.pSwapchain);
+    Assert(!pSource->AllocData.hostID);
 }
 #endif
 
@@ -164,7 +164,7 @@ DECLINLINE(VOID) vboxWddmAssignPrimary(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE 
         pAllocation->bVisible = pSource->bVisible;
 
         if(!vboxWddmAddrVramEqual(&pSource->AllocData.Addr, &pAllocation->AllocData.Addr))
-            pSource->bGhSynced = FALSE; /* force guest->host notification */
+            pSource->fGhSynced = 0; /* force guest->host notification */
         pSource->AllocData.Addr = pAllocation->AllocData.Addr;
 
         vboxWddmAllocationRetain(pAllocation);
@@ -174,6 +174,9 @@ DECLINLINE(VOID) vboxWddmAssignPrimary(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE 
     KeAcquireSpinLock(&pSource->AllocationLock, &OldIrql);
     pSource->pPrimaryAllocation = pAllocation;
     KeReleaseSpinLock(&pSource->AllocationLock, OldIrql);
+
+    Assert(!pSource->AllocData.pSwapchain);
+    Assert(!pSource->AllocData.hostID);
 }
 
 DECLINLINE(PVBOXWDDM_ALLOCATION) vboxWddmAquirePrimary(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE pSource, D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId)
@@ -190,21 +193,32 @@ DECLINLINE(PVBOXWDDM_ALLOCATION) vboxWddmAquirePrimary(PVBOXMP_DEVEXT pDevExt, P
 
 #define VBOXWDDMENTRY_2_SWAPCHAIN(_pE) ((PVBOXWDDM_SWAPCHAIN)((uint8_t*)(_pE) - RT_OFFSETOF(VBOXWDDM_SWAPCHAIN, DevExtListEntry)))
 
+#ifdef VBOX_WDDM_WIN8
+# define VBOXWDDM_IS_DISPLAYONLY() (g_VBoxDisplayOnly)
+#else
+# define VBOXWDDM_IS_DISPLAYONLY() (FALSE)
+#endif
+
 #ifdef VBOXWDDM_RENDER_FROM_SHADOW
-# ifdef VBOX_WDDM_WIN8
-#  define VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, _pAlloc) ( (_pAlloc)->bAssigned \
-        && (  (_pAlloc)->enmType == VBOXWDDM_ALLOC_TYPE_UMD_RC_GENERIC \
+
+# define VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, _pAlloc) ( (_pAlloc)->bAssigned \
+        && (  (_pAlloc)->AllocData.hostID \
            || (_pAlloc)->enmType == \
-               ((g_VBoxDisplayOnly || (_pDevExt)->fRenderToShadowDisabled) ? VBOXWDDM_ALLOC_TYPE_STD_SHAREDPRIMARYSURFACE : VBOXWDDM_ALLOC_TYPE_STD_SHADOWSURFACE) \
+               ((VBOXWDDM_IS_DISPLAYONLY() || (_pDevExt)->fRenderToShadowDisabled) ? VBOXWDDM_ALLOC_TYPE_STD_SHAREDPRIMARYSURFACE : VBOXWDDM_ALLOC_TYPE_STD_SHADOWSURFACE) \
                ))
-# else
-#  define VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, _pAlloc) ( (_pAlloc)->bAssigned \
-        && (  (_pAlloc)->enmType == VBOXWDDM_ALLOC_TYPE_UMD_RC_GENERIC \
-           || (_pAlloc)->enmType == \
-               (((_pDevExt)->fRenderToShadowDisabled) ? VBOXWDDM_ALLOC_TYPE_STD_SHAREDPRIMARYSURFACE : VBOXWDDM_ALLOC_TYPE_STD_SHADOWSURFACE) \
+
+# define VBOXWDDM_IS_REAL_FB_ALLOCATION(_pDevExt, _pAlloc) ( (_pAlloc)->bAssigned \
+        && (  (_pAlloc)->AllocData.hostID \
+           || (_pAlloc)->enmType == VBOXWDDM_ALLOC_TYPE_STD_SHAREDPRIMARYSURFACE \
                ))
-# endif
+
 # define VBOXWDDM_FB_ALLOCATION(_pDevExt, _pSrc) ( ((_pSrc)->pPrimaryAllocation && VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, (_pSrc)->pPrimaryAllocation)) ? \
+                (_pSrc)->pPrimaryAllocation : ( \
+                        ((_pSrc)->pShadowAllocation && VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, (_pSrc)->pShadowAllocation)) ? \
+                                (_pSrc)->pShadowAllocation : NULL \
+                        ) \
+                )
+# define VBOXWDDM_NONFB_ALLOCATION(_pDevExt, _pSrc) ( !((_pSrc)->pPrimaryAllocation && VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, (_pSrc)->pPrimaryAllocation)) ? \
                 (_pSrc)->pPrimaryAllocation : ( \
                         ((_pSrc)->pShadowAllocation && VBOXWDDM_IS_FB_ALLOCATION(_pDevExt, (_pSrc)->pShadowAllocation)) ? \
                                 (_pSrc)->pShadowAllocation : NULL \
@@ -213,6 +227,17 @@ DECLINLINE(PVBOXWDDM_ALLOCATION) vboxWddmAquirePrimary(PVBOXMP_DEVEXT pDevExt, P
 #else
 # define VBOXWDDM_FB_ALLOCATION(_pDevExt, _pSrc) ((_pSrc)->pPrimaryAllocation)
 #endif
+
+#define VBOXWDDM_CTXLOCK_INIT(_p) do { \
+        KeInitializeSpinLock(&(_p)->ContextLock); \
+    } while (0)
+#define VBOXWDDM_CTXLOCK_DATA KIRQL _ctxLockOldIrql;
+#define VBOXWDDM_CTXLOCK_LOCK(_p) do { \
+        KeAcquireSpinLock(&(_p)->ContextLock, &_ctxLockOldIrql); \
+    } while (0)
+#define VBOXWDDM_CTXLOCK_UNLOCK(_p) do { \
+        KeReleaseSpinLock(&(_p)->ContextLock, _ctxLockOldIrql); \
+    } while (0)
 
 #endif /* #ifndef ___VBoxMPWddm_h___ */
 

@@ -1,11 +1,11 @@
-/* $Id: d3d9_main.c 40587 2012-03-23 09:08:44Z vboxsync $ */
+/* $Id: d3d9_main.c $ */
 
 /** @file
  * VBox D3D8 dll switcher
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

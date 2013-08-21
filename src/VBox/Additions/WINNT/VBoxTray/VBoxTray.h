@@ -1,10 +1,10 @@
-/* $Id: VBoxTray.h 42224 2012-07-19 10:38:00Z vboxsync $ */
+/* $Id: VBoxTray.h $ */
 /** @file
  * VBoxTray - Guest Additions Tray, Internal Header.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -80,6 +80,9 @@
  * Timer IDs.
  */
 #define TIMERID_VBOXTRAY_CHECK_HOSTVERSION      1000
+#define TIMERID_VBOXTRAY_CAPS_TIMER             1001
+#define TIMERID_VBOXTRAY_DT_TIMER               1002
+#define TIMERID_VBOXTRAY_ST_DELAYED_INIT_TIMER  1003
 
 /* The environment information for services. */
 typedef struct _VBOXSERVICEENV
@@ -97,6 +100,7 @@ typedef struct _VBOXSERVICEINFO
     char     *pszName;
     int      (* pfnInit)             (const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStartThread);
     unsigned (__stdcall * pfnThread) (void *pInstance);
+    void     (* pfnStop)             (const VBOXSERVICEENV *pEnv, void *pInstance);
     void     (* pfnDestroy)          (const VBOXSERVICEENV *pEnv, void *pInstance);
 
     /* Variables. */

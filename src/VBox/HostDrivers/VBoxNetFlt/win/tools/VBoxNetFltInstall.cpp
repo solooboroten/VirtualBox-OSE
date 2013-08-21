@@ -1,10 +1,10 @@
-/* $Id: VBoxNetFltInstall.cpp 36184 2011-03-07 10:57:04Z vboxsync $ */
+/* $Id: VBoxNetFltInstall.cpp $ */
 /** @file
  * NetFltInstall - VBoxNetFlt installer command line tool
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/* $Id: VBoxMPUtils.h 42151 2012-07-13 16:45:06Z vboxsync $ */
+/* $Id: VBoxMPUtils.h $ */
 /** @file
  * VBox Miniport common utils header
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -27,6 +27,11 @@
 #define LOG_GROUP LOG_GROUP_DRV_MINIPORT
 #include <VBox/log.h>
 #define VBOX_VIDEO_LOG_NAME "VBoxMP"
+#ifdef VBOX_WDDM_MINIPORT
+# ifndef VBOX_WDDM_MINIPORT_WITH_FLOW_LOGGING
+#  define VBOX_VIDEO_LOGFLOW_LOGGER(_m) do {} while (0)
+# endif
+#endif
 #include "common/VBoxVideoLog.h"
 #include <iprt/err.h>
 #include <iprt/assert.h>
@@ -88,7 +93,8 @@ typedef enum
     WINXP     = 3,
     WINVISTA  = 4,
     WIN7      = 5,
-    WIN8      = 6
+    WIN8      = 6,
+    WIN81     = 7
 } vboxWinVersion_t;
 
 RT_C_DECLS_BEGIN

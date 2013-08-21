@@ -1,4 +1,4 @@
-; $Id: deps.asm 41725 2012-06-14 20:15:48Z vboxsync $
+; $Id: deps.asm $
 ;; @file
 ; Solaris kernel module dependency
 ;

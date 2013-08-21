@@ -1,10 +1,10 @@
-/* $Id: symlink-win.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
+/* $Id: symlink-win.cpp $ */
 /** @file
  * IPRT - Symbolic Links, Windows.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,8 +29,10 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP RTLOGGROUP_SYMLINK
+#include <Windows.h>
 
 #include <iprt/symlink.h>
+#include "internal-r3-win.h"
 
 #include <iprt/assert.h>
 #include <iprt/err.h>
@@ -40,7 +42,6 @@
 #include <iprt/string.h>
 #include "internal/path.h"
 
-#include <Windows.h>
 
 
 /*******************************************************************************
@@ -133,13 +134,9 @@ RTDECL(int) RTSymlinkCreate(const char *pszSymlink, const char *pszTarget, RTSYM
     static bool                     s_fTried = FALSE;
     if (!s_fTried)
     {
-        HMODULE hmod = LoadLibrary("KERNEL32.DLL");
-        if (hmod)
-        {
-            PFNCREATESYMBOLICLINKW pfn = (PFNCREATESYMBOLICLINKW)GetProcAddress(hmod, "CreateSymbolicLinkW");
-            if (pfn)
-                s_pfnCreateSymbolicLinkW = pfn;
-        }
+        PFNCREATESYMBOLICLINKW pfn = (PFNCREATESYMBOLICLINKW)GetProcAddress(g_hModKernel32, "CreateSymbolicLinkW");
+        if (pfn)
+            s_pfnCreateSymbolicLinkW = pfn;
         s_fTried = true;
     }
     if (!s_pfnCreateSymbolicLinkW)

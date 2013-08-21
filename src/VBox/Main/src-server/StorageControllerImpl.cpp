@@ -1,4 +1,4 @@
-/* $Id: StorageControllerImpl.cpp 43023 2012-08-28 06:43:23Z vboxsync $ */
+/* $Id: StorageControllerImpl.cpp $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2010 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

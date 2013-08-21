@@ -1,4 +1,4 @@
-/* $Id: Global.cpp 43248 2012-09-07 15:16:12Z vboxsync $ */
+/* $Id: Global.cpp $ */
 /** @file
  * VirtualBox COM global definitions
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2012 Oracle Corporation
+ * Copyright (C) 2008-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,11 +26,15 @@
 /* static */
 const Global::OSType Global::sOSTypes[] =
 {
-    /* NOTE1: we assume that unknown is always the first entry!
+    /* NOTE1: we assume that unknown is always the first two entries!
      * NOTE2: please use powers of 2 when specifying the size of harddisks since
      *        '2GB' looks better than '1.95GB' (= 2000MB) */
     { "Other",   "Other",             "Other",              "Other/Unknown",
       VBOXOSTYPE_Unknown,         VBOXOSHINT_NONE,
+        64,   4,  2 * _1G64, NetworkAdapterType_Am79C973, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+      StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97 },
+    { "Other",   "Other",             "Other_64",           "Other/Unknown (64-bit)",
+      VBOXOSTYPE_Unknown_x64,      VBOXOSHINT_64BIT | VBOXOSHINT_PAE | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,
         64,   4,  2 * _1G64, NetworkAdapterType_Am79C973, 0, StorageControllerType_PIIX4, StorageBus_IDE,
       StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97 },
     { "Windows", "Microsoft Windows", "Windows31",          "Windows 3.1",
@@ -105,6 +109,14 @@ const Global::OSType Global::sOSTypes[] =
       VBOXOSTYPE_Win8_x64,        VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_USBTABLET,
        2048,128, 25 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_IntelAhci, StorageBus_SATA, ChipsetType_PIIX3, AudioControllerType_HDA  },
+    { "Windows", "Microsoft Windows", "Windows81",          "Windows 8.1",
+      VBOXOSTYPE_Win8,             VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_USBTABLET | VBOXOSHINT_PAE,
+       1024,128, 25 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+        StorageControllerType_IntelAhci, StorageBus_SATA, ChipsetType_PIIX3, AudioControllerType_HDA  },
+    { "Windows", "Microsoft Windows", "Windows81_64",       "Windows 8.1 (64 bit)",
+      VBOXOSTYPE_Win8_x64,        VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_USBTABLET,
+       2048,128, 25 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+        StorageControllerType_IntelAhci, StorageBus_SATA, ChipsetType_PIIX3, AudioControllerType_HDA  },
     { "Windows", "Microsoft Windows", "Windows2012_64",     "Windows 2012 (64 bit)",
       VBOXOSTYPE_Win2k12_x64,     VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_USBTABLET,
        2048,128, 25 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
@@ -112,6 +124,10 @@ const Global::OSType Global::sOSTypes[] =
     { "Windows", "Microsoft Windows", "WindowsNT",          "Other Windows",
       VBOXOSTYPE_WinNT,           VBOXOSHINT_NONE,
        512,  16, 20 * _1G64, NetworkAdapterType_Am79C973, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+        StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97  },
+    { "Windows", "Microsoft Windows", "WindowsNT_64",       "Other Windows (64-bit)",
+      VBOXOSTYPE_WinNT_x64,       VBOXOSHINT_64BIT | VBOXOSHINT_PAE | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_USBTABLET,
+       512,  16, 20 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97  },
     { "Linux",   "Linux",             "Linux22",            "Linux 2.2",
       VBOXOSTYPE_Linux22,         VBOXOSHINT_RTCUTC,
@@ -125,13 +141,13 @@ const Global::OSType Global::sOSTypes[] =
       VBOXOSTYPE_Linux24_x64,     VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_RTCUTC,
        128,   4,  4 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_IntelAhci, StorageBus_SATA, ChipsetType_PIIX3, AudioControllerType_AC97  },
-    { "Linux",   "Linux",             "Linux26",            "Linux 2.6",
+    { "Linux",   "Linux",             "Linux26",            "Linux 2.6 / 3.x",
       VBOXOSTYPE_Linux26,         VBOXOSHINT_RTCUTC | VBOXOSHINT_USBTABLET,
-       256,   4,  8 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+       256,  12,  8 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_IntelAhci, StorageBus_SATA, ChipsetType_PIIX3, AudioControllerType_AC97  },
-    { "Linux",   "Linux",             "Linux26_64",         "Linux 2.6 (64 bit)",
+    { "Linux",   "Linux",             "Linux26_64",         "Linux 2.6 / 3.x (64 bit)",
       VBOXOSTYPE_Linux26_x64,     VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_RTCUTC | VBOXOSHINT_USBTABLET,
-       256,   4,  8 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+       256,  12,  8 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_IntelAhci, StorageBus_SATA, ChipsetType_PIIX3, AudioControllerType_AC97  },
     { "Linux",   "Linux",             "ArchLinux",          "Arch Linux",
       VBOXOSTYPE_ArchLinux,       VBOXOSHINT_RTCUTC | VBOXOSHINT_USBTABLET,
@@ -225,6 +241,10 @@ const Global::OSType Global::sOSTypes[] =
       VBOXOSTYPE_Linux,           VBOXOSHINT_RTCUTC | VBOXOSHINT_USBTABLET,
        256,  12,  8 * _1G64, NetworkAdapterType_Am79C973, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97  },
+    { "Linux",   "Linux",             "Linux_64",           "Other Linux (64-bit)",
+      VBOXOSTYPE_Linux_x64,       VBOXOSHINT_64BIT | VBOXOSHINT_PAE | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC | VBOXOSHINT_RTCUTC | VBOXOSHINT_USBTABLET,
+       512,  12,  8 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
+        StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97  },
     { "Solaris", "Solaris",           "Solaris",            "Oracle Solaris 10 5/09 and earlier",
       VBOXOSTYPE_Solaris,         VBOXOSHINT_NONE,
        768,  12, 16 * _1G64, NetworkAdapterType_I82540EM, 0, StorageControllerType_PIIX4, StorageBus_IDE,
@@ -312,7 +332,11 @@ const Global::OSType Global::sOSTypes[] =
         64,   4,  2 * _1G64, NetworkAdapterType_Am79C973, 0, StorageControllerType_PIIX4, StorageBus_IDE,
         StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97  },
     { "Other",   "Other",             "QNX",                "QNX",
+#ifdef VBOX_WITH_RAW_RING1
+      VBOXOSTYPE_QNX,             VBOXOSHINT_NONE,
+#else
       VBOXOSTYPE_QNX,             VBOXOSHINT_HWVIRTEX,
+#endif
        512,   4,  4 * _1G64, NetworkAdapterType_Am79C973, 0, StorageControllerType_PIIX4, StorageBus_IDE,
       StorageControllerType_PIIX4, StorageBus_IDE, ChipsetType_PIIX3, AudioControllerType_AC97  },
     { "Other",   "Other",             "JRockitVE",          "JRockitVE",
@@ -429,6 +453,26 @@ Global::stringifyDeviceType(DeviceType_T aType)
             AssertMsgFailed(("%d (%#x)\n", aType, aType));
             static char s_szMsg[48];
             RTStrPrintf(s_szMsg, sizeof(s_szMsg), "InvalidType-0x%08x\n", aType);
+            return s_szMsg;
+        }
+    }
+}
+
+
+/*static*/ const char *
+Global::stringifyReason(Reason_T aReason)
+{
+    switch (aReason)
+    {
+        case Reason_Unspecified:      return "unspecified";
+        case Reason_HostSuspend:      return "host suspend";
+        case Reason_HostResume:       return "host resume";
+        case Reason_HostBatteryLow:   return "host battery low";
+        default:
+        {
+            AssertMsgFailed(("%d (%#x)\n", aReason, aReason));
+            static char s_szMsg[48];
+            RTStrPrintf(s_szMsg, sizeof(s_szMsg), "invalid reason %#010x\n", aReason);
             return s_szMsg;
         }
     }

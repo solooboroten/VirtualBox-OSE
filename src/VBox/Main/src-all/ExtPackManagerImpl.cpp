@@ -1,10 +1,10 @@
-/* $Id: ExtPackManagerImpl.cpp 40468 2012-03-14 17:07:58Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.cpp $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -45,7 +45,9 @@
 #include "Global.h"
 #include "ProgressImpl.h"
 #include "SystemPropertiesImpl.h"
+#if !defined(VBOX_COM_INPROC)
 #include "VirtualBoxImpl.h"
+#endif
 
 
 /*******************************************************************************
@@ -80,6 +82,7 @@ public:
     Utf8Str             strWhyUnusable;
 };
 
+#if !defined(VBOX_COM_INPROC)
 /**
  * Private extension pack data.
  */
@@ -101,6 +104,7 @@ public:
 
     RTMEMEF_NEW_AND_DELETE_OPERATORS();
 };
+#endif
 
 /**
  * Private extension pack data.
@@ -150,8 +154,10 @@ struct ExtPackManager::Data
     Utf8Str             strCertificatDirPath;
     /** The list of installed extension packs. */
     ExtPackList         llInstalledExtPacks;
+#if !defined(VBOX_COM_INPROC)
     /** Pointer to the VirtualBox object, our parent. */
     VirtualBox         *pVirtualBox;
+#endif
     /** The current context. */
     VBOXEXTPACKCTX      enmContext;
 #if !defined(RT_OS_WINDOWS) && !defined(RT_OS_DARWIN)
@@ -162,6 +168,7 @@ struct ExtPackManager::Data
     RTMEMEF_NEW_AND_DELETE_OPERATORS();
 };
 
+#if !defined(VBOX_COM_INPROC)
 /**
  * Extension pack installation job.
  */
@@ -705,6 +712,7 @@ STDMETHODIMP ExtPackFile::Install(BOOL a_fReplace, IN_BSTR a_bstrDisplayInfo, IP
     return hrc;
 }
 
+#endif
 
 
 
@@ -1883,7 +1891,9 @@ HRESULT ExtPackManager::initExtPackManager(VirtualBox *a_pVirtualBox, VBOXEXTPAC
     m = new Data;
     m->strBaseDir           = szBaseDir;
     m->strCertificatDirPath = szCertificatDir;
+#if !defined(VBOX_COM_INPROC)
     m->pVirtualBox          = a_pVirtualBox;
+#endif
     m->enmContext           = a_enmContext;
 
     /*
@@ -2034,6 +2044,7 @@ STDMETHODIMP ExtPackManager::OpenExtPackFile(IN_BSTR a_bstrTarballAndDigest, IEx
     CheckComArgOutPointerValid(a_ppExtPackFile);
     AssertReturn(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON, E_UNEXPECTED);
 
+#if !defined(VBOX_COM_INPROC)
     /* The API can optionally take a ::SHA-256=<hex-digest> attribute at the
        end of the file name.  This is just a temporary measure for
        backporting, in 4.2 we'll add another parameter to the method. */
@@ -2057,6 +2068,9 @@ STDMETHODIMP ExtPackManager::OpenExtPackFile(IN_BSTR a_bstrTarballAndDigest, IEx
         NewExtPackFile.queryInterfaceTo(a_ppExtPackFile);
 
     return hrc;
+#else
+    return E_NOTIMPL;
+#endif
 }
 
 STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval, IN_BSTR a_bstrDisplayInfo,
@@ -2067,6 +2081,7 @@ STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval
         *a_ppProgress = NULL;
     Assert(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON);
 
+#if !defined(VBOX_COM_INPROC)
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
     if (SUCCEEDED(hrc))
@@ -2115,6 +2130,9 @@ STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval
     }
 
     return hrc;
+#else
+    return E_NOTIMPL;
+#endif
 }
 
 STDMETHODIMP ExtPackManager::Cleanup(void)
@@ -2448,6 +2466,7 @@ void ExtPackManager::removeExtPack(const char *a_pszName)
     AssertMsgFailed(("%s\n", a_pszName));
 }
 
+#if !defined(VBOX_COM_INPROC)
 /**
  * Refreshes the specified extension pack.
  *
@@ -2670,7 +2689,7 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, 
                         LogRel(("ExtPackManager: Successfully installed extension pack '%s'.\n", pStrName->c_str()));
                     else
                     {
-                        LogRel(("ExtPackManager: Installated hook for '%s' failed: %Rrc - %s\n",
+                        LogRel(("ExtPackManager: Installed hook for '%s' failed: %Rrc - %s\n",
                                 pStrName->c_str(), ErrInfo.Core.rc, ErrInfo.Core.pszMsg));
 
                         /*
@@ -2848,6 +2867,7 @@ void ExtPackManager::callAllVirtualBoxReadyHooks(void)
             it++;
     }
 }
+#endif
 
 /**
  * Calls the pfnConsoleReady hook for all working extension packs.
@@ -2875,6 +2895,7 @@ void ExtPackManager::callAllConsoleReadyHooks(IConsole *a_pConsole)
     }
 }
 
+#if !defined(VBOX_COM_INPROC)
 /**
  * Calls the pfnVMCreated hook for all working extension packs.
  *
@@ -2893,6 +2914,7 @@ void ExtPackManager::callAllVmCreatedHooks(IMachine *a_pMachine)
     for (ExtPackList::iterator it = llExtPacks.begin(); it != llExtPacks.end(); it++)
         (*it)->callVmCreatedHook(m->pVirtualBox, a_pMachine, &autoLock);
 }
+#endif
 
 /**
  * Calls the pfnVMConfigureVMM hook for all working extension packs.

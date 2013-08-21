@@ -2,7 +2,7 @@
  *
  * VBox extension to Wine D3D
  *
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -23,6 +23,7 @@ typedef enum
     /* the given client is requested to delete the underlying GL resource on SHRC termination */
     VBOXWINEEX_SHRC_STATE_GL_DELETE
 } VBOXWINEEX_SHRC_STATE;
+
 
 #ifndef IN_VBOXLIBWINE
 
@@ -46,8 +47,32 @@ typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_CREATECUBETEXTURE(IDirect3D
             void **pavClientMem);
 typedef FNVBOXWINEEXD3DDEV9_CREATECUBETEXTURE *PFNVBOXWINEEXD3DDEV9_CREATECUBETEXTURE;
 
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_CREATEVOLUMETEXTURE(IDirect3DDevice9Ex *iface,
+            UINT width, UINT height, UINT depth, UINT levels, DWORD usage, D3DFORMAT Format, D3DPOOL Pool,
+            IDirect3DVolumeTexture9 **ppVolumeTexture, HANDLE *pSharedHandle,
+            void **pavClientMem);
+typedef FNVBOXWINEEXD3DDEV9_CREATEVOLUMETEXTURE *PFNVBOXWINEEXD3DDEV9_CREATEVOLUMETEXTURE;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_VOLBLT(IDirect3DDevice9Ex *iface,
+                                                    IDirect3DVolume9 *pSourceVolume, IDirect3DVolume9 *pDestinationVolume,
+                                                    const struct VBOXBOX3D *pSrcBoxArg,
+                                                    const struct VBOXPOINT3D *pDstPoin3D);
+typedef FNVBOXWINEEXD3DDEV9_VOLBLT *PFNVBOXWINEEXD3DDEV9_VOLBLT;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_VOLTEXBLT(IDirect3DDevice9Ex *iface,
+                                                    IDirect3DVolumeTexture9 *pSourceTexture, IDirect3DVolumeTexture9 *pDestinationTexture,
+                                                    const struct VBOXBOX3D *pSrcBoxArg,
+                                                    const struct VBOXPOINT3D *pDstPoin3D);
+typedef FNVBOXWINEEXD3DDEV9_VOLTEXBLT *PFNVBOXWINEEXD3DDEV9_VOLTEXBLT;
+
 typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_FLUSH(IDirect3DDevice9Ex *iface);
 typedef FNVBOXWINEEXD3DDEV9_FLUSH *PFNVBOXWINEEXD3DDEV9_FLUSH;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_FLUSHTOHOST(IDirect3DDevice9Ex *iface);
+typedef FNVBOXWINEEXD3DDEV9_FLUSHTOHOST *PFNVBOXWINEEXD3DDEV9_FLUSHTOHOST;
+
+typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_FINISH(IDirect3DDevice9Ex *iface);
+typedef FNVBOXWINEEXD3DDEV9_FINISH *PFNVBOXWINEEXD3DDEV9_FINISH;
 
 typedef VBOXWINEEX_DECL(HRESULT) FNVBOXWINEEXD3DDEV9_UPDATE(IDirect3DDevice9Ex *iface, D3DPRESENT_PARAMETERS * pParams, IDirect3DDevice9Ex **outIface);
 typedef FNVBOXWINEEXD3DDEV9_UPDATE *PFNVBOXWINEEXD3DDEV9_UPDATE;
@@ -77,7 +102,26 @@ VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9CreateCubeTexture(IDirect3DDevice9Ex *
             void **pavClientMem); /* <- extension arg to pass in the client memory buffer,
                                  *    applicable ONLY for SYSMEM textures */
 
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9CreateVolumeTexture(IDirect3DDevice9Ex *iface,
+            UINT width, UINT height, UINT depth, UINT levels, DWORD usage, D3DFORMAT Format, D3DPOOL Pool,
+            IDirect3DVolumeTexture9 **ppVolumeTexture, HANDLE *pSharedHandle,
+            void **pavClientMem);
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9VolBlt(IDirect3DDevice9Ex *iface,
+                                                    IDirect3DVolume9 *pSourceVolume, IDirect3DVolume9 *pDestinationVolume,
+                                                    const struct VBOXBOX3D *pSrcBoxArg,
+                                                    const struct VBOXPOINT3D *pDstPoin3D);
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9VolTexBlt(IDirect3DDevice9Ex *iface,
+                                                    IDirect3DVolumeTexture9 *pSourceTexture, IDirect3DVolumeTexture9 *pDestinationTexture,
+                                                    const struct VBOXBOX3D *pSrcBoxArg,
+                                                    const struct VBOXPOINT3D *pDstPoin3D);
+
 VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Flush(IDirect3DDevice9Ex *iface); /* perform glFlush */
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Finish(IDirect3DDevice9Ex *iface); /* perform glFinish */
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9FlushToHost(IDirect3DDevice9Ex *iface); /* flash data to host */
 
 VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Update(IDirect3DDevice9Ex *iface, D3DPRESENT_PARAMETERS * pParams,
                                                     IDirect3DDevice9Ex **outIface); /* update device parameters */

@@ -1,4 +1,4 @@
-/* $Id: VBoxVNC.cpp 43219 2012-09-06 10:06:51Z vboxsync $ */
+/* $Id: VBoxVNC.cpp $ */
 /** @file
  * VBoxVNC - VNC VRDE module.
  */

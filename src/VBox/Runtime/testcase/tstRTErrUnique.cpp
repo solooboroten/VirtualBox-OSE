@@ -1,4 +1,4 @@
-/* $Id: tstRTErrUnique.cpp 41557 2012-06-03 22:45:44Z vboxsync $ */
+/* $Id: tstRTErrUnique.cpp $ */
 /** @file
  * IPRT Testcase - Error Messages.
  */

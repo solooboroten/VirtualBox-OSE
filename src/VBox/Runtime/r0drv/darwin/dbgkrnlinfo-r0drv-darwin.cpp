@@ -1,4 +1,4 @@
-/* $Id: dbgkrnlinfo-r0drv-darwin.cpp 41052 2012-04-25 15:01:48Z vboxsync $ */
+/* $Id: dbgkrnlinfo-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - Kernel Debug Information, R0 Driver, Darwin.
  */

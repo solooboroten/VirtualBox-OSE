@@ -1,10 +1,10 @@
-; $Id: sinl.asm 28800 2010-04-27 08:22:32Z vboxsync $
+; $Id: sinl.asm $
 ;; @file
 ; IPRT - No-CRT sinl - AMD64 & X86.
 ;
 
 ;
-; Copyright (C) 2006-2007 Oracle Corporation
+; Copyright (C) 2006-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -31,13 +31,13 @@ BEGINCODE
 ;;
 ; Compute the sine of lrd
 ; @returns st(0)
-; @param    lrd     [xSP + xS*2]
+; @param    lrd     [xSP + xCB*2]
 BEGINPROC RT_NOCRT(sinl)
     push    xBP
     mov     xBP, xSP
     sub     xSP, 10h
 
-    fld     tword [xBP + xS*2]
+    fld     tword [xBP + xCB*2]
     fsin
     fnstsw  ax
     test    ah, 04h

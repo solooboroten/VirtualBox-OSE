@@ -1,11 +1,11 @@
-/* $Id: cr_glsl.h 43051 2012-08-28 15:35:26Z vboxsync $ */
+/* $Id: cr_glsl.h $ */
 
 /** @file
  * VBox crOpenGL: GLSL related state info
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -99,6 +99,7 @@ DECLEXPORT(GLboolean) STATE_APIENTRY crStateIsIntUniform(GLenum type);
 
 DECLEXPORT(GLuint) STATE_APIENTRY crStateCreateShader(GLuint id, GLenum type);
 DECLEXPORT(GLuint) STATE_APIENTRY crStateCreateProgram(GLuint id);
+DECLEXPORT(GLuint) STATE_APIENTRY crStateDeleteObjectARB( GLhandleARB obj );
 
 DECLEXPORT(GLboolean) STATE_APIENTRY crStateIsProgramUniformsCached(GLuint program);
 

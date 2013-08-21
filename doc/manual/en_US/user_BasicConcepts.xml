@@ -18,8 +18,8 @@
   card, and, if you so choose, give the host system, other guests, or
   computers on the Internet access to the guest system.</para>
 
-  <sect1>
-    <title id="guestossupport">Supported guest operating systems</title>
+  <sect1 id="guestossupport">
+    <title>Supported guest operating systems</title>
 
     <para>Since VirtualBox is designed to provide a generic virtualization
     environment for x86 systems, it may run operating systems of any kind,
@@ -80,6 +80,15 @@
                 them from executing in a virtual environment; please see <xref
                 linkend="ts_linux-buggy" /> for details.</para>
               </note></para>
+          </glossdef>
+        </glossentry>
+
+        <glossentry>
+          <glossterm>Linux 3.x</glossterm>
+
+          <glossdef>
+            <para>All versions/editions are fully supported (32 bits and 64
+            bits). Guest Additions are available.</para>
           </glossdef>
         </glossentry>
 
@@ -496,7 +505,7 @@
               as Mac OS X, that old chipset is no longer well supported. As a
               result, VirtualBox 4.0 introduced an emulation of the more
               modern ICH9 chipset, which supports PCI express, three PCI
-              buses, PCI-to-PCI bridges and Message Signalled Interrupts
+              buses, PCI-to-PCI bridges and Message Signaled Interrupts
               (MSI). This allows modern operating systems to address more PCI
               devices and no longer requires IRQ sharing. Note that the ICH9
               support is experimental and not recommended for guest operating
@@ -616,7 +625,7 @@
       limits the amount of time a host CPU spents to emulate a virtual CPU.
       The default setting is 100% meaning that there is no limitation. A setting
       of 50% implies a single virtual CPU can use up to 50% of a single host
-      CPU. Notet that limiting the execution time of the virtual CPUs may induce
+      CPU. Note that limiting the execution time of the virtual CPUs may induce
       guest timing problems.</para>
 
       <para>In addition, the <emphasis role="bold">"Enable PAE/NX"</emphasis>

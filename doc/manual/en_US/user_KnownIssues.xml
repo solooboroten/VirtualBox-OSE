@@ -80,6 +80,13 @@
           experience this, do not attempt to execute 64-bit guests. Refer to the
           VirtualBox user forum for additional information.</para>
         </listitem>
+
+        <listitem>
+          <para><emphasis role="bold">NX (no execute, data execution
+          prevention)</emphasis> only works for guests running on 64-bit hosts
+          or guests running on 32-bit hosts with PAE enabled and requires that
+          hardware virtualization be enabled.</para>
+        </listitem>
     
         <listitem>
           <para>For <emphasis role="bold">basic Direct3D support in Windows
@@ -278,7 +285,7 @@
           </note>
           To solve this problem, one should uninstall the VirtualBox WDDM Video driver manually.
           To do that open Device Manager, and check whether the Display Adapter is named 
-          "VirtualBox Graphics Adapter ..". If no - there is nothing to be done. If yes - right-clik 
+          "VirtualBox Graphics Adapter ..". If no - there is nothing to be done. If yes - right-click 
           the VirtualBox Graphics Adapter in Device Manager, select "Uninstall", check "Delete the driver software for this device"
           and click "OK". Once uninstallation is done - in Device Manager go to menu "Action" and select 
           "Scan for hardware changes" to make the propper (Windows default) driver be picked up for the Graphics adapter.
@@ -288,7 +295,7 @@
         <listitem>
           <para>Neither <emphasis>virtio</emphasis> nor <emphasis>Intel PRO/1000
             </emphasis> drivers for <emphasis role="bold">Windows XP guests
-            </emphasis> do not support segmentation offloading. Therefore
+            </emphasis> support segmentation offloading. Therefore
             Windows XP guests have slower transmission rates comparing to other
             guest types. Refer to MS Knowledge base article 842264 for additional
             information.</para>

@@ -1,4 +1,4 @@
-/* $Id: tstGuestCtrlParseBuffer.cpp 42214 2012-07-18 18:02:58Z vboxsync $ */
+/* $Id: tstGuestCtrlParseBuffer.cpp $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

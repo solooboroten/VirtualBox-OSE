@@ -1,10 +1,10 @@
 ; $Id$
-; @file
+;; @file
 ; VBoxGuestAdditionsW2KXP.nsh - Guest Additions installation for Windows 2000/XP.
 ;
 
 ;
-; Copyright (C) 2006-2012 Oracle Corporation
+; Copyright (C) 2006-2013 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -29,7 +29,7 @@ Function W2K_SetVideoResolution
   StrCmp $g_iScreenY "0" exit
   StrCmp $g_iScreenBpp "0" exit
 
-  DetailPrint "Setting display parameters ($g_iScreenXx$g_iScreenY, $g_iScreenBpp BPP) ..."
+  ${LogVerbose} "Setting display parameters ($g_iScreenXx$g_iScreenY, $g_iScreenBpp BPP) ..."
 
   ; Enumerate all video devices (up to 32 at the moment, use key "MaxObjectNumber" key later)
   ${For} $i 0 32
@@ -55,13 +55,13 @@ Function W2K_SetVideoResolution
     ; Get device description
     ReadRegStr $dev_desc HKLM "$tmppath" "Device Description"
 !ifdef _DEBUG
-    DetailPrint "Registry path: $tmppath"
-    DetailPrint "Registry path to device name: $temp"
+    ${LogVerbose} "Registry path: $tmppath"
+    ${LogVerbose} "Registry path to device name: $temp"
 !endif
-    DetailPrint "Detected video device: $dev_desc"
+    ${LogVerbose} "Detected video device: $dev_desc"
 
     ${If} $dev_desc == "VirtualBox Graphics Adapter"
-      DetailPrint "VirtualBox video device found!"
+      ${LogVerbose} "VirtualBox video device found!"
       Goto dev_found
     ${EndIf}
   ${Next}
@@ -78,7 +78,7 @@ dev_found:
 dev_found_detect_id:
 
   StrCpy $i 0 ; Start at index 0
-  DetailPrint "Detecting device ID ..."
+  ${LogVerbose} "Detecting device ID ..."
 
 dev_found_detect_id_loop:
 
@@ -86,11 +86,11 @@ dev_found_detect_id_loop:
   EnumRegKey $dev_id HKLM "SYSTEM\CurrentControlSet\Control\Video" $i
   StrCmp $dev_id "" dev_not_found ; No more entries? Jump out
 !ifdef _DEBUG
-  DetailPrint "Got device ID: $dev_id"
+  ${LogVerbose} "Got device ID: $dev_id"
 !endif
   ReadRegStr $dev_desc HKLM "SYSTEM\CurrentControlSet\Control\Video\$dev_id\0000" "Device Description" ; Try to read device name
   ${If} $dev_desc == "VirtualBox Graphics Adapter"
-    DetailPrint "Device ID of $dev_desc: $dev_id"
+    ${LogVerbose} "Device ID of $dev_desc: $dev_id"
     Goto change_res
   ${EndIf}
 
@@ -99,20 +99,20 @@ dev_found_detect_id_loop:
 
 dev_not_found:
 
-  DetailPrint "No VirtualBox video device (yet) detected! No custom mode set."
+  ${LogVerbose} "No VirtualBox video device (yet) detected! No custom mode set."
   Goto exit
 
 change_res:
 
 !ifdef _DEBUG
-  DetailPrint "Device description: $dev_desc"
-  DetailPrint "Device ID: $dev_id"
+  ${LogVerbose} "Device description: $dev_desc"
+  ${LogVerbose} "Device ID: $dev_id"
 !endif
 
   Var /GLOBAL reg_path_device
   Var /GLOBAL reg_path_monitor
 
-  DetailPrint "Custom mode set: Platform is Windows $g_strWinVersion"
+  ${LogVerbose} "Custom mode set: Platform is Windows $g_strWinVersion"
   ${If} $g_strWinVersion == "2000"
   ${OrIf} $g_strWinVersion == "Vista"
     StrCpy $reg_path_device "SYSTEM\CurrentControlSet\SERVICES\VBoxVideo\Device0"
@@ -120,17 +120,18 @@ change_res:
   ${ElseIf} $g_strWinVersion == "XP"
   ${OrIf} $g_strWinVersion == "7"
   ${OrIf} $g_strWinVersion == "8"
+  ${OrIf} $g_strWinVersion == "8_1"
     StrCpy $reg_path_device "SYSTEM\CurrentControlSet\Control\Video\$dev_id\0000"
     StrCpy $reg_path_monitor "SYSTEM\CurrentControlSet\Control\VIDEO\$dev_id\0000\Mon00000001"
   ${Else}
-    DetailPrint "Custom mode set: Windows $g_strWinVersion not supported yet"
+    ${LogVerbose} "Custom mode set: Windows $g_strWinVersion not supported yet"
     Goto exit
   ${EndIf}
 
   ; Write the new value in the adapter config (VBoxVideo.sys) using hex values in binary format
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" registry write HKLM $reg_path_device CustomXRes REG_BIN $g_iScreenX DWORD'
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" registry write HKLM $reg_path_device CustomYRes REG_BIN $g_iScreenY DWORD'
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" registry write HKLM $reg_path_device CustomBPP REG_BIN $g_iScreenBpp DWORD'
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" registry write HKLM $reg_path_device CustomXRes REG_BIN $g_iScreenX DWORD" "false"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" registry write HKLM $reg_path_device CustomYRes REG_BIN $g_iScreenY DWORD" "false"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" registry write HKLM $reg_path_device CustomBPP REG_BIN $g_iScreenBpp DWORD" "false"
 
   ; ... and tell Windows to use that mode on next start!
   WriteRegDWORD HKCC $reg_path_device "DefaultSettings.XResolution" "$g_iScreenX"
@@ -141,7 +142,7 @@ change_res:
   WriteRegDWORD HKCC $reg_path_monitor "DefaultSettings.YResolution" "$g_iScreenY"
   WriteRegDWORD HKCC $reg_path_monitor "DefaultSettings.BitsPerPixel" "$g_iScreenBpp"
 
-  DetailPrint "Custom mode set to $g_iScreenXx$g_iScreenY, $g_iScreenBpp BPP on next restart."
+  ${LogVerbose} "Custom mode set to $g_iScreenXx$g_iScreenY, $g_iScreenBpp BPP on next restart."
 
 exit:
 
@@ -213,15 +214,15 @@ Function W2K_CopyFiles
     ClearErrors
     GetTempFileName $0
     IfErrors 0 +3
-      DetailPrint "Error getting temp file for VBoxService.exe"
+      ${LogVerbose} "Error getting temp file for VBoxService.exe"
       StrCpy "$0" "$INSTDIR\VBoxServiceTemp.exe"
-    DetailPrint "VBoxService is in use, will be installed on next reboot (from '$0')"
+    ${LogVerbose} "VBoxService is in use, will be installed on next reboot (from '$0')"
     File "/oname=$0" "$%PATH_OUT%\bin\additions\VBoxService.exe"
     IfErrors 0 +2
-      DetailPrint "Error copying VBoxService.exe to '$0'"
+      ${LogVerbose} "Error copying VBoxService.exe to '$0'"
     Rename /REBOOTOK "$0" "$g_strSystemDir\VBoxService.exe"
     IfErrors 0 +2
-      DetailPrint "Error renaming '$0' to '$g_strSystemDir\VBoxService.exe'"
+      ${LogVerbose} "Error renaming '$0' to '$g_strSystemDir\VBoxService.exe'"
     Pop $0
   ${EndIf}
 
@@ -232,6 +233,7 @@ Function W2K_CopyFiles
 
   !if $%VBOX_WITH_WDDM_W8% == "1"
     ${If} $g_strWinVersion == "8"
+    ${OrIf} $g_strWinVersion == "8_1"
       !ifdef VBOX_SIGN_ADDITIONS
         FILE "$%PATH_OUT%\bin\additions\VBoxVideoW8.cat"
       !endif
@@ -336,8 +338,8 @@ Function W2K_WHQLFakeOn
 
 do:
 
-  DetailPrint "Turning off WHQL protection..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxWHQLFake.exe" "ignore"'
+  ${LogVerbose} "Turning off WHQL protection..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxWHQLFake.exe$\" $\"ignore$\"" "true"
 
 exit:
 
@@ -350,8 +352,8 @@ Function W2K_WHQLFakeOff
 
 do:
 
-  DetailPrint "Turning back on WHQL protection..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxWHQLFake.exe" "warn"'
+  ${LogVerbose} "Turning back on WHQL protection..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxWHQLFake.exe$\" $\"warn$\"" "true"
 
 exit:
 
@@ -375,76 +377,66 @@ Function W2K_InstallFiles
   !insertmacro ReplaceDLL "$%PATH_OUT%\bin\additions\VBoxHook.dll" "$g_strSystemDir\VBoxHook.dll" "$INSTDIR"
   AccessControl::GrantOnFile "$g_strSystemDir\VBoxHook.dll" "(BU)" "GenericRead"
 
-  DetailPrint "Installing drivers ..."
+  ${LogVerbose} "Installing drivers ..."
 
   Push $0 ; For fetching results
 
   SetOutPath "$INSTDIR"
 
   ${If} $g_bNoGuestDrv == "false"
-    DetailPrint "Installing guest driver ..."
-    nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver install "$INSTDIR\VBoxGuest.inf" "$INSTDIR\install_drivers.log"'
-    Pop $0 ; Ret value
-    LogText "Guest driver returned: $0"
-    IntCmp $0 0 +1 error error  ; Check ret value (0=OK, 1=Error)
+    ${LogVerbose} "Installing guest driver ..."
+    ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver install $\"$INSTDIR\VBoxGuest.inf$\" $\"$INSTDIR\install_drivers.log$\"" "false"
   ${Else}
-    LogText "Guest driver installation skipped!"
+    ${LogVerbose} "Guest driver installation skipped!"
   ${EndIf}
 
   ${If} $g_bNoVideoDrv == "false"
     ${If} $g_bWithWDDM == "true"
   !if $%VBOX_WITH_WDDM_W8% == "1"
       ${If} $g_strWinVersion == "8"
-        DetailPrint "Installing WDDM video driver for Windows 8..."
-        nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver install "$INSTDIR\VBoxVideoW8.inf" "$INSTDIR\install_drivers.log"'
+      ${OrIf} $g_strWinVersion == "8_1"
+        ${LogVerbose} "Installing WDDM video driver for Windows 8..."
+        ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver install $\"$INSTDIR\VBoxVideoW8.inf$\" $\"$INSTDIR\install_drivers.log$\"" "false"
       ${Else}
   !endif
-        DetailPrint "Installing WDDM video driver for Windows Vista and 7..."
-        nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver install "$INSTDIR\VBoxVideoWddm.inf" "$INSTDIR\install_drivers.log"'
+        ${LogVerbose} "Installing WDDM video driver for Windows Vista and 7..."
+        ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver install $\"$INSTDIR\VBoxVideoWddm.inf$\" $\"$INSTDIR\install_drivers.log$\"" "false"
   !if $%VBOX_WITH_WDDM_W8% == "1"
       ${EndIf}
   !endif
     ${Else}
-      DetailPrint "Installing video driver ..."
-      nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver install "$INSTDIR\VBoxVideo.inf" "$INSTDIR\install_drivers.log"'
+      ${LogVerbose} "Installing video driver ..."
+      ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver install $\"$INSTDIR\VBoxVideo.inf$\" $\"$INSTDIR\install_drivers.log$\"" "false"
     ${EndIf}
-    Pop $0 ; Ret value
-    LogText "Video driver returned: $0"
-    IntCmp $0 0 +1 error error ; Check ret value (0=OK, 1=Error)
   ${Else}
-    LogText "Video driver installation skipped!"
+    ${LogVerbose} "Video driver installation skipped!"
   ${EndIf}
 
   ${If} $g_bNoMouseDrv == "false"
-    DetailPrint "Installing mouse driver ..."
+    ${LogVerbose} "Installing mouse driver ..."
     ; The mouse filter does not contain any device IDs but a "DefaultInstall" section;
     ; so this .INF file needs to be installed using "InstallHinfSection" which is implemented
     ; with VBoxDrvInst's "driver executeinf" routine
-    nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver executeinf "$INSTDIR\VBoxMouse.inf"'
-    Pop $0  ; Ret value
-    LogText "Mouse driver returned: $0"
-    IntCmp $0 0 +1 error error  ; Check ret value (0=OK, 1=Error)
+    ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver executeinf $\"$INSTDIR\VBoxMouse.inf$\"" "false"
   ${Else}
-    LogText "Mouse driver installation skipped!"
+    ${LogVerbose} "Mouse driver installation skipped!"
   ${EndIf}
 
   ; Create the VBoxService service
   ; No need to stop/remove the service here! Do this only on uninstallation!
-  DetailPrint "Installing VirtualBox service ..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service create "VBoxService" "VirtualBox Guest Additions Service" 16 2 "system32\VBoxService.exe" "Base"'
-  Pop $0 ; Ret value
-  LogText "VBoxService returned: $0"
+  ${LogVerbose} "Installing VirtualBox service ..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service create $\"VBoxService$\" $\"VirtualBox Guest Additions Service$\" 16 2 $\"system32\VBoxService.exe$\" $\"Base$\"" "false"
 
   ; Set service description
   WriteRegStr HKLM "SYSTEM\CurrentControlSet\Services\VBoxService" "Description" "Manages VM runtime information, time synchronization, remote sysprep execution and miscellaneous utilities for guest operating systems."
 
 sf:
 
-  DetailPrint "Installing Shared Folders service ..."
+  ${LogVerbose} "Installing Shared Folders service ..."
 
   ; Create the Shared Folders service ...
   ; No need to stop/remove the service here! Do this only on uninstallation!
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service create "VBoxSF" "VirtualBox Shared Folders" 2 1 "system32\drivers\VBoxSF.sys" "NetworkProvider"'
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service create $\"VBoxSF$\" $\"VirtualBox Shared Folders$\" 2 1 $\"system32\drivers\VBoxSF.sys$\" $\"NetworkProvider$\"" "false"
 
   ; ... and the link to the network provider
   WriteRegStr HKLM "SYSTEM\CurrentControlSet\Services\VBoxSF\NetworkProvider" "DeviceName" "\Device\VBoxMiniRdr"
@@ -452,22 +444,20 @@ sf:
   WriteRegStr HKLM "SYSTEM\CurrentControlSet\Services\VBoxSF\NetworkProvider" "ProviderPath" "$SYSDIR\VBoxMRXNP.dll"
 
   ; Add default network providers (if not present or corrupted)
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" netprovider add WebClient'
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" netprovider add LanmanWorkstation'
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" netprovider add RDPNP'
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" netprovider add WebClient" "false"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" netprovider add LanmanWorkstation" "false"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" netprovider add RDPNP" "false"
 
   ; Add the shared folders network provider
-  DetailPrint "Adding network provider (Order = $g_iSfOrder) ..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" netprovider add VBoxSF $g_iSfOrder'
-  Pop $0 ; Ret value
-  IntCmp $0 0 +1 error error  ; Check ret value (0=OK, 1=Error)
+  ${LogVerbose} "Adding network provider (Order = $g_iSfOrder) ..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" netprovider add VBoxSF $g_iSfOrder" "false"
 
 !if $%VBOX_WITH_CROGL% == "1"
 cropengl:
   ${If} $g_bWithWDDM == "true"
     ; Nothing to do here
   ${Else}
-    DetailPrint "Installing 3D OpenGL support ..."
+    ${LogVerbose} "Installing 3D OpenGL support ..."
     WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\VBoxOGL" "Version" 2
     WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\VBoxOGL" "DriverVersion" 1
     WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\OpenGLDrivers\VBoxOGL" "Flags" 1
@@ -475,7 +465,8 @@ cropengl:
 !if $%BUILD_TARGET_ARCH% == "amd64"
     SetRegView 32
     ; Write additional keys required for Windows XP, Vista and 7 64-bit (but for 32-bit stuff)
-    ${If} $g_strWinVersion   == '8'
+    ${If} $g_strWinVersion   == '8_1'
+    ${OrIf} $g_strWinVersion == '8'
     ${OrIf} $g_strWinVersion == '7'
     ${OrIf} $g_strWinVersion == 'Vista'
     ${OrIf} $g_strWinVersion == '2003' ; Windows XP 64-bit is a renamed Windows 2003 really
@@ -490,10 +481,6 @@ cropengl:
 !endif
 
   Goto done
-
-error:
-
-  Abort "ERROR: Could not install files for Windows 2000 / XP / Vista! Installation aborted."
 
 done:
 
@@ -605,11 +592,9 @@ Function ${un}W2K_Uninstall
   Push $0
 
   ; Remove VirtualBox video driver
-  DetailPrint "Uninstalling video driver ..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver uninstall "$INSTDIR\VBoxVideo.inf'
-  Pop $0 ; Ret value
-  ; @todo Add error handling here!
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxVideo'
+  ${LogVerbose} "Uninstalling video driver ..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver uninstall $\"$INSTDIR\VBoxVideo.inf$\"" "true"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxVideo" "true"
   Delete /REBOOTOK "$g_strSystemDir\drivers\VBoxVideo.sys"
   Delete /REBOOTOK "$g_strSystemDir\VBoxDisp.dll"
 
@@ -617,23 +602,18 @@ Function ${un}W2K_Uninstall
 !if $%VBOX_WITH_WDDM% == "1"
 
   !if $%VBOX_WITH_WDDM_W8% == "1"
-  DetailPrint "Uninstalling WDDM video driver for Windows 8..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver uninstall "$INSTDIR\VBoxVideoW8.inf"'
-  Pop $0 ; Ret value
-  ; Always try to remove both VBoxVideoW8 & VBoxVideoWddm services no matter what is installed currently
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxVideoW8'
-  Pop $0 ; Ret value
+  ${LogVerbose} "Uninstalling WDDM video driver for Windows 8..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver uninstall $\"$INSTDIR\VBoxVideoW8.inf$\"" "true"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxVideoW8" "true"
   ;misha> @todo driver file removal (as well as service removal) should be done as driver package uninstall
   ;       could be done with "VBoxDrvInst.exe /u", e.g. by passing additional arg to it denoting that driver package is to be uninstalled
   Delete /REBOOTOK "$g_strSystemDir\drivers\VBoxVideoW8.sys"
   !endif ; $%VBOX_WITH_WDDM_W8% == "1"
 
-  DetailPrint "Uninstalling WDDM video driver for Windows Vista and 7..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver uninstall "$INSTDIR\VBoxVideoWddm.inf"'
-  Pop $0 ; Ret value
+  ${LogVerbose} "Uninstalling WDDM video driver for Windows Vista and 7..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver uninstall $\"$INSTDIR\VBoxVideoWddm.inf$\"" "true"
   ; Always try to remove both VBoxVideoWddm & VBoxVideo services no matter what is installed currently
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxVideoWddm'
-  Pop $0 ; Ret value
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxVideoWddm" "true"
   ;misha> @todo driver file removal (as well as service removal) should be done as driver package uninstall
   ;       could be done with "VBoxDrvInst.exe /u", e.g. by passing additional arg to it denoting that driver package is to be uninstalled
   Delete /REBOOTOK "$g_strSystemDir\drivers\VBoxVideoWddm.sys"
@@ -642,13 +622,13 @@ Function ${un}W2K_Uninstall
 
 !if $%VBOX_WITH_CROGL% == "1"
 
-  DetailPrint "Removing Direct3D support ..."
+  ${LogVerbose} "Removing Direct3D support ..."
 
   ; Do file validation before we uninstall
   Call ${un}ValidateD3DFiles
   Pop $0
   ${If} $0 == "1" ; D3D files are invalid
-    DetailPrint $(VBOX_UNINST_INVALID_D3D)
+    ${LogVerbose} $(VBOX_UNINST_INVALID_D3D)
     MessageBox MB_ICONSTOP|MB_OK $(VBOX_UNINST_INVALID_D3D) /SD IDOK
     Goto d3d_uninstall_end
   ${EndIf}
@@ -730,18 +710,14 @@ d3d_uninstall_end:
 !endif ; VBOX_WITH_CROGL
 
   ; Remove mouse driver
-  DetailPrint "Removing mouse driver ..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxMouse'
-  Pop $0 ; Ret value
+  ${LogVerbose} "Removing mouse driver ..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxMouse" "true"
   Delete /REBOOTOK "$g_strSystemDir\drivers\VBoxMouse.sys"
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" registry delmultisz "SYSTEM\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE10318}" "UpperFilters" "VBoxMouse"'
-  Pop $0 ; Ret value
-  ; @todo Add error handling here!
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" registry delmultisz $\"SYSTEM\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE10318}$\" $\"UpperFilters$\" $\"VBoxMouse$\"" "true"
 
   ; Delete the VBoxService service
   Call ${un}StopVBoxService
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxService'
-  Pop $0 ; Ret value
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxService" "true"
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "VBoxService"
   Delete /REBOOTOK "$g_strSystemDir\VBoxService.exe"
 
@@ -749,7 +725,7 @@ d3d_uninstall_end:
   Delete /REBOOTOK "$g_strSystemDir\VBoxGINA.dll"
   ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL"
   ${If} $0 == "VBoxGINA.dll"
-    DetailPrint "Removing auto-logon support ..."
+    ${LogVerbose} "Removing auto-logon support ..."
     DeleteRegValue HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL"
   ${EndIf}
   DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon\Notify\VBoxGINA"
@@ -759,13 +735,10 @@ d3d_uninstall_end:
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "VBoxTray"
 
   ; Remove guest driver
-  DetailPrint "Removing guest driver ..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" driver uninstall "$INSTDIR\VBoxGuest.inf"'
-  Pop $0 ; Ret value
-  ; @todo Add error handling here!
+  ${LogVerbose} "Removing guest driver ..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" driver uninstall $\"$INSTDIR\VBoxGuest.inf$\"" "true"
 
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxGuest'
-  Pop $0 ; Ret value
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxGuest" "true"
   Delete /REBOOTOK "$g_strSystemDir\drivers\VBoxGuest.sys"
   Delete /REBOOTOK "$g_strSystemDir\VBCoInst.dll" ; Deprecated, does not get installed anymore
   Delete /REBOOTOK "$g_strSystemDir\VBoxTray.exe"
@@ -774,11 +747,9 @@ d3d_uninstall_end:
   Delete /REBOOTOK "$g_strSystemDir\VBoxControl.exe"
 
   ; Remove shared folders driver
-  DetailPrint "Removing shared folders driver ..."
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" netprovider remove VBoxSF'
-  Pop $0 ; Ret value
-  nsExec::ExecToLog '"$INSTDIR\VBoxDrvInst.exe" service delete VBoxSF'
-  Pop $0 ; Ret value
+  ${LogVerbose} "Removing shared folders driver ..."
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" netprovider remove VBoxSF" "true"
+  ${CmdExecute} "$\"$INSTDIR\VBoxDrvInst.exe$\" service delete VBoxSF" "true"
   Delete /REBOOTOK "$g_strSystemDir\VBoxMRXNP.dll" ; The network provider DLL will be locked
   !if $%BUILD_TARGET_ARCH% == "amd64"
     ; Only 64-bit installer: Also remove 32-bit DLLs on 64-bit target arch in Wow64 node

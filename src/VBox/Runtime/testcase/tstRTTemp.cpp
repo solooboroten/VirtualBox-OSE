@@ -1,10 +1,10 @@
-/* $Id: tstRTTemp.cpp 42714 2012-08-09 14:57:24Z vboxsync $ */
+/* $Id: tstRTTemp.cpp $ */
 /** @file
  * IPRT Testcase - Temporary files and directories.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

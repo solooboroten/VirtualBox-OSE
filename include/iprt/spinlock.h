@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -73,7 +73,6 @@ RTDECL(int)  RTSpinlockDestroy(RTSPINLOCK Spinlock);
  * Acquires the spinlock.
  *
  * @param   Spinlock    The spinlock to acquire.
- * @param   pTmp        Where to save the state.
  */
 RTDECL(void) RTSpinlockAcquire(RTSPINLOCK Spinlock);
 
@@ -81,7 +80,6 @@ RTDECL(void) RTSpinlockAcquire(RTSPINLOCK Spinlock);
  * Releases the spinlock.
  *
  * @param   Spinlock    The spinlock to acquire.
- * @param   pTmp        The state to restore. (This better be the same as for the RTSpinlockAcquire() call!)
  */
 RTDECL(void) RTSpinlockRelease(RTSPINLOCK Spinlock);
 

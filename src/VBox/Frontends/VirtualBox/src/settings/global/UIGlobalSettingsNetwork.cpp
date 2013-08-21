@@ -1,4 +1,4 @@
-/* $Id: UIGlobalSettingsNetwork.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: UIGlobalSettingsNetwork.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -57,7 +57,7 @@ void UIHostInterfaceItem::uploadNetworkData(UIHostNetworkData &data)
 }
 
 /* Validation stuff: */
-bool UIHostInterfaceItem::revalidate(QString &strWarning, QString & /* strTitle */)
+bool UIHostInterfaceItem::validate(QString &strWarning, QString&)
 {
     /* Host-only interface validation: */
     if (!m_data.m_interface.m_fDhcpClientEnabled)
@@ -66,14 +66,14 @@ bool UIHostInterfaceItem::revalidate(QString &strWarning, QString & /* strTitle 
             (QHostAddress(m_data.m_interface.m_strInterfaceAddress) == QHostAddress::Any ||
              QHostAddress(m_data.m_interface.m_strInterfaceAddress).protocol() != QAbstractSocket::IPv4Protocol))
         {
-            strWarning = UIGlobalSettingsNetwork::tr("host IPv4 address of <b>%1</b> is wrong").arg(text(0));
+            strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid IPv4 address.").arg(text(0));
             return false;
         }
         if (!m_data.m_interface.m_strInterfaceMask.isEmpty() &&
             (QHostAddress(m_data.m_interface.m_strInterfaceMask) == QHostAddress::Any ||
              QHostAddress(m_data.m_interface.m_strInterfaceMask).protocol() != QAbstractSocket::IPv4Protocol))
         {
-            strWarning = UIGlobalSettingsNetwork::tr("host IPv4 network mask of <b>%1</b> is wrong").arg(text(0));
+            strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid IPv4 network mask.").arg(text(0));
             return false;
         }
         if (m_data.m_interface.m_fIpv6Supported)
@@ -82,7 +82,7 @@ bool UIHostInterfaceItem::revalidate(QString &strWarning, QString & /* strTitle 
                 (QHostAddress(m_data.m_interface.m_strInterfaceAddress6) == QHostAddress::AnyIPv6 ||
                  QHostAddress(m_data.m_interface.m_strInterfaceAddress6).protocol() != QAbstractSocket::IPv6Protocol))
             {
-                strWarning = UIGlobalSettingsNetwork::tr("host IPv6 address of <b>%1</b> is wrong").arg(text(0));
+                strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid IPv6 address.").arg(text(0));
                 return false;
             }
         }
@@ -94,25 +94,25 @@ bool UIHostInterfaceItem::revalidate(QString &strWarning, QString & /* strTitle 
         if (QHostAddress(m_data.m_dhcpserver.m_strDhcpServerAddress) == QHostAddress::Any ||
             QHostAddress(m_data.m_dhcpserver.m_strDhcpServerAddress).protocol() != QAbstractSocket::IPv4Protocol)
         {
-            strWarning = UIGlobalSettingsNetwork::tr("DHCP server address of <b>%1</b> is wrong").arg(text(0));
+            strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid DHCP server address.").arg(text(0));
             return false;
         }
         if (QHostAddress(m_data.m_dhcpserver.m_strDhcpServerMask) == QHostAddress::Any ||
             QHostAddress(m_data.m_dhcpserver.m_strDhcpServerMask).protocol() != QAbstractSocket::IPv4Protocol)
         {
-            strWarning = UIGlobalSettingsNetwork::tr("DHCP server network mask of <b>%1</b> is wrong").arg(text(0));
+            strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid DHCP server mask.").arg(text(0));
             return false;
         }
         if (QHostAddress(m_data.m_dhcpserver.m_strDhcpLowerAddress) == QHostAddress::Any ||
             QHostAddress(m_data.m_dhcpserver.m_strDhcpLowerAddress).protocol() != QAbstractSocket::IPv4Protocol)
         {
-            strWarning = UIGlobalSettingsNetwork::tr("DHCP lower address bound of <b>%1</b> is wrong").arg(text(0));
+            strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid DHCP server lower address bound.").arg(text(0));
             return false;
         }
         if (QHostAddress(m_data.m_dhcpserver.m_strDhcpUpperAddress) == QHostAddress::Any ||
             QHostAddress(m_data.m_dhcpserver.m_strDhcpUpperAddress).protocol() != QAbstractSocket::IPv4Protocol)
         {
-            strWarning = UIGlobalSettingsNetwork::tr("DHCP upper address bound of <b>%1</b> is wrong").arg(text(0));
+            strWarning = UIGlobalSettingsNetwork::tr("The host interface <b>%1</b> does not currently have a valid DHCP server upper address bound.").arg(text(0));
             return false;
         }
     }
@@ -195,8 +195,7 @@ QString UIHostInterfaceItem::updateInfo()
 
 /* Network page constructor: */
 UIGlobalSettingsNetwork::UIGlobalSettingsNetwork()
-    : m_pValidator(0)
-    , m_pAddAction(0), m_pDelAction(0), m_pEditAction(0)
+    : m_pAddAction(0), m_pDelAction(0), m_pEditAction(0)
     , m_fChanged(false)
 {
     /* Apply UI decorations: */
@@ -228,9 +227,6 @@ UIGlobalSettingsNetwork::UIGlobalSettingsNetwork()
     m_pActionsToolbar->addAction(m_pAddAction);
     m_pActionsToolbar->addAction(m_pDelAction);
     m_pActionsToolbar->addAction(m_pEditAction);
-    m_pActionsToolbar->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::MinimumExpanding);
-    m_pActionsToolbar->updateGeometry();
-    m_pActionsToolbar->setMinimumHeight(m_pActionsToolbar->sizeHint().height());
 
     /* Setup connections: */
     connect(m_pAddAction, SIGNAL(triggered(bool)), this, SLOT(sltAddInterface()));
@@ -247,7 +243,7 @@ UIGlobalSettingsNetwork::UIGlobalSettingsNetwork()
     retranslateUi();
 }
 
-/* Load data to cashe from corresponding external object(s),
+/* Load data to cache from corresponding external object(s),
  * this task COULD be performed in other than GUI thread: */
 void UIGlobalSettingsNetwork::loadToCacheFrom(QVariant &data)
 {
@@ -277,6 +273,9 @@ void UIGlobalSettingsNetwork::getFromCache()
     /* Set first list item as current: */
     m_pInterfacesTree->setCurrentItem(m_pInterfacesTree->topLevelItem(0));
     sltUpdateCurrentItem();
+
+    /* Revalidate: */
+    revalidate();
 }
 
 /* Save data from corresponding widgets to cache,
@@ -370,17 +369,12 @@ void UIGlobalSettingsNetwork::saveFromCacheTo(QVariant &data)
     UISettingsPageGlobal::uploadData(data);
 }
 
-/* Validation assignments: */
-void UIGlobalSettingsNetwork::setValidator(QIWidgetValidator *pValidator)
-{
-    m_pValidator = pValidator;
-}
-
 /* Validation processing: */
-bool UIGlobalSettingsNetwork::revalidate(QString &strWarning, QString &strTitle)
+bool UIGlobalSettingsNetwork::validate(QString &strWarning, QString &strTitle)
 {
+    /* Redirect validation to items: */
     UIHostInterfaceItem *pItem = static_cast<UIHostInterfaceItem*>(m_pInterfacesTree->currentItem());
-    return pItem ? pItem->revalidate(strWarning, strTitle) : true;
+    return pItem ? pItem->validate(strWarning, strTitle) : true;
 }
 
 /* Navigation stuff: */
@@ -421,9 +415,8 @@ void UIGlobalSettingsNetwork::sltAddInterface()
     CProgress progress = host.CreateHostOnlyNetworkInterface(iface);
     if (host.isOk())
     {
-        msgCenter().showModalProgressDialog(progress, tr("Networking"),
-                                              ":/nw_32px.png", this, true, 0);
-        if (progress.GetResultCode() == 0)
+        msgCenter().showModalProgressDialog(progress, tr("Networking"), ":/nw_32px.png", this, 0);
+        if (progress.isOk() && progress.GetResultCode() == 0)
         {
             /* Create DHCP server: */
             CDHCPServer dhcp = vbox.FindDHCPServerByNetworkName(iface.GetNetworkName());
@@ -433,7 +426,6 @@ void UIGlobalSettingsNetwork::sltAddInterface()
                 dhcp = vbox.FindDHCPServerByNetworkName(iface.GetNetworkName());
             }
             AssertMsg(!dhcp.isNull(), ("DHCP server creation failed!\n"));
-
             /* Append cache with new item: */
             appendCacheItem(iface);
             /* Append list with new item: */
@@ -455,7 +447,7 @@ void UIGlobalSettingsNetwork::sltDelInterface()
     /* Get interface name: */
     QString strInterfaceName(pItem->name());
     /* Asking user about deleting selected network interface: */
-    if (msgCenter().confirmDeletingHostInterface(strInterfaceName, this) == QIMessageBox::Cancel)
+    if (!msgCenter().confirmHostInterfaceRemoval(strInterfaceName, this))
         return;
 
     /* Prepare useful variables: */
@@ -474,9 +466,8 @@ void UIGlobalSettingsNetwork::sltDelInterface()
     CProgress progress = host.RemoveHostOnlyNetworkInterface(iface.GetId());
     if (host.isOk())
     {
-        msgCenter().showModalProgressDialog(progress, tr("Networking"),
-                                              ":/nw_32px.png", this, true, 0);
-        if (progress.GetResultCode() == 0)
+        msgCenter().showModalProgressDialog(progress, tr("Networking"), ":/nw_32px.png", this, 0);
+        if (progress.isOk() && progress.GetResultCode() == 0)
         {
             /* Remove list item: */
             removeListItem(pItem);
@@ -484,10 +475,10 @@ void UIGlobalSettingsNetwork::sltDelInterface()
             removeCacheItem(strInterfaceName);
         }
         else
-            msgCenter().cannotRemoveHostInterface(progress, iface, this);
+            msgCenter().cannotRemoveHostInterface(progress, strInterfaceName, this);
     }
     else
-        msgCenter().cannotRemoveHostInterface(host, iface, this);
+        msgCenter().cannotRemoveHostInterface(host, strInterfaceName, this);
 }
 
 /* Edits selected network interface: */
@@ -504,8 +495,10 @@ void UIGlobalSettingsNetwork::sltEditInterface()
         details.putBackToItem();
         pItem->updateInfo();
         sltUpdateCurrentItem();
-        m_pValidator->revalidate();
         m_fChanged = true;
+
+        /* Revalidate: */
+        revalidate();
     }
 }
 
@@ -514,8 +507,6 @@ void UIGlobalSettingsNetwork::sltUpdateCurrentItem()
 {
     /* Get current item: */
     UIHostInterfaceItem *pItem = static_cast<UIHostInterfaceItem*>(m_pInterfacesTree->currentItem());
-    /* Set the final label text: */
-    m_pInfoLabel->setText(pItem ? pItem->updateInfo() : QString());
     /* Update availability: */
     m_pDelAction->setEnabled(pItem);
     m_pEditAction->setEnabled(pItem);

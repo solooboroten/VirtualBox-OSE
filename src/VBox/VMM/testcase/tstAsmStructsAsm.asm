@@ -1,4 +1,4 @@
-; $Id: tstAsmStructsAsm.asm 35346 2010-12-27 16:13:13Z vboxsync $
+; $Id: tstAsmStructsAsm.asm $
 ;; @file
 ; Assembly / C structure layout testcase.
 ;
@@ -7,7 +7,7 @@
 ;
 
 ;
-; Copyright (C) 2006-2007 Oracle Corporation
+; Copyright (C) 2006-2013 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -23,11 +23,12 @@ BITS 64
 %endif
 
 %include "CPUMInternal.mac"
-%include "HWACCMInternal.mac"
+%include "HMInternal.mac"
 %include "TRPMInternal.mac"
 %include "VMMInternal.mac"
 %include "VBox/vmm/cpum.mac"
 %include "VBox/vmm/vm.mac"
+%include "VBox/vmm/hm_vmx.mac"
 %include "VBox/sup.mac"
 %include "VMMSwitcher.mac"
 %ifdef DO_GLOBALS

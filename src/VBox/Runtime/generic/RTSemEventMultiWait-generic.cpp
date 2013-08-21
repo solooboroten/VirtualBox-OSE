@@ -1,10 +1,10 @@
-/* $Id: RTSemEventMultiWait-generic.cpp 36190 2011-03-07 16:28:50Z vboxsync $ */
+/* $Id: RTSemEventMultiWait-generic.cpp $ */
 /** @file
  * IPRT - RTSemEventMultiWait, generic RTSemEventMultiWaitNoResume wrapper.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

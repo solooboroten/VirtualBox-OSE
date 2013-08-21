@@ -1,10 +1,10 @@
-/* $Id: tstLow.cpp 38636 2011-09-05 13:49:45Z vboxsync $  */
+/* $Id: tstLow.cpp $  */
 /** @file
  * SUP Testcase - Low (<4GB) Memory Allocate interface (ring 3).
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -80,7 +80,7 @@ int main(int argc, char **argv)
                     for (uint8_t *pu8 = (uint8_t *)pvPages0 + iPage * PAGE_SIZE, *pu8End = pu8 + PAGE_SIZE; pu8 < pu8End; pu8++)
                         if (*pu8 != (uint8_t)iPage)
                         {
-                            RTPrintf("tstLow: error: invalid page content %02x != %02x. iPage=%p off=%#x\n",
+                            RTPrintf("tstLow: error: invalid page content %02x != %02x. iPage=%u off=%#x\n",
                                      *pu8, (uint8_t)iPage, iPage, (uintptr_t)pu8 & PAGE_OFFSET_MASK);
                             rcRet++;
                         }

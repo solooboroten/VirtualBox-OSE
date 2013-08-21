@@ -1,10 +1,10 @@
-/* $Id: strprintf.cpp 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: strprintf.cpp $ */
 /** @file
  * IPRT - String Formatters.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

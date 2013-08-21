@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010-2012 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -20,11 +20,14 @@
 #define __UIMachineLogic_h__
 
 /* GUI includes: */
-#include "UIMachineDefs.h"
+#include "UIDefs.h"
 #include <QIWithRetranslateUI.h>
 #ifdef VBOX_WITH_DEBUGGER_GUI
 # include <VBox/dbggui.h>
 #endif /* VBOX_WITH_DEBUGGER_GUI */
+
+/* COM includes: */
+#include "COMEnums.h"
 
 /* Forward declarations: */
 class QAction;
@@ -40,6 +43,9 @@ class CMachine;
 class CSnapshot;
 class CUSBDevice;
 class CVirtualBoxErrorInfo;
+#ifdef Q_WS_MAC
+class QMenuBar;
+#endif /* Q_WS_MAC */
 
 /* Machine logic interface: */
 class UIMachineLogic : public QIWithRetranslateUI3<QObject>
@@ -82,6 +88,14 @@ public:
     UIMachineView* dockPreviewView() const;
 #endif /* Q_WS_MAC */
 
+    /* API: Close actions: */
+    void saveState();
+    void shutdown();
+    void powerOff(bool fDiscardingState);
+
+    /* API: 3D overlay visibility stuff: */
+    virtual void notifyAbout3DOverlayVisibilityChange(bool fVisible);
+
 protected slots:
 
     /* Console callback handlers: */
@@ -93,6 +107,10 @@ protected slots:
 #ifdef RT_OS_DARWIN
     virtual void sltShowWindows();
 #endif /* RT_OS_DARWIN */
+    virtual void sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect screenGeo);
+
+    /* Qt callback handler: */
+    virtual void sltHostScreenCountChanged(int cHostScreenCount);
 
 protected:
 
@@ -101,7 +119,7 @@ protected:
 
     /* Protected getters/setters: */
     bool isMachineWindowsCreated() const { return m_fIsWindowsCreated; }
-    void setMachineWindowsCreated(bool fIsWindowsCreated) { m_fIsWindowsCreated = fIsWindowsCreated; }
+    void setMachineWindowsCreated(bool fIsWindowsCreated);
 
     /* Protected members: */
     void setKeyboardHandler(UIKeyboardHandler *pKeyboardHandler);
@@ -119,8 +137,10 @@ protected:
     virtual void prepareSessionConnections();
     virtual void prepareActionGroups();
     virtual void prepareActionConnections();
+    virtual void prepareOtherConnections() {}
     virtual void prepareHandlers();
     virtual void prepareMachineWindows() = 0;
+    virtual void prepareMenu();
 #ifdef Q_WS_MAC
     virtual void prepareDock();
 #endif /* Q_WS_MAC */
@@ -135,8 +155,10 @@ protected:
 #ifdef Q_WS_MAC
     virtual void cleanupDock();
 #endif /* Q_WS_MAC */
+    virtual void cleanupMenu();
     virtual void cleanupMachineWindows() = 0;
     virtual void cleanupHandlers();
+    //virtual void cleanupOtherConnections() {}
     //virtual void cleanupActionConnections() {}
     virtual void cleanupActionGroups();
     //virtual void cleanupSessionConnections() {}
@@ -160,11 +182,13 @@ private slots:
     void sltShowInformationDialog();
     void sltReset();
     void sltPause(bool fOn);
-    void sltACPIShutdown();
+    void sltSaveState();
+    void sltShutdown();
+    void sltPowerOff();
     void sltClose();
 
     /* "Device" menu functionality: */
-    void sltOpenVMSettingsDialog(const QString &strCategory = QString());
+    void sltOpenVMSettingsDialog(const QString &strCategory = QString(), const QString &strControl = QString());
     void sltOpenNetworkAdaptersDialog();
     void sltOpenSharedFoldersDialog();
     void sltPrepareStorageMenu();
@@ -174,7 +198,11 @@ private slots:
     void sltAttachUSBDevice();
     void sltPrepareSharedClipboardMenu();
     void sltChangeSharedClipboardType(QAction *pAction);
-    void sltSwitchVrde(bool fOn);
+    void sltPrepareDragAndDropMenu();
+    void sltChangeDragAndDropType(QAction *pAction);
+    void sltToggleVRDE(bool fEnabled);
+    void sltToggleVideoCapture(bool fEnabled);
+    void sltOpenVideoCaptureOptions();
     void sltInstallGuestAdditions();
 
 #ifdef VBOX_WITH_DEBUGGER_GUI
@@ -207,7 +235,9 @@ private:
 
     QActionGroup *m_pRunningActions;
     QActionGroup *m_pRunningOrPausedActions;
+    QActionGroup *m_pRunningOrPausedOrStackedActions;
     QActionGroup *m_pSharedClipboardActions;
+    QActionGroup *m_pDragAndDropActions;
 
     bool m_fIsWindowsCreated : 1;
     bool m_fIsPreventAutoClose : 1;
@@ -224,6 +254,7 @@ private:
 #endif /* VBOX_WITH_DEBUGGER_GUI */
 
 #ifdef Q_WS_MAC
+    QMenuBar *m_pMenuBar;
     bool m_fIsDockIconEnabled;
     UIDockIconPreview *m_pDockIconPreview;
     QActionGroup *m_pDockPreviewSelectMonitorGroup;

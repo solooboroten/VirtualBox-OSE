@@ -1,10 +1,10 @@
-/* $Id: alignmentchecks.h 29250 2010-05-09 17:53:58Z vboxsync $ */
+/* $Id: alignmentchecks.h $ */
 /** @file
  * IPRT - Internal header for hacking alignment checks on x86 and AMD64.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

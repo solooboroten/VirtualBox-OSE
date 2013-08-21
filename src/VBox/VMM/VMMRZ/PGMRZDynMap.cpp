@@ -1,10 +1,10 @@
-/* $Id: PGMRZDynMap.cpp 41836 2012-06-19 16:20:52Z vboxsync $ */
+/* $Id: PGMRZDynMap.cpp $ */
 /** @file
  * PGM - Page Manager and Monitor, dynamic mapping cache.
  */
 
 /*
- * Copyright (C) 2008-2011 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -481,7 +481,7 @@ VMMR0DECL(int) PGMR0DynMapInitVM(PVM pVM)
     /*
      * Do we need the cache? Skip the last bit if we don't.
      */
-    if (!VMMIsHwVirtExtForced(pVM))
+    if (!HMIsEnabled(pVM))
         return VINF_SUCCESS;
 
     /*
@@ -1841,7 +1841,7 @@ VMMDECL(void) PGMRZDynMapStartAutoSet(PVMCPU pVCpu)
 /**
  * Starts or migrates the autoset of a virtual CPU.
  *
- * This is used by HWACCMR0Enter.  When we've longjumped out of the HWACCM
+ * This is used by HMR0Enter.  When we've longjumped out of the HM
  * execution loop with the set open, we'll migrate it when re-entering.  While
  * under normal circumstances, we'll start it so VMXR0LoadGuestState can access
  * guest memory.

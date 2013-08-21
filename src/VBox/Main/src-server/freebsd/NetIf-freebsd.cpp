@@ -1,10 +1,10 @@
-/* $Id: NetIf-freebsd.cpp 40910 2012-04-14 07:01:24Z vboxsync $ */
+/* $Id: NetIf-freebsd.cpp $ */
 /** @file
  * Main - NetIfList, FreeBSD implementation.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -271,7 +271,7 @@ int NetIfList(std::list <ComObjPtr<HostNetworkInterface> > &list)
         if (pSdl->sdl_type == IFT_ETHER || pSdl->sdl_type == IFT_L2VLAN)
         {
             struct ifreq IfReq;
-            strcpy(IfReq.ifr_name, pNew->szShortName);
+            RTStrCopy(IfReq.ifr_name, sizeof(IfReq.ifr_name), pNew->szShortName);
             if (ioctl(sock, SIOCGIFFLAGS, &IfReq) < 0)
             {
                 Log(("NetIfList: ioctl(SIOCGIFFLAGS) -> %d\n", errno));
@@ -388,7 +388,7 @@ int NetIfGetConfigByName(PNETIFINFO pInfo)
             pInfo->Uuid = uuid;
 
             struct ifreq IfReq;
-            strcpy(IfReq.ifr_name, pInfo->szShortName);
+            RTSTrCopy(IfReq.ifr_name, sizeof(IfReq.ifr_name), pInfo->szShortName);
             if (ioctl(sock, SIOCGIFFLAGS, &IfReq) < 0)
             {
                 Log(("NetIfList: ioctl(SIOCGIFFLAGS) -> %d\n", errno));
@@ -405,3 +405,16 @@ int NetIfGetConfigByName(PNETIFINFO pInfo)
     return rc;
 }
 
+/**
+ * Retrieve the physical link speed in megabits per second. If the interface is
+ * not up or otherwise unavailable the zero speed is returned.
+ *
+ * @returns VBox status code.
+ *
+ * @param   pcszIfName  Interface name.
+ * @param   puMbits     Where to store the link speed.
+ */
+int NetIfGetLinkSpeed(const char * /*pcszIfName*/, uint32_t * /*puMbits*/)
+{
+    return VERR_NOT_IMPLEMENTED;
+}

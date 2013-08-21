@@ -1,4 +1,4 @@
-/* $Id: UIMainEventListener.cpp 42553 2012-08-02 17:36:40Z vboxsync $ */
+/* $Id: UIMainEventListener.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -162,7 +162,7 @@ STDMETHODIMP UIMainEventListener::HandleEvent(VBoxEventType_T /* type */, IEvent
         case KVBoxEventType_OnMouseCapabilityChanged:
         {
             CMouseCapabilityChangedEvent es(pEvent);
-            emit sigMouseCapabilityChange(es.GetSupportsAbsolute(), es.GetSupportsRelative(), es.GetNeedsHostCursor());
+            emit sigMouseCapabilityChange(es.GetSupportsAbsolute(), es.GetSupportsRelative(), es.GetSupportsMultiTouch(), es.GetNeedsHostCursor());
             break;
         }
         case KVBoxEventType_OnKeyboardLedsChanged:
@@ -206,6 +206,11 @@ STDMETHODIMP UIMainEventListener::HandleEvent(VBoxEventType_T /* type */, IEvent
         case KVBoxEventType_OnVRDEServerInfoChanged:
         {
             emit sigVRDEChange();
+            break;
+        }
+        case KVBoxEventType_OnVideoCaptureChanged:
+        {
+            emit sigVideoCaptureChange();
             break;
         }
         case KVBoxEventType_OnUSBControllerChanged:

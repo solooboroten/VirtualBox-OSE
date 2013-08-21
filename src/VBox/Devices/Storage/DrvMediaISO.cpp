@@ -1,10 +1,10 @@
-/* $Id: DrvMediaISO.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvMediaISO.cpp $ */
 /** @file
  * VBox storage devices: ISO image media driver
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -196,8 +196,11 @@ static DECLCALLBACK(void) drvMediaISODestruct(PPDMDRVINS pDrvIns)
     LogFlow(("drvMediaISODestruct: '%s'\n", pThis->pszFilename));
     PDMDRV_CHECK_VERSIONS_RETURN_VOID(pDrvIns);
 
-    RTFileClose(pThis->hFile);
-    pThis->hFile = NIL_RTFILE;
+    if (pThis->hFile != NIL_RTFILE)
+    {
+        RTFileClose(pThis->hFile);
+        pThis->hFile = NIL_RTFILE;
+    }
 
     if (pThis->pszFilename)
     {

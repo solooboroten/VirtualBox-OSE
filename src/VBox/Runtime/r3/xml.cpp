@@ -1,10 +1,10 @@
-/* $Id: xml.cpp 39933 2012-02-01 13:45:02Z vboxsync $ */
+/* $Id: xml.cpp $ */
 /** @file
  * IPRT - XML Manipulation API.
  */
 
 /*
- * Copyright (C) 2007-2011 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -516,6 +516,26 @@ void Node::buildChildren(const ElementNode &elmRoot)       // private
 const char* Node::getName() const
 {
     return m_pcszName;
+}
+
+/**
+ * Returns the name of the node, which is either the element name or
+ * the attribute name. For other node types it probably returns NULL.
+ * @return
+ */
+const char* Node::getPrefix() const
+{
+    return m_pcszNamespacePrefix;
+}
+
+/**
+ * Returns the XML namespace URI, which is the attribute name. For other node types it probably 
+ * returns NULL. 
+ * @return
+ */
+const char* Node::getNamespaceURI() const
+{
+    return m_pcszNamespaceHref;
 }
 
 /**

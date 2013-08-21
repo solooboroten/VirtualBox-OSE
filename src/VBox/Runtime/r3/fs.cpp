@@ -1,10 +1,10 @@
-/* $Id: fs.cpp 43046 2012-08-28 14:42:11Z vboxsync $ */
+/* $Id: fs.cpp $ */
 /** @file
  * IPRT - File System.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -205,6 +205,7 @@ RTDECL(const char *) RTFsTypeName(RTFSTYPE enmType)
         case RTFSTYPE_SYSFS:        return "sysfs";
         case RTFSTYPE_PROC:         return "proc";
         case RTFSTYPE_OCFS2:        return "ocfs2";
+        case RTFSTYPE_BTRFS:        return "btrfs";
 
         case RTFSTYPE_NTFS:         return "ntfs";
         case RTFSTYPE_FAT:          return "fat";

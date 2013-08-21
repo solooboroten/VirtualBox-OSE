@@ -1,10 +1,10 @@
-/* $Id: VBoxManage.h 42460 2012-07-30 20:37:10Z vboxsync $ */
+/* $Id: VBoxManage.h $ */
 /** @file
  * VBoxManage - VirtualBox command-line interface, internal header file.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -101,6 +101,7 @@
 #define USAGE_BANDWIDTHCONTROL      RT_BIT_64(56)
 #define USAGE_GUESTSTATS            RT_BIT_64(57)
 #define USAGE_REPAIRHD              RT_BIT_64(58)
+#define USAGE_NATNETWORK            RT_BIT_64(59)
 #define USAGE_ALL                   (~(uint64_t)0)
 /** @} */
 
@@ -198,13 +199,13 @@ extern int handleGuestControl(HandlerArg *a);
 HRESULT showSnapshots(ComPtr<ISnapshot> &rootSnapshot,
                       ComPtr<ISnapshot> &currentSnapshot,
                       VMINFO_DETAILS details,
-                      const com::Bstr &prefix = "",
+                      const com::Utf8Str &prefix = "",
                       int level = 0);
 int handleShowVMInfo(HandlerArg *a);
 HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                    ComPtr<IMachine> machine,
                    VMINFO_DETAILS details = VMINFO_NONE,
-                   ComPtr <IConsole> console = ComPtr<IConsole>());
+                   ComPtr<IConsole> console = ComPtr<IConsole>());
 const char *machineStateToName(MachineState_T machineState, bool fShort);
 HRESULT showBandwidthGroups(ComPtr<IBandwidthControl> &bwCtrl,
                             VMINFO_DETAILS details);
@@ -230,17 +231,18 @@ int handleSharedFolder(HandlerArg *a);
 int handleExtPack(HandlerArg *a);
 
 /* VBoxManageDisk.cpp */
-HRESULT findMedium(HandlerArg *a, const char *pszFilenameOrUuid,
-                   DeviceType_T enmDevType, bool fSilent,
-                   ComPtr<IMedium> &pMedium);
-HRESULT findOrOpenMedium(HandlerArg *a, const char *pszFilenameOrUuid,
-                         DeviceType_T enmDevType, AccessMode_T enmAccessMode,
-                         ComPtr<IMedium> &pMedium, bool fForceNewUuidOnOpen,
-                         bool *pfWasUnknown);
+HRESULT openMedium(HandlerArg *a, const char *pszFilenameOrUuid,
+                   DeviceType_T enmDevType, AccessMode_T enmAccessMode,
+                   ComPtr<IMedium> &pMedium, bool fForceNewUuidOnOpen,
+                   bool fSilent);
 int handleCreateHardDisk(HandlerArg *a);
 int handleModifyHardDisk(HandlerArg *a);
 int handleCloneHardDisk(HandlerArg *a);
 RTEXITCODE handleConvertFromRaw(int argc, char *argv[]);
+HRESULT showMediumInfo(const ComPtr<IVirtualBox> &pVirtualBox,
+                       const ComPtr<IMedium> &pMedium,
+                       const char *pszParentUUID,
+                       bool fOptLong);
 int handleShowHardDiskInfo(HandlerArg *a);
 int handleCloseMedium(HandlerArg *a);
 int parseDiskType(const char *psz, MediumType_T *pDiskType);
@@ -263,8 +265,12 @@ int handleUSBFilter(HandlerArg *a);
 /* VBoxManageHostonly.cpp */
 int handleHostonlyIf(HandlerArg *a);
 
-/* VBoxManageHostonly.cpp */
+/* VBoxManageDHCPServer.cpp */
 int handleDHCPServer(HandlerArg *a);
+
+/* VBoxManageNATNetwork.cpp */
+int handleNATNetwork(HandlerArg *a);
+
 
 /* VBoxManageBandwidthControl.cpp */
 int handleBandwidthControl(HandlerArg *a);

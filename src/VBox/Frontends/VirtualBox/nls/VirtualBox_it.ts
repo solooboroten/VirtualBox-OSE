@@ -3822,7 +3822,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Sinistra </translation>
@@ -14176,7 +14176,7 @@ la lingua a quella predefinita di sistema.&lt;/qt&gt;
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Mostra sempre la barra degli strumenti</translation>

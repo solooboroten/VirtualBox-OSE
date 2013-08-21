@@ -1,10 +1,10 @@
-/* $Id: zip.cpp 40098 2012-02-13 17:33:43Z vboxsync $ */
+/* $Id: zip.cpp $ */
 /** @file
  * IPRT - Compression.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -574,7 +574,8 @@ static DECLCALLBACK(int) rtZipZlibCompInit(PRTZIPCOMP pZip, RTZIPLEVEL enmLevel)
 static DECLCALLBACK(int) rtZipZlibDecompress(PRTZIPDECOMP pZip, void *pvBuf, size_t cbBuf, size_t *pcbWritten)
 {
     pZip->u.Zlib.next_out = (Bytef *)pvBuf;
-    pZip->u.Zlib.avail_out = (uInt)cbBuf;                   Assert(pZip->u.Zlib.avail_out == cbBuf);
+    pZip->u.Zlib.avail_out = (uInt)cbBuf;
+    Assert(pZip->u.Zlib.avail_out == cbBuf);
 
     /*
      * Be greedy reading input, even if no output buffer is left. It's possible

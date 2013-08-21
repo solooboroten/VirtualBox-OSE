@@ -1,10 +1,10 @@
-/* $Id: REMInternal.h 41774 2012-06-16 14:44:06Z vboxsync $ */
+/* $Id: REMInternal.h $ */
 /** @file
  * REM - Internal header file.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -234,7 +234,9 @@ typedef REM *PREM;
 #ifdef REM_INCLUDE_CPU_H
 bool    remR3CanExecuteRaw(CPUState *env, RTGCPTR eip, unsigned fFlags, int *piException);
 void    remR3CSAMCheckEIP(CPUState *env, RTGCPTR GCPtrCode);
+# ifdef VBOX_WITH_RAW_MODE
 bool    remR3GetOpcode(CPUState *env, RTGCPTR GCPtrInstr, uint8_t *pu8Byte);
+# endif
 bool    remR3DisasInstr(CPUState *env, int f32BitCode, char *pszPrefix);
 void    remR3FlushPage(CPUState *env, RTGCPTR GCPtr);
 void    remR3FlushTLB(CPUState *env, bool fGlobal);

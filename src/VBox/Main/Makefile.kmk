@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 43131 2012-08-31 11:34:49Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the VBox Main module.
 #
 
 #
-# Copyright (C) 2004-2012 Oracle Corporation
+# Copyright (C) 2004-2013 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -55,6 +55,7 @@ ifneq ($(KBUILD_TARGET),win)
 endif
 VBOX_MAIN_DEFS += \
 	$(if $(VBOX_WITH_RAW_MODE),VBOX_WITH_RAW_MODE,) \
+	$(if $(VBOX_WITH_RAW_RING1),VBOX_WITH_RAW_RING1,) \
 	$(if $(VBOX_WITH_NETFLT),VBOX_WITH_NETFLT,) \
 	$(if $(VBOX_WITH_COPYTOGUEST),VBOX_WITH_COPYTOGUEST,) \
 	$(if $(VBOX_WITH_DRAG_AND_DROP),VBOX_WITH_DRAG_AND_DROP,) \
@@ -100,7 +101,8 @@ if defined(VBOX_ONLY_SDK) || "$(KBUILD_TARGET)" == "win"
 endif
 
 # The XPCOM specific stuff.
-if defined(VBOX_ONLY_SDK) || "$(KBUILD_TARGET)" != "win"
+# if defined(VBOX_ONLY_SDK) || "$(KBUILD_TARGET)" != "win" -- does not build on Windows
+if "$(KBUILD_TARGET)" != "win"
  OTHERS         += $(VBOX_IDL_FILE.XPCOM) $(VBOX_IDL_TYPELIB.XPCOM) $(VBOX_IDL_HEADER.XPCOM)
  OTHER_CLEAN    += \
 	$(VBOX_IDL_FILE.XPCOM) \
@@ -159,6 +161,30 @@ docs.main docs.Main: $(PATH_TARGET)/docs.Main
 if !defined(VBOX_ONLY_DOCS)
 docs:                $(PATH_TARGET)/docs.Main
 endif
+
+
+#
+# Generate library with API class wrappers from the XIDL file.
+#
+LIBRARIES += VBoxAPIWrap
+VBoxAPIWrap_TEMPLATE        = VBOXMAINLIB
+VBoxAPIWrap_SOURCES         = $(VBoxAPIWrap_GENERATEDCPP)
+VBoxAPIWrap_GENERATEDCPP    = $(filter %.cpp,$(VBoxAPIWrap_GENERATEDSOURCES))
+VBoxAPIWrap_GENERATEDSOURCES = $(addprefix $(VBoxAPIWrap_0_OUTDIR)/,$(VBoxAPIWrap_VBOX_APIWRAPPERFILES))
+VBoxAPIWrap_RAWSRC          = \
+	$(VBoxAPIWrap_0_OUTDIR)/apiwrappers
+VBoxAPIWrap_XSLT            = \
+	$(VBOX_PATH_MAIN_SRC)/idl/apiwrap-server.xsl
+VBoxAPIWrap_DEFS.win.x86 += _WIN32_WINNT=0x0500
+VBoxAPIWrap_DEFS.win.amd64 += _WIN32_WINNT=0x0510
+VBoxAPIWrap_INCS           += \
+	include
+VBoxAPIWrap_CLEAN           = \
+	$(wildcard $(VBoxAPIWrap_0_OUTDIR)/*.cpp) \
+	$(wildcard $(VBoxAPIWrap_0_OUTDIR)/*.h) \
+	$(VBoxAPIWrap_RAWSRC)
+VBoxAPIWrap_KMK = $(PATH_OUT)/vboxapiwrap.kmk
+include $(VBoxAPIWrap_KMK)
 
 
 #
@@ -236,7 +262,8 @@ VBoxSVC_DEFS = \
 	$(if $(VBOX_WITH_EXTPACK),VBOX_WITH_EXTPACK,) \
 	$(if $(VBOX_WITH_VUSB),VBOX_WITH_VUSB,) \
 	$(if $(VBOX_WITH_S3),VBOX_WITH_S3,) \
-	$(if $(VBOX_WITH_PCI_PASSTHROUGH),VBOX_WITH_PCI_PASSTHROUGH,)
+	$(if $(VBOX_WITH_PCI_PASSTHROUGH),VBOX_WITH_PCI_PASSTHROUGH,) \
+	$(if $(VBOX_WITH_NAT_SERVICE),VBOX_WITH_NAT_SERVICE,)
 ifdef VBOX_WITH_USB
  VBoxSVC_DEFS += \
 	VBOX_WITH_USB \
@@ -252,10 +279,13 @@ VBoxSVC_DEFS.freebsd += VBOX_USE_LIBHAL
 
 VBoxSVC_CXXFLAGS = $(filter-out -Wno-unused,$(TEMPLATE_VBOXMAINEXE_CXXFLAGS))
 
+VBoxSVC_DEPS = $(filter %.h,$(VBoxAPIWrap_GENERATEDSOURCES))
+
 VBoxSVC_INCS = \
 	include \
 	$(VBoxSVC_0_OUTDIR) \
 	$(dir $(VBOX_XML_SCHEMADEFS_H)) \
+	$(VBoxAPIWrap_0_OUTDIR) \
 	.
 VBoxSVC_INCS.win = \
 	$(VBoxCOM_0_OUTDIR)
@@ -265,6 +295,7 @@ ifdef VBOX_WITH_USB
 endif
 
 VBoxSVC_LIBS += \
+	$(PATH_STAGE_LIB)/VBoxAPIWrap$(VBOX_SUFF_LIB) \
 	$(PATH_STAGE_LIB)/SSMStandalone$(VBOX_SUFF_LIB) \
 	$(LIB_DDU)
 VBoxSVC_SDKS = VBOX_LIBPNG VBOX_ZLIB
@@ -302,8 +333,11 @@ VBoxSVC_SOURCES = \
 	src-server/BandwidthControlImpl.cpp \
 	src-server/BandwidthGroupImpl.cpp \
 	src-server/BIOSSettingsImpl.cpp \
+	src-server/ClientWatcher.cpp \
+	src-server/ClientToken.cpp \
 	src-server/DHCPServerImpl.cpp \
-	src-server/DHCPServerRunner.cpp \
+	src-server/NetworkServiceRunner.cpp \
+	src-server/NATNetworkImpl.cpp \
 	src-server/GuestOSTypeImpl.cpp \
 	src-server/HostImpl.cpp \
 	src-server/HostNetworkInterfaceImpl.cpp \
@@ -315,7 +349,6 @@ VBoxSVC_SOURCES = \
 	src-server/MediumFormatImpl.cpp \
 	src-server/MediumImpl.cpp \
 	src-server/MediumLock.cpp \
-	$(if $(VBOX_WITH_NAT_SERVICE),src-server/NATServerImpl.cpp,) \
 	src-server/NATEngineImpl.cpp \
 	src-server/NetworkAdapterImpl.cpp \
 	src-server/ParallelPortImpl.cpp \
@@ -325,6 +358,7 @@ VBoxSVC_SOURCES = \
 	src-server/StorageControllerImpl.cpp \
 	src-server/SystemPropertiesImpl.cpp \
 	src-server/USBControllerImpl.cpp \
+	src-server/USBDeviceFiltersImpl.cpp \
 	src-server/VFSExplorerImpl.cpp \
 	src-server/VirtualBoxImpl.cpp \
 	src-server/VRDEServerImpl.cpp \
@@ -404,7 +438,7 @@ ifdef VBOX_WITH_RESOURCE_USAGE_API
  VBoxSVC_SOURCES.solaris += src-server/solaris/PerformanceSolaris.cpp
  VBoxSVC_SOURCES.win     +=     src-server/win/PerformanceWin.cpp
  VBoxSVC_LDFLAGS.darwin  += -lproc
- VBoxSVC_LDFLAGS.solaris += -lkstat
+ VBoxSVC_LDFLAGS.solaris += -lkstat -lnvpair
  VBoxSVC_LDFLAGS.win     += psapi.lib powrprof.lib
 endif
 
@@ -431,39 +465,37 @@ $$(VBoxSVC_0_OUTDIR)/VBoxSVC-icon.rc: $(MAKEFILE_CURRENT) $(VBOX_WINDOWS_ICON_FI
 $$(VBoxSVC_0_OUTDIR)/VBoxSVC.rgs: $(VBOX_PATH_MAIN_SRC)/src-all/win/VirtualBox_rgs.xsl $(VBOX_XIDL_FILE) | $$(dir $$(@D))
 	$(VBOX_XSLTPROC) --stringparam Module VBoxSVC -o $@ $< $(VBOX_XIDL_FILE)
 
+## @todo r=klaus unfortunately we don't have xmllint everywhere, would be
+# good to check the validity for every VirtualBox.xidl change.
+#$(VBOX_XIDL_FILE).validated.ts: $(VBOX_XIDL_FILE_SRC)
+#	xmllint --dtdvalid $(VBOX_PATH_MAIN_SRC)/idl/VirtualBox.dtd --noout $<
+#	$(QUIET)$(CP) --changed -fv $< $(VBOX_XIDL_FILE).validated.ts
+#
+#OTHERS += $(VBOX_XIDL_FILE).validated.ts
+#OTHER_CLEAN += $(VBOX_XIDL_FILE).validated.ts
+
+testvalidxidl: $(VBOX_XIDL_FILE_SRC)
+	xmllint --dtdvalid $(VBOX_PATH_MAIN_SRC)/idl/VirtualBox.dtd --noout $<
+
 
 #
-# Embed XML Schema files to VBoxSVC
+# Embed some constraints from XML Schema file into VBoxSVC
 #
-VBOX_XML_SCHEMA_COMMON        = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-common.xsd
-VBOX_XML_SCHEMA.darwin        = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-macosx.xsd
-VBOX_XML_SCHEMA.linux         = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-linux.xsd
-VBOX_XML_SCHEMA.freebsd       = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-freebsd.xsd
-VBOX_XML_SCHEMA.win           = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-windows.xsd
-VBOX_XML_SCHEMA.os2           = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-os2.xsd
-VBOX_XML_SCHEMA.solaris       = $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings-solaris.xsd
+VBOX_XML_SCHEMA	= $(VBOX_PATH_MAIN_SRC)/xml/VirtualBox-settings.xsd
 
-VBOX_XML_CONVERTER_TEMPLATE   = $(VBOX_PATH_MAIN_SRC)/xml/SettingsConverter.xsl
-
-$$(VBoxSVC_0_OUTDIR)/xml_VirtualBox_settings_xsd.h: $(VBOX_XML_SCHEMA.$(KBUILD_TARGET)) $(VBOX_BIN2C)
-	$(call MSG_TOOL,bin2c,VBoxSVC,$<,$@)
-	$(QUIET)$(VBOX_BIN2C) _xml_VirtualBox_settings_xsd $< $@
-
-$$(VBoxSVC_0_OUTDIR)/xml_VirtualBox_settings_common_xsd.h: $(VBOX_XML_SCHEMA_COMMON) $(VBOX_BIN2C)
-	$(call MSG_TOOL,bin2c,VBoxSVC,$<,$@)
-	$(QUIET)$(VBOX_BIN2C) _xml_VirtualBox_settings_common_xsd $< $@
-
-$$(VBoxSVC_0_OUTDIR)/xml_SettingsConverter_xsl.h: $(VBOX_XML_CONVERTER_TEMPLATE) $(VBOX_BIN2C)
-	$(call MSG_TOOL,bin2c,VBoxSVC,$<,$@)
-	$(QUIET)$(VBOX_BIN2C) _xml_SettingsConverter_xsl $< $@
-
-$(VBOX_XML_SCHEMADEFS_H): $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA.$(KBUILD_TARGET)) $(VBOX_XML_SCHEMA_COMMON) | $$(dir $$@)
+$(VBOX_XML_SCHEMADEFS_H): $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA) | $$(dir $$@)
 	$(call MSG_GENERATE,SchemaDefs,$@,$<)
-	$(QUIET)$(VBOX_XSLTPROC)  --stringparam mode declare -o $@ $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA.$(KBUILD_TARGET))
+	$(QUIET)$(VBOX_XSLTPROC)  --stringparam mode declare -o $@ $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA)
 
-$(VBOX_XML_SCHEMADEFS_CPP): $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA.$(KBUILD_TARGET)) $(VBOX_XML_SCHEMA_COMMON)  | $$(dir $$@)
+$(VBOX_XML_SCHEMADEFS_CPP): $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA) | $$(dir $$@)
 	$(call MSG_GENERATE,SchemaDefs,$@,$<)
-	$(QUIET)$(VBOX_XSLTPROC)  --stringparam mode define  -o $@ $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA.$(KBUILD_TARGET))
+	$(QUIET)$(VBOX_XSLTPROC)  --stringparam mode define  -o $@ $(VBOX_XML_SCHEMADEFS_XSL) $(VBOX_XML_SCHEMA)
+
+testvalidsettings: $(VBOX_XML_SCHEMA)
+	xmllint --schema $< --noout $(HOME)/.VirtualBox/VirtualBox.xml
+	xmllint --schema $< --noout $(HOME)/.VirtualBox/Machines/*/*.xml
+	xmllint --schema $< --noout $(HOME)/.VirtualBox/Machines/*/*.vbox
+	xmllint --schema $< --noout $(HOME)/VirtualBox\ VMs/*/*.vbox
 
 OTHER_CLEAN += $(VBOX_XML_SCHEMADEFS_H) $(VBOX_XML_SCHEMADEFS_CPP)
 
@@ -521,7 +553,6 @@ VBoxC_DEFS = \
 	IN_RING3 \
 	$(VBOX_MAIN_DEFS) \
 	VBOX_COM_INPROC \
-	$(if $(VBOX_WITH_VRDP_VIDEO_CHANNEL),VBOX_WITH_VRDP_VIDEO_CHANNEL,) \
 	$(if $(VBOX_WITH_HGCM),VBOX_WITH_HGCM,) \
 	$(if $(VBOX_WITH_ALSA),VBOX_WITH_ALSA,) \
 	$(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE,) \
@@ -543,19 +574,22 @@ VBoxC_DEFS = \
 	$(if $(VBOX_WITH_PCI_PASSTHROUGH),VBOX_WITH_PCI_PASSTHROUGH,) \
 	$(if $(VBOX_WITH_VPX),VBOX_WITH_VPX,)
 
+
 VBoxC_DEFS.darwin.x86 = VBOX_WITH_2X_4GB_ADDR_SPACE
 VBoxC_DEFS.win.x86 += _WIN32_WINNT=0x0500
 VBoxC_DEFS.win.amd64 += _WIN32_WINNT=0x0510
 
+VBoxC_SDKS = VBOX_LIBPNG VBOX_ZLIB
 ifdef VBOX_WITH_VPX
-  VBoxC_SDKS =  VBOX_LIBPNG VBOX_ZLIB VBOX_VPX
-else
-  VBoxC_SDKS =  VBOX_LIBPNG VBOX_ZLIB
+  VBoxC_SDKS += VBOX_VPX
 endif
+
+VBoxC_DEPS = $(filter %.h,$(VBoxAPIWrap_GENERATEDSOURCES))
 
 VBoxC_INCS          = \
 	include \
 	$(VBoxC_0_OUTDIR) \
+	$(VBoxAPIWrap_0_OUTDIR) \
 	$(dir $(VBOX_XML_SCHEMADEFS_H))
 VBoxC_INCS.win      = \
 	$(VBoxCOM_0_OUTDIR) \
@@ -565,11 +599,11 @@ VBoxC_LDFLAGS.darwin = \
 	-install_name $(VBOX_DYLD_EXECUTABLE_PATH)/components/VBoxC.dylib \
 	-exported_symbols_list $(VBoxC_0_OUTDIR)/VBoxC.def \
 	-framework IOKit
-VBoxC_LDFLAGS.win += /DELAYLOAD:VBoxVMM.dll /MANIFEST
+VBoxC_LDFLAGS.win += /MANIFEST
 
 VBoxC_LIBS += \
-	$(LIB_VMM) \
-	$(LIB_REM)
+	$(if-expr "$(LIB_VMM)" == "$(VBOX_LIB_VMM_LAZY)",$(LIB_REM),) \
+	$(VBOX_LIB_VMM_LAZY)
 
 ifdef VBOX_WITH_NETFLT
  VBoxC_LIBS.win += \
@@ -613,6 +647,7 @@ VBoxC_SOURCES = \
 	src-client/AudioSnifferInterface.cpp \
 	src-client/BusAssignmentManager.cpp \
 	$(if $(VBOX_WITH_PCI_PASSTHROUGH),src-client/PCIRawDevImpl.cpp,) \
+	src-client/ClientTokenHolder.cpp \
 	src-client/ConsoleImpl.cpp \
 	src-client/ConsoleImpl2.cpp \
 	src-client/ConsoleImplTeleporter.cpp \
@@ -715,6 +750,7 @@ VBoxCOM_SOURCES         = \
 	glue/string.cpp \
 	glue/AutoLock.cpp \
 	glue/EventQueue.cpp \
+	glue/NativeEventQueue.cpp \
 	glue/ErrorInfo.cpp \
 	glue/errorprint.cpp
 VBoxCOM_INCS          += \
@@ -907,6 +943,25 @@ javagluesample_MODE = a+r,u+w
 javagluesample_SOURCES = \
 	$(VBOX_PATH_MAIN_SRC)/glue/tests/TestVBox.java=>TestVBox.java \
 	$(VBOX_PATH_MAIN_SRC)/glue/tests/Makefile=>Makefile
+
+# moved those rules to the end so that VBoxAPIWrap_0_OUTDIR can be expanded without $$ trickery
+$(VBoxAPIWrap_RAWSRC) \
++| $(VBoxAPIWrap_GENERATEDSOURCES): \
+		$(VBOX_XIDL_FILE) \
+		$(VBoxAPIWrap_XSLT) \
+		$(VBOX_FILESPLIT) \
+		| $$(dir $$@)
+	$(call MSG_L1,Generating C++ Server API wrapper files from XIDL)
+	$(QUIET)$(RM) -f $(filter-out $(VBoxAPIWrap_GENERATEDSOURCES),$(wildcard $(VBoxAPIWrap_0_OUTDIR)/*.cpp) $(wildcard $(VBoxAPIWrap_0_OUTDIR)/*.h))
+	$(QUIET)$(VBOX_XSLTPROC) --stringparam filelistonly "" -o $@ $(VBoxAPIWrap_XSLT) $<
+	$(QUIET)$(VBOX_FILESPLIT) $@ $(VBoxAPIWrap_0_OUTDIR)
+
+$(VBoxAPIWrap_KMK).ts +| $(VBoxAPIWrap_KMK): $(VBOX_XIDL_FILE) $(VBoxAPIWrap_XSLT)
+	$(call MSG_GENERATE,,$(VBoxAPIWrap_KMK))
+	$(QUIET)$(RM) -f $@
+	$(QUIET)$(MKDIR) -p $(@D)
+	$(QUIET)$(VBOX_XSLTPROC) --stringparam filelistonly VBoxAPIWrap_VBOX_APIWRAPPERFILES -o $@ $(VBoxAPIWrap_XSLT) $<
+	$(QUIET)$(CP) --changed -fv $@ $(VBoxAPIWrap_KMK)
 
 updatenls::
 	$(VBOX_LUPDATE) $(VBoxSVC_SOURCES) $(VBoxSVC_VBOX_HEADERS) -ts $(VBoxSVC_VBOX_TRANSLATIONS)

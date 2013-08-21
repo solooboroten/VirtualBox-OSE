@@ -1,4 +1,4 @@
-/* $Id: VBoxCPP.cpp 42548 2012-08-02 15:30:49Z vboxsync $ */
+/* $Id: VBoxCPP.cpp $ */
 /** @file
  * VBox Build Tool - A mini C Preprocessor.
  *
@@ -5359,7 +5359,7 @@ static RTEXITCODE vbcppParseOptions(PVBCPP pThis, int argc, char **argv, bool *p
             case 'V':
             {
                 /* The following is assuming that svn does it's job here. */
-                static const char s_szRev[] = "$Revision: 42548 $";
+                static const char s_szRev[] = "$Revision: 79724 $";
                 const char *psz = RTStrStripL(strchr(s_szRev, ' '));
                 RTPrintf("r%.*s\n", strchr(psz, ' ') - psz, psz);
                 *pfExit = true;

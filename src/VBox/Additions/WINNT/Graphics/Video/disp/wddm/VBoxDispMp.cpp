@@ -1,11 +1,11 @@
-/* $Id: VBoxDispMp.cpp 42499 2012-08-01 10:26:43Z vboxsync $ */
+/* $Id: VBoxDispMp.cpp $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -18,7 +18,7 @@
 
 #include "VBoxDispD3DCmn.h"
 #include "VBoxDispMp.h"
-
+#if 0
 #include <iprt/assert.h>
 
 typedef struct VBOXVIDEOCM_ITERATOR
@@ -293,3 +293,4 @@ HRESULT vboxDispMpInternalCancel(VBOXWDDMDISP_CONTEXT *pContext, PVBOXWDDMDISP_S
     LeaveCriticalSection(&g_VBoxDispMp.CritSect);
     return hr;
 }
+#endif /* 0 */

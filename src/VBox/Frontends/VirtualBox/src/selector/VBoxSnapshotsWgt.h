@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -63,10 +63,11 @@ private slots:
     void onCurrentChanged (QTreeWidgetItem *aItem = 0);
     void onContextMenuRequested (const QPoint &aPoint);
     void onItemChanged (QTreeWidgetItem *aItem);
+    void sltItemDoubleClicked(QTreeWidgetItem *pItem);
 
     /* Snapshot functionality slots: */
     void sltTakeSnapshot();
-    void sltRestoreSnapshot();
+    void sltRestoreSnapshot(bool fSuppressNonCriticalWarnings = false);
     void sltDeleteSnapshot();
     void sltShowSnapshotDetails();
     void sltCloneSnapshot();
@@ -108,6 +109,8 @@ private:
     QAction         *mCloneSnapshotAction;
 
     QTimer          mAgeUpdateTimer;
+
+    bool            m_fShapshotOperationsAllowed;
 };
 
 #endif // __VBoxSnapshotsWgt_h__

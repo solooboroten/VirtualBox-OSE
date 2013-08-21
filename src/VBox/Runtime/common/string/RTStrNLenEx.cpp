@@ -1,10 +1,10 @@
-/* $Id: RTStrNLenEx.cpp 30320 2010-06-21 08:35:09Z vboxsync $ */
+/* $Id: RTStrNLenEx.cpp $ */
 /** @file
  * IPRT - RTStrNLenEx.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/* $Id: DevEEPROM.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: DevEEPROM.cpp $ */
 /** @file
  * DevEEPROM - Microware-compatible 64x16-bit 93C46 EEPROM Emulation.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

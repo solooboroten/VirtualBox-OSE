@@ -1,10 +1,10 @@
-/* $Id: slirp.c 43233 2012-09-06 20:21:37Z vboxsync $ */
+/* $Id: slirp.c $ */
 /** @file
  * NAT - slirp glue.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -736,7 +736,15 @@ void slirp_select_fill(PNATState pData, int *pnfds, struct pollfd *polls)
                 Log2(("NAT: %R[natsock] expired\n", so));
                 if (so->so_timeout != NULL)
                 {
+                    /* so_timeout - might change the so_expire value or 
+                     * drop so_timeout* from so. 
+                     */
                     so->so_timeout(pData, so, so->so_timeout_arg);
+                    /* on 4.2 so->  
+                     */
+                    if (   so_next->so_prev != so /* so_timeout freed the socket */
+                        || so->so_timeout)  /* so_timeout just freed so_timeout */
+                      CONTINUE_NO_UNLOCK(udp);
                 }
                 UDP_DETACH(pData, so, so_next);
                 CONTINUE_NO_UNLOCK(udp);

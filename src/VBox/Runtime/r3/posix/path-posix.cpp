@@ -1,10 +1,10 @@
-/* $Id: path-posix.cpp 42229 2012-07-19 14:18:00Z vboxsync $ */
+/* $Id: path-posix.cpp $ */
 /** @file
  * IPRT - Path Manipulation, POSIX, Part 1.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -48,11 +48,6 @@
 #include "internal/path.h"
 #include "internal/process.h"
 #include "internal/fs.h"
-
-#ifdef RT_OS_L4
-# include <l4/vboxserver/vboxserver.h>
-#endif
-
 
 
 

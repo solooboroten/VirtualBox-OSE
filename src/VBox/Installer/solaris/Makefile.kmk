@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 42491 2012-08-01 07:09:11Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the Solaris installer.
 #
 
 #
-# Copyright (C) 2007-2012 Oracle Corporation
+# Copyright (C) 2007-2013 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -206,10 +206,10 @@ SOLARIS_STRIP_EXES = \
 	VBoxZoneAccess \
 	$(if $(VBOX_WITH_QTGUI),VirtualBox,) \
 	VBoxManage \
-	$(if $(VBOX_WITH_VBOXBFE),VBoxBFE,) \
 	$(if $(VBOX_WITH_VBOXSDL),VBoxSDL,) \
 	$(if $(VBOX_WITH_NETADP),VBoxNetAdpCtl,) \
 	VBoxNetDHCP \
+	VBoxNetNAT \
 	$(if $(VBOX_WITH_EXTPACK),VBoxExtPackHelperApp,) \
 	VBoxSVC \
 	$(if $(VBOX_WITH_CROGL),VBoxTestOGL,) \
@@ -247,6 +247,7 @@ SOLARIS_STRIP_BINS = \
 	$(if $(VBOX_WITH_DRAG_AND_DROP),VBoxDragAndDropSvc.so,) \
 	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestPropSvc.so,) \
 	$(if $(VBOX_WITH_GUEST_CONTROL),VBoxGuestControlSvc.so,) \
+	VBoxHostChannel.so \
 	$(if $(VBOX_WITH_JXPCOM),libvboxjxpcom.so,) \
 	$(if $(VBOX_WITH_QTGUI),\
 	  VBoxKeyboard.so \
@@ -268,7 +269,7 @@ SOLARIS_STRIP_BINS = \
 ifdef VBOX_WITH_HARDENING
 SOLARIS_STRIP_BINS += \
 	VBoxNetDHCP.so \
-	$(if $(VBOX_WITH_VBOXBFE),VBoxBFE.so,) \
+	VBoxNetNAT.so \
 	$(if $(VBOX_WITH_VBOXSDL),VBoxSDL.so,) \
 	$(if $(VBOX_WITH_QTGUI),VirtualBox.so,)
 endif
@@ -687,7 +688,7 @@ endif
 	@# Clean up files emitted as side-effect or result of packing
 	$(QUIET)$(RM) -f $(SOLARIS_BASEINST_DIR)/$(PKG_FILENAME).tar.gz
 	$(QUIET)$(RM) -f $(SOLARIS_BASEINST_DIR)/$(PKG_FILENAME).pkg
-	$(call MSG_L1,Packaging completed.)
+	$(call MSG_L1,Packaging $@ is completed.)
 
 
 #
@@ -782,8 +783,7 @@ $(addprefix $(SOLARIS_USRSHR_ICONS_DIR)/,$(SOLARIS_COMMON_ICONS)): \
 # Some symlinks are created manually in the prepackage steps above (eg. VBoxQtconfig)
 # as those binaries do not originate from $(PATH_STAGE_BIN)
 #
-$(addprefix $(SOLARIS_USRBIN_DIR)/,$(SOLARIS_USRBIN_LINKS)): \
-		$(SOLARIS_USRBIN_DIR)/% : % | $$(dir $$@)
+$(addprefix $(SOLARIS_USRBIN_DIR)/,$(SOLARIS_USRBIN_LINKS)): | $$(dir $$@)
 	$(LN_SYMLINK) -f ../../$(SOLARIS_VBOXINST_SUBDIR)/VBox.sh $@
 
 
@@ -797,9 +797,10 @@ $(PATH_STAGE_BIN)/$(DBG_ARCHIVE): \
 		$(SOLARIS_DBG_DEPFILES)
 	$(call MSG_L1,Installing debug binaries $(SOLARIS_DBG_DIR))
 	$(call MSG_L1,Packing $@)
-	$(QUIET)/usr/sfw/bin/gtar --dereference --owner 0 --group 0 \
+	$(QUIET)$(SOL_GTAR) --dereference --owner 0 --group 0 \
 		-cjRhf "$(PATH_STAGE_BIN)/$(DBG_ARCHIVE)" -C "$(SOLARIS_INST_OUT_DIR)" "$(SOLARIS_DBG_DIR_NAME)"
 	$(QUIET)$(CHMOD) 0644 $@
+	$(call MSG_L1,Packaging $@ is completed.)
 
 #
 # 32-bit Debug package

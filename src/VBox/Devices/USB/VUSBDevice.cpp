@@ -1,10 +1,10 @@
-/* $Id: VUSBDevice.cpp 37359 2011-06-07 17:12:57Z vboxsync $ */
+/* $Id: VUSBDevice.cpp $ */
 /** @file
  * Virtual USB - Device.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -715,6 +715,7 @@ static void ReadCachedConfigDesc(PCVUSBDESCCONFIGEX pCfgDesc, uint8_t *pbBuf, ui
         PCVUSBINTERFACE pIf = &pCfgDesc->paIfs[i];
         for (uint32_t j = 0; j < pIf->cSettings; j++)
         {
+            cbTotal += pIf->paSettings[j].cbIAD;
             cbTotal += pIf->paSettings[j].Core.bLength;
             cbTotal += pIf->paSettings[j].cbClass;
             for (unsigned k = 0; k < pIf->paSettings[j].Core.bNumEndpoints; k++)
@@ -742,6 +743,7 @@ static void ReadCachedConfigDesc(PCVUSBDESCCONFIGEX pCfgDesc, uint8_t *pbBuf, ui
         {
             PCVUSBDESCINTERFACEEX pIfDesc = &pIf->paSettings[j];
 
+            COPY_DATA(pbBuf, cbLeft, pIfDesc->pIAD, pIfDesc->cbIAD);
             COPY_DATA(pbBuf, cbLeft, pIfDesc, VUSB_DT_INTERFACE_MIN_LEN);
             COPY_DATA(pbBuf, cbLeft, pIfDesc->pvMore, pIfDesc->Core.bLength - VUSB_DT_INTERFACE_MIN_LEN);
             COPY_DATA(pbBuf, cbLeft, pIfDesc->pvClass, pIfDesc->cbClass);
@@ -993,6 +995,7 @@ void vusbDevSetAddress(PVUSBDEV pDev, uint8_t u8Address)
         return;
 
     PVUSBROOTHUB pRh = vusbDevGetRh(pDev);
+    AssertPtrReturnVoid(pRh);
     if (pDev->u8Address == VUSB_DEFAULT_ADDRESS)
         pRh->pDefaultAddress = NULL;
 
@@ -1032,6 +1035,7 @@ void vusbDevSetAddress(PVUSBDEV pDev, uint8_t u8Address)
 static void vusbDevCancelAllUrbs(PVUSBDEV pDev, bool fDetaching)
 {
     PVUSBROOTHUB pRh = vusbDevGetRh(pDev);
+    AssertPtrReturnVoid(pRh);
 
     /*
      * Iterate the URBs and cancel them.
@@ -1099,6 +1103,11 @@ static void vusbDevCancelAllUrbs(PVUSBDEV pDev, bool fDetaching)
                 AssertMsgFailed(("%s: Leaking left over URB! state=%d pDev=%p[%s]\n",
                                  pUrb->pszDesc, pUrb->enmState, pDev, pDev->pUsbIns->pszName));
                 vusbUrbUnlink(pUrb);
+                /* Unlink isn't enough, because boundary timer and detaching will try to reap it. 
+                 * It was tested with MSD & iphone attachment to vSMP guest, if 
+                 * it breaks anything, please add comment here, why we should unlink only.
+                 */
+                pUrb->VUsb.pfnFree(pUrb);
             }
             pUrb = pNext;
         }

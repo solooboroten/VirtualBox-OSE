@@ -1,11 +1,11 @@
-/* $Id: VBoxDisp.h 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxDisp.h $ */
 
 /** @file
  * VBox XPDM Display driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,7 +29,7 @@
 #error VBOXDISPDRIVERVERSION can't be more than 0xFF
 #endif
 
-#define VBOXDISP_DEVICE_NAME L"VBoxVideo"
+#define VBOXDISP_DEVICE_NAME L"VBoxDisp"
 
 /* Current mode info */
 typedef struct _VBOXDISPCURRENTMODE
@@ -134,6 +134,8 @@ typedef struct _VBOXDISPDEV
 #ifdef VBOX_WITH_VIDEOHWACCEL
     VBOXDISPVHWAINFO  vhwa;                  /* VHWA Info */
 #endif
+
+    BOOL bBitmapCacheDisabled;
 } VBOXDISPDEV, *PVBOXDISPDEV;
 
 /* -------------------- Driver callbacks -------------------- */

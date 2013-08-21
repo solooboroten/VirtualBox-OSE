@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -130,7 +130,7 @@ typedef enum MMTAG
 
     MM_TAG_VMM,
 
-    MM_TAG_HWACCM,
+    MM_TAG_HM,
 
     MM_TAG_32BIT_HACK = 0x7fffffff
 } MMTAG;

@@ -1,4 +1,4 @@
-/* $Id: UIMediumManager.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
+/* $Id: UIMediumManager.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -189,7 +189,7 @@ public:
         mProgressBar->setTextVisible (false);
 
         QHBoxLayout *layout = new QHBoxLayout (this);
-        VBoxGlobal::setLayoutMargin (layout, 0);
+        layout->setContentsMargins(0, 0, 0, 0);
         layout->addWidget (mText);
         layout->addWidget (mProgressBar);
     }
@@ -217,6 +217,10 @@ UIMediumManager::UIMediumManager (QWidget *aParent /* = 0 */, Qt::WindowFlags aF
 {
     /* Apply UI decorations */
     Ui::UIMediumManager::setupUi (this);
+
+    /* No need to count that window as important for application,
+     * it will NOT be taken into account when other top-level windows will be closed: */
+    setAttribute(Qt::WA_QuitOnClose, false);
 
     /* Apply window icons */
     setWindowIcon(UIIconPool::iconSetFull(QSize (32, 32), QSize (16, 16),
@@ -362,14 +366,14 @@ UIMediumManager::UIMediumManager (QWidget *aParent /* = 0 */, Qt::WindowFlags aF
     addToolBar (mToolBar);
     mToolBar->setMacToolbar();
     /* No spacing/margin on the mac */
-    VBoxGlobal::setLayoutMargin (mainLayout, 0);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->insertSpacing (0, 10);
 #else /* MAC_LEOPARD_STYLE */
     /* Add the toolbar */
     mainLayout->insertWidget (0, mToolBar);
     /* Set spacing/margin like in the selector window */
     mainLayout->setSpacing (5);
-    VBoxGlobal::setLayoutMargin (mainLayout, 5);
+    mainLayout->setContentsMargins(5, 5, 5, 5);
 #endif /* MAC_LEOPARD_STYLE */
 
 //    mToolBar->addAction (mNewAction);
@@ -506,7 +510,7 @@ void UIMediumManager::setup (UIMediumType aType, bool aDoSelect,
              this, SLOT (mediumRemoved (UIMediumType, const QString &)));
 
     if (aRefresh && !vboxGlobal().isMediaEnumerationStarted())
-        vboxGlobal().startEnumeratingMedia();
+        vboxGlobal().startEnumeratingMedia(true /*fReallyNecessary*/);
     else
     {
         /* Insert already enumerated media */
@@ -561,10 +565,6 @@ void UIMediumManager::showModeless (QWidget *aCenterWidget /* = 0 */, bool aRefr
         mModelessDialog->setAttribute (Qt::WA_DeleteOnClose);
         mModelessDialog->setup (UIMediumType_All, false /* aDoSelect */, aRefresh);
 
-        /* Setup 'closing' connection if main window is UISelectorWindow: */
-        if (vboxGlobal().mainWindow() && vboxGlobal().mainWindow()->inherits("UISelectorWindow"))
-            connect(vboxGlobal().mainWindow(), SIGNAL(closing()), mModelessDialog, SLOT(close()));
-
         /* listen to events that may change the media status and refresh
          * the contents of the modeless dialog */
         /// @todo refreshAll() may be slow, so it may be better to analyze
@@ -580,6 +580,12 @@ void UIMediumManager::showModeless (QWidget *aCenterWidget /* = 0 */, bool aRefr
     mModelessDialog->show();
     mModelessDialog->setWindowState (mModelessDialog->windowState() & ~Qt::WindowMinimized);
     mModelessDialog->activateWindow();
+}
+
+/* static */
+UIMediumManager* UIMediumManager::modelessInstance()
+{
+    return mModelessDialog;
 }
 
 QString UIMediumManager::selectedId() const
@@ -609,7 +615,7 @@ QString UIMediumManager::selectedLocation() const
 void UIMediumManager::refreshAll()
 {
     /* Start enumerating media */
-    vboxGlobal().startEnumeratingMedia();
+    vboxGlobal().startEnumeratingMedia(true /*fReallyNecessary*/);
 }
 
 void UIMediumManager::retranslateUi()
@@ -771,6 +777,10 @@ void UIMediumManager::mediumAdded (const UIMedium &aMedium)
         (aMedium.isHostDrive()))
         return;
 
+    /* Ignore mediums (and their children) attached to hidden machines only: */
+    if (isMediumAttachedToHiddenMachinesOnly(aMedium))
+        return;
+
     if (!mShowDiffs && aMedium.type() == UIMediumType_HardDisk)
     {
         if (aMedium.parent() && !mSessionMachineId.isNull())
@@ -880,6 +890,10 @@ void UIMediumManager::mediumUpdated (const UIMedium &aMedium)
     if ((aMedium.isNull()) ||
         (mType != UIMediumType_All && mType != aMedium.type()) ||
         (aMedium.isHostDrive()))
+        return;
+
+    /* Ignore mediums (and their children) attached to hidden machines only: */
+    if (isMediumAttachedToHiddenMachinesOnly(aMedium))
         return;
 
     MediaItem *item = 0;
@@ -1096,8 +1110,11 @@ void UIMediumManager::doCopyMedium()
     MediaItem *pItem = toMediaItem(pTree->currentItem());
 
     /* Show Clone VD wizard: */
-    UIWizardCloneVD wizard(this, pItem->medium().medium());
-    wizard.exec();
+    UISafePointerWizard pWizard = new UIWizardCloneVD(this, pItem->medium().medium());
+    pWizard->prepare();
+    pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UIMediumManager::doModifyMedium()
@@ -1122,7 +1139,8 @@ void UIMediumManager::doRemoveMedium()
     AssertReturnVoid (!id.isNull());
     UIMediumType type = item->type();
 
-    if (!msgCenter().confirmRemoveMedium (this, item->medium()))
+    /* Confirm medium removal: */
+    if (!msgCenter().confirmMediumRemoval(item->medium(), this))
         return;
 
     COMResult result;
@@ -1133,34 +1151,48 @@ void UIMediumManager::doRemoveMedium()
         {
             bool deleteStorage = false;
 
-            /* We don't want to try to delete inaccessible storage as it will
-             * most likely fail. Note that
-             * UIMessageCenter::confirmRemoveMedium() is aware of that and
-             * will give a corresponding hint. Therefore, once the code is
-             * changed below, the hint should be re-checked for validity. */
+            /* We don't want to try to delete inaccessible storage as it will most likely fail.
+             * Note that UIMessageCenter::confirmMediumRemoval() is aware of that and
+             * will give a corresponding hint. Therefore, once the code is changed below,
+             * the hint should be re-checked for validity. */
+
+            qulonglong caps = 0;
+            QVector<KMediumFormatCapabilities> capabilities;
+            capabilities = item->medium().medium().GetMediumFormat().GetCapabilities();
+            for (int i = 0; i < capabilities.size(); i++)
+                caps |= capabilities[i];
+
             if (item->state() != KMediumState_Inaccessible &&
-                item->medium().medium().GetMediumFormat().GetCapabilities() & MediumFormatCapabilities_File)
+                caps & MediumFormatCapabilities_File)
             {
-                int rc = msgCenter().
-                    confirmDeleteHardDiskStorage (this, item->location());
-                if (rc == QIMessageBox::Cancel)
+                int rc = msgCenter().confirmDeleteHardDiskStorage(item->location(), this);
+                if (rc == AlertButton_Cancel)
                     return;
-                deleteStorage = rc == QIMessageBox::Yes;
+                deleteStorage = rc == AlertButton_Choice1;
             }
 
             CMedium hardDisk = item->medium().medium();
 
             if (deleteStorage)
             {
+                /* Remember virtual-disk attributes: */
+                QString strLocation = hardDisk.GetLocation();
+                /* Prepare delete storage progress: */
                 CProgress progress = hardDisk.DeleteStorage();
                 if (hardDisk.isOk())
                 {
-                    msgCenter().showModalProgressDialog(progress, windowTitle(), ":/progress_media_delete_90px.png", this, true);
-                    if (!(progress.isOk() && progress.GetResultCode() == S_OK))
+                    /* Show delete storage progress: */
+                    msgCenter().showModalProgressDialog(progress, windowTitle(), ":/progress_media_delete_90px.png", this);
+                    if (!progress.isOk() || progress.GetResultCode() != 0)
                     {
-                        msgCenter().cannotDeleteHardDiskStorage(this, hardDisk, progress);
+                        msgCenter().cannotDeleteHardDiskStorage(progress, strLocation, this);
                         return;
                     }
+                }
+                else
+                {
+                    msgCenter().cannotDeleteHardDiskStorage(hardDisk, strLocation, this);
+                    return;
                 }
             }
 
@@ -1187,9 +1219,9 @@ void UIMediumManager::doRemoveMedium()
     }
 
     if (result.isOk())
-        vboxGlobal().removeMedium (type, id);
+        vboxGlobal().removeMedium(type, id);
     else
-        msgCenter().cannotCloseMedium (this, item->medium(), result);
+        msgCenter().cannotCloseMedium(item->medium(), result, this);
 }
 
 void UIMediumManager::doReleaseMedium()
@@ -1230,7 +1262,7 @@ void UIMediumManager::doReleaseMedium()
 
     AssertReturnVoid (machines.size() > 0);
 
-    if (!msgCenter().confirmReleaseMedium (this, item->medium(), usage))
+    if (!msgCenter().confirmMediumRelease(item->medium(), usage, this))
         return;
 
     for (QList <QString>::const_iterator it = machineIds.begin(); it != machineIds.end(); ++ it)
@@ -1283,8 +1315,8 @@ bool UIMediumManager::releaseMediumFrom (const UIMedium &aMedium, const QString 
                     if (!machine.isOk())
                     {
                         CStorageController controller = machine.GetStorageControllerByName (attachment.GetController());
-                        msgCenter().cannotDetachDevice (this, machine, UIMediumType_HardDisk, aMedium.location(),
-                                                          StorageSlot(controller.GetBus(), attachment.GetPort(), attachment.GetDevice()));
+                        msgCenter().cannotDetachDevice(machine, UIMediumType_HardDisk, aMedium.location(),
+                                                       StorageSlot(controller.GetBus(), attachment.GetPort(), attachment.GetDevice()), this);
                         success = false;
                         break;
                     }
@@ -1305,7 +1337,7 @@ bool UIMediumManager::releaseMediumFrom (const UIMedium &aMedium, const QString 
                     machine.MountMedium (attachment.GetController(), attachment.GetPort(), attachment.GetDevice(), CMedium(), false /* force */);
                     if (!machine.isOk())
                     {
-                        msgCenter().cannotRemountMedium (this, machine, aMedium, false /* mount? */, false /* retry? */);
+                        msgCenter().cannotRemountMedium(machine, aMedium, false /* mount? */, false /* retry? */, this);
                         success = false;
                         break;
                     }
@@ -1326,7 +1358,7 @@ bool UIMediumManager::releaseMediumFrom (const UIMedium &aMedium, const QString 
                     machine.MountMedium (attachment.GetController(), attachment.GetPort(), attachment.GetDevice(), CMedium(), false /* force */);
                     if (!machine.isOk())
                     {
-                        msgCenter().cannotRemountMedium (this, machine, aMedium, false /* mount? */, false /* retry? */);
+                        msgCenter().cannotRemountMedium(machine, aMedium, false /* mount? */, false /* retry? */, this);
                         success = false;
                         break;
                     }
@@ -1343,7 +1375,7 @@ bool UIMediumManager::releaseMediumFrom (const UIMedium &aMedium, const QString 
         machine.SaveSettings();
         if (!machine.isOk())
         {
-            msgCenter().cannotSaveMachineSettings (machine);
+            msgCenter().cannotSaveMachineSettings(machine, this);
             success = false;
         }
     }
@@ -1628,7 +1660,7 @@ void UIMediumManager::addMediumToList(const QString &aLocation, UIMediumType aTy
         medium = UIMedium(CMedium(med), aType, KMediumState_Created);
 
     if (!mVBox.isOk())
-        msgCenter().cannotOpenMedium(this, mVBox, aType, aLocation);
+        msgCenter().cannotOpenMedium(mVBox, aType, aLocation, this);
     else
         vboxGlobal().addMedium(medium);
 }
@@ -1956,6 +1988,24 @@ QString UIMediumManager::formatPaneText (const QString &aText, bool aCompact /* 
               aText)
         .arg (aCompact ? "</compact>" : "");
     return info;
+}
+
+/* static */
+bool UIMediumManager::isMediumAttachedToHiddenMachinesOnly(const UIMedium &medium)
+{
+    /* Iterate till the root: */
+    const UIMedium *pMedium = &medium;
+    do
+    {
+        /* Ignore medium if its attached to hidden machines only: */
+        if (pMedium->isAttachedToHiddenMachinesOnly())
+            return true;
+        /* Move iterator to parent: */
+        pMedium = pMedium->parent();
+    }
+    while (pMedium);
+    /* False by default: */
+    return false;
 }
 
 #include "UIMediumManager.moc"

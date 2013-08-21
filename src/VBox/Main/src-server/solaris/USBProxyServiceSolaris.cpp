@@ -1,4 +1,4 @@
-/* $Id: USBProxyServiceSolaris.cpp 41529 2012-05-31 17:13:58Z vboxsync $ */
+/* $Id: USBProxyServiceSolaris.cpp $ */
 /** @file
  * VirtualBox USB Proxy Service, Solaris Specialization.
  */
@@ -304,7 +304,7 @@ static int solarisWalkDeviceNode(di_node_t Node, void *pvArg)
                 pList->pTail = pList->pHead = pCur;
 
             rc = DI_WALK_CONTINUE;
-        } while(0);
+        } while (0);
 
         di_devfs_path_free(pszDevicePath);
         if (!fValidDevice)

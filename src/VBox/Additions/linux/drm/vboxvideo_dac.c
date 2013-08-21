@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_dac.c 42784 2012-08-12 20:31:36Z vboxsync $
+/** @file $Id: vboxvideo_dac.c $
  *
  * VirtualBox Additions Linux kernel video driver, DAC functions
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -43,7 +43,6 @@
  */
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
 
 #include "vboxvideo_drv.h"
 
@@ -73,7 +72,11 @@ static void vboxvideo_dac_dpms(struct drm_encoder *encoder, int mode)
 }
 
 static bool vboxvideo_dac_mode_fixup(struct drm_encoder *encoder,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
+                                     const struct drm_display_mode *mode,
+#else
                                      struct drm_display_mode *mode,
+#endif
                                      struct drm_display_mode *adjusted_mode)
 {
     return true;
@@ -133,5 +136,3 @@ struct drm_encoder *vboxvideo_dac_init(struct drm_device *dev)
 
     return encoder;
 }
-
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27) */

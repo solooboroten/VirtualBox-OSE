@@ -1,10 +1,10 @@
-/* $Id: the-linux-kernel.h 42784 2012-08-12 20:31:36Z vboxsync $ */
+/* $Id: the-linux-kernel.h $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -90,6 +90,9 @@
 #include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/sched.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0)
+# include <linux/sched/rt.h>
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 7)
 # include <linux/jiffies.h>
 #endif
@@ -120,6 +123,11 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 #include <asm/div64.h>
+
+/* For thread-context hooks. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 23) && defined(CONFIG_PREEMPT_NOTIFIERS)
+# include <linux/preempt.h>
+#endif
 
 /* for workqueue / task queues. */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 41)

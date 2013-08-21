@@ -1,10 +1,10 @@
-/* $Id: VBoxSampleDevice.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: VBoxSampleDevice.cpp $ */
 /** @file
  * VBox Sample Device.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -115,7 +115,7 @@ static const PDMDEVREG g_DeviceSample =
     devSampleDestruct,
     /* pfnRelocate */
     NULL,
-    /* pfnIOCtl */
+    /* pfnMemSetup */
     NULL,
     /* pfnPowerOn */
     NULL,

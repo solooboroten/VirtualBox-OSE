@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_drv.h 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo_drv.h $
  *
  * VirtualBox Additions Linux kernel video driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -65,14 +65,28 @@
 #define VBOXVIDEO_INFO(fmt, arg...)  DRM_INFO(DRIVER_NAME ": " fmt, ##arg)
 #define VBOXVIDEO_ERROR(fmt, arg...) DRM_ERROR(DRIVER_NAME ": " fmt, ##arg)
 
-/** @todo does this make sense?  What exactly is this connector? */
-#define VBOXVIDEOFB_CONN_LIMIT VBOX_VIDEO_MAX_SCREENS
+#define MB (1024 * 1024)
+
+#define VBOXVIDEOFB_CONN_LIMIT VBOX_VIDEO_MAX_SCREENS°°
 
 /* vboxvideo_crtc.c */
+void vboxvideo_crtc_fb_gamma_set(struct drm_crtc *crtc, u16 red, u16 green,
+                                 u16 blue, int regno);
+void vboxvideo_crtc_fb_gamma_get(struct drm_crtc *crtc, u16 *red, u16 *green,
+                                 u16 *blue, int regno);
 void vboxvideo_crtc_init(struct drm_device *dev, int index);
 
 /* vboxvideo_dac.c */
 struct drm_encoder *vboxvideo_dac_init(struct drm_device *dev);
+
+/* vboxvideo_fbdev.c */
+int vboxvideo_fbdev_init(struct vboxvideo_device *gdev);
+void vboxvideo_fbdev_fini(struct vboxvideo_device *gdev);
+
+/* vboxvideo_framebuffer.c */
+int vboxvideo_framebuffer_init(struct drm_device *dev,
+                               struct vboxvideo_framebuffer *gfb,
+                               struct DRM_MODE_FB_CMD *mode_cmd);
 
 /* vboxvideo_device.c */
 int vboxvideo_device_init(struct vboxvideo_device *gdev,

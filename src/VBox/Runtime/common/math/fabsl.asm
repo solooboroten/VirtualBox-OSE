@@ -1,10 +1,10 @@
-; $Id: fabsl.asm 28800 2010-04-27 08:22:32Z vboxsync $
+; $Id: fabsl.asm $
 ;; @file
 ; IPRT - No-CRT fabsl - AMD64 & X86.
 ;
 
 ;
-; Copyright (C) 2006-2007 Oracle Corporation
+; Copyright (C) 2006-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -31,12 +31,12 @@ BEGINCODE
 ;;
 ; Compute the absolute value of lrd (|lrd|).
 ; @returns st(0)
-; @param    lrd     [xSP + xS*2]
+; @param    lrd     [xSP + xCB*2]
 BEGINPROC RT_NOCRT(fabsl)
     push    xBP
     mov     xBP, xSP
 
-    fld     tword [xBP + xS*2]
+    fld     tword [xBP + xCB*2]
     fabs
 
 .done:

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2010-2011 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -37,6 +37,13 @@ void int_enable(void);
 
 void int_disable(void);
 #pragma aux int_disable = "cli" modify exact [] nomemory;
+
+void int_enable_hlt_disable(void);
+#pragma aux int_enable_hlt_disable = \
+    "sti" \
+    "hlt" \
+    "cli" \
+    modify exact [] nomemory;
 
 uint16_t int_query(void);
 #pragma aux int_query =     \

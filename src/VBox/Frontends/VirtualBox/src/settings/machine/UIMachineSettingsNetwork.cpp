@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsNetwork.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: UIMachineSettingsNetwork.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -47,7 +47,6 @@ QString wipedOutString(const QString &strInputString)
 UIMachineSettingsNetwork::UIMachineSettingsNetwork(UIMachineSettingsNetworkPage *pParent)
     : QIWithRetranslateUI<QWidget>(0)
     , m_pParent(pParent)
-    , m_pValidator(0)
     , m_iSlot(-1)
 {
     /* Apply UI decorations: */
@@ -67,6 +66,9 @@ UIMachineSettingsNetwork::UIMachineSettingsNetwork(UIMachineSettingsNetworkPage 
     connect(m_pMACButton, SIGNAL(clicked()), this, SLOT(sltGenerateMac()));
     connect(m_pPortForwardingButton, SIGNAL(clicked()), this, SLOT(sltOpenPortForwardingDlg()));
     connect(this, SIGNAL(sigTabUpdated()), m_pParent, SLOT(sltHandleUpdatedTab()));
+
+    /* Prepare validation: */
+    prepareValidation();
 
     /* Applying language settings: */
     retranslateUi();
@@ -160,15 +162,9 @@ void UIMachineSettingsNetwork::uploadAdapterCache(UICacheSettingsMachineNetworkA
     adapterCache.cacheCurrentData(adapterData);
 }
 
-void UIMachineSettingsNetwork::setValidator(QIWidgetValidator *pValidator)
+bool UIMachineSettingsNetwork::validate(QString &strWarning, QString &strTitle)
 {
-    m_pValidator = pValidator;
-    connect(m_pMACEditor, SIGNAL(textEdited(const QString &)), m_pValidator, SLOT(revalidate()));
-}
-
-bool UIMachineSettingsNetwork::revalidate(QString &strWarning, QString &strTitle)
-{
-    /* 'True' for disabled adapter: */
+    /* Pass if adapter is disabled: */
     if (!m_pEnableAdapterCheckBox->isChecked())
         return true;
 
@@ -180,7 +176,7 @@ bool UIMachineSettingsNetwork::revalidate(QString &strWarning, QString &strTitle
         {
             if (alternativeName().isNull())
             {
-                strWarning = tr("no bridged network adapter is selected");
+                strWarning = tr("No bridged network adapter is currently selected.");
                 fValid = false;
             }
             break;
@@ -189,7 +185,7 @@ bool UIMachineSettingsNetwork::revalidate(QString &strWarning, QString &strTitle
         {
             if (alternativeName().isNull())
             {
-                strWarning = tr("no internal network name is specified");
+                strWarning = tr("No internal network name is currently specified.");
                 fValid = false;
             }
             break;
@@ -198,7 +194,7 @@ bool UIMachineSettingsNetwork::revalidate(QString &strWarning, QString &strTitle
         {
             if (alternativeName().isNull())
             {
-                strWarning = tr("no host-only network adapter is selected");
+                strWarning = tr("No host-only network adapter is currently selected.");
                 fValid = false;
             }
             break;
@@ -207,7 +203,7 @@ bool UIMachineSettingsNetwork::revalidate(QString &strWarning, QString &strTitle
         {
             if (alternativeName().isNull())
             {
-                strWarning = tr("no generic driver is selected");
+                strWarning = tr("No generic driver is currently selected.");
                 fValid = false;
             }
             break;
@@ -217,19 +213,18 @@ bool UIMachineSettingsNetwork::revalidate(QString &strWarning, QString &strTitle
     }
 
     /* Validate MAC-address length: */
-    if (m_pMACEditor->text().size() < 12)
+    if (fValid && m_pMACEditor->text().size() < 12)
     {
-        strWarning = tr("the MAC address must be 12 hexadecimal digits long.");
+        strWarning = tr("The MAC address must be 12 hexadecimal digits long.");
         fValid = false;
     }
     /* Make sure MAC-address is unicast: */
-    if (m_pMACEditor->text().size() >= 2)
+    if (fValid && m_pMACEditor->text().size() >= 2)
     {
         QRegExp validator("^[0-9A-Fa-f][02468ACEace]");
         if (validator.indexIn(m_pMACEditor->text()) != 0)
         {
-            strWarning = tr("the second digit in the MAC address may not be odd "
-                            "as only unicast addresses are allowed.");
+            strWarning = tr("The second digit in the MAC address may not be odd as only unicast addresses are allowed.");
             fValid = false;
         }
     }
@@ -355,9 +350,9 @@ void UIMachineSettingsNetwork::sltHandleAdapterActivityChange()
 {
     /* Update availability: */
     m_pAdapterOptionsContainer->setEnabled(m_pEnableAdapterCheckBox->isChecked());
-    /* Revalidate if possible: */
-    if (m_pValidator)
-        m_pValidator->revalidate();
+
+    /* Revalidate: */
+    m_pParent->revalidate();
 }
 
 void UIMachineSettingsNetwork::sltHandleAttachmentTypeChange()
@@ -481,9 +476,8 @@ void UIMachineSettingsNetwork::sltHandleAlternativeNameChange()
             break;
     }
 
-    /* Revalidate if possible: */
-    if (m_pValidator)
-        m_pValidator->revalidate();
+    /* Revalidate: */
+    m_pParent->revalidate();
 }
 
 void UIMachineSettingsNetwork::sltHandleAdvancedButtonStateChange()
@@ -514,6 +508,12 @@ void UIMachineSettingsNetwork::sltOpenPortForwardingDlg()
     UIMachineSettingsPortForwardingDlg dlg(this, m_portForwardingRules);
     if (dlg.exec() == QDialog::Accepted)
         m_portForwardingRules = dlg.rules();
+}
+
+void UIMachineSettingsNetwork::prepareValidation()
+{
+    /* Configure validation: */
+    connect(m_pMACEditor, SIGNAL(textEdited(const QString &)), m_pParent, SLOT(revalidate()));
 }
 
 void UIMachineSettingsNetwork::populateComboboxes()
@@ -724,8 +724,7 @@ int UIMachineSettingsNetwork::position(QComboBox *pComboBox, const QString &strT
 
 /* UIMachineSettingsNetworkPage Stuff: */
 UIMachineSettingsNetworkPage::UIMachineSettingsNetworkPage()
-    : m_pValidator(0)
-    , m_pTwAdapters(0)
+    : m_pTwAdapters(0)
 {
     /* Setup main layout: */
     QVBoxLayout *pMainLayout = new QVBoxLayout(this);
@@ -746,7 +745,7 @@ UIMachineSettingsNetworkPage::UIMachineSettingsNetworkPage()
     }
 }
 
-/* Load data to cashe from corresponding external object(s),
+/* Load data to cache from corresponding external object(s),
  * this task COULD be performed in other than GUI thread: */
 void UIMachineSettingsNetworkPage::loadToCacheFrom(QVariant &data)
 {
@@ -829,9 +828,6 @@ void UIMachineSettingsNetworkPage::getFromCache()
         /* Load adapter data to page: */
         pTab->fetchAdapterCache(m_cache.child(iSlot));
 
-        /* Setup page validation: */
-        pTab->setValidator(m_pValidator);
-
         /* Setup tab order: */
         pLastFocusWidget = pTab->setOrderAfter(pLastFocusWidget);
     }
@@ -842,9 +838,8 @@ void UIMachineSettingsNetworkPage::getFromCache()
     /* Polish page finally: */
     polishPage();
 
-    /* Revalidate if possible: */
-    if (m_pValidator)
-        m_pValidator->revalidate();
+    /* Revalidate: */
+    revalidate();
 }
 
 /* Save data from corresponding widgets to cache,
@@ -942,20 +937,17 @@ void UIMachineSettingsNetworkPage::saveFromCacheTo(QVariant &data)
     UISettingsPageMachine::uploadData(data);
 }
 
-void UIMachineSettingsNetworkPage::setValidator(QIWidgetValidator *pValidator)
+bool UIMachineSettingsNetworkPage::validate(QString &strWarning, QString &strTitle)
 {
-    m_pValidator = pValidator;
-}
-
-bool UIMachineSettingsNetworkPage::revalidate(QString &strWarning, QString &strTitle)
-{
+    /* Pass by default: */
     bool fValid = true;
 
+    /* Delegate validation to adapters: */
     for (int i = 0; i < m_pTwAdapters->count(); ++i)
     {
         UIMachineSettingsNetwork *pTab = qobject_cast<UIMachineSettingsNetwork*>(m_pTwAdapters->widget(i));
         Assert(pTab);
-        fValid = pTab->revalidate(strWarning, strTitle);
+        fValid = pTab->validate(strWarning, strTitle);
         if (!fValid)
             break;
     }

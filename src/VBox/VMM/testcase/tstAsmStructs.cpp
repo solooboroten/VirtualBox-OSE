@@ -1,10 +1,10 @@
-/* $Id: tstAsmStructs.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: tstAsmStructs.cpp $ */
 /** @file
  * Testcase for checking offsets in the assembly structures shared with C/C++.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,10 +22,11 @@
 #include "CPUMInternal.h"
 #include <VBox/vmm/trpm.h>
 #include "TRPMInternal.h"
-#include "HWACCMInternal.h"
+#include "HMInternal.h"
 #include "VMMSwitcher.h"
 #include "VMMInternal.h"
 #include <VBox/vmm/vm.h>
+#include <VBox/vmm/hm_vmx.h>
 
 #include "tstHelp.h"
 #include <stdio.h>

@@ -1,10 +1,10 @@
-/* $Id: VBoxPciInternal.h 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxPciInternal.h $ */
 /** @file
  * VBoxPci - PCI driver (Host), Internal Header.
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

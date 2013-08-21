@@ -2,7 +2,7 @@
 #
 # VirtualBox Uninstaller Script.
 #
-# Copyright (C) 2007-2010 Oracle Corporation
+# Copyright (C) 2007-2013 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -104,10 +104,16 @@ for kext in org.virtualbox.kext.VBoxUSB org.virtualbox.kext.VBoxNetFlt org.virtu
 done
 
 #
+# Collect packages to forget
+#
+my_pb='org\.virtualbox\.pkg\.'
+my_pkgs=`/usr/sbin/pkgutil --pkgs="${my_pb}vboxkexts|${my_pb}vboxstartupitems|${my_pb}virtualbox|${my_pb}virtualboxcli"`
+
+#
 # Did we find anything to uninstall?
 #
-if test -z "$my_directories"  -a  -z "$my_files"   -a  -z "$my_kexts"; then
-    echo "No VirtualBox files, directories or KEXTs to uninstall."
+if test -z "$my_directories"  -a  -z "$my_files"   -a  -z "$my_kexts"  -a  -z "$my_pkgs"; then
+    echo "No VirtualBox files, directories, KEXTs or packages to uninstall."
     echo "Done."
     exit 0;
 fi
@@ -120,7 +126,7 @@ fi
 #
 # Note! comm isn't supported on Tiger, so we make -c to do the stripping.
 #
-my_processes="`ps -axco 'pid uid command' | grep -wEe '(VirtualBox|VirtualBoxVM|VBoxManage|VBoxHeadless|vboxwebsrv|VBoxXPCOMIPCD|VBoxSVC|VBoxNetDHCP)' | grep -vw grep | grep -vw VirtualBox_Uninstall.tool | tr '\n' '\a'`";
+my_processes="`ps -axco 'pid uid command' | grep -wEe '(VirtualBox|VirtualBoxVM|VBoxManage|VBoxHeadless|vboxwebsrv|VBoxXPCOMIPCD|VBoxSVC|VBoxNetDHCP|VBoxNetNAT)' | grep -vw grep | grep -vw VirtualBox_Uninstall.tool | tr '\n' '\a'`";
 if test -n "$my_processes"; then
     echo 'Warning! Found the following active VirtualBox processes:'
     echo "$my_processes" | tr '\a' '\n'
@@ -150,8 +156,12 @@ if test -n "$my_files"  -o  -n "$my_directories"; then
     for dir  in $my_directories; do echo "    $dir"; done
 fi
 if test -n "$my_kexts"; then
-echo "And the following KEXTs will be unloaded:"
+    echo "And the following KEXTs will be unloaded:"
     for kext in $my_kexts;       do echo "    $kext"; done
+fi
+if test -n "$my_pkgs"; then
+    echo "And the traces of following packages will be removed:"
+    for kext in $my_pkgs;       do echo "    $kext"; done
 fi
 echo ""
 
@@ -208,10 +218,17 @@ for kext in $my_kexts; do
     fi
 done
 if test "$my_rc" -eq 0; then
-    echo "Successfully uninstalled VirtualBox."
+    echo "Successfully unloaded VirtualBox kernel extensions."
 else
-    echo "Failed to unload on or more KEXTs, please reboot the machine to complete the uninstall."
+    echo "Failed to unload one or more KEXTs, please reboot the machine to complete the uninstall."
+    exit 1;
 fi
+
+# Cleaning up pkgutil database
+for my_pkg in $my_pkgs; do
+    /usr/bin/sudo -p "Please enter %u's password (removing $my_pkg):" /usr/sbin/pkgutil --forget "$my_pkg"
+done
+
 echo "Done."
 exit 0;
 

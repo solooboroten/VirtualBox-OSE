@@ -1,10 +1,10 @@
-/* $Id: kHlpAlloc-iprt.cpp 35288 2010-12-22 09:14:54Z vboxsync $ */
+/* $Id: kHlpAlloc-iprt.cpp $ */
 /** @file
  * kHlpAlloc - Memory Allocation, IPRT based implementation.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/* $Id: VirtualBoxImpl.cpp 43186 2012-09-05 09:01:42Z vboxsync $ */
+/* $Id: VirtualBoxImpl.cpp $ */
 /** @file
  * Implementation of IVirtualBox in VBoxSVC.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -35,6 +35,7 @@
 #include <VBox/com/com.h>
 #include <VBox/com/array.h>
 #include "VBox/com/EventQueue.h"
+#include "VBox/com/MultiResult.h"
 
 #include <VBox/err.h>
 #include <VBox/param.h>
@@ -60,8 +61,9 @@
 #include "USBControllerImpl.h"
 #include "SystemPropertiesImpl.h"
 #include "GuestOSTypeImpl.h"
-#include "DHCPServerRunner.h"
+#include "NetworkServiceRunner.h"
 #include "DHCPServerImpl.h"
+#include "NATNetworkImpl.h"
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
 # include "PerformanceImpl.h"
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
@@ -71,10 +73,10 @@
 # include "ExtPackManagerImpl.h"
 #endif
 #include "AutostartDb.h"
+#include "ClientWatcher.h"
 
 #include "AutoCaller.h"
 #include "Logging.h"
-#include "objectslist.h"
 
 #ifdef RT_OS_WINDOWS
 # include "win/svchlp.h"
@@ -109,12 +111,6 @@ Bstr VirtualBox::sPackageType;
 
 // static
 Bstr VirtualBox::sAPIVersion;
-
-#ifdef VBOX_WITH_SYS_V_IPC_SESSION_WATCHER
-/** Table for adaptive timeouts in the client watcher. The counter starts at
- * the maximum value and decreases to 0. */
-static const RTMSINTERVAL s_updateAdaptTimeouts[] = { 500, 200, 100, 50, 20, 10, 5 };
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -163,24 +159,11 @@ protected:
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#if defined(RT_OS_WINDOWS)
-    #define UPDATEREQARG NULL
-    #define UPDATEREQTYPE HANDLE
-#elif defined(RT_OS_OS2)
-    #define UPDATEREQARG NIL_RTSEMEVENT
-    #define UPDATEREQTYPE RTSEMEVENT
-#elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-    #define UPDATEREQARG
-    #define UPDATEREQTYPE RTSEMEVENT
-#else
-# error "Port me!"
-#endif
-
-typedef ObjectsList<Machine> MachinesOList;
 typedef ObjectsList<Medium> MediaOList;
 typedef ObjectsList<GuestOSType> GuestOSTypesOList;
 typedef ObjectsList<SharedFolder> SharedFoldersOList;
 typedef ObjectsList<DHCPServer> DHCPServersOList;
+typedef ObjectsList<NATNetwork> NATNetworksOList;
 
 typedef std::map<Guid, ComPtr<IProgress> > ProgressMap;
 typedef std::map<Guid, ComObjPtr<Medium> > HardDiskMap;
@@ -208,9 +191,10 @@ struct VirtualBox::Data
           allSharedFolders(lockSharedFolders),
           lockDHCPServers(LOCKCLASS_LISTOFOTHEROBJECTS),
           allDHCPServers(lockDHCPServers),
+          lockNATNetworks(LOCKCLASS_LISTOFOTHEROBJECTS),
+          allNATNetworks(lockNATNetworks),
           mtxProgressOperations(LOCKCLASS_PROGRESSLIST),
-          updateReq(UPDATEREQARG),
-          threadClientWatcher(NIL_RTTHREAD),
+          pClientWatcher(NULL),
           threadAsyncEvent(NIL_RTTHREAD),
           pAsyncEventQ(NULL),
           pAutostartDb(NULL),
@@ -286,17 +270,13 @@ struct VirtualBox::Data
     RWLockHandle                        lockDHCPServers;
     DHCPServersOList                    allDHCPServers;
 
+    RWLockHandle                        lockNATNetworks;
+    NATNetworksOList                    allNATNetworks;
+
     RWLockHandle                        mtxProgressOperations;
     ProgressMap                         mapProgressOperations;
 
-    // the following are data for the client watcher thread
-    const UPDATEREQTYPE                 updateReq;
-#ifdef VBOX_WITH_SYS_V_IPC_SESSION_WATCHER
-    uint8_t                             updateAdaptCtr;
-#endif
-    const RTTHREAD                      threadClientWatcher;
-    typedef std::list<RTPROCESS> ProcessList;
-    ProcessList                         llProcesses;
+    ClientWatcher * const               pClientWatcher;
 
     // the following are data for the async event thread
     const RTTHREAD                      threadAsyncEvent;
@@ -485,7 +465,7 @@ HRESULT VirtualBox::init()
         dumpAllBackRefs();
 #endif
 
-        /* net services */
+        /* net services - dhcp services */
         for (settings::DHCPServersList::const_iterator it = m->pMainConfigFile->llDhcpServers.begin();
              it != m->pMainConfigFile->llDhcpServers.end();
              ++it)
@@ -498,6 +478,22 @@ HRESULT VirtualBox::init()
             if (FAILED(rc)) throw rc;
 
             rc = registerDHCPServer(pDhcpServer, false /* aSaveRegistry */);
+            if (FAILED(rc)) throw rc;
+        }
+
+        /* net services - nat networks */
+        for (settings::NATNetworksList::const_iterator it = m->pMainConfigFile->llNATNetworks.begin();
+             it != m->pMainConfigFile->llNATNetworks.end();
+             ++it)
+        {
+            const settings::NATNetwork &net = *it;
+
+            ComObjPtr<NATNetwork> pNATNetwork;
+            if (SUCCEEDED(rc = pNATNetwork.createObject()))
+                rc = pNATNetwork->init(this, net);
+            if (FAILED(rc)) throw rc;
+
+            rc = registerNATNetwork(pNATNetwork, false /* aSaveRegistry */);
             if (FAILED(rc)) throw rc;
         }
 
@@ -527,27 +523,21 @@ HRESULT VirtualBox::init()
 
     if (SUCCEEDED(rc))
     {
-        /* start the client watcher thread */
-#if defined(RT_OS_WINDOWS)
-        unconst(m->updateReq) = ::CreateEvent(NULL, FALSE, FALSE, NULL);
-#elif defined(RT_OS_OS2)
-        RTSemEventCreate(&unconst(m->updateReq));
-#elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-        RTSemEventCreate(&unconst(m->updateReq));
-        ASMAtomicUoWriteU8(&m->updateAdaptCtr, 0);
-#else
-# error "Port me!"
-#endif
-        int vrc = RTThreadCreate(&unconst(m->threadClientWatcher),
-                                 ClientWatcher,
-                                 (void *)this,
-                                 0,
-                                 RTTHREADTYPE_MAIN_WORKER,
-                                 RTTHREADFLAGS_WAITABLE,
-                                 "Watcher");
-        ComAssertRC(vrc);
-        if (RT_FAILURE(vrc))
-            rc = E_FAIL;
+        /* set up client monitoring */
+        try
+        {
+            unconst(m->pClientWatcher) = new ClientWatcher(this);
+            if (!m->pClientWatcher->isReady())
+            {
+                delete m->pClientWatcher;
+                unconst(m->pClientWatcher) = NULL;
+                rc = E_FAIL;
+            }
+        }
+        catch (std::bad_alloc &)
+        {
+            rc = E_OUTOFMEMORY;
+        }
     }
 
     if (SUCCEEDED(rc))
@@ -812,36 +802,11 @@ void VirtualBox::uninit()
     }
 
     LogFlowThisFunc(("Terminating the client watcher...\n"));
-    if (m->threadClientWatcher != NIL_RTTHREAD)
+    if (m->pClientWatcher)
     {
-        /* signal the client watcher thread */
-        updateClientWatcher();
-        /* wait for the termination */
-        RTThreadWait(m->threadClientWatcher, RT_INDEFINITE_WAIT, NULL);
-        unconst(m->threadClientWatcher) = NIL_RTTHREAD;
+        delete m->pClientWatcher;
+        unconst(m->pClientWatcher) = NULL;
     }
-    m->llProcesses.clear();
-#if defined(RT_OS_WINDOWS)
-    if (m->updateReq != NULL)
-    {
-        ::CloseHandle(m->updateReq);
-        unconst(m->updateReq) = NULL;
-    }
-#elif defined(RT_OS_OS2)
-    if (m->updateReq != NIL_RTSEMEVENT)
-    {
-        RTSemEventDestroy(m->updateReq);
-        unconst(m->updateReq) = NIL_RTSEMEVENT;
-    }
-#elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-    if (m->updateReq != NIL_RTSEMEVENT)
-    {
-        RTSemEventDestroy(m->updateReq);
-        unconst(m->updateReq) = NIL_RTSEMEVENT;
-    }
-#else
-# error "Port me!"
-#endif
 
     delete m->pAutostartDb;
 
@@ -1129,6 +1094,7 @@ VirtualBox::COMGETTER(PerformanceCollector)(IPerformanceCollector **aPerformance
 
     return S_OK;
 #else /* !VBOX_WITH_RESOURCE_USAGE_API */
+    NOREF(aPerformanceCollector);
     ReturnComNotImplemented();
 #endif /* !VBOX_WITH_RESOURCE_USAGE_API */
 }
@@ -1147,6 +1113,31 @@ VirtualBox::COMGETTER(DHCPServers)(ComSafeArrayOut(IDHCPServer *, aDHCPServers))
 
     return S_OK;
 }
+
+
+STDMETHODIMP
+VirtualBox::COMGETTER(NATNetworks)(ComSafeArrayOut(INATNetwork *, aNATNetworks))
+{
+#ifdef VBOX_WITH_NAT_SERVICE
+    CheckComArgOutSafeArrayPointerValid(aNATNetworks);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock al(m->allNATNetworks.getLockHandle() COMMA_LOCKVAL_SRC_POS);
+    SafeIfaceArray<INATNetwork> nets(m->allNATNetworks.getList());
+    nets.detachTo(ComSafeArrayOutArg(aNATNetworks));
+
+    return S_OK;
+#else
+    NOREF(aNATNetworks);
+# ifndef RT_OS_WINDOWS
+    NOREF(aNATNetworksSize);
+# endif
+    return E_NOTIMPL;
+#endif
+}
+
 
 STDMETHODIMP
 VirtualBox::COMGETTER(EventSource)(IEventSource ** aEventSource)
@@ -1452,8 +1443,16 @@ STDMETHODIMP VirtualBox::ComposeMachineFilename(IN_BSTR aName,
                 pcszNext += strFlag.length() + 1;
         }
     }
-    if (id.isEmpty())
+
+    if (id.isZero())
         fDirectoryIncludesUUID = false;
+    else if (!id.isValid())
+    {
+        /* do something else */
+        return setError(E_INVALIDARG,
+                 tr("'%ls' is not a valid Guid"),
+                 id.toStringCurly().c_str());
+    }
 
     Utf8Str strGroup(aGroup);
     if (strGroup.isEmpty())
@@ -1514,13 +1513,13 @@ void sanitiseMachineFilename(Utf8Str &strName)
      * *nix, or be otherwise difficult for shells to handle (I would have
      * preferred to remove the space and brackets too).  We also remove all
      * characters which need UTF-16 surrogate pairs for Windows's benefit. */
-#ifdef RT_STRICT
     RTUNICP aCpSet[] =
         { ' ', ' ', '(', ')', '-', '.', '0', '9', 'A', 'Z', 'a', 'z', '_', '_',
           0xa0, 0xd7af, '\0' };
-#endif
     char *pszName = strName.mutableRaw();
-    Assert(RTStrPurgeComplementSet(pszName, aCpSet, '_') >= 0);
+    int cReplacements = RTStrPurgeComplementSet(pszName, aCpSet, '_');
+    Assert(cReplacements >= 0);
+    NOREF(cReplacements);
     /* No leading dot or dash. */
     if (pszName[0] == '.' || pszName[0] == '-')
         pszName[0] = '_';
@@ -1648,8 +1647,15 @@ STDMETHODIMP VirtualBox::CreateMachine(IN_BSTR aSettingsFile,
         }
     }
     /* Create UUID if none was specified. */
-    if (id.isEmpty())
+    if (id.isZero())
         id.create();
+    else if (!id.isValid())
+    {
+        /* do something else */
+        return setError(E_INVALIDARG,
+                 tr("'%ls' is not a valid Guid"),
+                 id.toStringCurly().c_str());
+    }
 
     /* NULL settings file means compose automatically */
     Bstr bstrSettingsFile(aSettingsFile);
@@ -1779,7 +1785,8 @@ STDMETHODIMP VirtualBox::FindMachine(IN_BSTR aNameOrId, IMachine **aMachine)
     ComObjPtr<Machine> pMachineFound;
 
     Guid id(aNameOrId);
-    if (!id.isEmpty())
+    if (id.isValid() && !id.isZero())
+
         rc = findMachine(id,
                          true /* fPermitInaccessible */,
                          true /* setError */,
@@ -1939,6 +1946,7 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
+    Guid id(aLocation);
     ComObjPtr<Medium> pMedium;
 
     // have to get write lock as the whole find/update sequence must be done
@@ -1951,18 +1959,22 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
     switch (deviceType)
     {
         case DeviceType_HardDisk:
-            rc = findHardDiskByLocation(aLocation,
-                                   false, /* aSetError */
-                                   &pMedium);
+            if (id.isValid() && !id.isZero())
+                rc = findHardDiskById(id, false /* setError */, &pMedium);
+            else
+                rc = findHardDiskByLocation(aLocation,
+                                            false, /* aSetError */
+                                            &pMedium);
         break;
 
         case DeviceType_Floppy:
         case DeviceType_DVD:
-            rc = findDVDOrFloppyImage(deviceType,
-                                 NULL, /* guid */
-                                 aLocation,
-                                 false, /* aSetError */
-                                 &pMedium);
+            if (id.isValid() && !id.isZero())
+                rc = findDVDOrFloppyImage(deviceType, &id, Utf8Str::Empty,
+                                          false /* setError */, &pMedium);
+            else
+                rc = findDVDOrFloppyImage(deviceType, NULL, aLocation,
+                                          false /* setError */, &pMedium);
 
             // enforce read-only for DVDs even if caller specified ReadWrite
             if (deviceType == DeviceType_DVD)
@@ -1972,7 +1984,6 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
         default:
             return setError(E_INVALIDARG, "Device type must be HardDisk, DVD or Floppy %d", deviceType);
     }
-
 
     if (pMedium.isNull())
     {
@@ -2768,7 +2779,7 @@ VirtualBox::SVCHelperClientThread(RTTHREAD aThread, void *aUser)
 #endif /* RT_OS_WINDOWS */
 
 /**
- *  Sends a signal to the client watcher thread to rescan the set of machines
+ *  Sends a signal to the client watcher to rescan the set of machines
  *  that have open sessions.
  *
  *  @note Doesn't lock anything.
@@ -2778,35 +2789,23 @@ void VirtualBox::updateClientWatcher()
     AutoCaller autoCaller(this);
     AssertComRCReturnVoid(autoCaller.rc());
 
-    AssertReturnVoid(m->threadClientWatcher != NIL_RTTHREAD);
-
-    /* sent an update request */
-#if defined(RT_OS_WINDOWS)
-    ::SetEvent(m->updateReq);
-#elif defined(RT_OS_OS2)
-    RTSemEventSignal(m->updateReq);
-#elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-    ASMAtomicUoWriteU8(&m->updateAdaptCtr, RT_ELEMENTS(s_updateAdaptTimeouts) - 1);
-    RTSemEventSignal(m->updateReq);
-#else
-# error "Port me!"
-#endif
+    AssertPtrReturnVoid(m->pClientWatcher);
+    m->pClientWatcher->update();
 }
 
 /**
  *  Adds the given child process ID to the list of processes to be reaped.
  *  This call should be followed by #updateClientWatcher() to take the effect.
+ *
+ *  @note Doesn't lock anything.
  */
 void VirtualBox::addProcessToReap(RTPROCESS pid)
 {
     AutoCaller autoCaller(this);
     AssertComRCReturnVoid(autoCaller.rc());
 
-    /// @todo (dmik) Win32?
-#ifndef RT_OS_WINDOWS
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-    m->llProcesses.push_back(pid);
-#endif
+    AssertPtrReturnVoid(m->pClientWatcher);
+    m->pClientWatcher->addProcess(pid);
 }
 
 /** Event for onMachineStateChange(), onMachineDataChange(), onMachineRegistered() */
@@ -2977,8 +2976,8 @@ struct SnapshotEvent : public VirtualBox::CallbackEvent
 
     virtual HRESULT prepareEventDesc(IEventSource* aSource, VBoxEventDesc& aEvDesc)
     {
-        return aEvDesc.init(aSource, VBoxEventType_OnSnapshotTaken,
-                            machineId.toUtf16().raw(), snapshotId.toUtf16().raw());
+        return aEvDesc.init(aSource, mWhat, machineId.toUtf16().raw(),
+                            snapshotId.toUtf16().raw());
     }
 
     Guid machineId;
@@ -3043,54 +3042,6 @@ void VirtualBox::onGuestPropertyChange(const Guid &aMachineId, IN_BSTR aName,
     postEvent(new GuestPropertyEvent(this, aMachineId, aName, aValue, aFlags));
 }
 
-/** Event for onMachineUninit(), this is not a CallbackEvent */
-class MachineUninitEvent : public Event
-{
-public:
-
-    MachineUninitEvent(VirtualBox *aVirtualBox, Machine *aMachine)
-        : mVirtualBox(aVirtualBox), mMachine(aMachine)
-    {
-        Assert(aVirtualBox);
-        Assert(aMachine);
-    }
-
-    void *handler()
-    {
-#ifdef VBOX_WITH_RESOURCE_USAGE_API
-        /* Handle unregistering metrics here, as it is not vital to get
-         * it done immediately. It reduces the number of locks needed and
-         * the lock contention in SessionMachine::uninit. */
-        {
-            AutoWriteLock mLock(mMachine COMMA_LOCKVAL_SRC_POS);
-            mMachine->unregisterMetrics(mVirtualBox->performanceCollector(), mMachine);
-        }
-#endif /* VBOX_WITH_RESOURCE_USAGE_API */
-
-        return NULL;
-    }
-
-private:
-
-    /**
-     *  Note that this is a weak ref -- the CallbackEvent handler thread
-     *  is bound to the lifetime of the VirtualBox instance, so it's safe.
-     */
-    VirtualBox        *mVirtualBox;
-
-    /** Reference to the machine object. */
-    ComObjPtr<Machine> mMachine;
-};
-
-/**
- *  Trigger internal event. This isn't meant to be signalled to clients.
- *  @note Doesn't lock any object.
- */
-void VirtualBox::onMachineUninit(Machine *aMachine)
-{
-    postEvent(new MachineUninitEvent(this, aMachine));
-}
-
 /**
  *  @note Doesn't lock any object.
  */
@@ -3100,6 +3051,36 @@ void VirtualBox::onNatRedirectChange(const Guid &aMachineId, ULONG ulSlot, bool 
 {
     fireNATRedirectEvent(m->pEventSource, aMachineId.toUtf16().raw(), ulSlot, fRemove, aName, aProto, aHostIp,
                          aHostPort, aGuestIp, aGuestPort);
+}
+
+void VirtualBox::onNATNetworkChange(IN_BSTR aName)
+{
+    fireNATNetworkChangedEvent(m->pEventSource, aName);
+}
+
+void VirtualBox::onNATNetworkStartStop(IN_BSTR aName, BOOL fStart)
+{
+    fireNATNetworkStartStopEvent(m->pEventSource, aName, fStart);
+}
+void VirtualBox::onNATNetworkSetting(IN_BSTR aNetworkName, BOOL aEnabled,
+                                     IN_BSTR aNetwork, IN_BSTR aGateway,
+                                     BOOL aAdvertiseDefaultIpv6RouteEnabled,
+                                     BOOL fNeedDhcpServer)
+{
+    fireNATNetworkSettingEvent(m->pEventSource, aNetworkName, aEnabled,
+                               aNetwork, aGateway,
+                               aAdvertiseDefaultIpv6RouteEnabled, fNeedDhcpServer);
+}
+
+void VirtualBox::onNATNetworkPortForward(IN_BSTR aNetworkName, BOOL create, BOOL fIpv6,
+                                         IN_BSTR aRuleName, NATProtocol_T proto,
+                                         IN_BSTR aHostIp, LONG aHostPort,
+                                         IN_BSTR aGuestIp, LONG aGuestPort)
+{
+    fireNATNetworkPortForwardEvent(m->pEventSource, aNetworkName, create,
+                                   fIpv6, aRuleName, proto,
+                                   aHostIp, aHostPort,
+                                   aGuestIp, aGuestPort);
 }
 
 /**
@@ -3158,6 +3139,19 @@ void VirtualBox::getOpenedMachines(SessionMachinesList &aMachines,
                 aControls->push_back(ctl);
         }
     }
+}
+
+/**
+ * Gets a reference to the machine list. This is the real thing, not a copy,
+ * so bad things will happen if the caller doesn't hold the necessary lock.
+ *
+ * @returns reference to machine list
+ *
+ * @note Caller must hold the VirtualBox object lock at least for reading.
+ */
+VirtualBox::MachinesOList &VirtualBox::getMachinesList(void)
+{
+    return m->allMachines;
 }
 
 /**
@@ -3402,7 +3396,7 @@ HRESULT VirtualBox::findHardDiskById(const Guid &id,
                                      bool aSetError,
                                      ComObjPtr<Medium> *aHardDisk /*= NULL*/)
 {
-    AssertReturn(!id.isEmpty(), E_INVALIDARG);
+    AssertReturn(!id.isZero(), E_INVALIDARG);
 
     // we use the hard disks map, but it is protected by the
     // hard disk _list_ lock handle
@@ -3609,11 +3603,18 @@ HRESULT VirtualBox::findRemoveableMedium(DeviceType_T mediumType,
                                          bool aSetError,
                                          ComObjPtr<Medium> &pMedium)
 {
-    if (uuid.isEmpty())
+    if (uuid.isZero())
     {
         // that's easy
         pMedium.setNull();
         return S_OK;
+    }
+    else if (!uuid.isValid())
+    {
+        /* handling of case invalid GUID */
+        return setError(VBOX_E_OBJECT_NOT_FOUND,
+                            tr("Guid '%ls' is invalid"),
+                            uuid.toString().c_str());
     }
 
     // first search for host drive with that UUID
@@ -3816,7 +3817,7 @@ HRESULT VirtualBox::checkMediaForConflicts(const Guid &aId,
                                            Utf8Str &aConflict,
                                            ComObjPtr<Medium> *ppMedium)
 {
-    AssertReturn(!aId.isEmpty() && !aLocation.isEmpty(), E_FAIL);
+    AssertReturn(!aId.isZero() && !aLocation.isEmpty(), E_FAIL);
     AssertReturn(ppMedium, E_INVALIDARG);
 
     aConflict.setNull();
@@ -3829,7 +3830,7 @@ HRESULT VirtualBox::checkMediaForConflicts(const Guid &aId,
     ComObjPtr<Medium> pMediumFound;
     const char *pcszType = NULL;
 
-    if (!aId.isEmpty())
+    if (aId.isValid() && !aId.isZero())
         rc = findHardDiskById(aId, false /* aSetError */, &pMediumFound);
     if (FAILED(rc) && !aLocation.isEmpty())
         rc = findHardDiskByLocation(aLocation, false /* aSetError */, &pMediumFound);
@@ -3870,6 +3871,49 @@ HRESULT VirtualBox::checkMediaForConflicts(const Guid &aId,
     }
 
     return S_OK;
+}
+
+/**
+ * Checks whether the given UUID is already in use by one medium for the
+ * given device type.
+ *
+ * @returns true if the UUID is already in use
+ *          fale otherwise
+ * @param   aId           The UUID to check.
+ * @param   deviceType    The device type the UUID is going to be checked for
+ *                        conflicts.
+ */
+bool VirtualBox::isMediaUuidInUse(const Guid &aId, DeviceType_T deviceType)
+{
+    /* A zero UUID is invalid here, always claim that it is already used. */
+    AssertReturn(!aId.isZero(), true);
+
+    AutoReadLock alock(getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
+
+    HRESULT rc = S_OK;
+    bool fInUse = false;
+
+    ComObjPtr<Medium> pMediumFound;
+
+    switch (deviceType)
+    {
+        case DeviceType_HardDisk:
+            rc = findHardDiskById(aId, false /* aSetError */, &pMediumFound);
+            break;
+        case DeviceType_DVD:
+            rc = findDVDOrFloppyImage(DeviceType_DVD, &aId, Utf8Str::Empty, false /* aSetError */, &pMediumFound);
+            break;
+        case DeviceType_Floppy:
+            rc = findDVDOrFloppyImage(DeviceType_Floppy, &aId, Utf8Str::Empty, false /* aSetError */, &pMediumFound);
+            break;
+        default:
+            AssertMsgFailed(("Invalid device type %d\n", deviceType));
+    }
+
+    if (SUCCEEDED(rc) && pMediumFound)
+        fInUse = true;
+
+    return fInUse;
 }
 
 /**
@@ -4128,6 +4172,23 @@ HRESULT VirtualBox::saveSettings()
                 m->pMainConfigFile->llDhcpServers.push_back(d);
             }
         }
+
+#ifdef VBOX_WITH_NAT_SERVICE
+        /* Saving NAT Network configuration */
+        m->pMainConfigFile->llNATNetworks.clear();
+        {
+            AutoReadLock natNetworkLock(m->allNATNetworks.getLockHandle() COMMA_LOCKVAL_SRC_POS);
+            for (NATNetworksOList::const_iterator it = m->allNATNetworks.begin();
+                 it != m->allNATNetworks.end();
+                 ++it)
+            {
+                settings::NATNetwork n;
+                rc = (*it)->saveSettings(n);
+                if (FAILED(rc)) throw rc;
+                m->pMainConfigFile->llNATNetworks.push_back(n);
+            }
+        }
+#endif
 
         // leave extra data alone, it's still in the config file
 
@@ -4418,7 +4479,7 @@ void VirtualBox::pushMediumToListWithChildren(MediaList &llMedia, Medium *pMediu
  */
 HRESULT VirtualBox::unregisterMachineMedia(const Guid &uuidMachine)
 {
-    Assert(!uuidMachine.isEmpty());
+    Assert(!uuidMachine.isZero() && uuidMachine.isValid());
 
     LogFlowFuncEnter();
 
@@ -4570,32 +4631,35 @@ void VirtualBox::saveModifiedRegistries()
     bool fNeedsGlobalSettings = false;
     uint64_t uOld;
 
-    for (MachinesOList::iterator it = m->allMachines.begin();
-         it != m->allMachines.end();
-         ++it)
     {
-        const ComObjPtr<Machine> &pMachine = *it;
+        AutoReadLock alock(m->allMachines.getLockHandle() COMMA_LOCKVAL_SRC_POS);
+        for (MachinesOList::iterator it = m->allMachines.begin();
+             it != m->allMachines.end();
+             ++it)
+        {
+            const ComObjPtr<Machine> &pMachine = *it;
 
-        for (;;)
-        {
-            uOld = ASMAtomicReadU64(&pMachine->uRegistryNeedsSaving);
-            if (!uOld)
-                break;
-            if (ASMAtomicCmpXchgU64(&pMachine->uRegistryNeedsSaving, 0, uOld))
-                break;
-            ASMNopPause();
-        }
-        if (uOld)
-        {
-            AutoCaller autoCaller(pMachine);
-            if (FAILED(autoCaller.rc()))
-                continue;
-            /* object is already dead, no point in saving settings */
-            if (autoCaller.state() != Ready)
-                continue;
-            AutoWriteLock mlock(pMachine COMMA_LOCKVAL_SRC_POS);
-            rc = pMachine->saveSettings(&fNeedsGlobalSettings,
-                                        Machine::SaveS_Force);           // caller said save, so stop arguing
+            for (;;)
+            {
+                uOld = ASMAtomicReadU64(&pMachine->uRegistryNeedsSaving);
+                if (!uOld)
+                    break;
+                if (ASMAtomicCmpXchgU64(&pMachine->uRegistryNeedsSaving, 0, uOld))
+                    break;
+                ASMNopPause();
+            }
+            if (uOld)
+            {
+                AutoCaller autoCaller(pMachine);
+                if (FAILED(autoCaller.rc()))
+                    continue;
+                /* object is already dead, no point in saving settings */
+                if (autoCaller.state() != Ready)
+                    continue;
+                AutoWriteLock mlock(pMachine COMMA_LOCKVAL_SRC_POS);
+                rc = pMachine->saveSettings(&fNeedsGlobalSettings,
+                                            Machine::SaveS_Force);           // caller said save, so stop arguing
+            }
         }
     }
 
@@ -4680,504 +4744,6 @@ RWLockHandle& VirtualBox::getMediaTreeLockHandle()
 }
 
 /**
- *  Thread function that watches the termination of all client processes
- *  that have opened sessions using IMachine::LockMachine()
- */
-// static
-DECLCALLBACK(int) VirtualBox::ClientWatcher(RTTHREAD /* thread */, void *pvUser)
-{
-    LogFlowFuncEnter();
-
-    VirtualBox *that = (VirtualBox*)pvUser;
-    Assert(that);
-
-    typedef std::vector< ComObjPtr<Machine> > MachineVector;
-    typedef std::vector< ComObjPtr<SessionMachine> > SessionMachineVector;
-
-    SessionMachineVector machines;
-    MachineVector spawnedMachines;
-
-    size_t cnt = 0;
-    size_t cntSpawned = 0;
-
-    VirtualBoxBase::initializeComForThread();
-
-#if defined(RT_OS_WINDOWS)
-
-    /// @todo (dmik) processes reaping!
-
-    HANDLE handles[MAXIMUM_WAIT_OBJECTS];
-    handles[0] = that->m->updateReq;
-
-    do
-    {
-        AutoCaller autoCaller(that);
-        /* VirtualBox has been early uninitialized, terminate */
-        if (!autoCaller.isOk())
-            break;
-
-        do
-        {
-            /* release the caller to let uninit() ever proceed */
-            autoCaller.release();
-
-            DWORD rc = ::WaitForMultipleObjects((DWORD)(1 + cnt + cntSpawned),
-                                                handles,
-                                                FALSE,
-                                                INFINITE);
-
-            /* Restore the caller before using VirtualBox. If it fails, this
-             * means VirtualBox is being uninitialized and we must terminate. */
-            autoCaller.add();
-            if (!autoCaller.isOk())
-                break;
-
-            bool update = false;
-
-            if (rc == WAIT_OBJECT_0)
-            {
-                /* update event is signaled */
-                update = true;
-            }
-            else if (rc > WAIT_OBJECT_0 && rc <= (WAIT_OBJECT_0 + cnt))
-            {
-                /* machine mutex is released */
-                (machines[rc - WAIT_OBJECT_0 - 1])->checkForDeath();
-                update = true;
-            }
-            else if (rc > WAIT_ABANDONED_0 && rc <= (WAIT_ABANDONED_0 + cnt))
-            {
-                /* machine mutex is abandoned due to client process termination */
-                (machines[rc - WAIT_ABANDONED_0 - 1])->checkForDeath();
-                update = true;
-            }
-            else if (rc > WAIT_OBJECT_0 + cnt && rc <= (WAIT_OBJECT_0 + cntSpawned))
-            {
-                /* spawned VM process has terminated (normally or abnormally) */
-                (spawnedMachines[rc - WAIT_OBJECT_0 - cnt - 1])->
-                    checkForSpawnFailure();
-                update = true;
-            }
-
-            if (update)
-            {
-                /* close old process handles */
-                for (size_t i = 1 + cnt; i < 1 + cnt + cntSpawned; ++i)
-                    CloseHandle(handles[i]);
-
-                // lock the machines list for reading
-                AutoReadLock thatLock(that->m->allMachines.getLockHandle() COMMA_LOCKVAL_SRC_POS);
-
-                /* obtain a new set of opened machines */
-                cnt = 0;
-                machines.clear();
-
-                for (MachinesOList::iterator it = that->m->allMachines.begin();
-                     it != that->m->allMachines.end();
-                     ++it)
-                {
-                    /// @todo handle situations with more than 64 objects
-                    AssertMsgBreak((1 + cnt) <= MAXIMUM_WAIT_OBJECTS,
-                                   ("MAXIMUM_WAIT_OBJECTS reached"));
-
-                    ComObjPtr<SessionMachine> sm;
-                    HANDLE ipcSem;
-                    if ((*it)->isSessionOpenOrClosing(sm, NULL, &ipcSem))
-                    {
-                        machines.push_back(sm);
-                        handles[1 + cnt] = ipcSem;
-                        ++cnt;
-                    }
-                }
-
-                LogFlowFunc(("UPDATE: direct session count = %d\n", cnt));
-
-                /* obtain a new set of spawned machines */
-                cntSpawned = 0;
-                spawnedMachines.clear();
-
-                for (MachinesOList::iterator it = that->m->allMachines.begin();
-                     it != that->m->allMachines.end();
-                     ++it)
-                {
-                    /// @todo handle situations with more than 64 objects
-                    AssertMsgBreak((1 + cnt + cntSpawned) <= MAXIMUM_WAIT_OBJECTS,
-                                   ("MAXIMUM_WAIT_OBJECTS reached"));
-
-                    RTPROCESS pid;
-                    if ((*it)->isSessionSpawning(&pid))
-                    {
-                        HANDLE ph = OpenProcess(SYNCHRONIZE, FALSE, pid);
-                        AssertMsg(ph != NULL, ("OpenProcess (pid=%d) failed with %d\n",
-                                               pid, GetLastError()));
-                        if (rc == 0)
-                        {
-                            spawnedMachines.push_back(*it);
-                            handles[1 + cnt + cntSpawned] = ph;
-                            ++cntSpawned;
-                        }
-                    }
-                }
-
-                LogFlowFunc(("UPDATE: spawned session count = %d\n", cntSpawned));
-
-                // machines lock unwinds here
-            }
-        }
-        while (true);
-    }
-    while (0);
-
-    /* close old process handles */
-    for (size_t i = 1 + cnt; i < 1 + cnt + cntSpawned; ++ i)
-        CloseHandle(handles[i]);
-
-    /* release sets of machines if any */
-    machines.clear();
-    spawnedMachines.clear();
-
-    ::CoUninitialize();
-
-#elif defined(RT_OS_OS2)
-
-    /// @todo (dmik) processes reaping!
-
-    /* according to PMREF, 64 is the maximum for the muxwait list */
-    SEMRECORD handles[64];
-
-    HMUX muxSem = NULLHANDLE;
-
-    do
-    {
-        AutoCaller autoCaller(that);
-        /* VirtualBox has been early uninitialized, terminate */
-        if (!autoCaller.isOk())
-            break;
-
-        do
-        {
-            /* release the caller to let uninit() ever proceed */
-            autoCaller.release();
-
-            int vrc = RTSemEventWait(that->m->updateReq, 500);
-
-            /* Restore the caller before using VirtualBox. If it fails, this
-             * means VirtualBox is being uninitialized and we must terminate. */
-            autoCaller.add();
-            if (!autoCaller.isOk())
-                break;
-
-            bool update = false;
-            bool updateSpawned = false;
-
-            if (RT_SUCCESS(vrc))
-            {
-                /* update event is signaled */
-                update = true;
-                updateSpawned = true;
-            }
-            else
-            {
-                AssertMsg(vrc == VERR_TIMEOUT || vrc == VERR_INTERRUPTED,
-                          ("RTSemEventWait returned %Rrc\n", vrc));
-
-                /* are there any mutexes? */
-                if (cnt > 0)
-                {
-                    /* figure out what's going on with machines */
-
-                    unsigned long semId = 0;
-                    APIRET arc = ::DosWaitMuxWaitSem(muxSem,
-                                                     SEM_IMMEDIATE_RETURN, &semId);
-
-                    if (arc == NO_ERROR)
-                    {
-                        /* machine mutex is normally released */
-                        Assert(semId >= 0 && semId < cnt);
-                        if (semId >= 0 && semId < cnt)
-                        {
-#if 0//def DEBUG
-                            {
-                                AutoReadLock machineLock(machines[semId] COMMA_LOCKVAL_SRC_POS);
-                                LogFlowFunc(("released mutex: machine='%ls'\n",
-                                             machines[semId]->name().raw()));
-                            }
-#endif
-                            machines[semId]->checkForDeath();
-                        }
-                        update = true;
-                    }
-                    else if (arc == ERROR_SEM_OWNER_DIED)
-                    {
-                        /* machine mutex is abandoned due to client process
-                         * termination; find which mutex is in the Owner Died
-                         * state */
-                        for (size_t i = 0; i < cnt; ++ i)
-                        {
-                            PID pid; TID tid;
-                            unsigned long reqCnt;
-                            arc = DosQueryMutexSem((HMTX)handles[i].hsemCur, &pid, &tid, &reqCnt);
-                            if (arc == ERROR_SEM_OWNER_DIED)
-                            {
-                                /* close the dead mutex as asked by PMREF */
-                                ::DosCloseMutexSem((HMTX)handles[i].hsemCur);
-
-                                Assert(i >= 0 && i < cnt);
-                                if (i >= 0 && i < cnt)
-                                {
-#if 0//def DEBUG
-                                    {
-                                        AutoReadLock machineLock(machines[semId] COMMA_LOCKVAL_SRC_POS);
-                                        LogFlowFunc(("mutex owner dead: machine='%ls'\n",
-                                                     machines[i]->name().raw()));
-                                    }
-#endif
-                                    machines[i]->checkForDeath();
-                                }
-                            }
-                        }
-                        update = true;
-                    }
-                    else
-                        AssertMsg(arc == ERROR_INTERRUPT || arc == ERROR_TIMEOUT,
-                                  ("DosWaitMuxWaitSem returned %d\n", arc));
-                }
-
-                /* are there any spawning sessions? */
-                if (cntSpawned > 0)
-                {
-                    for (size_t i = 0; i < cntSpawned; ++ i)
-                        updateSpawned |= (spawnedMachines[i])->
-                            checkForSpawnFailure();
-                }
-            }
-
-            if (update || updateSpawned)
-            {
-                AutoReadLock thatLock(that COMMA_LOCKVAL_SRC_POS);
-
-                if (update)
-                {
-                    /* close the old muxsem */
-                    if (muxSem != NULLHANDLE)
-                        ::DosCloseMuxWaitSem(muxSem);
-
-                    /* obtain a new set of opened machines */
-                    cnt = 0;
-                    machines.clear();
-
-                    for (MachinesOList::iterator it = that->m->allMachines.begin();
-                         it != that->m->allMachines.end(); ++ it)
-                    {
-                        /// @todo handle situations with more than 64 objects
-                        AssertMsg(cnt <= 64 /* according to PMREF */,
-                                  ("maximum of 64 mutex semaphores reached (%d)",
-                                   cnt));
-
-                        ComObjPtr<SessionMachine> sm;
-                        HMTX ipcSem;
-                        if ((*it)->isSessionOpenOrClosing(sm, NULL, &ipcSem))
-                        {
-                            machines.push_back(sm);
-                            handles[cnt].hsemCur = (HSEM)ipcSem;
-                            handles[cnt].ulUser = cnt;
-                            ++ cnt;
-                        }
-                    }
-
-                    LogFlowFunc(("UPDATE: direct session count = %d\n", cnt));
-
-                    if (cnt > 0)
-                    {
-                        /* create a new muxsem */
-                        APIRET arc = ::DosCreateMuxWaitSem(NULL, &muxSem, cnt,
-                                                           handles,
-                                                           DCMW_WAIT_ANY);
-                        AssertMsg(arc == NO_ERROR,
-                                  ("DosCreateMuxWaitSem returned %d\n", arc));
-                        NOREF(arc);
-                    }
-                }
-
-                if (updateSpawned)
-                {
-                    /* obtain a new set of spawned machines */
-                    spawnedMachines.clear();
-
-                    for (MachinesOList::iterator it = that->m->allMachines.begin();
-                         it != that->m->allMachines.end(); ++ it)
-                    {
-                        if ((*it)->isSessionSpawning())
-                            spawnedMachines.push_back(*it);
-                    }
-
-                    cntSpawned = spawnedMachines.size();
-                    LogFlowFunc(("UPDATE: spawned session count = %d\n", cntSpawned));
-                }
-            }
-        }
-        while (true);
-    }
-    while (0);
-
-    /* close the muxsem */
-    if (muxSem != NULLHANDLE)
-        ::DosCloseMuxWaitSem(muxSem);
-
-    /* release sets of machines if any */
-    machines.clear();
-    spawnedMachines.clear();
-
-#elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-
-    bool update = false;
-    bool updateSpawned = false;
-
-    do
-    {
-        AutoCaller autoCaller(that);
-        if (!autoCaller.isOk())
-            break;
-
-        do
-        {
-            /* release the caller to let uninit() ever proceed */
-            autoCaller.release();
-
-            /* determine wait timeout adaptively: after updating information
-             * relevant to the client watcher, check a few times more
-             * frequently. This ensures good reaction time when the signalling
-             * has to be done a bit before the actual change for technical
-             * reasons, and saves CPU cycles when no activities are expected. */
-            RTMSINTERVAL cMillies;
-            {
-                uint8_t uOld, uNew;
-                do
-                {
-                    uOld = ASMAtomicUoReadU8(&that->m->updateAdaptCtr);
-                    uNew = uOld ? uOld - 1 : uOld;
-                } while (!ASMAtomicCmpXchgU8(&that->m->updateAdaptCtr, uNew, uOld));
-                Assert(uOld <= RT_ELEMENTS(s_updateAdaptTimeouts) - 1);
-                cMillies = s_updateAdaptTimeouts[uOld];
-            }
-
-            int rc = RTSemEventWait(that->m->updateReq, cMillies);
-
-            /*
-             *  Restore the caller before using VirtualBox. If it fails, this
-             *  means VirtualBox is being uninitialized and we must terminate.
-             */
-            autoCaller.add();
-            if (!autoCaller.isOk())
-                break;
-
-            if (RT_SUCCESS(rc) || update || updateSpawned)
-            {
-                /* RT_SUCCESS(rc) means an update event is signaled */
-
-                // lock the machines list for reading
-                AutoReadLock thatLock(that->m->allMachines.getLockHandle() COMMA_LOCKVAL_SRC_POS);
-
-                if (RT_SUCCESS(rc) || update)
-                {
-                    /* obtain a new set of opened machines */
-                    machines.clear();
-
-                    for (MachinesOList::iterator it = that->m->allMachines.begin();
-                         it != that->m->allMachines.end();
-                         ++it)
-                    {
-                        ComObjPtr<SessionMachine> sm;
-                        if ((*it)->isSessionOpenOrClosing(sm))
-                            machines.push_back(sm);
-                    }
-
-                    cnt = machines.size();
-                    LogFlowFunc(("UPDATE: direct session count = %d\n", cnt));
-                }
-
-                if (RT_SUCCESS(rc) || updateSpawned)
-                {
-                    /* obtain a new set of spawned machines */
-                    spawnedMachines.clear();
-
-                    for (MachinesOList::iterator it = that->m->allMachines.begin();
-                         it != that->m->allMachines.end();
-                         ++it)
-                    {
-                        if ((*it)->isSessionSpawning())
-                            spawnedMachines.push_back(*it);
-                    }
-
-                    cntSpawned = spawnedMachines.size();
-                    LogFlowFunc(("UPDATE: spawned session count = %d\n", cntSpawned));
-                }
-
-                // machines lock unwinds here
-            }
-
-            update = false;
-            for (size_t i = 0; i < cnt; ++ i)
-                update |= (machines[i])->checkForDeath();
-
-            updateSpawned = false;
-            for (size_t i = 0; i < cntSpawned; ++ i)
-                updateSpawned |= (spawnedMachines[i])->checkForSpawnFailure();
-
-            /* reap child processes */
-            {
-                AutoWriteLock alock(that COMMA_LOCKVAL_SRC_POS);
-                if (that->m->llProcesses.size())
-                {
-                    LogFlowFunc(("UPDATE: child process count = %d\n",
-                                 that->m->llProcesses.size()));
-                    VirtualBox::Data::ProcessList::iterator it = that->m->llProcesses.begin();
-                    while (it != that->m->llProcesses.end())
-                    {
-                        RTPROCESS pid = *it;
-                        RTPROCSTATUS status;
-                        int vrc = ::RTProcWait(pid, RTPROCWAIT_FLAGS_NOBLOCK, &status);
-                        if (vrc == VINF_SUCCESS)
-                        {
-                            LogFlowFunc(("pid %d (%x) was reaped, status=%d, reason=%d\n",
-                                         pid, pid, status.iStatus,
-                                         status.enmReason));
-                            it = that->m->llProcesses.erase(it);
-                        }
-                        else
-                        {
-                            LogFlowFunc(("pid %d (%x) was NOT reaped, vrc=%Rrc\n",
-                                         pid, pid, vrc));
-                            if (vrc != VERR_PROCESS_RUNNING)
-                            {
-                                /* remove the process if it is not already running */
-                                it = that->m->llProcesses.erase(it);
-                            }
-                            else
-                                ++ it;
-                        }
-                    }
-                }
-            }
-        }
-        while (true);
-    }
-    while (0);
-
-    /* release sets of machines if any */
-    machines.clear();
-    spawnedMachines.clear();
-
-#else
-# error "Port me!"
-#endif
-
-    VirtualBoxBase::uninitializeComForThread();
-    LogFlowFuncLeave();
-    return 0;
-}
-
-/**
  *  Thread function that handles custom events posted using #postEvent().
  */
 // static
@@ -5187,34 +4753,53 @@ DECLCALLBACK(int) VirtualBox::AsyncEventHandler(RTTHREAD thread, void *pvUser)
 
     AssertReturn(pvUser, VERR_INVALID_POINTER);
 
-    com::Initialize();
+    HRESULT hr = com::Initialize();
+    if (FAILED(hr))
+        return VERR_COM_UNEXPECTED;
 
-    // create an event queue for the current thread
-    EventQueue *eventQ = new EventQueue();
-    AssertReturn(eventQ, VERR_NO_MEMORY);
+    int rc = VINF_SUCCESS;
 
-    // return the queue to the one who created this thread
-    *(static_cast <EventQueue **>(pvUser)) = eventQ;
-    // signal that we're ready
-    RTThreadUserSignal(thread);
+    try
+    {
+        /* Create an event queue for the current thread. */
+        EventQueue *pEventQueue = new EventQueue();
+        AssertPtr(pEventQueue);
 
-    /*
-     * In case of spurious wakeups causing VERR_TIMEOUTs and/or other return codes
-     * we must not stop processing events and delete the "eventQ" object. This must
-     * be done ONLY when we stop this loop via interruptEventQueueProcessing().
-     * See @bugref{5724}.
-     */
-    while (eventQ->processEventQueue(RT_INDEFINITE_WAIT) != VERR_INTERRUPTED)
-        /* nothing */ ;
+        /* Return the queue to the one who created this thread. */
+        *(static_cast <EventQueue **>(pvUser)) = pEventQueue;
 
-    delete eventQ;
+        /* signal that we're ready. */
+        RTThreadUserSignal(thread);
+
+        /*
+         * In case of spurious wakeups causing VERR_TIMEOUTs and/or other return codes
+         * we must not stop processing events and delete the pEventQueue object. This must
+         * be done ONLY when we stop this loop via interruptEventQueueProcessing().
+         * See @bugref{5724}.
+         */
+        for (;;)
+        {
+            rc = pEventQueue->processEventQueue(RT_INDEFINITE_WAIT);
+            if (rc == VERR_INTERRUPTED)
+            {
+                LogFlow(("Event queue processing ended with rc=%Rrc\n", rc));
+                rc = VINF_SUCCESS; /* Set success when exiting. */
+                break;
+            }
+        }
+
+        delete pEventQueue;
+    }
+    catch (std::bad_alloc &ba)
+    {
+        rc = VERR_NO_MEMORY;
+        NOREF(ba);
+    }
 
     com::Shutdown();
 
-
-    LogFlowFuncLeave();
-
-    return 0;
+    LogFlowFuncLeaveRC(rc);
+    return rc;
 }
 
 
@@ -5419,4 +5004,196 @@ HRESULT VirtualBox::unregisterDHCPServer(DHCPServer *aDHCPServer,
     return rc;
 }
 
+
+/**
+ * NAT Network
+ */
+
+STDMETHODIMP VirtualBox::CreateNATNetwork(IN_BSTR aName, INATNetwork ** aNatNetwork)
+{
+#ifdef VBOX_WITH_NAT_SERVICE
+    CheckComArgStrNotEmptyOrNull(aName);
+    CheckComArgNotNull(aNatNetwork);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    ComObjPtr<NATNetwork> natNetwork;
+    natNetwork.createObject();
+    HRESULT rc = natNetwork->init(this, aName);
+    if (FAILED(rc)) return rc;
+
+    rc = registerNATNetwork(natNetwork, true);
+    if (FAILED(rc)) return rc;
+
+    natNetwork.queryInterfaceTo(aNatNetwork);
+
+    fireNATNetworkCreationDeletionEvent(m->pEventSource, aName, TRUE);
+    return rc;
+#else
+    NOREF(aName);
+    NOREF(aNatNetwork);
+    return E_NOTIMPL;
+#endif
+}
+
+STDMETHODIMP VirtualBox::FindNATNetworkByName(IN_BSTR aName, INATNetwork ** aNetwork)
+{
+#ifdef VBOX_WITH_NAT_SERVICE
+    CheckComArgStrNotEmptyOrNull(aName);
+    CheckComArgNotNull(aNetwork);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    HRESULT rc;
+    Bstr bstr;
+    ComPtr<NATNetwork> found;
+
+    AutoReadLock alock(m->allNATNetworks.getLockHandle() COMMA_LOCKVAL_SRC_POS);
+
+    for (NATNetworksOList::const_iterator it = m->allNATNetworks.begin();
+         it != m->allNATNetworks.end();
+         ++it)
+    {
+        rc = (*it)->COMGETTER(NetworkName)(bstr.asOutParam());
+        if (FAILED(rc)) return rc;
+
+        if (bstr == aName)
+        {
+            found = *it;
+            break;
+        }
+    }
+
+    if (!found)
+        return E_INVALIDARG;
+
+    return found.queryInterfaceTo(aNetwork);
+#else
+    NOREF(aName);
+    NOREF(aNetwork);
+    return E_NOTIMPL;
+#endif
+}
+
+STDMETHODIMP VirtualBox::RemoveNATNetwork(INATNetwork * aNetwork)
+{
+#ifdef VBOX_WITH_NAT_SERVICE
+    CheckComArgNotNull(aNetwork);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+    Bstr name;
+    HRESULT rc;
+    NATNetwork *network = static_cast<NATNetwork *>(aNetwork);
+    rc = network->COMGETTER(NetworkName)(name.asOutParam());
+    rc = unregisterNATNetwork(network, true);
+    fireNATNetworkCreationDeletionEvent(m->pEventSource, name.raw(), FALSE);
+    return rc;
+#else
+    NOREF(aNetwork);
+    return E_NOTIMPL;
+#endif
+
+}
+/**
+ * Remembers the given NAT network in the settings.
+ *
+ * @param aNATNetwork    NAT Network object to remember.
+ * @param aSaveSettings @c true to save settings to disk (default).
+ *
+ *
+ * @note Locks this object for writing and @a aNATNetwork for reading.
+ */
+HRESULT VirtualBox::registerNATNetwork(NATNetwork *aNATNetwork,
+                                       bool aSaveSettings /*= true*/)
+{
+#ifdef VBOX_WITH_NAT_SERVICE
+    AssertReturn(aNATNetwork != NULL, E_INVALIDARG);
+
+    AutoCaller autoCaller(this);
+    AssertComRCReturn(autoCaller.rc(), autoCaller.rc());
+
+    AutoCaller natNetworkCaller(aNATNetwork);
+    AssertComRCReturn(natNetworkCaller.rc(), natNetworkCaller.rc());
+
+    Bstr name;
+    HRESULT rc;
+    rc = aNATNetwork->COMGETTER(NetworkName)(name.asOutParam());
+    if (FAILED(rc)) return rc;
+
+    ComPtr<INATNetwork> existing;
+    rc = FindNATNetworkByName(name.raw(), existing.asOutParam());
+    if (SUCCEEDED(rc))
+        return E_INVALIDARG;
+
+    rc = S_OK;
+
+    m->allNATNetworks.addChild(aNATNetwork);
+
+    if (aSaveSettings)
+    {
+        AutoWriteLock vboxLock(this COMMA_LOCKVAL_SRC_POS);
+        rc = saveSettings();
+        vboxLock.release();
+
+        if (FAILED(rc))
+            unregisterNATNetwork(aNATNetwork, false /* aSaveSettings */);
+    }
+
+    return rc;
+#else
+    NOREF(aNATNetwork);
+    NOREF(aSaveSettings);
+    /* No panic please (silently ignore) */
+    return S_OK;
+#endif
+}
+
+/**
+ * Removes the given NAT network from the settings.
+ *
+ * @param aNATNetwork   NAT network object to remove.
+ * @param aSaveSettings @c true to save settings to disk (default).
+ *
+ * When @a aSaveSettings is @c true, this operation may fail because of the
+ * failed #saveSettings() method it calls. In this case, the DHCP server
+ * will NOT be removed from the settingsi when this method returns.
+ *
+ * @note Locks this object for writing.
+ */
+HRESULT VirtualBox::unregisterNATNetwork(NATNetwork *aNATNetwork,
+                                         bool aSaveSettings /*= true*/)
+{
+#ifdef VBOX_WITH_NAT_SERVICE
+    AssertReturn(aNATNetwork != NULL, E_INVALIDARG);
+
+    AutoCaller autoCaller(this);
+    AssertComRCReturn(autoCaller.rc(), autoCaller.rc());
+
+    AutoCaller natNetworkCaller(aNATNetwork);
+    AssertComRCReturn(natNetworkCaller.rc(), natNetworkCaller.rc());
+
+    m->allNATNetworks.removeChild(aNATNetwork);
+
+    HRESULT rc = S_OK;
+
+    if (aSaveSettings)
+    {
+        AutoWriteLock vboxLock(this COMMA_LOCKVAL_SRC_POS);
+        rc = saveSettings();
+        vboxLock.release();
+
+        if (FAILED(rc))
+            registerNATNetwork(aNATNetwork, false /* aSaveSettings */);
+    }
+
+    return rc;
+#else
+    NOREF(aNATNetwork);
+    NOREF(aSaveSettings);
+    return E_NOTIMPL;
+#endif
+}
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

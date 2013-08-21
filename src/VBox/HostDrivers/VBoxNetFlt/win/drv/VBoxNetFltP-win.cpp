@@ -1,10 +1,10 @@
-/* $Id: VBoxNetFltP-win.cpp 41783 2012-06-16 19:24:15Z vboxsync $ */
+/* $Id: VBoxNetFltP-win.cpp $ */
 /** @file
  * VBoxNetFltP-win.cpp - Bridged Networking Driver, Windows Specific Code.
  * Protocol edge
  */
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

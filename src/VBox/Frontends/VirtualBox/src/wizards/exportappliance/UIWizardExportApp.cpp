@@ -1,4 +1,4 @@
-/* $Id: UIWizardExportApp.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
+/* $Id: UIWizardExportApp.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -85,7 +85,8 @@ bool UIWizardExportApp::exportAppliance()
     if (fResult)
     {
         /* Show some progress, so the user know whats going on: */
-        msgCenter().showModalProgressDialog(progress, QApplication::translate("UIWizardExportApp", "Checking files ..."), "", this);
+        msgCenter().showModalProgressDialog(progress, QApplication::translate("UIWizardExportApp", "Checking files ..."),
+                                            ":/refresh_32px.png", this);
         if (progress.GetCanceled())
             return false;
         if (!progress.isOk() || progress.GetResultCode() != 0)
@@ -96,7 +97,7 @@ bool UIWizardExportApp::exportAppliance()
     }
     QVector<QString> exists = explorer.Exists(files);
     /* Check if the file exists already, if yes get confirmation for overwriting from the user. */
-    if (!msgCenter().askForOverridingFiles(exists, this))
+    if (!msgCenter().confirmOverridingFiles(exists, this))
         return false;
     /* Ok all is confirmed so delete all the files which exists: */
     if (!exists.isEmpty())
@@ -106,7 +107,8 @@ bool UIWizardExportApp::exportAppliance()
         if (fResult)
         {
             /* Show some progress, so the user know whats going on: */
-            msgCenter().showModalProgressDialog(progress1, QApplication::translate("UIWizardExportApp", "Removing files ..."), "", this);
+            msgCenter().showModalProgressDialog(progress1, QApplication::translate("UIWizardExportApp", "Removing files ..."),
+                                                ":/vm_delete_32px.png", this);
             if (progress1.GetCanceled())
                 return false;
             if (!progress1.isOk() || progress1.GetResultCode() != 0)
@@ -136,26 +138,25 @@ bool UIWizardExportApp::exportAppliance()
 bool UIWizardExportApp::exportVMs(CAppliance &appliance)
 {
     /* Write the appliance: */
-    const QString strVersion = field("OVF09Selected").toBool() ? "ovf-0.9" : "ovf-1.0";
-    CProgress progress = appliance.Write(strVersion, field("manifestSelected").toBool() /* fManifest */, uri());
+    CProgress progress = appliance.Write(field("format").toString(), field("manifestSelected").toBool() /* fManifest */, uri());
     bool fResult = appliance.isOk();
     if (fResult)
     {
         /* Show some progress, so the user know whats going on: */
         msgCenter().showModalProgressDialog(progress, QApplication::translate("UIWizardExportApp", "Exporting Appliance ..."),
-                                            ":/progress_export_90px.png", this, true);
+                                            ":/progress_export_90px.png", this);
         if (progress.GetCanceled())
             return false;
         if (!progress.isOk() || progress.GetResultCode() != 0)
         {
-            msgCenter().cannotExportAppliance(progress, &appliance, this);
+            msgCenter().cannotExportAppliance(progress, appliance.GetPath(), this);
             return false;
         }
         else
             return true;
     }
     if (!fResult)
-        msgCenter().cannotExportAppliance(&appliance, this);
+        msgCenter().cannotExportAppliance(appliance, this);
     return false;
 }
 

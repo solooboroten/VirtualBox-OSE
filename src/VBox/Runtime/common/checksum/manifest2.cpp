@@ -1,10 +1,10 @@
-/* $Id: manifest2.cpp 39877 2012-01-25 16:26:55Z vboxsync $ */
+/* $Id: manifest2.cpp $ */
 /** @file
  * IPRT - Manifest, the core.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

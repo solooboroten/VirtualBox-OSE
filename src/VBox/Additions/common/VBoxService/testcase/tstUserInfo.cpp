@@ -1,10 +1,10 @@
-/* $Id: tstUserInfo.cpp 42150 2012-07-13 15:22:54Z vboxsync $ */
+/* $Id: tstUserInfo.cpp $ */
 /** @file
  * Test case for correct user environment.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

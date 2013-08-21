@@ -1,4 +1,4 @@
-/* $Id: thread-win.cpp 37733 2011-07-01 15:41:37Z vboxsync $ */
+/* $Id: thread-win.cpp $ */
 /** @file
  * IPRT - Threads, Windows.
  */
@@ -65,6 +65,12 @@ DECLHIDDEN(int) rtThreadNativeInit(void)
     if (g_dwSelfTLS == TLS_OUT_OF_INDEXES)
         return VERR_NO_TLS_FOR_SELF;
     return VINF_SUCCESS;
+}
+
+
+DECLHIDDEN(void) rtThreadNativeReInitObtrusive(void)
+{
+    /* nothing to do here. */
 }
 
 
@@ -167,7 +173,7 @@ static void rtThreadNativeUninitComAndOle(void)
         AssertMsgFailed(("cComInits=%u (%#x) cOleInits=%u (%#x) - dangling COM/OLE inits!\n",
                          cComInits, cComInits, cOleInits, cOleInits));
 
-        HMODULE hOle32 = GetModuleHandle("OLE32");
+        HMODULE hOle32 = GetModuleHandle("ole32.dll");
         AssertReturnVoid(hOle32 != NULL);
 
         typedef void (WINAPI *PFNOLEUNINITIALIZE)(void);
@@ -251,7 +257,7 @@ static int rtThreadGetCurrentProcessorNumber(void)
     static DWORD (WINAPI *pfnGetCurrentProcessorNumber)(void) = NULL;
     if (!fInitialized)
     {
-        HMODULE hmodKernel32 = GetModuleHandle("KERNEL32.DLL");
+        HMODULE hmodKernel32 = GetModuleHandle("kernel32.dll");
         if (hmodKernel32)
             pfnGetCurrentProcessorNumber = (DWORD (WINAPI*)(void))GetProcAddress(hmodKernel32, "GetCurrentProcessorNumber");
         fInitialized = true;

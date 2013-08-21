@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_drv.c 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo_drv.c $
  *
  * VirtualBox Additions Linux kernel video driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -58,44 +58,92 @@
 
 #include "vboxvideo_drv.h"
 
+#ifndef __devinit
+#define __devinit
+#define __devinitdata
+#endif
+
+static struct drm_driver driver;
+
 static struct pci_device_id pciidlist[] = {
         vboxvideo_PCI_IDS
 };
 
+MODULE_DEVICE_TABLE(pci, pciidlist);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36)
+# define drm_get_dev drm_get_pci_dev
+#endif
+
+static int __devinit
+vboxvideo_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+{
+    return drm_get_dev(pdev, ent, &driver);
+}
+
+static void
+vboxvideo_pci_remove(struct pci_dev *pdev)
+{
+    struct drm_device *dev = pci_get_drvdata(pdev);
+
+    drm_put_dev(dev);
+}
+
+#if defined(DRM_UNLOCKED) || LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
+# define IOCTL_MEMBER unlocked_ioctl
+#else
+# define IOCTL_MEMBER ioctl
+#endif
+
+#define DRIVER_FOPS \
+    { \
+        .owner = THIS_MODULE, \
+        .open = drm_open, \
+        .release = drm_release, \
+        /* This was changed with Linux 2.6.33 but Fedora backported this \
+         * change to their 2.6.32 kernel. */ \
+        .IOCTL_MEMBER = drm_ioctl, \
+        .mmap = drm_mmap, \
+        .poll = drm_poll, \
+        .fasync = drm_fasync, \
+    }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0) || defined(DRM_RHEL63) || defined(DRM_DEBIAN_34ON32)
+/* since linux-3.3.0-rc1 drm_driver::fops is pointer */
+static struct file_operations driver_fops = DRIVER_FOPS;
+#endif
+
+#define PCI_DRIVER \
+    { \
+        .name = DRIVER_NAME, \
+        .id_table = pciidlist, \
+        .probe = vboxvideo_pci_probe, \
+        .remove = vboxvideo_pci_remove, \
+    }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39)
+static struct pci_driver pci_driver = PCI_DRIVER;
+#endif
+
 static struct drm_driver driver =
 {
-    .driver_features = 0,
+    .driver_features = DRIVER_MODESET,
     .load = vboxvideo_driver_load,
     .unload = vboxvideo_driver_unload,
-    .reclaim_buffers = drm_core_reclaim_buffers,
     /* As of Linux 2.6.37, always the internal functions are used. */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 37) && !defined(DRM_RHEL61)
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 37) && !defined(DRM_RHEL61)
+    .reclaim_buffers = drm_core_reclaim_buffers,
     .get_map_ofs = drm_core_get_map_ofs,
     .get_reg_ofs = drm_core_get_reg_ofs,
 #endif
     .ioctls = vboxvideo_ioctls,
-    .fops =
-    {
-        .owner = THIS_MODULE,
-        .open = drm_open,
-        .release = drm_release,
-        /* This was changed with Linux 2.6.33 but Fedora backported this
-         * change to their 2.6.32 kernel. */
-#if defined(DRM_UNLOCKED) || LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
-        .unlocked_ioctl = drm_ioctl,
-#else
-        .ioctl = drm_ioctl,
+# if LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0) && !defined(DRM_RHEL63) && !defined(DRM_DEBIAN_34ON32)
+    .fops = DRIVER_FOPS,
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0) || defined(DRM_RHEL63) || defined(DRM_DEBIAN_34ON32) */
+    .fops = &driver_fops,
 #endif
-        .mmap = drm_mmap,
-        .poll = drm_poll,
-        .fasync = drm_fasync,
-    },
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39)
-    .pci_driver =
-    {
-        .name = DRIVER_NAME,
-        .id_table = pciidlist,
-    },
+    .pci_driver = PCI_DRIVER,
 #endif
     .name = DRIVER_NAME,
     .desc = DRIVER_DESC,
@@ -104,14 +152,6 @@ static struct drm_driver driver =
     .minor = DRIVER_MINOR,
     .patchlevel = DRIVER_PATCHLEVEL,
 };
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39)
-static struct pci_driver pci_driver =
-{
-    .name = DRIVER_NAME,
-    .id_table = pciidlist,
-};
-#endif
 
 static int __init vboxvideo_init(void)
 {

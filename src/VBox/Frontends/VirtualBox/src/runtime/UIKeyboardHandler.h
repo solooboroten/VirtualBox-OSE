@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -24,7 +24,7 @@
 #include <QMap>
 
 /* GUI includes: */
-#include "UIMachineDefs.h"
+#include "UIDefs.h"
 #ifdef Q_WS_MAC
 # include <CoreFoundation/CFBase.h>
 # include <Carbon/Carbon.h>

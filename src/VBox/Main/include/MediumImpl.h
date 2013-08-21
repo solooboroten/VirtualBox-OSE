@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.h 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: MediumImpl.h $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2012 Oracle Corporation
+ * Copyright (C) 2008-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -103,7 +103,7 @@ public:
     STDMETHOD(COMGETTER(Description))(BSTR *aDescription);
     STDMETHOD(COMSETTER(Description))(IN_BSTR aDescription);
     STDMETHOD(COMGETTER(State))(MediumState_T *aState);
-    STDMETHOD(COMGETTER(Variant))(ULONG *aVariant);
+    STDMETHOD(COMGETTER(Variant))(ComSafeArrayOut(MediumVariant_T, aVariant));
     STDMETHOD(COMGETTER(Location))(BSTR *aLocation);
     STDMETHOD(COMSETTER(Location))(IN_BSTR aLocation);
     STDMETHOD(COMGETTER(Name))(BSTR *aName);
@@ -144,16 +144,16 @@ public:
     STDMETHOD(SetProperties)(ComSafeArrayIn(IN_BSTR, aNames),
                              ComSafeArrayIn(IN_BSTR, aValues));
     STDMETHOD(CreateBaseStorage)(LONG64 aLogicalSize,
-                                 ULONG aVariant,
+                                 ComSafeArrayIn(MediumVariant_T, aVariant),
                                  IProgress **aProgress);
     STDMETHOD(DeleteStorage)(IProgress **aProgress);
     STDMETHOD(CreateDiffStorage)(IMedium *aTarget,
-                                 ULONG aVariant,
+                                 ComSafeArrayIn(MediumVariant_T, aVariant),
                                  IProgress **aProgress);
     STDMETHOD(MergeTo)(IMedium *aTarget, IProgress **aProgress);
-    STDMETHOD(CloneTo)(IMedium *aTarget, ULONG aVariant,
+    STDMETHOD(CloneTo)(IMedium *aTarget, ComSafeArrayIn(MediumVariant_T, aVariant),
                         IMedium *aParent, IProgress **aProgress);
-    STDMETHOD(CloneToBase)(IMedium *aTarget, ULONG aVariant,
+    STDMETHOD(CloneToBase)(IMedium *aTarget, ComSafeArrayIn(MediumVariant_T, aVariant),
                            IProgress **aProgress);
     STDMETHOD(Compact)(IProgress **aProgress);
     STDMETHOD(Resize)(LONG64 aLogicalSize, IProgress **aProgress);
@@ -230,6 +230,9 @@ public:
     HRESULT unmarkForDeletion();
     HRESULT markLockedForDeletion();
     HRESULT unmarkLockedForDeletion();
+
+    HRESULT queryPreferredMergeDirection(const ComObjPtr<Medium> &pOther,
+                                         bool &fMergeForward);
 
     HRESULT prepareMergeTo(const ComObjPtr<Medium> &pTarget,
                            const Guid *aMachineId,

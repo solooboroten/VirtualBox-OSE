@@ -3214,7 +3214,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Лівий</translation>
@@ -11843,7 +11843,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Завжди показувати панель інструментів</translation>

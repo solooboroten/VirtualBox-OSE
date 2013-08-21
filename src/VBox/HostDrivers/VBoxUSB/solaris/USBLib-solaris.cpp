@@ -1,10 +1,10 @@
-/** $Id: USBLib-solaris.cpp 40504 2012-03-16 16:38:06Z vboxsync $ */
+/** $Id: USBLib-solaris.cpp $ */
 /** @file
  * USBLib - Library for wrapping up the VBoxUSB functionality, Solaris flavor.
  */
 
 /*
- * Copyright (C) 2008-2011 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -57,13 +57,7 @@
 static uint32_t volatile g_cUsers = 0;
 /** VBoxUSB Device handle. */
 static RTFILE g_hFile = NIL_RTFILE;
-/** List of tasks handled by the USB helper. */
-typedef enum USBHELPER_OP
-{
-    ADD_ALIAS = 0,
-    DEL_ALIAS,
-    RESET
-};
+
 
 /*******************************************************************************
 *   Internal Functions                                                         *

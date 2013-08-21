@@ -58,21 +58,16 @@ namespace UIDefs
     enum RenderMode
     {
           InvalidRenderMode
-        , TimerMode
         , QImageMode
-        , SDLMode
-        , DDRAWMode
+#ifdef VBOX_GUI_USE_QUARTZ2D
         , Quartz2DMode
-#ifdef VBOX_GUI_USE_QGLFB
-        , QGLMode
-#endif /* VBOX_GUI_USE_QGLFB */
+#endif /* VBOX_GUI_USE_QUARTZ2D */
     };
 
     /* Additional Qt event types: */
     enum UIEventType
     {
           ResizeEventType = QEvent::User + 101
-        , RepaintEventType
         , SetRegionEventType
         , ModifierKeyChangeEventType
         , MediaEnumEventType
@@ -108,6 +103,7 @@ namespace UIDefs
     extern const char* GUI_RecentListHD;
     extern const char* GUI_RecentListCD;
     extern const char* GUI_RecentListFD;
+    extern const char* GUI_PreventApplicationUpdate;
 
     /* Selector-window declarations: */
     extern const char* GUI_Input_SelectorShortcuts;
@@ -121,8 +117,14 @@ namespace UIDefs
     extern const char* GUI_LastVMSelected;
     extern const char* GUI_LastItemSelected;
     extern const char* GUI_GroupDefinitions;
+    extern const char* GUI_HideFromManager;
+    extern const char* GUI_PreventReconfiguration;
+    extern const char* GUI_PreventSnapshotOperations;
+    extern const char* GUI_HideDetails;
 
     /* Machine-window declarations: */
+    extern const char* GUI_RestrictedRuntimeMenus;
+    extern const char* GUI_RestrictedVisualStates;
     extern const char* GUI_Input_MachineShortcuts;
     extern const char* GUI_LastNormalWindowPosition;
     extern const char* GUI_LastScaleWindowPosition;
@@ -134,8 +136,15 @@ namespace UIDefs
     extern const char* GUI_Scale;
     extern const char* GUI_VirtualScreenToHostScreen;
     extern const char* GUI_AutoresizeGuest;
+    extern const char* GUI_AutomountGuestScreens;
     extern const char* GUI_SaveMountedAtRuntime;
     extern const char* GUI_PassCAD;
+    extern const char* GUI_DefaultCloseAction;
+    extern const char* GUI_RestrictedStatusBarIndicators;
+
+    /* Settings dialogs stuff: */
+    extern const char* GUI_RestrictedGlobalSettingsPages;
+    extern const char* GUI_RestrictedMachineSettingsPages;
 
     /* Mini tool-bar declarations: */
     extern const char* GUI_ShowMiniToolBar;
@@ -158,10 +167,6 @@ namespace UIDefs
     /* Message-center declarations: */
     extern const char* GUI_SuppressMessages;
     extern const char* GUI_InvertMessageOption;
-
-    /* Registration dialog declarations: */
-    extern const char* GUI_RegistrationDlgWinID;
-    extern const char* GUI_RegistrationData;
 
     /* Update manager declarations: */
     extern const char* GUI_UpdateDate;
@@ -197,13 +202,6 @@ namespace UIDefs
     extern const char* GUI_Accelerate2D_PixformatAYUV;
 #endif /* VBOX_WITH_VIDEOHWACCEL */
 
-#ifdef VBOX_GUI_WITH_SYSTRAY
-    /* Tray icon declarations: */
-    extern const char* GUI_TrayIconWinID;
-    extern const char* GUI_TrayIconEnabled;
-    extern const char* GUI_MainWindowCount;
-#endif /* VBOX_GUI_WITH_SYSTRAY */
-
     /* File extensions declarations: */
     extern QStringList VBoxFileExts;
     extern QStringList VBoxExtPackFileExts;
@@ -230,6 +228,29 @@ struct StorageSlot
 };
 Q_DECLARE_METATYPE(StorageSlot);
 
+/* Runtime UI menu types: */
+enum RuntimeMenuType
+{
+    RuntimeMenuType_Invalid = 0,
+    RuntimeMenuType_Machine = RT_BIT(0),
+    RuntimeMenuType_View    = RT_BIT(1),
+    RuntimeMenuType_Devices = RT_BIT(2),
+    RuntimeMenuType_Debug   = RT_BIT(3),
+    RuntimeMenuType_Help    = RT_BIT(4),
+    RuntimeMenuType_All     = 0xFF
+};
+
+/* Runtime UI visual-state types: */
+enum UIVisualStateType
+{
+    UIVisualStateType_Invalid    = 0,
+    UIVisualStateType_Normal     = RT_BIT(0),
+    UIVisualStateType_Fullscreen = RT_BIT(1),
+    UIVisualStateType_Seamless   = RT_BIT(2),
+    UIVisualStateType_Scale      = RT_BIT(3),
+    UIVisualStateType_All        = 0xFF
+};
+
 /* Details element type: */
 enum DetailsElementType
 {
@@ -249,6 +270,71 @@ enum DetailsElementType
     DetailsElementType_Description
 };
 Q_DECLARE_METATYPE(DetailsElementType);
+
+/* Global settings page type: */
+enum GlobalSettingsPageType
+{
+    GlobalSettingsPageType_Invalid,
+    GlobalSettingsPageType_General,
+    GlobalSettingsPageType_Input,
+    GlobalSettingsPageType_Update,
+    GlobalSettingsPageType_Language,
+    GlobalSettingsPageType_Display,
+    GlobalSettingsPageType_Network,
+    GlobalSettingsPageType_Extensions,
+    GlobalSettingsPageType_Proxy,
+    GlobalSettingsPageType_Max
+};
+Q_DECLARE_METATYPE(GlobalSettingsPageType);
+
+/* Machine settings page type: */
+enum MachineSettingsPageType
+{
+    MachineSettingsPageType_Invalid,
+    MachineSettingsPageType_General,
+    MachineSettingsPageType_System,
+    MachineSettingsPageType_Display,
+    MachineSettingsPageType_Storage,
+    MachineSettingsPageType_Audio,
+    MachineSettingsPageType_Network,
+    MachineSettingsPageType_Ports,
+    MachineSettingsPageType_Serial,
+    MachineSettingsPageType_Parallel,
+    MachineSettingsPageType_USB,
+    MachineSettingsPageType_SF,
+    MachineSettingsPageType_Max
+};
+Q_DECLARE_METATYPE(MachineSettingsPageType);
+
+/* Indicator type: */
+enum IndicatorType
+{
+    IndicatorType_Invalid,
+    IndicatorType_HardDisks,
+    IndicatorType_OpticalDisks,
+    IndicatorType_FloppyDisks,
+    IndicatorType_Network,
+    IndicatorType_USB,
+    IndicatorType_SharedFolders,
+    IndicatorType_VideoCapture,
+    IndicatorType_Features,
+    IndicatorType_Mouse,
+    IndicatorType_Keyboard,
+    IndicatorType_Max
+};
+Q_DECLARE_METATYPE(IndicatorType);
+
+/* Machine close action: */
+enum MachineCloseAction
+{
+    MachineCloseAction_Invalid,
+    MachineCloseAction_SaveState,
+    MachineCloseAction_Shutdown,
+    MachineCloseAction_PowerOff,
+    MachineCloseAction_PowerOff_RestoringSnapshot,
+    MachineCloseAction_Max
+};
+Q_DECLARE_METATYPE(MachineCloseAction);
 
 #endif // __UIDefs_h__
 

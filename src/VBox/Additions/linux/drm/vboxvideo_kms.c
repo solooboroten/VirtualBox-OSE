@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_kms.c 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo_kms.c $
  *
  * VirtualBox Additions Linux kernel video driver, KMS support
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -43,7 +43,6 @@
  */
 
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
 
 #include "vboxvideo_drv.h"
 
@@ -96,5 +95,3 @@ int vboxvideo_driver_unload(struct drm_device * dev)
 struct drm_ioctl_desc vboxvideo_ioctls[] = {
 };
 int vboxvideo_max_ioctl = DRM_ARRAY_SIZE(vboxvideo_ioctls);
-
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27) */

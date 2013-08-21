@@ -1,10 +1,10 @@
-/* $Id: reqpool.cpp 40100 2012-02-13 17:45:33Z vboxsync $ */
+/* $Id: reqpool.cpp $ */
 /** @file
  * IPRT - Request Pool.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

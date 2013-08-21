@@ -85,6 +85,7 @@
   <xsl:output method="text"/>
 
   <xsl:strip-space elements="*"/>
+  <xsl:preserve-space elements="para"/>
 
   <xsl:template match="/book">
     <xsl:text>
@@ -99,6 +100,7 @@
             a4paper,
             colorlinks=true,
             linkcolor=blue,
+            urlcolor=darkgreen,
             bookmarksnumbered,
             bookmarksopen=true,
             bookmarksopenlevel=0,
@@ -113,6 +115,7 @@
 \usepackage{fancyvrb}
 \usepackage{alltt}
 \usepackage{color}
+\definecolor{darkgreen}{rgb}{0,0.6,0}
 
 </xsl:text>
   <xsl:if test="$TARGETLANG='de_DE'">\usepackage[ngerman]{babel}&#10;\PrerenderUnicode{ü}</xsl:if>
@@ -313,7 +316,7 @@
         <xsl:text>}</xsl:text>
       </xsl:when>
     </xsl:choose>
-    <xsl:variable name="refid" select="(@id) | (../@id)" />
+    <xsl:variable name="refid" select="../@id" />
     <xsl:if test="$refid">
       <xsl:value-of select="concat('&#x0a;\label{', $refid, '}')" />
     </xsl:if>

@@ -1,10 +1,10 @@
-/* $Id: DrvNAT.cpp 41805 2012-06-17 17:29:20Z vboxsync $ */
+/* $Id: DrvNAT.cpp $ */
 /** @file
  * DrvNAT - NAT network transport driver.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -59,6 +59,8 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
+
+#define DRVNAT_MAXFRAMESIZE (16 * 1024)
 
 /**
  * @todo: This is a bad hack to prevent freezing the guest during high network
@@ -465,6 +467,16 @@ static DECLCALLBACK(int) drvNATNetworkUp_AllocBuf(PPDMINETWORKUP pInterface, siz
         return VERR_NO_MEMORY;
     if (!pGso)
     {
+        /*
+         * Drop the frame if it is too big.
+         */
+        if (cbMin >= DRVNAT_MAXFRAMESIZE)
+        {
+            Log(("drvNATNetowrkUp_AllocBuf: drops over-sized frame (%u bytes), returns VERR_INVALID_PARAMETER\n",
+                 cbMin));
+            return VERR_INVALID_PARAMETER;
+        }
+
         pSgBuf->pvUser      = NULL;
         pSgBuf->pvAllocator = slirp_ext_m_get(pThis->pNATState, cbMin,
                                               &pSgBuf->aSegs[0].pvSeg, &pSgBuf->aSegs[0].cbSeg);
@@ -476,6 +488,16 @@ static DECLCALLBACK(int) drvNATNetworkUp_AllocBuf(PPDMINETWORKUP pInterface, siz
     }
     else
     {
+        /*
+         * Drop the frame if its segment is too big.
+         */
+        if (pGso->cbHdrsTotal + pGso->cbMaxSeg >= DRVNAT_MAXFRAMESIZE)
+        {
+            Log(("drvNATNetowrkUp_AllocBuf: drops over-sized frame (%u bytes), returns VERR_INVALID_PARAMETER\n",
+                 pGso->cbHdrsTotal + pGso->cbMaxSeg));
+            return VERR_INVALID_PARAMETER;
+        }
+
         pSgBuf->pvUser      = RTMemDup(pGso, sizeof(*pGso));
         pSgBuf->pvAllocator = NULL;
         pSgBuf->aSegs[0].cbSeg = RT_ALIGN_Z(cbMin, 16);
@@ -973,6 +995,31 @@ static DECLCALLBACK(void) drvNATPowerOn(PPDMDRVINS pDrvIns)
 
 
 /**
+ * @interface_method_impl{PDMDEVREG,pfnResume}
+ */
+static DECLCALLBACK(void) drvNATResume(PPDMDRVINS pDrvIns)
+{
+    PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
+    VMRESUMEREASON enmReason = PDMDrvHlpVMGetResumeReason(pDrvIns);
+
+    switch (enmReason)
+    {
+        case VMRESUMEREASON_HOST_RESUME:
+            /*
+             * Host resumed from a suspend and the network might have changed.
+             * Disconnect the guest from the network temporarily to let it pick up the changes.
+             */
+            pThis->pIAboveConfig->pfnSetLinkState(pThis->pIAboveConfig, 
+                                                  PDMNETWORKLINKSTATE_DOWN_RESUME);
+            return;
+        default: /* Ignore every other resume reason. */
+            /* do nothing */
+            return;
+    }
+}
+
+
+/**
  * Info handler.
  */
 static DECLCALLBACK(void) drvNATInfo(PPDMDRVINS pDrvIns, PCDBGFINFOHLP pHlp, const char *pszArgs)
@@ -1029,7 +1076,7 @@ static int drvNATConstructDNSMappings(unsigned iInstance, PDRVNAT pThis, PCFGMNO
  * @returns VBox status code.
  * @param   pCfg            The configuration handle.
  */
-static int drvNATConstructRedir(unsigned iInstance, PDRVNAT pThis, PCFGMNODE pCfg, RTIPV4ADDR Network)
+static int drvNATConstructRedir(unsigned iInstance, PDRVNAT pThis, PCFGMNODE pCfg, PRTNETADDRIPV4 pNetwork)
 {
     RTMAC Mac;
     RT_ZERO(Mac); /* can't get MAC here */
@@ -1088,8 +1135,7 @@ static int drvNATConstructRedir(unsigned iInstance, PDRVNAT pThis, PCFGMNODE pCf
 
         /* guest address */
         struct in_addr GuestIP;
-        /* @todo (vvl) use CTL_* */
-        GETIP_DEF(rc, pThis, pNode, GuestIP, htonl(Network | CTL_GUEST));
+        GETIP_DEF(rc, pThis, pNode, GuestIP, RT_H2N_U32(pNetwork->u | CTL_GUEST));
 
         /* Store the guest IP for re-establishing the port-forwarding rules. Note that GuestIP
          * is not documented. Without */
@@ -1171,24 +1217,6 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
     PDMDRV_CHECK_VERSIONS_RETURN(pDrvIns);
 
     /*
-     * Validate the config.
-     */
-    if (!CFGMR3AreValuesValid(pCfg,
-                              "PassDomain\0TFTPPrefix\0BootFile\0Network"
-                              "\0NextServer\0DNSProxy\0BindIP\0UseHostResolver\0"
-                              "SlirpMTU\0AliasMode\0"
-                              "SockRcv\0SockSnd\0TcpRcv\0TcpSnd\0"
-                              "ICMPCacheLimit\0"
-                              "SoMaxConnection\0"
-#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
-                              "HostResolverMappings\0"
-#endif
-                            ))
-        return PDMDRV_SET_ERROR(pDrvIns, VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES,
-                                N_("Unknown NAT configuration option, only supports PassDomain,"
-                                " TFTPPrefix, BootFile and Network"));
-
-    /*
      * Init the static parts.
      */
     pThis->pDrvIns                      = pDrvIns;
@@ -1215,6 +1243,24 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
 
     /* NAT engine configuration */
     pThis->INetworkNATCfg.pfnRedirectRuleCommand = drvNATNetworkNatConfig_RedirectRuleCommand;
+
+    /*
+     * Validate the config.
+     */
+    if (!CFGMR3AreValuesValid(pCfg,
+                              "PassDomain\0TFTPPrefix\0BootFile\0Network"
+                              "\0NextServer\0DNSProxy\0BindIP\0UseHostResolver\0"
+                              "SlirpMTU\0AliasMode\0"
+                              "SockRcv\0SockSnd\0TcpRcv\0TcpSnd\0"
+                              "ICMPCacheLimit\0"
+                              "SoMaxConnection\0"
+#ifdef VBOX_WITH_DNSMAPPING_IN_HOSTRESOLVER
+                              "HostResolverMappings\0"
+#endif
+                            ))
+        return PDMDRV_SET_ERROR(pDrvIns, VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES,
+                                N_("Unknown NAT configuration option, only supports PassDomain,"
+                                " TFTPPrefix, BootFile and Network"));
 
     /*
      * Get the configuration settings.
@@ -1266,8 +1312,8 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
                                    "missing network"),
                                    pDrvIns->iInstance, szNetwork);
 
-    RTIPV4ADDR Network;
-    RTIPV4ADDR Netmask;
+    RTNETADDRIPV4 Network, Netmask;
+
     rc = RTCidrStrToIPv4(szNetwork, &Network, &Netmask);
     if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS, N_("NAT#%d: Configuration error: "
@@ -1277,7 +1323,7 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
     /*
      * Initialize slirp.
      */
-    rc = slirp_init(&pThis->pNATState, RT_H2N_U32(Network), Netmask,
+    rc = slirp_init(&pThis->pNATState, RT_H2N_U32(Network.u), Netmask.u,
                     fPassDomain, !!fUseHostResolver, i32AliasMode,
                     iIcmpCacheLimit, pThis);
     if (RT_SUCCESS(rc))
@@ -1326,7 +1372,7 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uin
             AssertRC(rc);
         }
 #endif
-        rc = drvNATConstructRedir(pDrvIns->iInstance, pThis, pCfg, Network);
+        rc = drvNATConstructRedir(pDrvIns->iInstance, pThis, pCfg, &Network);
         if (RT_SUCCESS(rc))
         {
             /*
@@ -1446,7 +1492,7 @@ const PDMDRVREG g_DrvNAT =
     /* pfnSuspend */
     NULL,
     /* pfnResume */
-    NULL,
+    drvNATResume,
     /* pfnAttach */
     NULL,
     /* pfnDetach */

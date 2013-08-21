@@ -1,4 +1,4 @@
-/* $Id: PATMPatch.cpp 42481 2012-07-31 13:38:15Z vboxsync $ */
+/* $Id: PATMPatch.cpp $ */
 /** @file
  * PATMPatch - Dynamic Guest OS Instruction patches
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,28 +22,25 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_PATM
 #include <VBox/vmm/patm.h>
-#include <VBox/vmm/stam.h>
 #include <VBox/vmm/pgm.h>
 #include <VBox/vmm/cpum.h>
 #include <VBox/vmm/mm.h>
+#include <VBox/vmm/em.h>
 #include <VBox/vmm/trpm.h>
-#include <VBox/param.h>
-#include <iprt/avl.h>
+#include <VBox/vmm/csam.h>
 #include "PATMInternal.h"
 #include <VBox/vmm/vm.h>
-#include <VBox/vmm/csam.h>
+#include <VBox/param.h>
 
-#include <VBox/dbg.h>
 #include <VBox/err.h>
 #include <VBox/log.h>
-#include <iprt/assert.h>
-#include <iprt/asm.h>
-#include <iprt/string.h>
 #include <VBox/dis.h>
 #include <VBox/disopcode.h>
 
-#include <stdlib.h>
-#include <stdio.h>
+#include <iprt/assert.h>
+#include <iprt/asm.h>
+#include <iprt/string.h>
+
 #include "PATMA.h"
 #include "PATMPatch.h"
 
@@ -373,7 +370,7 @@ static uint32_t patmPatchGenCode(PVM pVM, PPATCHINFO pPatch, uint8_t *pPB, PPATC
 
         /* Add lookup record for patch to guest address translation */
         Assert(pPB[pAsmRecord->offJump - 1] == 0xE9);
-        patmr3AddP2GLookupRecord(pVM, pPatch, &pPB[pAsmRecord->offJump - 1], pReturnAddrGC, PATM_LOOKUP_PATCH2GUEST);
+        patmR3AddP2GLookupRecord(pVM, pPatch, &pPB[pAsmRecord->offJump - 1], pReturnAddrGC, PATM_LOOKUP_PATCH2GUEST);
 
         *(uint32_t *)&pPB[pAsmRecord->offJump] = displ;
         patmPatchAddReloc32(pVM, pPatch, &pPB[pAsmRecord->offJump], FIXUP_REL_JMPTOGUEST,
@@ -435,10 +432,12 @@ int patmPatchGenIret(PVM pVM, PPATCHINFO pPatch, RTRCPTR pCurInstrGC, bool fSize
     PATCHGEN_PROLOG(pVM, pPatch);
 
     AssertMsg(fSizeOverride == false, ("operand size override!!\n"));
-
     callInfo.pCurInstrGC = pCurInstrGC;
 
-    size = patmPatchGenCode(pVM, pPatch, pPB, &PATMIretRecord, 0, false, &callInfo);
+    if (EMIsRawRing1Enabled(pVM))
+        size = patmPatchGenCode(pVM, pPatch, pPB, &PATMIretRing1Record, 0, false, &callInfo);
+    else
+        size = patmPatchGenCode(pVM, pPatch, pPB, &PATMIretRecord, 0, false, &callInfo);
 
     PATCHGEN_EPILOG(pPatch, size);
     return VINF_SUCCESS;
@@ -636,7 +635,7 @@ int patmPatchGenRelJump(PVM pVM, PPATCHINFO pPatch, RCPTRTYPE(uint8_t *) pTarget
     case OP_JMP:
         /* If interrupted here, then jump to the target instruction. Used by PATM.cpp for jumping to known instructions. */
         /* Add lookup record for patch to guest address translation */
-        patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pTargetGC, PATM_LOOKUP_PATCH2GUEST);
+        patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pTargetGC, PATM_LOOKUP_PATCH2GUEST);
 
         pPB[0] = 0xE9;
         break;
@@ -865,7 +864,7 @@ int patmPatchGenRet(PVM pVM, PPATCHINFO pPatch, DISCPUSTATE *pCpu, RCPTRTYPE(uin
     }
 
     /* Jump back to the original instruction if IF is set again. */
-    Assert(!PATMFindActivePatchByEntrypoint(pVM, pCurInstrGC));
+    Assert(!patmFindActivePatchByEntrypoint(pVM, pCurInstrGC));
     rc = patmPatchGenCheckIF(pVM, pPatch, pCurInstrGC);
     AssertRCReturn(rc, rc);
 
@@ -978,7 +977,7 @@ int patmPatchGenCheckIF(PVM pVM, PPATCHINFO pPatch, RTRCPTR pCurInstrGC)
     PATCHGEN_PROLOG(pVM, pPatch);
 
     /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pCurInstrGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pCurInstrGC, PATM_LOOKUP_PATCH2GUEST);
 
     /* Generate code to check for IF=1 before executing the call to the duplicated function. */
     size = patmPatchGenCode(pVM, pPatch, pPB, &PATMCheckIFRecord, pCurInstrGC, true);
@@ -1001,7 +1000,7 @@ int patmPatchGenSetPIF(PVM pVM, PPATCHINFO pPatch, RTRCPTR pInstrGC)
     PATCHGEN_PROLOG(pVM, pPatch);
 
     /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pInstrGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pInstrGC, PATM_LOOKUP_PATCH2GUEST);
 
     int size = patmPatchGenCode(pVM, pPatch, pPB, &PATMSetPIFRecord, 0, false);
     PATCHGEN_EPILOG(pPatch, size);
@@ -1022,7 +1021,7 @@ int patmPatchGenClearPIF(PVM pVM, PPATCHINFO pPatch, RTRCPTR pInstrGC)
     PATCHGEN_PROLOG(pVM, pPatch);
 
     /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pInstrGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pInstrGC, PATM_LOOKUP_PATCH2GUEST);
 
     int size = patmPatchGenCode(pVM, pPatch, pPB, &PATMClearPIFRecord, 0, false);
     PATCHGEN_EPILOG(pPatch, size);
@@ -1048,7 +1047,7 @@ int patmPatchGenClearInhibitIRQ(PVM pVM, PPATCHINFO pPatch, RTRCPTR pNextInstrGC
     Assert((pPatch->flags & (PATMFL_GENERATE_JUMPTOGUEST|PATMFL_DUPLICATE_FUNCTION)) != (PATMFL_GENERATE_JUMPTOGUEST|PATMFL_DUPLICATE_FUNCTION));
 
     /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pNextInstrGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pNextInstrGC, PATM_LOOKUP_PATCH2GUEST);
 
     callInfo.pNextInstrGC = pNextInstrGC;
 
@@ -1073,20 +1072,25 @@ int patmPatchGenClearInhibitIRQ(PVM pVM, PPATCHINFO pPatch, RTRCPTR pNextInstrGC
  */
 int patmPatchGenIntEntry(PVM pVM, PPATCHINFO pPatch, RTRCPTR pIntHandlerGC)
 {
-    uint32_t size;
     int rc = VINF_SUCCESS;
 
-    PATCHGEN_PROLOG(pVM, pPatch);
+    if (!EMIsRawRing1Enabled(pVM))    /* direct passthru of interrupts is not allowed in the ring-1 support case as we can't
+                                         deal with the ring-1/2 ambiguity in the patm asm code and we don't need it either as
+                                         TRPMForwardTrap takes care of the details. */
+    {
+        uint32_t size;
+        PATCHGEN_PROLOG(pVM, pPatch);
 
-    /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pIntHandlerGC, PATM_LOOKUP_PATCH2GUEST);
+        /* Add lookup record for patch to guest address translation */
+        patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pIntHandlerGC, PATM_LOOKUP_PATCH2GUEST);
 
-    /* Generate entrypoint for the interrupt handler (correcting CS in the interrupt stack frame) */
-    size = patmPatchGenCode(pVM, pPatch, pPB,
-                            (pPatch->flags & PATMFL_INTHANDLER_WITH_ERRORCODE) ? &PATMIntEntryRecordErrorCode : &PATMIntEntryRecord,
-                            0, false);
+        /* Generate entrypoint for the interrupt handler (correcting CS in the interrupt stack frame) */
+        size = patmPatchGenCode(pVM, pPatch, pPB,
+                                (pPatch->flags & PATMFL_INTHANDLER_WITH_ERRORCODE) ? &PATMIntEntryRecordErrorCode : &PATMIntEntryRecord,
+                                0, false);
 
-    PATCHGEN_EPILOG(pPatch, size);
+        PATCHGEN_EPILOG(pPatch, size);
+    }
 
     // Interrupt gates set IF to 0
     rc = patmPatchGenCli(pVM, pPatch);
@@ -1107,10 +1111,12 @@ int patmPatchGenTrapEntry(PVM pVM, PPATCHINFO pPatch, RTRCPTR pTrapHandlerGC)
 {
     uint32_t size;
 
+    Assert(!EMIsRawRing1Enabled(pVM));
+
     PATCHGEN_PROLOG(pVM, pPatch);
 
     /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pTrapHandlerGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pTrapHandlerGC, PATM_LOOKUP_PATCH2GUEST);
 
     /* Generate entrypoint for the trap handler (correcting CS in the interrupt stack frame) */
     size = patmPatchGenCode(pVM, pPatch, pPB,
@@ -1129,7 +1135,7 @@ int patmPatchGenStats(PVM pVM, PPATCHINFO pPatch, RTRCPTR pInstrGC)
     PATCHGEN_PROLOG(pVM, pPatch);
 
     /* Add lookup record for stats code -> guest handler. */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pInstrGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pInstrGC, PATM_LOOKUP_PATCH2GUEST);
 
     /* Generate code to keep calling statistics for this patch */
     size = patmPatchGenCode(pVM, pPatch, pPB, &PATMStatsRecord, pInstrGC, false);
@@ -1544,7 +1550,7 @@ int patmPatchGenJumpToGuest(PVM pVM, PPATCHINFO pPatch, RCPTRTYPE(uint8_t *) pRe
     PATCHGEN_PROLOG(pVM, pPatch);
 
     /* Add lookup record for patch to guest address translation */
-    patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pReturnAddrGC, PATM_LOOKUP_PATCH2GUEST);
+    patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pReturnAddrGC, PATM_LOOKUP_PATCH2GUEST);
 
     /* Generate code to jump to guest code if IF=1, else fault. */
     size = patmPatchGenCode(pVM, pPatch, pPB, &PATMJumpToGuest_IF1Record, pReturnAddrGC, true);
@@ -1567,7 +1573,7 @@ int patmPatchGenPatchJump(PVM pVM, PPATCHINFO pPatch, RTRCPTR pCurInstrGC, RCPTR
     if (fAddLookupRecord)
     {
         /* Add lookup record for patch to guest address translation */
-        patmr3AddP2GLookupRecord(pVM, pPatch, pPB, pCurInstrGC, PATM_LOOKUP_PATCH2GUEST);
+        patmR3AddP2GLookupRecord(pVM, pPatch, pPB, pCurInstrGC, PATM_LOOKUP_PATCH2GUEST);
     }
 
     pPB[0] = 0xE9;  //JMP

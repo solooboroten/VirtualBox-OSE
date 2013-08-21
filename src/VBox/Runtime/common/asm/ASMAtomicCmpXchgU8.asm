@@ -1,10 +1,10 @@
-; $Id: ASMAtomicCmpXchgU8.asm 33540 2010-10-28 09:27:05Z vboxsync $
+; $Id: ASMAtomicCmpXchgU8.asm $
 ;; @file
 ; IPRT - ASMAtomicCmpXchgU8().
 ;
 
 ;
-; Copyright (C) 2006-2009 Oracle Corporation
+; Copyright (C) 2006-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;

@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -20,26 +20,32 @@
 #define __UIMachineMenuBar_h__
 
 /* Local includes */
-#include "UIMachineDefs.h"
+#include "UIDefs.h"
 
 /* Global includes */
 #include <QList>
 
+/* COM includes: */
+#include "COMEnums.h"
+#include "CMachine.h"
+
 /* Global forwards */
 class QMenu;
 class QMenuBar;
+class UISession;
 
 class UIMachineMenuBar
 {
 public:
-    UIMachineMenuBar();
 
-    QMenu* createMenu(UIMainMenuType fOptions = UIMainMenuType_All);
-    QMenuBar* createMenuBar(UIMainMenuType fOptions = UIMainMenuType_All);
+    UIMachineMenuBar(UISession *pSession, const CMachine &machine);
+
+    QMenu* createMenu(RuntimeMenuType fOptions = RuntimeMenuType_All);
+    QMenuBar* createMenuBar(RuntimeMenuType fOptions = RuntimeMenuType_All);
 
 protected:
 
-    QList<QMenu*> prepareSubMenus(UIMainMenuType fOptions = UIMainMenuType_All);
+    QList<QMenu*> prepareSubMenus(RuntimeMenuType fOptions = RuntimeMenuType_All);
     void prepareMenuMachine(QMenu *pMenu);
     void prepareMenuView(QMenu *pMenu);
     void prepareMenuDevices(QMenu *pMenu);
@@ -48,7 +54,12 @@ protected:
 #endif
     void prepareMenuHelp(QMenu *pMenu);
 
-    bool m_fIsFirstTime;
+    /* Helper: UI session stuff: */
+    UISession* uisession() const { return m_pSession; }
+
+    /* Variables: */
+    UISession *m_pSession;
+    CMachine m_machine;
 };
 
 #endif /* __UIMachineMenuBar_h__ */

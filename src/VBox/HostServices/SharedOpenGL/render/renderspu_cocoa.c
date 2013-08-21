@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -82,7 +82,7 @@ GLboolean renderspu_SystemVBoxCreateWindow(VisualInfo *pVisInfo, GLboolean fShow
     NativeNSViewRef pParentWin = (NativeNSViewRef)(uint32_t)render_spu_parent_window_id;
 #endif /* __LP64__ */
 
-    cocoaViewCreate(&pWinInfo->window, pParentWin, pVisInfo->visAttribs);
+    cocoaViewCreate(&pWinInfo->window, pWinInfo, pParentWin, pVisInfo->visAttribs);
 
     if (fShowIt)
         renderspu_SystemShowWindow(pWinInfo, fShowIt);
@@ -151,15 +151,22 @@ void renderspu_SystemShowWindow(WindowInfo *pWinInfo, GLboolean fShowIt)
     cocoaViewShow(pWinInfo->window, fShowIt);
 }
 
+void renderspu_SystemVBoxPresentComposition( WindowInfo *window, struct VBOXVR_SCR_COMPOSITOR_ENTRY *pChangedEntry )
+{
+    cocoaViewPresentComposition(window->window, pChangedEntry);
+}
+
 void renderspu_SystemMakeCurrent(WindowInfo *pWinInfo, GLint nativeWindow, ContextInfo *pCtxInfo)
 {
-    CRASSERT(pWinInfo);
-    CRASSERT(pCtxInfo);
-
 /*    if(pWinInfo->visual != pCtxInfo->visual)*/
 /*        printf ("visual mismatch .....................\n");*/
 
-    cocoaViewMakeCurrentContext(pWinInfo->window, pCtxInfo->context);
+    nativeWindow = 0;
+
+    if (pWinInfo && pCtxInfo)
+        cocoaViewMakeCurrentContext(pWinInfo->window, pCtxInfo->context);
+    else
+        cocoaViewMakeCurrentContext(NULL, NULL);
 }
 
 void renderspu_SystemSwapBuffers(WindowInfo *pWinInfo, GLint flags)
@@ -169,53 +176,13 @@ void renderspu_SystemSwapBuffers(WindowInfo *pWinInfo, GLint flags)
     cocoaViewDisplay(pWinInfo->window);
 }
 
-void renderspu_SystemWindowVisibleRegion(WindowInfo *pWinInfo, GLint cRects, GLint* paRects)
+void renderspu_SystemWindowVisibleRegion(WindowInfo *pWinInfo, GLint cRects, const GLint* paRects)
 {
     CRASSERT(pWinInfo);
 
     cocoaViewSetVisibleRegion(pWinInfo->window, cRects, paRects);
 }
 
-void renderspu_SystemSetRootVisibleRegion(GLint cRects, GLint *paRects)
-{
-}
-
 void renderspu_SystemWindowApplyVisibleRegion(WindowInfo *pWinInfo)
 {
 }
-
-void renderspu_SystemFlush()
-{
-    cocoaFlush();
-}
-
-void renderspu_SystemFinish()
-{
-    cocoaFinish();
-}
-
-void renderspu_SystemBindFramebufferEXT(GLenum target, GLuint framebuffer)
-{
-    cocoaBindFramebufferEXT(target, framebuffer);
-}
-
-void renderspu_SystemCopyPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum type)
-{
-    cocoaCopyPixels(x, y, width, height, type);
-}
-
-void renderspu_SystemGetIntegerv(GLenum pname, GLint * params)
-{
-    cocoaGetIntegerv(pname, params);
-}
-
-void renderspu_SystemReadBuffer(GLenum mode)
-{
-    cocoaReadBuffer(mode);
-}
-
-void renderspu_SystemDrawBuffer(GLenum mode)
-{
-    cocoaDrawBuffer(mode);
-}
-

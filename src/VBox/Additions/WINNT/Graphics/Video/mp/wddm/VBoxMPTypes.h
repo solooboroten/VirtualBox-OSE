@@ -1,11 +1,11 @@
-/* $Id: VBoxMPTypes.h 42081 2012-07-10 09:47:29Z vboxsync $ */
+/* $Id: VBoxMPTypes.h $ */
 
 /** @file
  * VBox WDDM Miniport driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -31,6 +31,9 @@ typedef struct VBOXWDDM_ALLOCATION *PVBOXWDDM_ALLOCATION;
 #include "VBoxMPShgsmi.h"
 #include "VBoxMPVbva.h"
 #include "VBoxMPCr.h"
+
+#include <cr_vreg.h>
+
 
 #if 0
 #include <iprt/avl.h>
@@ -100,6 +103,8 @@ typedef struct VBOXWDDM_ALLOC_DATA
 {
     VBOXWDDM_SURFACE_DESC SurfDesc;
     VBOXWDDM_ADDR Addr;
+    uint32_t hostID;
+    struct VBOXWDDM_SWAPCHAIN *pSwapchain;
 } VBOXWDDM_ALLOC_DATA, *PVBOXWDDM_ALLOC_DATA;
 
 typedef struct VBOXWDDM_SOURCE
@@ -110,7 +115,10 @@ typedef struct VBOXWDDM_SOURCE
 #endif
     VBOXWDDM_ALLOC_DATA AllocData;
     BOOLEAN bVisible;
-    BOOLEAN bGhSynced;
+    char fGhSynced;
+    /* specifies whether the source has 3D overlay data visible */
+    BOOLEAN fHas3DVrs;
+    VBOXVR_LIST VrList;
     VBOXVBVAINFO Vbva;
 #ifdef VBOX_WITH_VIDEOHWACCEL
     /* @todo: in our case this seems more like a target property,
@@ -137,7 +145,6 @@ typedef struct VBOXWDDM_TARGET
 typedef struct VBOXWDDM_ALLOCATION
 {
     LIST_ENTRY SwapchainEntry;
-    struct VBOXWDDM_SWAPCHAIN *pSwapchain;
     VBOXWDDM_ALLOC_TYPE enmType;
     volatile uint32_t cRefs;
     D3DDDI_RESOURCEFLAGS fRcFlags;
@@ -220,10 +227,12 @@ typedef struct VBOXWDDM_SWAPCHAIN
     volatile uint32_t cRefs;
     VBOXDISP_UMHANDLE hSwapchainUm;
     VBOXDISP_KMHANDLE hSwapchainKm;
+    int32_t winHostID;
+    BOOLEAN fExposed;
     POINT Pos;
     UINT width;
     UINT height;
-    VBOXWDDMVR_LIST VisibleRegions;
+    VBOXVR_LIST VisibleRegions;
 }VBOXWDDM_SWAPCHAIN, *PVBOXWDDM_SWAPCHAIN;
 
 typedef struct VBOXWDDM_CONTEXT
@@ -234,7 +243,9 @@ typedef struct VBOXWDDM_CONTEXT
     UINT  NodeOrdinal;
     UINT  EngineAffinity;
     BOOLEAN fRenderFromShadowDisabled;
+    int32_t hostID;
     uint32_t u32CrConClientID;
+    VBOXMP_CRPACKER CrPacker;
     VBOXWDDM_HTABLE Swapchains;
     VBOXVIDEOCM_CTX CmContext;
     VBOXVIDEOCM_ALLOC_CONTEXT AllocContext;

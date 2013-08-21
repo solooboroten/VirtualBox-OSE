@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -219,6 +219,12 @@ DECLINLINE(bool) ShflStringIsValid(PCSHFLSTRING pString, uint32_t cbBuf)
         return false;
     if (RT_UNLIKELY(pString->u16Length >= pString->u16Size))
         return false;
+    /** @todo r=bird: Check that u16Length is a multiple of two if UTF-16 input? */
+    /** @todo r=bird: Do we require the string to have a NUL terminator char, if
+     *        so check for it!! (Just had a problem with too small (/2) u16Length
+     *        and code behaving incorrectly because it worked up to the terminator
+     *        instead of the length.) */
+    /** @todo r=bird: Who checks for valid UTF-8 encoding of strings? */
     return true;
 }
 
@@ -1338,9 +1344,14 @@ typedef struct _VBoxSFSymlink
  * Host call, no guest structure is used.
  */
 
+/** mapping is writable */
 #define SHFL_ADD_MAPPING_F_WRITABLE         (RT_BIT_32(0))
+/** mapping is automounted by the guest */
 #define SHFL_ADD_MAPPING_F_AUTOMOUNT        (RT_BIT_32(1))
+/** allow the guest to create symlinks */
 #define SHFL_ADD_MAPPING_F_CREATE_SYMLINKS  (RT_BIT_32(2))
+/** mapping is actually missing on the host */
+#define SHFL_ADD_MAPPING_F_MISSING          (RT_BIT_32(3))
 
 #define SHFL_CPARMS_ADD_MAPPING  (3)
 

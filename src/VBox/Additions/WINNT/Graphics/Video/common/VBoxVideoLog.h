@@ -1,11 +1,11 @@
-/* $Id: VBoxVideoLog.h 41472 2012-05-29 07:12:42Z vboxsync $ */
+/* $Id: VBoxVideoLog.h $ */
 
 /** @file
  * VBox Video drivers, logging helper
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -96,18 +96,40 @@
 # define _WARN_LOGGER VBOX_VIDEO_LOG_LOGGER
 #endif
 
-#define WARN_NOBP(_a) _LOGMSG(VBOX_VIDEO_LOG_LOGGER, "WARNING! :", _a)
+#define WARN_NOBP(_a) _LOGMSG(_WARN_LOGGER, "WARNING! :", _a)
 #define WARN(_a)           \
     do                     \
     {                      \
         WARN_NOBP(_a);     \
         BP_WARN();         \
     } while (0)
+
 #define ASSERT_WARN(_a, _w) do {\
         if(!(_a)) { \
             WARN(_w); \
         }\
     } while (0)
+
+#define STOP_FATAL() do {      \
+        AssertReleaseFailed(); \
+    } while (0)
+#define ERR(_a) do { \
+        _LOGMSG(VBOX_VIDEO_LOGREL_LOGGER, "FATAL! :", _a); \
+        STOP_FATAL();                             \
+    } while (0)
+
+#define _DBGOP_N_TIMES(_count, _op) do {    \
+        static int fDoWarnCount = (_count); \
+        if (fDoWarnCount) { \
+            --fDoWarnCount; \
+            _op; \
+        } \
+    } while (0)
+
+#define WARN_ONCE(_a) do {    \
+        _DBGOP_N_TIMES(1, WARN(_a)); \
+    } while (0)
+
 
 #define LOG(_a) _LOGMSG(VBOX_VIDEO_LOG_LOGGER, "", _a)
 #define LOGREL(_a) _LOGMSG(VBOX_VIDEO_LOGREL_LOGGER, "", _a)

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -93,6 +93,43 @@ typedef struct {
 
 ct_assert(sizeof(cdb_atapi) == 12);
 
+/* Generic ATAPI/SCSI CD-ROM access routine signature. */
+typedef uint16_t (* cd_pkt_func)(uint16_t device_id, uint8_t cmdlen, char __far *cmdbuf,
+                                 uint16_t header, uint32_t length, uint8_t inout, char __far *buffer);
+
+/* Pointers to HW specific CD-ROM access routines. */
+cd_pkt_func     pktacc[DSKTYP_CNT] = {
+    [DSK_TYPE_ATAPI]  = { ata_cmd_packet },
+#ifdef VBOX_WITH_AHCI
+    [DSK_TYPE_AHCI]   = { ahci_cmd_packet },
+#endif
+#ifdef VBOX_WITH_SCSI
+    [DSK_TYPE_SCSI]   = { scsi_cmd_packet },
+#endif
+};
+
+#if defined(VBOX_WITH_AHCI) || defined(VBOX_WITH_SCSI)
+uint16_t dummy_soft_reset(uint16_t device_id)
+{
+    return 0;
+}
+#endif
+
+/* Generic reset routine signature. */
+typedef uint16_t (* cd_rst_func)(uint16_t device_id);
+
+/* Pointers to HW specific CD-ROM reset routines. */
+cd_rst_func     softrst[DSKTYP_CNT] = {
+    [DSK_TYPE_ATAPI]  = { ata_soft_reset },
+#ifdef VBOX_WITH_AHCI
+    [DSK_TYPE_AHCI]   = { dummy_soft_reset },
+#endif
+#ifdef VBOX_WITH_SCSI
+    [DSK_TYPE_SCSI]   = { dummy_soft_reset },
+#endif
+};
+
+
 // ---------------------------------------------------------------------------
 // Start of El-Torito boot functions
 // ---------------------------------------------------------------------------
@@ -145,11 +182,11 @@ void BIOSCALL int13_eltorito(disk_regs_t r)
     
     switch (GET_AH()) {
 
-    // FIXME ElTorito Various. Should be implemented
+    // FIXME ElTorito Various. Not implemented in many real BIOSes.
     case 0x4a: // ElTorito - Initiate disk emu
     case 0x4c: // ElTorito - Initiate disk emu and boot
     case 0x4d: // ElTorito - Return Boot catalog
-        BX_PANIC("%s: call with AX=%04x. Please report\n", __func__, AX);
+        BX_INFO("%s: call with AX=%04x not implemented.\n", __func__, AX);
         goto int13_fail;
         break;
 
@@ -266,11 +303,7 @@ uint16_t cdrom_boot(void)
 
     for (read_try = 0; read_try <= 4; ++read_try)
     {
-        //@todo: Use indirect calls instead?
-        if (device > BX_MAX_ATA_DEVICES)
-            error = ahci_cmd_packet(device, 12, (char __far *)&atapicmd, 0, 2048L, ATA_DATA_IN, &buffer);
-        else
-            error = ata_cmd_packet(device, 12, (char __far *)&atapicmd, 0, 2048L, ATA_DATA_IN, &buffer);
+        error = pktacc[bios_dsk->devices[device].type](device, 12, (char __far *)&atapicmd, 0, 2048L, ATA_DATA_IN, &buffer);
         if (!error)
             break;
     }
@@ -303,11 +336,7 @@ uint16_t cdrom_boot(void)
     bios_dsk->drqp.sect_sz = 512;
 #endif
 
-    if (device > BX_MAX_ATA_DEVICES)
-        error = ahci_cmd_packet(device, 12, (char __far *)&atapicmd, 0, 2048L, ATA_DATA_IN, &buffer);
-    else
-        error = ata_cmd_packet(device, 12, (char __far *)&atapicmd, 0, 2048L, ATA_DATA_IN, &buffer);
-
+    error = pktacc[bios_dsk->devices[device].type](device, 12, (char __far *)&atapicmd, 0, 2048L, ATA_DATA_IN, &buffer);
     if (error != 0)
         return 7;
 
@@ -351,6 +380,12 @@ uint16_t cdrom_boot(void)
     nbsectors = ((uint16_t *)buffer)[0x26 / 2];
     cdemu->sector_count = nbsectors;
 
+    /* Sanity check the sector count. In incorrectly mastered CDs, it might
+     * be zero. If it's more than 512K, reject it as well.
+     */
+    if (nbsectors == 0 || nbsectors > 1024)
+        return 12;
+
     lba = *((uint32_t *)&buffer[0x28]);
     cdemu->ilba = lba;
 
@@ -365,17 +400,14 @@ uint16_t cdrom_boot(void)
     bios_dsk->drqp.nsect   = 1 + (nbsectors - 1) / 4;
     bios_dsk->drqp.sect_sz = 512;
 
-    bios_dsk->drqp.skip_a = 2048 - nbsectors * 512UL % 2048;
+    bios_dsk->drqp.skip_a = (2048 - nbsectors * 512) % 2048;
 
-    if (device > BX_MAX_ATA_DEVICES)
-        error = ahci_cmd_packet(device, 12, (char __far *)&atapicmd, 0, nbsectors*512L, ATA_DATA_IN, MK_FP(boot_segment,0));
-    else
-        error = ata_cmd_packet(device, 12, (char __far *)&atapicmd, 0, nbsectors*512L, ATA_DATA_IN, MK_FP(boot_segment,0));
+    error = pktacc[bios_dsk->devices[device].type](device, 12, (char __far *)&atapicmd, 0, nbsectors*512L, ATA_DATA_IN, MK_FP(boot_segment,0));
 
     bios_dsk->drqp.skip_a = 0;
 
     if (error != 0)
-        return 12;
+        return 13;
 
     BX_DEBUG_ELTORITO("Emulate drive %02x, type %02x, LBA %lu\n", 
                       cdemu->emulated_drive, cdemu->media, cdemu->ilba);
@@ -463,8 +495,14 @@ void BIOSCALL int13_cdemu(disk_regs_t r)
     
     switch (GET_AH()) {
 
-    // all those functions return SUCCESS
     case 0x00: /* disk controller reset */
+        if (pktacc[bios_dsk->devices[device].type])
+        {
+            status = softrst[bios_dsk->devices[device].type](device);
+        }
+        goto int13_success;
+        break;
+    // all those functions return SUCCESS
     case 0x09: /* initialize drive parameters */
     case 0x0c: /* seek to specified cylinder */
     case 0x0d: /* alternate disk reset */  // FIXME ElTorito Various. should really reset ?
@@ -547,16 +585,13 @@ void BIOSCALL int13_cdemu(disk_regs_t r)
         atapicmd.lba     = swap_32(ilba + slba);
         atapicmd.nsect   = swap_16(elba - slba + 1);
 
-        bios_dsk->drqp.nsect   = elba - slba + 1;
+        bios_dsk->drqp.nsect   = nbsectors;
         bios_dsk->drqp.sect_sz = 512;
 
         bios_dsk->drqp.skip_b = before * 512;
-        bios_dsk->drqp.skip_a = 2048 - nbsectors * 512UL % 2048 - bios_dsk->drqp.skip_b;
+        bios_dsk->drqp.skip_a = ((4 - nbsectors % 4 - before) * 512) % 2048;
 
-        if (device > BX_MAX_ATA_DEVICES)
-            status = ahci_cmd_packet(device, 12, (char __far *)&atapicmd, before*512, nbsectors*512L, ATA_DATA_IN, MK_FP(segment,offset));
-        else
-            status = ata_cmd_packet(device, 12, (char __far *)&atapicmd, before*512, nbsectors*512L, ATA_DATA_IN, MK_FP(segment,offset));
+        status = pktacc[bios_dsk->devices[device].type](device, 12, (char __far *)&atapicmd, before*512, nbsectors*512L, ATA_DATA_IN, MK_FP(segment,offset));
 
         bios_dsk->drqp.skip_b = 0;
         bios_dsk->drqp.skip_a = 0;
@@ -585,13 +620,16 @@ void BIOSCALL int13_cdemu(disk_regs_t r)
                           // FIXME ElTorito Harddisk. should send the HD count
 
         switch (cdemu->media) {
-        case 0x01: SET_BL( 0x02 ); break;
-        case 0x02: SET_BL( 0x04 ); break;
-        case 0x03: SET_BL( 0x06 ); break;
+        case 0x01: SET_BL( 0x02 ); break;   /* 1.2 MB  */
+        case 0x02: SET_BL( 0x04 ); break;   /* 1.44 MB */
+        case 0x03: SET_BL( 0x05 ); break;   /* 2.88 MB */
         }
 
-        DI = (uint16_t)&diskette_param_table;   // @todo: or really DPT2?
-        ES = 0xF000;                            // @todo: how to make this relocatable?
+        /* Only set the DPT pointer for emulated floppies. */
+        if (cdemu->media < 4) {
+            DI = (uint16_t)&diskette_param_table;   // @todo: should this depend on emulated medium?
+            ES = 0xF000;                            // @todo: how to make this relocatable?
+        }
         goto int13_success;
         break;
 
@@ -757,10 +795,7 @@ void BIOSCALL int13_cdrom(uint16_t EHBX, disk_regs_t r)
         bios_dsk->drqp.nsect   = count;
         bios_dsk->drqp.sect_sz = 2048;
 
-        if (device > BX_MAX_ATA_DEVICES)
-            status = ahci_cmd_packet(device, 12, (char __far *)&atapicmd, 0, count*2048L, ATA_DATA_IN, MK_FP(segment,offset));
-        else
-            status = ata_cmd_packet(device, 12, (char __far *)&atapicmd, 0, count*2048L, ATA_DATA_IN, MK_FP(segment,offset));
+        status = pktacc[bios_dsk->devices[device].type](device, 12, (char __far *)&atapicmd, 0, count*2048L, ATA_DATA_IN, MK_FP(segment,offset));
 
         count = (uint16_t)(bios_dsk->drqp.trsfbytes >> 11);
         i13x->count = count;

@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-dtrace.cpp 41357 2012-05-19 23:26:39Z vboxsync $ */
+/* $Id: SUPDrv-dtrace.cpp $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - DTrace Provider.
  */

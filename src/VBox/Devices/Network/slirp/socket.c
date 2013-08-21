@@ -1,10 +1,10 @@
-/* $Id: socket.c 41855 2012-06-21 05:46:27Z vboxsync $ */
+/* $Id: socket.c $ */
 /** @file
  * NAT - socket handling.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -195,6 +195,9 @@ sofree(PNATState pData, struct socket *so)
      * Check that we don't freeng socket with tcbcb
      */
     Assert(!sototcpcb(so));
+    /* udp checks */
+    Assert(!so->so_timeout);
+    Assert(!so->so_timeout_arg);
     if (so == tcp_last_so)
         tcp_last_so = &tcb;
     else if (so == udp_last_so)
@@ -1137,9 +1140,10 @@ solisten(PNATState pData, u_int32_t bind_addr, u_int port, u_int32_t laddr, u_in
 #else
         int tmperrno = errno; /* Don't clobber the real reason we failed */
         close(s);
-        QSOCKET_LOCK(tcb);
-        sofree(pData, so);
-        QSOCKET_UNLOCK(tcb);
+        if (sototcpcb(so))
+            tcp_close(pData, sototcpcb(so));
+        else
+            sofree(pData, so);
         /* Restore the real errno */
         errno = tmperrno;
 #endif
@@ -1474,7 +1478,7 @@ sorecvfrom_icmp_win(PNATState pData, struct socket *so)
     int out_len;
     int size;
 
-    len = pData->pfIcmpParseReplies(pData->pvIcmpBuffer, pData->szIcmpBuffer);
+    len = pData->pfIcmpParseReplies(pData->pvIcmpBuffer, pData->cbIcmpBuffer);
     if (len < 0)
     {
         LogRel(("NAT: Error (%d) occurred on ICMP receiving\n", GetLastError()));

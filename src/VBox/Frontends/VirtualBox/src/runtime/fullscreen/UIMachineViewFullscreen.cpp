@@ -1,4 +1,4 @@
-/* $Id: UIMachineViewFullscreen.cpp 42323 2012-07-23 12:33:32Z vboxsync $ */
+/* $Id: UIMachineViewFullscreen.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -62,29 +62,11 @@ UIMachineViewFullscreen::~UIMachineViewFullscreen()
 
 void UIMachineViewFullscreen::sltAdditionsStateChanged()
 {
-    /* Check if we should restrict minimum size: */
-    maybeRestrictMinimumSize();
-
     /* Check if we should resize guest to fullscreen */
     if ((int)frameBuffer()->width() != workingArea().size().width() ||
         (int)frameBuffer()->height() != workingArea().size().height())
         if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
             sltPerformGuestResize(workingArea().size());
-}
-
-bool UIMachineViewFullscreen::event(QEvent *pEvent)
-{
-    switch (pEvent->type())
-    {
-        case ResizeEventType:
-        {
-            return guestResizeEvent(pEvent, true);
-        }
-
-        default:
-            break;
-    }
-    return UIMachineView::event(pEvent);
 }
 
 bool UIMachineViewFullscreen::eventFilter(QObject *pWatched, QEvent *pEvent)
@@ -132,11 +114,6 @@ void UIMachineViewFullscreen::prepareFilters()
 {
     /* Base class filters: */
     UIMachineView::prepareFilters();
-
-#ifdef Q_WS_MAC // TODO: Is it really needed? See UIMachineViewFullscreen::eventFilter(...);
-    /* Menu bar filter: */
-    machineWindow()->menuBar()->installEventFilter(this);
-#endif /* Q_WS_MAC */
 }
 
 void UIMachineViewFullscreen::prepareConsoleConnections()
@@ -154,11 +131,14 @@ void UIMachineViewFullscreen::setGuestAutoresizeEnabled(bool fEnabled)
     {
         m_bIsGuestAutoresizeEnabled = fEnabled;
 
-        maybeRestrictMinimumSize();
-
         if (uisession()->isGuestSupportsGraphics())
             sltPerformGuestResize();
     }
+}
+
+void UIMachineViewFullscreen::normalizeGeometry(bool /* fAdjustPosition */)
+{
+    sltPerformGuestResize(workingArea().size());
 }
 
 QRect UIMachineViewFullscreen::workingArea() const
@@ -172,20 +152,5 @@ QRect UIMachineViewFullscreen::workingArea() const
 QSize UIMachineViewFullscreen::calculateMaxGuestSize() const
 {
     return workingArea().size();
-}
-
-void UIMachineViewFullscreen::maybeRestrictMinimumSize()
-{
-    /* Sets the minimum size restriction depending on the auto-resize feature state and the current rendering mode.
-     * Currently, the restriction is set only in SDL mode and only when the auto-resize feature is inactive.
-     * We need to do that because we cannot correctly draw in a scrolled window in SDL mode.
-     * In all other modes, or when auto-resize is in force, this function does nothing. */
-    if (vboxGlobal().vmRenderMode() == SDLMode)
-    {
-        if (!uisession()->isGuestSupportsGraphics() || !m_bIsGuestAutoresizeEnabled)
-            setMinimumSize(sizeHint());
-        else
-            setMinimumSize(0, 0);
-    }
 }
 

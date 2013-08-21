@@ -1,10 +1,10 @@
-/* $Id: ConsoleVRDPServer.h 41352 2012-05-18 12:19:49Z vboxsync $ */
+/* $Id: ConsoleVRDPServer.h $ */
 /** @file
  * VBox Console VRDE Server Helper class and implementation of IVRDEServerInfo
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,8 +26,13 @@
 #include <VBox/RemoteDesktop/VRDEImage.h>
 #include <VBox/RemoteDesktop/VRDEMousePtr.h>
 #include <VBox/RemoteDesktop/VRDESCard.h>
+#include <VBox/RemoteDesktop/VRDETSMF.h>
+#define VRDE_VIDEOIN_WITH_VRDEINTERFACE /* Get the VRDE interface definitions. */
+#include <VBox/RemoteDesktop/VRDEVideoIn.h>
+#include <VBox/RemoteDesktop/VRDEInput.h>
 
 #include <VBox/HostServices/VBoxClipboardExt.h>
+#include <VBox/HostServices/VBoxHostChannel.h>
 
 #include "SchemaDefs.h"
 
@@ -121,7 +126,7 @@ public:
      * Forwarders to VRDP server library.
      */
     void SendUpdate (unsigned uScreenId, void *pvUpdate, uint32_t cbUpdate) const;
-    void SendResize (void) const;
+    void SendResize (void);
     void SendUpdateBitmap (unsigned uScreenId, uint32_t x, uint32_t y, uint32_t w, uint32_t h) const;
 
     void SendAudioSamples (void *pvSamples, uint32_t cSamples, VRDEAUDIOFORMAT format) const;
@@ -145,6 +150,12 @@ public:
 
     int SCardRequest(void *pvUser, uint32_t u32Function, const void *pvData, uint32_t cbData);
 
+    int VideoInDeviceAttach(const VRDEVIDEOINDEVICEHANDLE *pDeviceHandle, void *pvDeviceCtx);
+    int VideoInDeviceDetach(const VRDEVIDEOINDEVICEHANDLE *pDeviceHandle);
+    int VideoInGetDeviceDesc(void *pvUser, const VRDEVIDEOINDEVICEHANDLE *pDeviceHandle);
+    int VideoInControl(void *pvUser, const VRDEVIDEOINDEVICEHANDLE *pDeviceHandle,
+                       const VRDEVIDEOINCTRLHDR *pReq, uint32_t cbReq);
+
 private:
     /* Note: This is not a ComObjPtr here, because the ConsoleVRDPServer object
      * is actually just a part of the Console.
@@ -153,6 +164,8 @@ private:
 
     HVRDESERVER mhServer;
     int mServerInterfaceVersion;
+
+    int32_t volatile mcInResize; /* Do not Stop the server if this is not 0. */
 
     static int loadVRDPLibrary (const char *pszLibraryName);
 
@@ -235,19 +248,21 @@ private:
 
     uint32_t volatile mu32AudioInputClientId;
 
+    int32_t volatile mcClients;
+
     static DECLCALLBACK(void) H3DORBegin(const void *pvContext, void **ppvInstance,
                                          const char *pszFormat);
     static DECLCALLBACK(void) H3DORGeometry(void *pvInstance,
                                             int32_t x, int32_t y, uint32_t w, uint32_t h);
     static DECLCALLBACK(void) H3DORVisibleRegion(void *pvInstance,
-                                                 uint32_t cRects, RTRECT *paRects);
+                                                 uint32_t cRects, const RTRECT *paRects);
     static DECLCALLBACK(void) H3DORFrame(void *pvInstance,
                                          void *pvData, uint32_t cbData);
     static DECLCALLBACK(void) H3DOREnd(void *pvInstance);
     static DECLCALLBACK(int)  H3DORContextProperty(const void *pvContext, uint32_t index,
                                                    void *pvBuffer, uint32_t cbBuffer, uint32_t *pcbOut);
 
-    void remote3DRedirect(void);
+    void remote3DRedirect(bool fEnable);
 
     /*
      * VRDE server optional interfaces.
@@ -279,6 +294,68 @@ private:
                                                  uint32_t u32Function,
                                                  void *pvData,
                                                  uint32_t cbData);
+
+    /* TSMF interface. */
+    VRDETSMFINTERFACE m_interfaceTSMF;
+    VRDETSMFCALLBACKS m_interfaceCallbacksTSMF;
+    static DECLCALLBACK(void) VRDETSMFCbNotify(void *pvContext,
+                                               uint32_t u32Notification,
+                                               void *pvChannel,
+                                               const void *pvParm,
+                                               uint32_t cbParm);
+    void setupTSMF(void);
+
+    static DECLCALLBACK(int) tsmfHostChannelAttach(void *pvProvider, void **ppvInstance, uint32_t u32Flags,
+                                                   VBOXHOSTCHANNELCALLBACKS *pCallbacks, void *pvCallbacks);
+    static DECLCALLBACK(void) tsmfHostChannelDetach(void *pvInstance);
+    static DECLCALLBACK(int) tsmfHostChannelSend(void *pvInstance, const void *pvData, uint32_t cbData);
+    static DECLCALLBACK(int) tsmfHostChannelRecv(void *pvInstance, void *pvData, uint32_t cbData,
+                                                 uint32_t *pcbReturned, uint32_t *pcbRemaining);
+    static DECLCALLBACK(int) tsmfHostChannelControl(void *pvInstance, uint32_t u32Code,
+                                                    const void *pvParm, uint32_t cbParm,
+                                                    const void *pvData, uint32_t cbData, uint32_t *pcbDataReturned);
+    int tsmfLock(void);
+    void tsmfUnlock(void);
+    RTCRITSECT mTSMFLock;
+
+    /* Video input interface. */
+    VRDEVIDEOININTERFACE m_interfaceVideoIn;
+    VRDEVIDEOINCALLBACKS m_interfaceCallbacksVideoIn;
+    static DECLCALLBACK(void) VRDECallbackVideoInNotify(void *pvCallback,
+                                                        uint32_t u32Id,
+                                                        const void *pvData,
+                                                        uint32_t cbData);
+    static DECLCALLBACK(void) VRDECallbackVideoInDeviceDesc(void *pvCallback,
+                                                            int rcRequest,
+                                                            void *pDeviceCtx,
+                                                            void *pvUser,
+                                                            const VRDEVIDEOINDEVICEDESC *pDeviceDesc,
+                                                            uint32_t cbDevice);
+    static DECLCALLBACK(void) VRDECallbackVideoInControl(void *pvCallback,
+                                                         int rcRequest,
+                                                         void *pDeviceCtx,
+                                                         void *pvUser,
+                                                         const VRDEVIDEOINCTRLHDR *pControl,
+                                                         uint32_t cbControl);
+    static DECLCALLBACK(void) VRDECallbackVideoInFrame(void *pvCallback,
+                                                       int rcRequest,
+                                                       void *pDeviceCtx,
+                                                       const VRDEVIDEOINPAYLOADHDR *pFrame,
+                                                       uint32_t cbFrame);
+
+    /* Input interface. */
+    VRDEINPUTINTERFACE m_interfaceInput;
+    VRDEINPUTCALLBACKS m_interfaceCallbacksInput;
+    static DECLCALLBACK(void) VRDECallbackInputSetup(void *pvCallback,
+                                                     int rcRequest,
+                                                     uint32_t u32Method,
+                                                     const void *pvResult,
+                                                     uint32_t cbResult);
+    static DECLCALLBACK(void) VRDECallbackInputEvent(void *pvCallback,
+                                                     uint32_t u32Method,
+                                                     const void *pvEvent,
+                                                     uint32_t cbEvent);
+    uint64_t mu64TouchInputTimestampMCS;
 };
 
 

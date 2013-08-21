@@ -1,10 +1,10 @@
-/* $Id: VMInternal.h 38942 2011-10-05 13:17:23Z vboxsync $ */
+/* $Id: VMInternal.h $ */
 /** @file
  * VM - Internal header file.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -227,6 +227,11 @@ typedef struct VMINTUSERPERVM
      * This is mainly used for the 'Resetting' state, but may come in handy later
      * and when debugging. */
     VMSTATE                         enmPrevVMState;
+
+    /** Reason for the most recent suspend operation. */
+    VMSUSPENDREASON                 enmSuspendReason;
+    /** Reason for the most recent operation. */
+    VMRESUMEREASON                  enmResumeReason;
 
     /** Critical section for pAtError and pAtRuntimeError. */
     RTCRITSECT                      AtErrorCritSect;

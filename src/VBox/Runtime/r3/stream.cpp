@@ -1,10 +1,10 @@
-/* $Id: stream.cpp 41504 2012-05-30 18:40:48Z vboxsync $ */
+/* $Id: stream.cpp $ */
 /** @file
  * IPRT - I/O Stream.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -311,6 +311,7 @@ RTR3DECL(int) RTStrmOpen(const char *pszFilename, const char *pszMode, PRTSTREAM
         pStream->i32Error = VINF_SUCCESS;
         pStream->fCurrentCodeSet = false;
         pStream->fBinary  = fBinary;
+        pStream->fRecheckMode = false;
 #ifndef HAVE_FWRITE_UNLOCKED
         pStream->pCritSect = NULL;
 #endif /* HAVE_FWRITE_UNLOCKED */

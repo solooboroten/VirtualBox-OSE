@@ -1,10 +1,10 @@
-/* $Id: SUPDrvIDC.h 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: SUPDrvIDC.h $ */
 /** @file
  * VirtualBox Support Driver - Inter-Driver Communication (IDC) definitions.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -224,7 +224,11 @@ typedef SUPDRVIDCREQCOMPDEREGFACTORY *PSUPDRVIDCREQCOMPDEREGFACTORY;
 RT_C_DECLS_BEGIN
 
 #if defined(RT_OS_DARWIN)
-extern int VBOXCALL SUPDrvDarwinIDC(uint32_t iReq, PSUPDRVIDCREQHDR pReq);
+# ifdef IN_SUP_R0
+extern DECLEXPORT(int) VBOXCALL SUPDrvDarwinIDC(uint32_t iReq, PSUPDRVIDCREQHDR pReq);
+# else
+extern DECLIMPORT(int) VBOXCALL SUPDrvDarwinIDC(uint32_t iReq, PSUPDRVIDCREQHDR pReq);
+# endif
 
 #elif defined(RT_OS_FREEBSD)
 extern int VBOXCALL SUPDrvFreeBSDIDC(uint32_t iReq, PSUPDRVIDCREQHDR pReq);

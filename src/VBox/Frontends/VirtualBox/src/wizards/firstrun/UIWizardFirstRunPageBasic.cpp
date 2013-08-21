@@ -1,4 +1,4 @@
-/* $Id: UIWizardFirstRunPageBasic.cpp 41615 2012-06-07 16:55:08Z vboxsync $ */
+/* $Id: UIWizardFirstRunPageBasic.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2012 Oracle Corporation
+ * Copyright (C) 2008-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -62,6 +62,7 @@ UIWizardFirstRunPageBasic::UIWizardFirstRunPageBasic(const QString &strMachineId
     QVBoxLayout *pMainLayout = new QVBoxLayout(this);
     {
         pMainLayout->setContentsMargins(8, 0, 8, 0);
+        pMainLayout->setSpacing(10);
         m_pLabel = new QIRichTextLabel(this);
         QHBoxLayout *pSourceDiskLayout = new QHBoxLayout;
         {
@@ -73,7 +74,7 @@ UIWizardFirstRunPageBasic::UIWizardFirstRunPageBasic(const QString &strMachineId
             }
             m_pSelectMediaButton = new QIToolButton(this);
             {
-                m_pSelectMediaButton->setIcon(UIIconPool::iconSet(":/select_file_16px.png", ":/select_file_dis_16px.png"));
+                m_pSelectMediaButton->setIcon(UIIconPool::iconSet(":/select_file_16px.png", ":/select_file_disabled_16px.png"));
                 m_pSelectMediaButton->setAutoRaise(true);
             }
             pSourceDiskLayout->addWidget(m_pMediaSelector);

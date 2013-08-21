@@ -1,4 +1,4 @@
-/* $Id: timer-r0drv-os2.cpp 40806 2012-04-06 21:05:19Z vboxsync $ */
+/* $Id: timer-r0drv-os2.cpp $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver, OS/2.
  */

@@ -222,7 +222,6 @@ typedef struct {
     int trackWindowVisibleRgn;
     char *spu_dir;
     int force_pbuffers;
-    int viewportHack;
 
     /* thread safety stuff */
     GLboolean threadSafe;
@@ -354,6 +353,7 @@ extern GLboolean stubIsWindowVisible(WindowInfo *win);
 extern bool stubInit(void);
 
 extern void stubForcedFlush(GLint con);
+extern void stubConFlush(GLint con);
 extern void APIENTRY stub_GetChromiumParametervCR( GLenum target, GLuint index, GLenum type, GLsizei count, GLvoid *values );
 
 extern void APIENTRY glBoundsInfoCR(const CRrecti *, const GLbyte *, GLint, GLint);

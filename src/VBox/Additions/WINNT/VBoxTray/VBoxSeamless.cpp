@@ -1,10 +1,10 @@
-/* $Id: VBoxSeamless.cpp 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: VBoxSeamless.cpp $ */
 /** @file
  * VBoxSeamless - Seamless windows
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -24,16 +24,17 @@
 #include <VBoxDisplay.h>
 #include <VBox/VMMDev.h>
 #include <iprt/assert.h>
+#include <iprt/ldr.h>
 #include <VBoxGuestInternal.h>
 
 typedef struct _VBOXSEAMLESSCONTEXT
 {
     const VBOXSERVICEENV *pEnv;
 
-    HMODULE    hModule;
+    RTLDRMOD hModHook;
 
-    BOOL    (* pfnVBoxInstallHook)(HMODULE hDll);
-    BOOL    (* pfnVBoxRemoveHook)();
+    BOOL    (* pfnVBoxHookInstallWindowTracker)(HMODULE hDll);
+    BOOL    (* pfnVBoxHookRemoveWindowTracker)();
 
     PVBOXDISPIFESCAPE lpEscapeData;
 } VBOXSEAMLESSCONTEXT;
@@ -54,6 +55,7 @@ int VBoxSeamlessInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStar
 
     *pfStartThread = false;
     gCtx.pEnv = pEnv;
+    gCtx.hModHook = NIL_RTLDRMOD;
 
     OSVERSIONINFO OSinfo;
     OSinfo.dwOSVersionInfoSize = sizeof (OSinfo);
@@ -71,27 +73,25 @@ int VBoxSeamlessInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStar
     else
     {
         /* Will fail if SetWinEventHook is not present (version < NT4 SP6 apparently) */
-        gCtx.hModule = LoadLibrary(VBOXHOOK_DLL_NAME);
-        if (gCtx.hModule)
+        rc = RTLdrLoadAppPriv(VBOXHOOK_DLL_NAME, &gCtx.hModHook);
+        if (RT_SUCCESS(rc))
         {
-            *(uintptr_t *)&gCtx.pfnVBoxInstallHook = (uintptr_t)GetProcAddress(gCtx.hModule, "VBoxInstallHook");
-            *(uintptr_t *)&gCtx.pfnVBoxRemoveHook  = (uintptr_t)GetProcAddress(gCtx.hModule, "VBoxRemoveHook");
+            *(PFNRT *)&gCtx.pfnVBoxHookInstallWindowTracker = RTLdrGetFunction(gCtx.hModHook, "VBoxHookInstallWindowTracker");
+            *(PFNRT *)&gCtx.pfnVBoxHookRemoveWindowTracker  = RTLdrGetFunction(gCtx.hModHook, "VBoxHookRemoveWindowTracker");
 
-            /* Inform the host that we support the seamless window mode. */
-            rc = VbglR3SetGuestCaps(VMMDEV_GUEST_SUPPORTS_SEAMLESS, 0);
-            if (RT_SUCCESS(rc))
+            /* rc should contain success status */
+            AssertRC(rc);
+
+            VBoxSeamlessSetSupported(TRUE);
+
+//            if (RT_SUCCESS(rc))
             {
                 *pfStartThread = true;
                 *ppInstance = &gCtx;
             }
-            else
-                Log(("VBoxTray: VBoxSeamlessInit: Failed to set seamless capability\n"));
         }
         else
-        {
-            rc = RTErrConvertFromWin32(GetLastError());
             Log(("VBoxTray: VBoxSeamlessInit: LoadLibrary of \"%s\" failed with rc=%Rrc\n", VBOXHOOK_DLL_NAME, rc));
-        }
     }
 
     return rc;
@@ -102,34 +102,36 @@ void VBoxSeamlessDestroy(const VBOXSERVICEENV *pEnv, void *pInstance)
 {
     Log(("VBoxTray: VBoxSeamlessDestroy\n"));
 
-    /* Inform the host that we no longer support the seamless window mode. */
-    int rc = VbglR3SetGuestCaps(0, VMMDEV_GUEST_SUPPORTS_SEAMLESS);
-    if (RT_FAILURE(rc))
-        Log(("VBoxTray: VBoxSeamlessDestroy: Failed to unset seamless capability, rc=%Rrc\n", rc));
+    VBoxSeamlessSetSupported(FALSE);
 
-    if (gCtx.pfnVBoxRemoveHook)
-        gCtx.pfnVBoxRemoveHook();
-    if (gCtx.hModule)
-        FreeLibrary(gCtx.hModule);
-    gCtx.hModule = 0;
+    /* Inform the host that we no longer support the seamless window mode. */
+    if (gCtx.pfnVBoxHookRemoveWindowTracker)
+        gCtx.pfnVBoxHookRemoveWindowTracker();
+    if (gCtx.hModHook != NIL_RTLDRMOD)
+    {
+        RTLdrClose(gCtx.hModHook);
+        gCtx.hModHook = NIL_RTLDRMOD;
+    }
     return;
 }
 
 void VBoxSeamlessInstallHook()
 {
-    if (gCtx.pfnVBoxInstallHook)
+    if (gCtx.pfnVBoxHookInstallWindowTracker)
     {
         /* Check current visible region state */
         VBoxSeamlessCheckWindows();
 
-        gCtx.pfnVBoxInstallHook(gCtx.hModule);
+        HMODULE hMod = (HMODULE)RTLdrGetNativeHandle(gCtx.hModHook);
+        Assert(hMod != (HMODULE)~(uintptr_t)0);
+        gCtx.pfnVBoxHookInstallWindowTracker(hMod);
     }
 }
 
 void VBoxSeamlessRemoveHook()
 {
-    if (gCtx.pfnVBoxRemoveHook)
-        gCtx.pfnVBoxRemoveHook();
+    if (gCtx.pfnVBoxHookRemoveWindowTracker)
+        gCtx.pfnVBoxHookRemoveWindowTracker();
 
     if (gCtx.lpEscapeData)
     {
@@ -154,27 +156,60 @@ BOOL CALLBACK VBoxEnumFunc(HWND hwnd, LPARAM lParam)
     /* Only visible windows that are present on the desktop are interesting here */
     if (GetWindowRect(hwnd, &rectWindow))
     {
-        rectVisible = rectWindow;
-
         char szWindowText[256];
         szWindowText[0] = 0;
+        OSVERSIONINFO OSinfo;
+        HWND hStart = NULL;
         GetWindowText(hwnd, szWindowText, sizeof(szWindowText));
+        OSinfo.dwOSVersionInfoSize = sizeof (OSinfo);
+        GetVersionEx (&OSinfo);
+        if (OSinfo.dwMajorVersion >= 6)
+        {
+            hStart = ::FindWindowEx(GetDesktopWindow(), NULL, "Button", "Start");
+            if (  hwnd == hStart && szWindowText != NULL
+                && !(strcmp(szWindowText, "Start"))
+               )
+            {
+                /* for vista and above. To solve the issue of small bar above
+                 * the Start button when mouse is hovered over the start button in seamless mode.
+                 * Difference of 7 is observed in Win 7 platform between the dimensionsof rectangle with Start title and its shadow.
+                 */
+                rectWindow.top += 7;
+                rectWindow.bottom -=7;
+            }
+        }
+        rectVisible = rectWindow;
+
+#ifdef LOG_ENABLED
+        DWORD pid = 0;
+        DWORD tid = GetWindowThreadProcessId(hwnd, &pid);
+#endif
 
         /* Filter out Windows XP shadow windows */
         /** @todo still shows inside the guest */
         if (   szWindowText[0] == 0
-            && dwStyle == (WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS)
-            && dwExStyle == (WS_EX_LAYERED|WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT|WS_EX_TOPMOST))
+            && (
+                    (dwStyle == (WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS)
+                            && dwExStyle == (WS_EX_LAYERED|WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT|WS_EX_TOPMOST))
+                 || (dwStyle == (WS_POPUP|WS_VISIBLE|WS_DISABLED|WS_CLIPSIBLINGS|WS_CLIPCHILDREN)
+                            && dwExStyle == (WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE))
+                 || (dwStyle == (WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS|WS_CLIPCHILDREN)
+                                       && dwExStyle == (WS_EX_TOOLWINDOW))
+                            ))
         {
             Log(("VBoxTray: Filter out shadow window style=%x exstyle=%x\n", dwStyle, dwExStyle));
+            Log(("VBoxTray: Enum hwnd=%x rect (%d,%d) (%d,%d) (filtered)\n", hwnd, rectWindow.left, rectWindow.top, rectWindow.right, rectWindow.bottom));
+            Log(("VBoxTray: title=%s style=%x exStyle=%x\n", szWindowText, dwStyle, dwExStyle));
+            Log(("VBoxTray: pid=%d tid=%d\n", pid, tid));
             return TRUE;
         }
 
         /** @todo will this suffice? The Program Manager window covers the whole screen */
         if (strcmp(szWindowText, "Program Manager"))
         {
-            Log(("VBoxTray: Enum hwnd=%x rect (%d,%d) (%d,%d)\n", hwnd, rectWindow.left, rectWindow.top, rectWindow.right, rectWindow.bottom));
+            Log(("VBoxTray: Enum hwnd=%x rect (%d,%d) (%d,%d) (applying)\n", hwnd, rectWindow.left, rectWindow.top, rectWindow.right, rectWindow.bottom));
             Log(("VBoxTray: title=%s style=%x exStyle=%x\n", szWindowText, dwStyle, dwExStyle));
+            Log(("VBoxTray: pid=%d tid=%d\n", pid, tid));
 
             HRGN hrgn = CreateRectRgn(0,0,0,0);
 
@@ -203,6 +238,7 @@ BOOL CALLBACK VBoxEnumFunc(HWND hwnd, LPARAM lParam)
         {
             Log(("VBoxTray: Enum hwnd=%x rect (%d,%d) (%d,%d) (ignored)\n", hwnd, rectWindow.left, rectWindow.top, rectWindow.right, rectWindow.bottom));
             Log(("VBoxTray: title=%s style=%x\n", szWindowText, dwStyle));
+            Log(("VBoxTray: pid=%d tid=%d\n", pid, tid));
         }
     }
     return TRUE; /* continue enumeration */
@@ -341,7 +377,7 @@ unsigned __stdcall VBoxSeamlessThread(void *pInstance)
                                 if (!ret)
                                     Log(("VBoxTray: SystemParametersInfo SPI_SETSCREENSAVEACTIVE failed with %d\n", GetLastError()));
                             }
-                            PostMessage(ghwndToolWindow, WM_VBOX_REMOVE_SEAMLESS_HOOK, 0, 0);
+                            PostMessage(ghwndToolWindow, WM_VBOX_SEAMLESS_DISABLE, 0, 0);
                             break;
 
                         case VMMDev_Seamless_Visible_Region:
@@ -355,7 +391,7 @@ unsigned __stdcall VBoxSeamlessThread(void *pInstance)
                             ret = SystemParametersInfo(SPI_SETSCREENSAVEACTIVE, FALSE, NULL, 0);
                             if (!ret)
                                 Log(("VBoxTray: SystemParametersInfo SPI_SETSCREENSAVEACTIVE failed with %d\n", GetLastError()));
-                            PostMessage(ghwndToolWindow, WM_VBOX_INSTALL_SEAMLESS_HOOK, 0, 0);
+                            PostMessage(ghwndToolWindow, WM_VBOX_SEAMLESS_ENABLE, 0, 0);
                             break;
 
                         case VMMDev_Seamless_Host_Window:

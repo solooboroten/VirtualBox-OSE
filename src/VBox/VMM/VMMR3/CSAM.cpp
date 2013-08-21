@@ -1,10 +1,10 @@
-/* $Id: CSAM.cpp 42782 2012-08-11 23:19:17Z vboxsync $ */
+/* $Id: CSAM.cpp $ */
 /** @file
  * CSAM - Guest OS Code Scanning and Analysis Manager
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,29 +26,33 @@
 #include <VBox/vmm/cpumdis.h>
 #include <VBox/vmm/pgm.h>
 #include <VBox/vmm/iom.h>
-#include <VBox/sup.h>
 #include <VBox/vmm/mm.h>
 #include <VBox/vmm/em.h>
+#include <VBox/vmm/hm.h>
 #ifdef VBOX_WITH_REM
 # include <VBox/vmm/rem.h>
 #endif
 #include <VBox/vmm/selm.h>
 #include <VBox/vmm/trpm.h>
 #include <VBox/vmm/cfgm.h>
+#include <VBox/vmm/ssm.h>
 #include <VBox/param.h>
 #include <iprt/avl.h>
 #include <iprt/asm.h>
 #include <iprt/thread.h>
 #include "CSAMInternal.h"
 #include <VBox/vmm/vm.h>
+#include <VBox/vmm/uvm.h>
+
 #include <VBox/dbg.h>
+#include <VBox/sup.h>
 #include <VBox/err.h>
-#include <VBox/vmm/ssm.h>
 #include <VBox/log.h>
-#include <iprt/assert.h>
-#include <iprt/string.h>
+
 #include <VBox/dis.h>
 #include <VBox/disopcode.h>
+#include <iprt/assert.h>
+#include <iprt/string.h>
 #include "internal/pgm.h"
 
 
@@ -67,6 +71,7 @@
 *******************************************************************************/
 static DECLCALLBACK(int) csamr3Save(PVM pVM, PSSMHANDLE pSSM);
 static DECLCALLBACK(int) csamr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass);
+static DECLCALLBACK(int) csamR3LoadDummy(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass);
 static DECLCALLBACK(int) CSAMCodePageWriteHandler(PVM pVM, RTGCPTR GCPtr, void *pvPtr, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser);
 static DECLCALLBACK(int) CSAMCodePageInvalidate(PVM pVM, RTGCPTR GCPtr);
 
@@ -82,13 +87,16 @@ static int          csamAnalyseCodeStream(PVM pVM, RCPTRTYPE(uint8_t *) pInstrGC
 /** @todo Temporary for debugging. */
 static bool fInCSAMCodePageInvalidate = false;
 
+#ifdef VBOX_WITH_DEBUGGER
+static FNDBGCCMD csamr3CmdOn;
+static FNDBGCCMD csamr3CmdOff;
+#endif
+
+
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
 #ifdef VBOX_WITH_DEBUGGER
-static DECLCALLBACK(int) csamr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs);
-static DECLCALLBACK(int) csamr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs);
-
 /** Command descriptors. */
 static const DBGCCMD    g_aCmds[] =
 {
@@ -213,10 +221,25 @@ static const SSMFIELD g_aCsamPageRecFields[] =
  * @returns VBox status code.
  * @param   pVM         Pointer to the VM.
  */
-VMMR3DECL(int) CSAMR3Init(PVM pVM)
+VMMR3_INT_DECL(int) CSAMR3Init(PVM pVM)
 {
     int rc;
 
+    /*
+     * We only need a saved state dummy loader if HM is enabled.
+     */
+    if (HMIsEnabled(pVM))
+    {
+        pVM->fCSAMEnabled = false;
+        return SSMR3RegisterInternal(pVM, "CSAM", 0, CSAM_SSM_VERSION, 0,
+                                     NULL, NULL, NULL,
+                                     NULL, NULL, NULL,
+                                     NULL, csamR3LoadDummy, NULL);
+    }
+
+    /*
+     * Raw-mode.
+     */
     LogFlow(("CSAMR3Init\n"));
 
     /* Allocate bitmap for the page directory. */
@@ -324,6 +347,7 @@ static int csamReinit(PVM pVM)
      */
     AssertRelease(!(RT_OFFSETOF(VM, csam.s) & 31));
     AssertRelease(sizeof(pVM->csam.s) <= sizeof(pVM->csam.padding));
+    AssertRelease(!HMIsEnabled(pVM));
 
     /*
      * Setup any fixed pointers and offsets.
@@ -361,9 +385,9 @@ static int csamReinit(PVM pVM)
  * @param   pVM      The VM.
  * @param   offDelta Relocation delta.
  */
-VMMR3DECL(void) CSAMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
+VMMR3_INT_DECL(void) CSAMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
 {
-    if (offDelta)
+    if (offDelta && !HMIsEnabled(pVM))
     {
         /* Adjust pgdir and page bitmap pointers. */
         pVM->csam.s.pPDBitmapGC   = MMHyperR3ToRC(pVM, pVM->csam.s.pPDGCBitmapHC);
@@ -389,8 +413,11 @@ VMMR3DECL(void) CSAMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
  * @returns VBox status code.
  * @param   pVM         Pointer to the VM.
  */
-VMMR3DECL(int) CSAMR3Term(PVM pVM)
+VMMR3_INT_DECL(int) CSAMR3Term(PVM pVM)
 {
+    if (HMIsEnabled(pVM))
+        return VINF_SUCCESS;
+
     int rc;
 
     rc = CSAMR3Reset(pVM);
@@ -414,10 +441,13 @@ VMMR3DECL(int) CSAMR3Term(PVM pVM)
  * @returns VBox status code.
  * @param   pVM     The VM which is reset.
  */
-VMMR3DECL(int) CSAMR3Reset(PVM pVM)
+VMMR3_INT_DECL(int) CSAMR3Reset(PVM pVM)
 {
+    if (HMIsEnabled(pVM))
+        return VINF_SUCCESS;
+
     /* Clear page bitmaps. */
-    for(int i=0;i<CSAM_PGDIRBMP_CHUNKS;i++)
+    for (int i = 0; i < CSAM_PGDIRBMP_CHUNKS; i++)
     {
         if (pVM->csam.s.pPDBitmapHC[i])
         {
@@ -427,15 +457,12 @@ VMMR3DECL(int) CSAMR3Reset(PVM pVM)
     }
 
     /* Remove all CSAM page records. */
-    while(true)
+    for (;;)
     {
         PCSAMPAGEREC pPageRec = (PCSAMPAGEREC)RTAvlPVGetBestFit(&pVM->csam.s.pPageTree, 0, true);
-        if (pPageRec)
-        {
-            csamRemovePageRecord(pVM, pPageRec->page.pPageGC);
-        }
-        else
+        if (!pPageRec)
             break;
+        csamRemovePageRecord(pVM, pPageRec->page.pPageGC);
     }
     Assert(!pVM->csam.s.pPageTree);
 
@@ -539,6 +566,16 @@ static DECLCALLBACK(int) csamr3Save(PVM pVM, PSSMHANDLE pSSM)
     /** @note we don't restore aDangerousInstr; it will be recreated automatically. */
     return VINF_SUCCESS;
 }
+
+
+/**
+ * @callback_method_impl{FNSSMINTLOADEXEC, Dummy load function for HM mode.}
+ */
+DECLCALLBACK(int) csamR3LoadDummy(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
+{
+    return SSMR3SkipToEndOfUnit(pSSM);
+}
+
 
 /**
  * Execute state load operation.
@@ -671,17 +708,18 @@ static DECLCALLBACK(int) csamr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion,
 /**
  * Convert guest context address to host context pointer
  *
- * @returns VBox status code.
+ * @returns Byte pointer (ring-3 context) corresponding to pGCPtr on success,
+ *          NULL on failure.
  * @param   pVM         Pointer to the VM.
  * @param   pCacheRec   Address conversion cache record
  * @param   pGCPtr      Guest context pointer
  * @returns             Host context pointer or NULL in case of an error
  *
  */
-static R3PTRTYPE(void *) CSAMGCVirtToHCVirt(PVM pVM, PCSAMP2GLOOKUPREC pCacheRec, RCPTRTYPE(uint8_t *) pGCPtr)
+static uint8_t *csamR3GCVirtToHCVirt(PVM pVM, PCSAMP2GLOOKUPREC pCacheRec, RCPTRTYPE(uint8_t *) pGCPtr)
 {
     int rc;
-    R3PTRTYPE(void *) pHCPtr;
+    void *pHCPtr;
     Assert(pVM->cCpus == 1);
     PVMCPU pVCpu = VMMGetCpu0(pVM);
 
@@ -689,7 +727,7 @@ static R3PTRTYPE(void *) CSAMGCVirtToHCVirt(PVM pVM, PCSAMP2GLOOKUPREC pCacheRec
 
     pHCPtr = PATMR3GCPtrToHCPtr(pVM, pGCPtr);
     if (pHCPtr)
-        return pHCPtr;
+        return (uint8_t *)pHCPtr;
 
     if (pCacheRec->pPageLocStartHC)
     {
@@ -716,10 +754,10 @@ static R3PTRTYPE(void *) CSAMGCVirtToHCVirt(PVM pVM, PCSAMP2GLOOKUPREC pCacheRec
         return NULL;
     }
 
-    pCacheRec->pPageLocStartHC = (R3PTRTYPE(uint8_t*))((RTHCUINTPTR)pHCPtr & PAGE_BASE_HC_MASK);
+    pCacheRec->pPageLocStartHC = (uint8_t*)((uintptr_t)pHCPtr & PAGE_BASE_HC_MASK);
     pCacheRec->pGuestLoc       = pGCPtr & PAGE_BASE_GC_MASK;
     STAM_PROFILE_STOP(&pVM->csam.s.StatTimeAddrConv, a);
-    return pHCPtr;
+    return (uint8_t *)pHCPtr;
 }
 
 
@@ -841,15 +879,17 @@ static int CSAMR3AnalyseCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_t *
         }
         break;
 
+    /* removing breaks win2k guests? */
+    case OP_IRET:
+        if (EMIsRawRing1Enabled(pVM))
+            break;
+        /* no break */
+
     case OP_ILLUD2:
         /* This appears to be some kind of kernel panic in Linux 2.4; no point to continue. */
     case OP_RETN:
     case OP_INT3:
     case OP_INVALID:
-#if 1
-    /* removing breaks win2k guests? */
-    case OP_IRET:
-#endif
         return VINF_SUCCESS;
     }
 
@@ -895,11 +935,10 @@ static int CSAMR3AnalyseCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_t *
             cbInstrs    += cbCurInstr;
 
             {   /* Force pCurInstrHC out of scope after we stop using it (page lock!) */
-                uint8_t       *pCurInstrHC = 0;
-                pCurInstrHC = (uint8_t *)CSAMGCVirtToHCVirt(pVM, pCacheRec, pCurInstrGC);
+                uint8_t *pCurInstrHC = csamR3GCVirtToHCVirt(pVM, pCacheRec, pCurInstrGC);
                 if (pCurInstrHC == NULL)
                 {
-                    Log(("CSAMGCVirtToHCVirt failed for %RRv\n", pCurInstrGC));
+                    Log(("csamR3GCVirtToHCVirt failed for %RRv\n", pCurInstrGC));
                     break;
                 }
                 Assert(VALID_PTR(pCurInstrHC));
@@ -914,12 +953,37 @@ static int CSAMR3AnalyseCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_t *
         break;
     }
 
+#ifdef VBOX_WITH_RAW_RING1
+    case OP_MOV:
+        /* mov xx, CS is a dangerous instruction as our raw ring usage leaks through. */
+        if (    EMIsRawRing1Enabled(pVM)
+            &&  (pCpu->Param2.fUse & DISUSE_REG_SEG) 
+            &&  (pCpu->Param2.Base.idxSegReg == DISSELREG_CS))
+        {
+            Log(("CSAM: Patching dangerous 'mov xx, cs' instruction at %RGv with an int3\n", pCurInstrGC));
+            if (PATMR3HasBeenPatched(pVM, pCurInstrGC) == false)
+            {
+                rc = PATMR3InstallPatch(pVM, pCurInstrGC, (pPage->fCode32) ? PATMFL_CODE32 : 0);
+                if (RT_FAILURE(rc))
+                {
+                    Log(("PATMR3InstallPatch failed with %d\n", rc));
+                    return VWRN_CONTINUE_ANALYSIS;
+                }
+            }
+            return VWRN_CONTINUE_ANALYSIS;
+        }
+        break;
+#endif
+
     case OP_PUSH:
+        /** @todo broken comparison!! should be if ((pCpu->Param1.fUse & DISUSE_REG_SEG) &&  (pCpu->Param1.Base.idxSegReg == DISSELREG_SS)) */
         if (pCpu->pCurInstr->fParam1 != OP_PARM_REG_CS)
             break;
 
         /* no break */
+#ifndef VBOX_WITH_SAFE_STR
     case OP_STR:
+#endif
     case OP_LSL:
     case OP_LAR:
     case OP_SGDT:
@@ -1077,10 +1141,10 @@ static int csamAnalyseCallCodeStream(PVM pVM, RCPTRTYPE(uint8_t *) pInstrGC, RCP
              */
             for (int j = 0; j < 16; j++)
             {
-                uint8_t *pCurInstrHC = (uint8_t *)CSAMGCVirtToHCVirt(pVM, pCacheRec, pCurInstrGC);
+                uint8_t *pCurInstrHC = csamR3GCVirtToHCVirt(pVM, pCacheRec, pCurInstrGC);
                 if (pCurInstrHC == NULL)
                 {
-                    Log(("CSAMGCVirtToHCVirt failed for %RRv\n", pCurInstrGC));
+                    Log(("csamR3GCVirtToHCVirt failed for %RRv\n", pCurInstrGC));
                     goto done;
                 }
                 Assert(VALID_PTR(pCurInstrHC));
@@ -1289,10 +1353,10 @@ static int csamAnalyseCodeStream(PVM pVM, RCPTRTYPE(uint8_t *) pInstrGC, RCPTRTY
         }
 
         {   /* Force pCurInstrHC out of scope after we stop using it (page lock!) */
-            uint8_t *pCurInstrHC = (uint8_t *)CSAMGCVirtToHCVirt(pVM, pCacheRec, pCurInstrGC);
+            uint8_t *pCurInstrHC = csamR3GCVirtToHCVirt(pVM, pCacheRec, pCurInstrGC);
             if (pCurInstrHC == NULL)
             {
-                Log(("CSAMGCVirtToHCVirt failed for %RRv\n", pCurInstrGC));
+                Log(("csamR3GCVirtToHCVirt failed for %RRv\n", pCurInstrGC));
                 rc = VERR_PATCHING_REFUSED;
                 goto done;
             }
@@ -1589,6 +1653,7 @@ static int csamFlushPage(PVM pVM, RTRCPTR addr, bool fRemovePage)
 
     if (!CSAMIsEnabled(pVM))
         return VINF_SUCCESS;
+    Assert(!HMIsEnabled(pVM));
 
     PVMCPU pVCpu = VMMGetCpu0(pVM);
 
@@ -1689,7 +1754,7 @@ static int csamFlushPage(PVM pVM, RTRCPTR addr, bool fRemovePage)
  * @param   pVM         Pointer to the VM.
  * @param   addr        GC address of the page to flush
  */
-VMMR3DECL(int) CSAMR3FlushPage(PVM pVM, RTRCPTR addr)
+VMMR3_INT_DECL(int) CSAMR3FlushPage(PVM pVM, RTRCPTR addr)
 {
     return csamFlushPage(pVM, addr, true /* remove page record */);
 }
@@ -1701,10 +1766,12 @@ VMMR3DECL(int) CSAMR3FlushPage(PVM pVM, RTRCPTR addr)
  * @param   pVM         Pointer to the VM.
  * @param   addr        GC address of the page to flush
  */
-VMMR3DECL(int) CSAMR3RemovePage(PVM pVM, RTRCPTR addr)
+VMMR3_INT_DECL(int) CSAMR3RemovePage(PVM pVM, RTRCPTR addr)
 {
     PCSAMPAGEREC pPageRec;
     int          rc;
+
+    AssertReturn(!HMIsEnabled(pVM), VERR_CSAM_HM_IPE);
 
     addr = addr & PAGE_BASE_GC_MASK;
 
@@ -1882,7 +1949,8 @@ VMMR3DECL(int) CSAMR3MonitorPage(PVM pVM, RTRCPTR pPageAddrGC, CSAMTAG enmTag)
     int          rc;
     bool         fMonitorInvalidation;
     Assert(pVM->cCpus == 1);
-    PVMCPU pVCpu = VMMGetCpu0(pVM);
+    PVMCPU       pVCpu = VMMGetCpu0(pVM);
+    Assert(!HMIsEnabled(pVM));
 
     /* Dirty pages must be handled before calling this function!. */
     Assert(!pVM->csam.s.cDirtyPages);
@@ -2002,6 +2070,8 @@ VMMR3DECL(int) CSAMR3MonitorPage(PVM pVM, RTRCPTR pPageAddrGC, CSAMTAG enmTag)
  */
 VMMR3DECL(int) CSAMR3UnmonitorPage(PVM pVM, RTRCPTR pPageAddrGC, CSAMTAG enmTag)
 {
+    Assert(!HMIsEnabled(pVM));
+
     pPageAddrGC &= PAGE_BASE_GC_MASK;
 
     Log(("CSAMR3UnmonitorPage %RRv %d\n", pPageAddrGC, enmTag));
@@ -2257,12 +2327,13 @@ static void csamMarkCode(PVM pVM, PCSAMPAGE pPage, RTRCPTR pInstr, uint32_t cbIn
  * @param   cbInstr      Instruction size
  * @param   fScanned    Mark as scanned or not
  */
-VMMR3DECL(int) CSAMR3MarkCode(PVM pVM, RTRCPTR pInstr, uint32_t cbInstr, bool fScanned)
+VMMR3_INT_DECL(int) CSAMR3MarkCode(PVM pVM, RTRCPTR pInstr, uint32_t cbInstr, bool fScanned)
 {
     PCSAMPAGE pPage = 0;
 
     Assert(!fScanned);   /* other case not implemented. */
     Assert(!PATMIsPatchGCAddr(pVM, pInstr));
+    Assert(!HMIsEnabled(pVM));
 
     if (csamIsCodeScanned(pVM, pInstr, &pPage) == false)
     {
@@ -2284,8 +2355,9 @@ VMMR3DECL(int) CSAMR3MarkCode(PVM pVM, RTRCPTR pInstr, uint32_t cbInstr, bool fS
  * @param   pCtxCore    CPU context
  * @param   pInstrGC    Instruction pointer
  */
-VMMR3DECL(int) CSAMR3CheckCodeEx(PVM pVM, PCPUMCTXCORE pCtxCore, RTRCPTR pInstrGC)
+VMMR3_INT_DECL(int) CSAMR3CheckCodeEx(PVM pVM, PCPUMCTXCORE pCtxCore, RTRCPTR pInstrGC)
 {
+    Assert(!HMIsEnabled(pVM));
     if (EMIsRawRing0Enabled(pVM) == false || PATMIsPatchGCAddr(pVM, pInstrGC) == true)
     {
         // No use
@@ -2310,10 +2382,11 @@ VMMR3DECL(int) CSAMR3CheckCodeEx(PVM pVM, PCPUMCTXCORE pCtxCore, RTRCPTR pInstrG
  * @param   pVM         Pointer to the VM.
  * @param   pInstrGC    Instruction pointer (0:32 virtual address)
  */
-VMMR3DECL(int) CSAMR3CheckCode(PVM pVM, RTRCPTR pInstrGC)
+VMMR3_INT_DECL(int) CSAMR3CheckCode(PVM pVM, RTRCPTR pInstrGC)
 {
     int rc;
     PCSAMPAGE pPage = NULL;
+    Assert(!HMIsEnabled(pVM));
 
     if (    EMIsRawRing0Enabled(pVM) == false
         ||  PATMIsPatchGCAddr(pVM, pInstrGC) == true)
@@ -2324,7 +2397,7 @@ VMMR3DECL(int) CSAMR3CheckCode(PVM pVM, RTRCPTR pInstrGC)
 
     if (CSAMIsEnabled(pVM))
     {
-        /* Cache record for CSAMGCVirtToHCVirt */
+        /* Cache record for csamR3GCVirtToHCVirt */
         CSAMP2GLOOKUPREC cacheRec;
         RT_ZERO(cacheRec);
 
@@ -2429,8 +2502,10 @@ static int csamR3FlushCodePages(PVM pVM)
  * @param   pVM         Pointer to the VM.
  * @param   pVCpu       Pointer to the VMCPU.
  */
-VMMR3DECL(int) CSAMR3DoPendingAction(PVM pVM, PVMCPU pVCpu)
+VMMR3_INT_DECL(int) CSAMR3DoPendingAction(PVM pVM, PVMCPU pVCpu)
 {
+    AssertReturn(!HMIsEnabled(pVM), VERR_CSAM_HM_IPE);
+
     csamR3FlushDirtyPages(pVM);
     csamR3FlushCodePages(pVM);
 
@@ -2446,8 +2521,9 @@ VMMR3DECL(int) CSAMR3DoPendingAction(PVM pVM, PVMCPU pVCpu)
  * @param   iGate       Start gate
  * @param   cGates      Number of gates to check
  */
-VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
+VMMR3_INT_DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
 {
+#ifdef VBOX_WITH_RAW_MODE
     Assert(pVM->cCpus == 1);
     PVMCPU      pVCpu = VMMGetCpu0(pVM);
     uint16_t    cbIDT;
@@ -2458,6 +2534,7 @@ VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
     PVBOXIDTE   pGuestIdte;
     int         rc;
 
+    AssertReturn(!HMIsEnabled(pVM), VERR_CSAM_HM_IPE);
     if (EMIsRawRing0Enabled(pVM) == false)
     {
         /* Enabling interrupt gates only works when raw ring 0 is enabled. */
@@ -2489,7 +2566,7 @@ VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
             if (pHandler)
             {
                 PCSAMPAGE pPage = NULL;
-                CSAMP2GLOOKUPREC cacheRec;                  /* Cache record for CSAMGCVirtToHCVirt. */
+                CSAMP2GLOOKUPREC cacheRec;                  /* Cache record for csamR3GCVirtToHCVirt. */
                 RT_ZERO(cacheRec);
 
                 Log(("CSAMCheckGates: checking previous call instruction %RRv\n", pHandler));
@@ -2546,7 +2623,7 @@ VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
             RTRCPTR pHandler;
             PCSAMPAGE pPage = NULL;
             DBGFSELINFO selInfo;
-            CSAMP2GLOOKUPREC cacheRec;                  /* Cache record for CSAMGCVirtToHCVirt. */
+            CSAMP2GLOOKUPREC cacheRec;                  /* Cache record for csamR3GCVirtToHCVirt. */
             RT_ZERO(cacheRec);
 
             pHandler = VBOXIDTE_OFFSET(*pGuestIdte);
@@ -2636,7 +2713,8 @@ VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
             Log(("Installing %s gate handler for 0x%X at %RRv\n", (pGuestIdte->Gen.u5Type2 == VBOX_IDTE_TYPE2_TRAP_32) ? "trap" : "intr", iGate, pHandler));
 
             rc = PATMR3InstallPatch(pVM, pHandler, fPatchFlags);
-            if (RT_SUCCESS(rc) || rc == VERR_PATM_ALREADY_PATCHED)
+            if (    RT_SUCCESS(rc) 
+                ||  rc == VERR_PATM_ALREADY_PATCHED)
             {
                 Log(("Gate handler 0x%X is SAFE!\n", iGate));
 
@@ -2651,6 +2729,7 @@ VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
         }
     } /* for */
     STAM_PROFILE_STOP(&pVM->csam.s.StatCheckGates, a);
+#endif /* VBOX_WITH_RAW_MODE */
     return VINF_SUCCESS;
 }
 
@@ -2663,6 +2742,7 @@ VMMR3DECL(int) CSAMR3CheckGates(PVM pVM, uint32_t iGate, uint32_t cGates)
  */
 VMMR3DECL(int) CSAMR3RecordCallAddress(PVM pVM, RTRCPTR GCPtrCall)
 {
+    Assert(!HMIsEnabled(pVM));
     for (unsigned i=0;i<RT_ELEMENTS(pVM->csam.s.pvCallInstruction);i++)
     {
         if (pVM->csam.s.pvCallInstruction[i] == GCPtrCall)
@@ -2682,55 +2762,79 @@ VMMR3DECL(int) CSAMR3RecordCallAddress(PVM pVM, RTRCPTR GCPtrCall)
 /**
  * Query CSAM state (enabled/disabled)
  *
- * @returns 0 - disabled, 1 - enabled
- * @param   pVM         Pointer to the VM.
+ * @returns true if enabled, false otherwise.
+ * @param   pUVM        The user mode VM handle.
  */
-VMMR3DECL(int) CSAMR3IsEnabled(PVM pVM)
+VMMR3DECL(bool) CSAMR3IsEnabled(PUVM pUVM)
 {
-    return pVM->fCSAMEnabled;
+    UVM_ASSERT_VALID_EXT_RETURN(pUVM, false);
+    PVM pVM = pUVM->pVM;
+    VM_ASSERT_VALID_EXT_RETURN(pVM, false);
+    return CSAMIsEnabled(pVM);
 }
+
+
+/**
+ * Enables or disables code scanning.
+ *
+ * @returns VBox status code.
+ * @param   pUVM        The user mode VM handle.
+ * @param   fEnabled    Whether to enable or disable scanning.
+ */
+VMMR3DECL(int) CSAMR3SetScanningEnabled(PUVM pUVM, bool fEnabled)
+{
+    UVM_ASSERT_VALID_EXT_RETURN(pUVM, VERR_INVALID_VM_HANDLE);
+    PVM pVM = pUVM->pVM;
+    VM_ASSERT_VALID_EXT_RETURN(pVM, VERR_INVALID_VM_HANDLE);
+
+    if (HMIsEnabled(pVM))
+    {
+        Assert(!pVM->fCSAMEnabled);
+        return VINF_SUCCESS;
+    }
+
+    int rc;
+    if (fEnabled)
+        rc = CSAMEnableScanning(pVM);
+    else
+        rc = CSAMDisableScanning(pVM);
+    return rc;
+}
+
 
 #ifdef VBOX_WITH_DEBUGGER
 
 /**
- * The '.csamoff' command.
- *
- * @returns VBox status.
- * @param   pCmd        Pointer to the command descriptor (as registered).
- * @param   pCmdHlp     Pointer to command helper functions.
- * @param   pVM         Pointer to the current VM (if any).
- * @param   paArgs      Pointer to (readonly) array of arguments.
- * @param   cArgs       Number of arguments in the array.
+ * @callback_method_impl{FNDBGCCMD, The '.csamoff' command.}
  */
-static DECLCALLBACK(int) csamr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
+static DECLCALLBACK(int) csamr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PUVM pUVM, PCDBGCVAR paArgs, unsigned cArgs)
 {
-    DBGC_CMDHLP_REQ_VM_RET(pCmdHlp, pCmd, pVM);
+    DBGC_CMDHLP_REQ_UVM_RET(pCmdHlp, pCmd, pUVM);
     NOREF(cArgs); NOREF(paArgs);
 
-    int rc = CSAMDisableScanning(pVM);
+    if (HMR3IsEnabled(pUVM))
+        return DBGCCmdHlpPrintf(pCmdHlp, "CSAM is permanently disabled by HM.\n");
+
+    int rc = CSAMR3SetScanningEnabled(pUVM, false);
     if (RT_FAILURE(rc))
-        return DBGCCmdHlpFailRc(pCmdHlp, pCmd, rc, "CSAMDisableScanning");
+        return DBGCCmdHlpFailRc(pCmdHlp, pCmd, rc, "CSAMR3SetScanningEnabled");
     return DBGCCmdHlpPrintf(pCmdHlp, "CSAM Scanning disabled\n");
 }
 
 /**
- * The '.csamon' command.
- *
- * @returns VBox status.
- * @param   pCmd        Pointer to the command descriptor (as registered).
- * @param   pCmdHlp     Pointer to command helper functions.
- * @param   pVM         Pointer to the current VM (if any).
- * @param   paArgs      Pointer to (readonly) array of arguments.
- * @param   cArgs       Number of arguments in the array.
+ * @callback_method_impl{FNDBGCCMD, The '.csamon' command.}
  */
-static DECLCALLBACK(int) csamr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
+static DECLCALLBACK(int) csamr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PUVM pUVM, PCDBGCVAR paArgs, unsigned cArgs)
 {
-    DBGC_CMDHLP_REQ_VM_RET(pCmdHlp, pCmd, pVM);
+    DBGC_CMDHLP_REQ_UVM_RET(pCmdHlp, pCmd, pUVM);
     NOREF(cArgs); NOREF(paArgs);
 
-    int rc = CSAMEnableScanning(pVM);
+    if (HMR3IsEnabled(pUVM))
+        return DBGCCmdHlpPrintf(pCmdHlp, "CSAM is permanently disabled by HM.\n");
+
+    int rc = CSAMR3SetScanningEnabled(pUVM, true);
     if (RT_FAILURE(rc))
-        return DBGCCmdHlpFailRc(pCmdHlp, pCmd, rc, "CSAMEnableScanning");
+        return DBGCCmdHlpFailRc(pCmdHlp, pCmd, rc, "CSAMR3SetScanningEnabled");
     return DBGCCmdHlpPrintf(pCmdHlp, "CSAM Scanning enabled\n");
 }
 

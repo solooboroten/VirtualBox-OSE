@@ -1,10 +1,10 @@
-/* $Id: PDMThread.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: PDMThread.cpp $ */
 /** @file
  * PDM Thread - VM Thread Management.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -957,7 +957,8 @@ VMMR3DECL(int) PDMR3ThreadSuspend(PPDMTHREAD pThread)
     /*
      * Something failed, initialize termination.
      */
-    AssertMsgFailed(("PDMR3ThreadSuspend -> rc=%Rrc enmState=%d\n", rc, pThread->enmState));
+    AssertMsgFailed(("PDMR3ThreadSuspend -> rc=%Rrc enmState=%d suspending '%s'\n",
+                     rc, pThread->enmState, RTThreadGetName(pThread->Thread)));
     pdmR3ThreadBailOut(pThread);
     return rc;
 }

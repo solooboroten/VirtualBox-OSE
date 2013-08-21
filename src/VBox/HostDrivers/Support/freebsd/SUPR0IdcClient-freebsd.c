@@ -1,10 +1,10 @@
-/* $Id: SUPR0IdcClient-freebsd.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: SUPR0IdcClient-freebsd.c $ */
 /** @file
  * VirtualBox Support Driver - IDC Client Lib, FreeBSD Specific Code.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

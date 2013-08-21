@@ -1,3 +1,4 @@
+/* $Id: UISelectorWindow.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -5,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,6 +27,7 @@
 #include <QMenuBar>
 #include <QResizeEvent>
 #include <QStackedWidget>
+#include <QTimer>
 
 /* Local includes: */
 #include "QISplitter.h"
@@ -48,7 +50,6 @@
 #include "UISettingsDialogSpecific.h"
 #include "UIToolBar.h"
 #include "UIVMLogViewer.h"
-#include "UISelectorShortcuts.h"
 #include "UIDesktopServices.h"
 #include "UIGlobalSettingsExtension.h"
 #include "UIActionPoolSelector.h"
@@ -75,6 +76,8 @@
 UISelectorWindow::UISelectorWindow(UISelectorWindow **ppSelf, QWidget *pParent,
                                    Qt::WindowFlags flags /* = Qt::Window */)
     : QIWithRetranslateUI2<QMainWindow>(pParent, flags)
+    , m_fPolished(false)
+    , m_fWarningAboutInaccessibleMediumShown(false)
     , m_pSplitter(0)
 #ifndef Q_WS_MAC
     , m_pBar(0)
@@ -84,11 +87,16 @@ UISelectorWindow::UISelectorWindow(UISelectorWindow **ppSelf, QWidget *pParent,
     , m_pChooser(0)
     , m_pDetails(0)
     , m_pVMDesktop(0)
-    , m_fDoneInaccessibleWarningOnce(false)
 {
     /* Remember self: */
     if (ppSelf)
         *ppSelf = this;
+
+#ifdef Q_WS_MAC
+    /* We have to make sure that we are getting the front most process.
+     * This is necessary for Qt versions > 4.3.3: */
+    ::darwinSetFrontMostProcess();
+#endif /* Q_WS_MAC */
 
     /* Prepare: */
     prepareIcon();
@@ -168,36 +176,30 @@ void UISelectorWindow::sltDetailsViewIndexChanged(int iWidgetIndex)
         m_pContainer->setCurrentWidget(m_pDetails);
 }
 
-void UISelectorWindow::sltMediumEnumFinished(const VBoxMediaList &list)
+void UISelectorWindow::sltMediumEnumFinished()
 {
-    /* We warn about inaccessible media only once
+    /* We try to warn about inaccessible mediums only once
      * (after media emumeration started from main() at startup),
      * to avoid annoying the user: */
-    if (m_fDoneInaccessibleWarningOnce)
+    if (m_fWarningAboutInaccessibleMediumShown)
         return;
-    m_fDoneInaccessibleWarningOnce = true;
+    m_fWarningAboutInaccessibleMediumShown = true;
 
-    /* Ignore the signal if a modal widget is currently active
-     * (we won't be able to properly show the modeless VDI manager window in this case): */
-    // TODO: Not sure that is required at all...
-    if (QApplication::activeModalWidget())
+    /* Make sure MM window is not opened: */
+    if (UIMediumManager::modelessInstance())
         return;
 
-    /* Ignore the signal if a UIMediumManager window is active: */
-    // TODO: Thats a very dirty way, rework required!
-    if (qApp->activeWindow() &&
-        !strcmp(qApp->activeWindow()->metaObject()->className(), "UIMediumManager"))
-        return;
-
-    /* Look for at least one inaccessible media: */
+    /* Look for at least one inaccessible medium: */
+    const VBoxMediaList &list = vboxGlobal().currentMediaList();
     VBoxMediaList::const_iterator it;
     for (it = list.begin(); it != list.end(); ++it)
         if ((*it).state() == KMediumState_Inaccessible)
             break;
-    /* Ask the user about: */
-    if (it != list.end() && msgCenter().remindAboutInaccessibleMedia())
+
+    /* Warn the user about inaccessible medium: */
+    if (it != list.end() && !msgCenter().warnAboutInaccessibleMedia())
     {
-        /* Show the VMM dialog without refresh: */
+        /* Open the MM window (without refresh): */
         UIMediumManager::showModeless(this, false /* refresh? */);
     }
 }
@@ -277,9 +279,12 @@ void UISelectorWindow::sltShowImportApplianceWizard(const QString &strFileName /
 #else /* Q_WS_MAC */
     QString strTmpFile = strFileName;
 #endif /* !Q_WS_MAC */
-    UIWizardImportApp wizard(this, strTmpFile);
-    if (strFileName.isEmpty() || wizard.isValid())
-        wizard.exec();
+    UISafePointerWizardImportApp pWizard = new UIWizardImportApp(this, strTmpFile);
+    pWizard->prepare();
+    if (strFileName.isEmpty() || pWizard->isValid())
+        pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UISelectorWindow::sltShowExportApplianceWizard()
@@ -293,8 +298,11 @@ void UISelectorWindow::sltShowExportApplianceWizard()
     for (int i = 0; i < items.size(); ++i)
         names << items[i]->name();
     /* Show Export Appliance wizard: */
-    UIWizardExportApp wizard(this, names);
-    wizard.exec();
+    UISafePointerWizard pWizard = new UIWizardExportApp(this, names);
+    pWizard->prepare();
+    pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UISelectorWindow::sltShowPreferencesDialog()
@@ -304,6 +312,10 @@ void UISelectorWindow::sltShowPreferencesDialog()
         return;
     /* Remember that we handling that already: */
     m_pPreferencesDialogAction->setData(true);
+
+    /* Don't show the inaccessible warning
+     * if the user tries to open global settings: */
+    m_fWarningAboutInaccessibleMediumShown = true;
 
     /* Create and execute global settings dialog: */
     UISettingsDialogGlobal dialog(this);
@@ -346,9 +358,9 @@ void UISelectorWindow::sltShowAddMachineDialog(const QString &strFileName /* = Q
 
     /* Make sure this machine can be opened: */
     CMachine newMachine = vbox.OpenMachine(strTmpFile);
-    if (!vbox.isOk() || newMachine.isNull())
+    if (!vbox.isOk())
     {
-        msgCenter().cannotOpenMachine(this, strTmpFile, vbox);
+        msgCenter().cannotOpenMachine(vbox, strTmpFile);
         return;
     }
 
@@ -356,7 +368,7 @@ void UISelectorWindow::sltShowAddMachineDialog(const QString &strFileName /* = Q
     CMachine oldMachine = vbox.FindMachine(newMachine.GetId());
     if (!oldMachine.isNull())
     {
-        msgCenter().cannotReregisterMachine(this, strTmpFile, oldMachine.GetName());
+        msgCenter().cannotReregisterExistingMachine(strTmpFile, oldMachine.GetName());
         return;
     }
 
@@ -395,12 +407,13 @@ void UISelectorWindow::sltShowMachineSettingsDialog(const QString &strCategoryRe
         }
     }
 
-    /* Don't show the inaccessible warning if the user tries to open VM settings: */
-    m_fDoneInaccessibleWarningOnce = true;
+    /* Don't show the inaccessible warning
+     * if the user tries to open VM settings: */
+    m_fWarningAboutInaccessibleMediumShown = true;
 
     /* Create and execute corresponding VM settings dialog: */
     UISettingsDialogMachine dialog(this,
-                                   strId.isEmpty() ? currentItem()->id() : strId,
+                                   QUuid(strId).isNull() ? currentItem()->id() : strId,
                                    strCategory, strControl);
     dialog.execute();
 
@@ -415,8 +428,11 @@ void UISelectorWindow::sltShowCloneMachineWizard()
     AssertMsgReturnVoid(pItem, ("Current item should be selected!\n"));
 
     /* Show Clone VM wizard: */
-    UIWizardCloneVM wizard(this, pItem->machine());
-    wizard.exec();
+    UISafePointerWizard pWizard = new UIWizardCloneVM(this, pItem->machine());
+    pWizard->prepare();
+    pWizard->exec();
+    if (pWizard)
+        delete pWizard;
 }
 
 void UISelectorWindow::sltPerformStartOrShowAction()
@@ -465,10 +481,7 @@ void UISelectorWindow::sltPerformDiscardAction()
         /* Open a session to modify VM: */
         CSession session = vboxGlobal().openSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
             return;
-        }
 
         /* Get session console: */
         CConsole console = session.GetConsole();
@@ -513,10 +526,7 @@ void UISelectorWindow::sltPerformPauseResumeAction(bool fPause)
         /* Open a session to modify VM state: */
         CSession session = vboxGlobal().openExistingSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
             return;
-        }
 
         /* Get session console: */
         CConsole console = session.GetConsole();
@@ -557,7 +567,7 @@ void UISelectorWindow::sltPerformResetAction()
     AssertMsg(!machineNames.isEmpty(), ("This action should not be allowed!"));
 
     /* Confirm reseting VM: */
-    if (!msgCenter().confirmVMReset(machineNames.join(", ")))
+    if (!msgCenter().confirmResetMachine(machineNames.join(", ")))
         return;
 
     /* For each selected item: */
@@ -566,10 +576,7 @@ void UISelectorWindow::sltPerformResetAction()
         /* Open a session to modify VM state: */
         CSession session = vboxGlobal().openExistingSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
             return;
-        }
 
         /* Get session console: */
         CConsole console = session.GetConsole();
@@ -597,25 +604,29 @@ void UISelectorWindow::sltPerformSaveAction()
         /* Open a session to modify VM state: */
         CSession session = vboxGlobal().openExistingSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
             return;
-        }
 
         /* Get session console: */
         CConsole console = session.GetConsole();
-        /* Save machine state: */
-        CProgress progress = console.SaveState();
-        if (!console.isOk())
-            msgCenter().cannotSaveMachineState(console);
-        else
+        /* Pause VM first: */
+        console.Pause();
+        if (console.isOk())
         {
-            /* Show the "VM saving" progress dialog: */
-            CMachine machine = session.GetMachine();
-            msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_save_90px.png", 0, true);
-            if (progress.GetResultCode() != 0)
-                msgCenter().cannotSaveMachineState(progress);
+            /* Prepare machine state saving: */
+            CProgress progress = console.SaveState();
+            if (console.isOk())
+            {
+                /* Show machine state saving progress: */
+                CMachine machine = session.GetMachine();
+                msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_save_90px.png");
+                if (!progress.isOk() || progress.GetResultCode() != 0)
+                    msgCenter().cannotSaveMachineState(progress, machine.GetName());
+            }
+            else
+                msgCenter().cannotSaveMachineState(console);
         }
+        else
+            msgCenter().cannotPauseMachine(console);
 
         /* Unlock machine finally: */
         session.UnlockMachine();
@@ -640,7 +651,7 @@ void UISelectorWindow::sltPerformACPIShutdownAction()
     AssertMsg(!machineNames.isEmpty(), ("This action should not be allowed!"));
 
     /* Confirm ACPI shutdown current VM: */
-    if (!msgCenter().confirmVMACPIShutdown(machineNames.join(", ")))
+    if (!msgCenter().confirmACPIShutdownMachine(machineNames.join(", ")))
         return;
 
     /* For each selected item: */
@@ -649,15 +660,14 @@ void UISelectorWindow::sltPerformACPIShutdownAction()
         /* Open a session to modify VM state: */
         CSession session = vboxGlobal().openExistingSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
             return;
-        }
 
         /* Get session console: */
         CConsole console = session.GetConsole();
         /* ACPI Shutdown: */
         console.PowerButton();
+        if (!console.isOk())
+            msgCenter().cannotACPIShutdownMachine(console);
 
         /* Unlock machine finally: */
         session.UnlockMachine();
@@ -682,7 +692,7 @@ void UISelectorWindow::sltPerformPowerOffAction()
     AssertMsg(!machineNames.isEmpty(), ("This action should not be allowed!"));
 
     /* Confirm Power Off current VM: */
-    if (!msgCenter().confirmVMPowerOff(machineNames.join(", ")))
+    if (!msgCenter().confirmPowerOffMachine(machineNames.join(", ")))
         return;
 
     /* For each selected item: */
@@ -691,15 +701,22 @@ void UISelectorWindow::sltPerformPowerOffAction()
         /* Open a session to modify VM state: */
         CSession session = vboxGlobal().openExistingSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
             return;
-        }
 
         /* Get session console: */
         CConsole console = session.GetConsole();
-        /* Power Off: */
-        console.PowerDown();
+        /* Prepare machine power down: */
+        CProgress progress = console.PowerDown();
+        if (console.isOk())
+        {
+            /* Show machine power down progress: */
+            CMachine machine = session.GetMachine();
+            msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_poweroff_90px.png");
+            if (!progress.isOk() || progress.GetResultCode() != 0)
+                msgCenter().cannotPowerDownMachine(progress, machine.GetName());
+        }
+        else
+            msgCenter().cannotPowerDownMachine(console);
 
         /* Unlock machine finally: */
         session.UnlockMachine();
@@ -786,8 +803,8 @@ void UISelectorWindow::sltCurrentVMItemChanged(bool fRefreshDetails, bool fRefre
     UIVMItem *pItem = currentItem();
 
     /* Determine which menu to show: */
-    m_pGroupMenuAction->setVisible(m_pChooser->singleGroupSelected());
-    m_pMachineMenuAction->setVisible(!m_pChooser->singleGroupSelected());
+    m_pGroupMenuAction->setVisible(m_pChooser->isSingleGroupSelected());
+    m_pMachineMenuAction->setVisible(!m_pChooser->isSingleGroupSelected());
     if (m_pGroupMenuAction->isVisible())
     {
         foreach (UIAction *pAction, m_machineActions)
@@ -822,7 +839,7 @@ void UISelectorWindow::sltCurrentVMItemChanged(bool fRefreshDetails, bool fRefre
             m_pVMDesktop->updateSnapshots(pItem, pItem->machine());
             /* Always hide snapshots-view if
              * single group or more than one machine is selected: */
-            if (currentItems().size() > 1 || m_pChooser->singleGroupSelected())
+            if (currentItems().size() > 1 || m_pChooser->isSingleGroupSelected())
                 m_pVMDesktop->lockSnapshots();
         }
     }
@@ -837,7 +854,7 @@ void UISelectorWindow::sltCurrentVMItemChanged(bool fRefreshDetails, bool fRefre
         if (pItem)
         {
             /* The VM is inaccessible: */
-            m_pVMDesktop->updateDetailsErrorText(UIMessageCenter::formatErrorInfo(pItem->accessError()));
+            m_pVMDesktop->updateDetailsError(UIMessageCenter::formatErrorInfo(pItem->accessError()));
         }
         else
         {
@@ -936,14 +953,6 @@ void UISelectorWindow::retranslateUi()
     /* Ensure the details and screenshot view are updated: */
     sltCurrentVMItemChanged();
 
-#ifdef VBOX_GUI_WITH_SYSTRAY
-    if (vboxGlobal().isTrayMenu())
-    {
-        m_pTrayIcon->retranslateUi();
-        m_pTrayIcon->refresh();
-    }
-#endif /* VBOX_GUI_WITH_SYSTRAY */
-
 #ifdef QT_MAC_USE_COCOA
     /* There is a bug in Qt Cocoa which result in showing a "more arrow" when
        the necessary size of the toolbar is increased. Also for some languages
@@ -1007,11 +1016,26 @@ bool UISelectorWindow::event(QEvent *pEvent)
     return QMainWindow::event(pEvent);
 }
 
-void UISelectorWindow::closeEvent(QCloseEvent *pEvent)
+void UISelectorWindow::showEvent(QShowEvent *pEvent)
 {
-    // TODO: Such things are obsolete, rework required!
-    emit closing();
-    QMainWindow::closeEvent(pEvent);
+    /* Call to base-class: */
+    QMainWindow::showEvent(pEvent);
+
+    /* Is polishing required? */
+    if (!m_fPolished)
+    {
+        /* Pass the show-event to polish-event: */
+        polishEvent(pEvent);
+        /* Mark as polished: */
+        m_fPolished = true;
+    }
+}
+
+void UISelectorWindow::polishEvent(QShowEvent*)
+{
+    /* Make sure user warned about inaccessible medium(s)
+     * even if enumeration had finished before selector window shown: */
+    QTimer::singleShot(0, this, SLOT(sltMediumEnumFinished()));
 }
 
 #ifdef Q_WS_MAC
@@ -1036,17 +1060,6 @@ bool UISelectorWindow::eventFilter(QObject *pObject, QEvent *pEvent)
             return true;
             break;
         }
-# if (QT_VERSION < 0x040402)
-        case QEvent::KeyPress:
-        {
-            /* Bug in Qt below 4.4.2. The key events are send to the current
-             * window even if a menu is shown & has the focus. See
-             * http://trolltech.com/developer/task-tracker/index_html?method=entry&id=214681. */
-            if (::darwinIsMenuOpen())
-                return true;
-            break;
-        }
-# endif
         default:
             break;
     }
@@ -1137,7 +1150,7 @@ void UISelectorWindow::prepareMenuFile(QMenu *pMenu)
 
 void UISelectorWindow::prepareCommonActions()
 {
-    m_pAction_Common_StartOrShow       = gActionPool->action(UIActionIndexSelector_State_Common_StartOrShow);
+    m_pAction_Common_StartOrShow       = gActionPool->action(UIActionIndexSelector_State_Common_StartOrShow)->toStateAction();
     m_pAction_Common_PauseAndResume    = gActionPool->action(UIActionIndexSelector_Toggle_Common_PauseAndResume);
     m_pAction_Common_Reset             = gActionPool->action(UIActionIndexSelector_Simple_Common_Reset);
     m_pAction_Common_Discard           = gActionPool->action(UIActionIndexSelector_Simple_Common_Discard);
@@ -1253,6 +1266,11 @@ void UISelectorWindow::prepareMenuGroupClose(QMenu *pMenu)
     pMenu->addAction(m_pGroupACPIShutdownAction);
     m_pGroupPowerOffAction = gActionPool->action(UIActionIndexSelector_Simple_Group_Close_PowerOff);
     pMenu->addAction(m_pGroupPowerOffAction);
+
+    /* Remember action list: */
+    m_groupActions << m_pGroupSaveAction
+                   << m_pGroupACPIShutdownAction
+                   << m_pGroupPowerOffAction;
 }
 
 void UISelectorWindow::prepareMenuMachineClose(QMenu *pMenu)
@@ -1268,6 +1286,11 @@ void UISelectorWindow::prepareMenuMachineClose(QMenu *pMenu)
     pMenu->addAction(m_pMachineACPIShutdownAction);
     m_pMachinePowerOffAction = gActionPool->action(UIActionIndexSelector_Simple_Machine_Close_PowerOff);
     pMenu->addAction(m_pMachinePowerOffAction);
+
+    /* Remember action list: */
+    m_machineActions << m_pMachineSaveAction
+                     << m_pMachineACPIShutdownAction
+                     << m_pMachinePowerOffAction;
 }
 
 void UISelectorWindow::prepareMenuHelp(QMenu *pMenu)
@@ -1287,12 +1310,12 @@ void UISelectorWindow::prepareMenuHelp(QMenu *pMenu)
     pMenu->addSeparator();
     m_pNetworkAccessManager = gActionPool->action(UIActionIndex_Simple_NetworkAccessManager);
     pMenu->addAction(m_pNetworkAccessManager);
-#ifdef VBOX_WITH_REGISTRATION
-    m_pRegisterAction = gActionPool->action(UIActionIndex_Simple_Register);
-    pMenu->addAction(m_pRegisterAction);
-#endif /* VBOX_WITH_REGISTRATION */
     m_pUpdateAction = gActionPool->action(UIActionIndex_Simple_CheckForUpdates);
-    pMenu->addAction(m_pUpdateAction);
+    CVirtualBox vbox = vboxGlobal().virtualBox();
+    if (VBoxGlobal::shouldWeAllowApplicationUpdate(vbox))
+        pMenu->addAction(m_pUpdateAction);
+    else
+        m_pUpdateAction->setEnabled(false);
 #ifndef Q_WS_MAC
     pMenu->addSeparator();
 #endif /* !Q_WS_MAC */
@@ -1336,6 +1359,10 @@ void UISelectorWindow::prepareWidgets()
     /* Prepare graphics details: */
     m_pDetails = new UIGDetails(this);
 
+    /* Configure splitter colors: */
+    m_pSplitter->configureColors(m_pChooser->palette().color(QPalette::Active, QPalette::Window),
+                                 m_pDetails->palette().color(QPalette::Active, QPalette::Window));
+
     /* Prepare details and snapshots tabs: */
     m_pVMDesktop = new UIVMDesktop(mVMToolBar, m_pAction_Common_Refresh, this);
 
@@ -1375,7 +1402,7 @@ void UISelectorWindow::prepareWidgets()
 void UISelectorWindow::prepareConnections()
 {
     /* Medium enumeration connections: */
-    connect(&vboxGlobal(), SIGNAL(mediumEnumFinished(const VBoxMediaList &)), this, SLOT(sltMediumEnumFinished(const VBoxMediaList &)));
+    connect(&vboxGlobal(), SIGNAL(mediumEnumFinished(const VBoxMediaList &)), this, SLOT(sltMediumEnumFinished()));
 
     /* Menu-bar connections: */
     connect(menuBar(), SIGNAL(customContextMenuRequested(const QPoint&)), this, SLOT(sltShowSelectorContextMenu(const QPoint&)));
@@ -1421,10 +1448,6 @@ void UISelectorWindow::prepareConnections()
     connect(m_pWebAction, SIGNAL(triggered()), &msgCenter(), SLOT(sltShowHelpWebDialog()));
     connect(m_pResetWarningsAction, SIGNAL(triggered()), &msgCenter(), SLOT(sltResetSuppressedMessages()));
     connect(m_pNetworkAccessManager, SIGNAL(triggered()), gNetworkManager, SLOT(show()));
-#ifdef VBOX_WITH_REGISTRATION
-    connect(m_pRegisterAction, SIGNAL(triggered()), &vboxGlobal(), SLOT(showRegistrationDialog()));
-    connect(gEDataEvents, SIGNAL(sigCanShowRegistrationDlg(bool)), m_pRegisterAction, SLOT(setEnabled(bool)));
-#endif /* VBOX_WITH_REGISTRATION */
     connect(m_pUpdateAction, SIGNAL(triggered()), gUpdateManager, SLOT(sltForceCheck()));
     connect(m_pAboutAction, SIGNAL(triggered()), &msgCenter(), SLOT(sltShowHelpAboutDialog()));
 
@@ -1452,16 +1475,6 @@ void UISelectorWindow::prepareConnections()
     connect(m_pVMDesktop, SIGNAL(sigCurrentChanged(int)), this, SLOT(sltDetailsViewIndexChanged(int)));
     connect(m_pDetails, SIGNAL(sigLinkClicked(const QString&, const QString&, const QString&)),
             this, SLOT(sltShowMachineSettingsDialog(const QString&, const QString&, const QString&)));
-
-#ifdef VBOX_GUI_WITH_SYSTRAY
-    /* Tray icon connections: */
-    connect(m_pTrayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)),
-            this, SLOT(sltTrayIconActivated(QSystemTrayIcon::ActivationReason)));
-    connect(gEDataEvents, SIGNAL(sigMainWindowCountChange(int)), this, SLOT(sltMainWindowCountChanged(int)));
-    connect(gEDataEvents, SIGNAL(sigCanShowTrayIcon(bool)), this, SLOT(sltTrayIconCanShow(bool)));
-    connect(gEDataEvents, SIGNAL(sigTrayIconChange(bool)), this, SLOT(sltTrayIconChanged(bool)));
-    connect(&vboxGlobal(), SIGNAL(sigTrayIconShow(bool)), this, SLOT(sltTrayIconShow(bool)));
-#endif /* VBOX_GUI_WITH_SYSTRAY */
 
     /* Global event handlers: */
     connect(gVBoxEvents, SIGNAL(sigMachineStateChange(QString, KMachineState)), this, SLOT(sltStateChanged(QString)));
@@ -1623,19 +1636,19 @@ void UISelectorWindow::updateActionsAppearance()
 
     /* Start/Show action is deremined by 1st item: */
     if (pItem && pItem->accessible())
-        m_pAction_Common_StartOrShow->setState(isItemPoweredOff(pItem) ? 1 : 2);
+        m_pAction_Common_StartOrShow->setState(UIVMItem::isItemPoweredOff(pItem) ? 0 : 1);
     else
-        m_pAction_Common_StartOrShow->setState(1);
+        m_pAction_Common_StartOrShow->setState(0);
 
     /* Pause/Resume action is deremined by 1st started item: */
     UIVMItem *pFirstStartedAction = 0;
     foreach (UIVMItem *pSelectedItem, items)
-        if (isItemStarted(pSelectedItem))
+        if (UIVMItem::isItemStarted(pSelectedItem))
             pFirstStartedAction = pSelectedItem;
     /* Update the Pause/Resume action appearance: */
     m_pAction_Common_PauseAndResume->blockSignals(true);
-    m_pAction_Common_PauseAndResume->setChecked(pFirstStartedAction && isItemPaused(pFirstStartedAction));
-    m_pAction_Common_PauseAndResume->updateAppearance();
+    m_pAction_Common_PauseAndResume->setChecked(pFirstStartedAction && UIVMItem::isItemPaused(pFirstStartedAction));
+    m_pAction_Common_PauseAndResume->update();
     m_pAction_Common_PauseAndResume->blockSignals(false);
 
 #ifdef QT_MAC_USE_COCOA
@@ -1668,20 +1681,19 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
         case UIActionIndexSelector_Simple_Group_Sort:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
-                   m_pChooser->singleGroupSelected();
+                   m_pChooser->isSingleGroupSelected();
         }
         case UIActionIndexSelector_Simple_Machine_Settings:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
                    items.size() == 1 &&
-                   pItem->accessible() &&
-                   !isItemStuck(pItem);
+                   pItem->reconfigurable();
         }
         case UIActionIndexSelector_Simple_Machine_Clone:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
                    items.size() == 1 &&
-                   isItemEditable(pItem);
+                   UIVMItem::isItemEditable(pItem);
         }
         case UIActionIndexSelector_Simple_Machine_Remove:
         {
@@ -1691,6 +1703,7 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
         case UIActionIndexSelector_Simple_Machine_AddGroup:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
+                   !m_pChooser->isAllItemsOfOneGroupSelected() &&
                    isItemsPoweredOff(items);
         }
         case UIActionIndexSelector_State_Common_StartOrShow:
@@ -1764,7 +1777,7 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
 bool UISelectorWindow::isItemsPoweredOff(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (!isItemPoweredOff(pItem))
+        if (!UIVMItem::isItemPoweredOff(pItem))
             return false;
     return true;
 }
@@ -1772,27 +1785,33 @@ bool UISelectorWindow::isItemsPoweredOff(const QList<UIVMItem*> &items)
 /* static */
 bool UISelectorWindow::isAtLeastOneItemAbleToShutdown(const QList<UIVMItem*> &items)
 {
+    /* Enumerate all the passed items: */
     foreach (UIVMItem *pItem, items)
     {
-        if (!isItemRunning(pItem))
+        /* Skip non-running machines: */
+        if (!UIVMItem::isItemRunning(pItem))
             continue;
-
+        /* Skip session failures: */
         CSession session = vboxGlobal().openExistingSession(pItem->id());
         if (session.isNull())
-        {
-            msgCenter().cannotOpenSession(session);
-            return false;
-        }
+            continue;
+        /* Skip console failures: */
         CConsole console = session.GetConsole();
         if (console.isNull())
         {
+            /* Do not forget to release machine: */
             session.UnlockMachine();
-            return false;
+            continue;
         }
+        /* Is the guest entered ACPI mode? */
+        bool fGuestEnteredACPIMode = console.GetGuestEnteredACPIMode();
+        /* Do not forget to release machine: */
         session.UnlockMachine();
-
-        return console.GetGuestEnteredACPIMode();
+        /* True if the guest entered ACPI mode: */
+        if (fGuestEnteredACPIMode)
+            return true;
     }
+    /* False by default: */
     return false;
 }
 
@@ -1804,7 +1823,7 @@ bool UISelectorWindow::isAtLeastOneItemSupportsShortcuts(const QList<UIVMItem*> 
 #ifdef Q_WS_MAC
             /* On Mac OS X this are real alias files, which don't work with the old
              * legacy xml files. On the other OS's some kind of start up script is used. */
-            && !pItem->settingsFile().endsWith(".vbox", Qt::CaseInsensitive)
+            && pItem->settingsFile().endsWith(".vbox", Qt::CaseInsensitive)
 #endif /* Q_WS_MAC */
             )
             return true;
@@ -1833,7 +1852,7 @@ bool UISelectorWindow::isAtLeastOneItemInaccessible(const QList<UIVMItem*> &item
 bool UISelectorWindow::isAtLeastOneItemRemovable(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (!pItem->accessible() || isItemEditable(pItem))
+        if (!pItem->accessible() || UIVMItem::isItemEditable(pItem))
             return true;
     return false;
 }
@@ -1843,8 +1862,8 @@ bool UISelectorWindow::isAtLeastOneItemCanBeStartedOrShowed(const QList<UIVMItem
 {
     foreach (UIVMItem *pItem, items)
     {
-        if ((isItemPoweredOff(pItem) && isItemEditable(pItem)) ||
-            (isItemStarted(pItem) && pItem->canSwitchTo()))
+        if ((UIVMItem::isItemPoweredOff(pItem) && UIVMItem::isItemEditable(pItem)) ||
+            (UIVMItem::isItemStarted(pItem) && pItem->canSwitchTo()))
             return true;
     }
     return false;
@@ -1854,7 +1873,7 @@ bool UISelectorWindow::isAtLeastOneItemCanBeStartedOrShowed(const QList<UIVMItem
 bool UISelectorWindow::isAtLeastOneItemDiscardable(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (isItemSaved(pItem) && isItemEditable(pItem))
+        if (UIVMItem::isItemSaved(pItem) && UIVMItem::isItemEditable(pItem))
             return true;
     return false;
 }
@@ -1863,7 +1882,7 @@ bool UISelectorWindow::isAtLeastOneItemDiscardable(const QList<UIVMItem*> &items
 bool UISelectorWindow::isAtLeastOneItemStarted(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (isItemStarted(pItem))
+        if (UIVMItem::isItemStarted(pItem))
             return true;
     return false;
 }
@@ -1872,73 +1891,8 @@ bool UISelectorWindow::isAtLeastOneItemStarted(const QList<UIVMItem*> &items)
 bool UISelectorWindow::isAtLeastOneItemRunning(const QList<UIVMItem*> &items)
 {
     foreach (UIVMItem *pItem, items)
-        if (isItemRunning(pItem))
+        if (UIVMItem::isItemRunning(pItem))
             return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemEditable(UIVMItem *pItem)
-{
-    return pItem->accessible() &&
-           pItem->sessionState() == KSessionState_Unlocked;
-}
-
-/* static */
-bool UISelectorWindow::isItemSaved(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        pItem->machineState() == KMachineState_Saved)
-        return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemPoweredOff(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        (pItem->machineState() == KMachineState_PoweredOff ||
-         pItem->machineState() == KMachineState_Saved ||
-         pItem->machineState() == KMachineState_Teleported ||
-         pItem->machineState() == KMachineState_Aborted))
-        return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemStarted(UIVMItem *pItem)
-{
-    return isItemRunning(pItem) || isItemPaused(pItem);
-}
-
-/* static */
-bool UISelectorWindow::isItemRunning(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        (pItem->machineState() == KMachineState_Running ||
-         pItem->machineState() == KMachineState_Teleporting ||
-         pItem->machineState() == KMachineState_LiveSnapshotting))
-        return true;
-    return false;
-}
-
-/* static */
-bool UISelectorWindow::isItemPaused(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        (pItem->machineState() == KMachineState_Paused ||
-         pItem->machineState() == KMachineState_TeleportingPausedVM))
-        return true;
-    return false;
-
-}
-
-/* static */
-bool UISelectorWindow::isItemStuck(UIVMItem *pItem)
-{
-    if (pItem->accessible() &&
-        pItem->machineState() == KMachineState_Stuck)
-        return true;
     return false;
 }
 

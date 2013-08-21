@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogicSeamless.cpp 41587 2012-06-06 04:19:03Z vboxsync $ */
+/* $Id: UIMachineLogicSeamless.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2010-2012 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -23,6 +23,7 @@
 /* GUI includes: */
 #include "VBoxGlobal.h"
 #include "UIMessageCenter.h"
+#include "UIPopupCenter.h"
 #include "UISession.h"
 #include "UIActionPoolRuntime.h"
 #include "UIMachineLogicSeamless.h"
@@ -49,15 +50,6 @@ bool UIMachineLogicSeamless::checkAvailability()
 {
     /* Temporary get a machine object: */
     const CMachine &machine = uisession()->session().GetMachine();
-
-    /* Check that there are enough physical screens are connected: */
-    int cHostScreens = m_pScreenLayout->hostScreenCount();
-    int cGuestScreens = m_pScreenLayout->guestScreenCount();
-    if (cHostScreens < cGuestScreens)
-    {
-        msgCenter().cannotEnterSeamlessMode();
-        return false;
-    }
 
     /* Check if there is enough physical memory to enter seamless: */
     if (uisession()->isGuestAdditionsActive())
@@ -86,9 +78,50 @@ bool UIMachineLogicSeamless::checkAvailability()
     return true;
 }
 
-int UIMachineLogicSeamless::hostScreenForGuestScreen(int screenId) const
+int UIMachineLogicSeamless::hostScreenForGuestScreen(int iScreenId) const
 {
-    return m_pScreenLayout->hostScreenForGuestScreen(screenId);
+    return m_pScreenLayout->hostScreenForGuestScreen(iScreenId);
+}
+
+bool UIMachineLogicSeamless::hasHostScreenForGuestScreen(int iScreenId) const
+{
+    return m_pScreenLayout->hasHostScreenForGuestScreen(iScreenId);
+}
+
+void UIMachineLogicSeamless::notifyAbout3DOverlayVisibilityChange(bool)
+{
+    /* If active machine-window is defined now: */
+    if (activeMachineWindow())
+    {
+        /* Reinstall corresponding popup-stack and make sure it has proper type: */
+        popupCenter().hidePopupStack(activeMachineWindow());
+        popupCenter().setPopupStackType(activeMachineWindow(), UIPopupStackType_Separate);
+        popupCenter().showPopupStack(activeMachineWindow());
+    }
+}
+
+void UIMachineLogicSeamless::sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect screenGeo)
+{
+    LogRelFlow(("UIMachineLogicSeamless::GuestScreenCountChanged.\n"));
+
+    /* Update multi-screen layout before any window update: */
+    if (changeType == KGuestMonitorChangedEventType_Enabled ||
+        changeType == KGuestMonitorChangedEventType_Disabled)
+        m_pScreenLayout->rebuild();
+
+    /* Call to base-class: */
+    UIMachineLogic::sltGuestMonitorChange(changeType, uScreenId, screenGeo);
+}
+
+void UIMachineLogicSeamless::sltHostScreenCountChanged(int cScreenCount)
+{
+    LogRelFlow(("UIMachineLogicSeamless::HostScreenCountChanged.\n"));
+
+    /* Update multi-screen layout before any window update: */
+    m_pScreenLayout->rebuild();
+
+    /* Call to base-class: */
+    UIMachineLogic::sltHostScreenCountChanged(cScreenCount);
 }
 
 void UIMachineLogicSeamless::prepareActionGroups()
@@ -104,16 +137,11 @@ void UIMachineLogicSeamless::prepareActionGroups()
 
     /* Disable mouse-integration isn't allowed in seamless: */
     gActionPool->action(UIActionIndexRuntime_Toggle_MouseIntegration)->setVisible(false);
-
-    /* Add the view menu: */
-    QMenu *pMenu = gActionPool->action(UIActionIndexRuntime_Menu_View)->menu();
-    m_pScreenLayout->initialize(pMenu);
-    pMenu->setVisible(true);
 }
 
 void UIMachineLogicSeamless::prepareMachineWindows()
 {
-    /* Do not create window(s) if they created already: */
+    /* Do not create machine-window(s) if they created already: */
     if (isMachineWindowsCreated())
         return;
 
@@ -123,29 +151,41 @@ void UIMachineLogicSeamless::prepareMachineWindows()
     ::darwinSetFrontMostProcess();
 #endif /* Q_WS_MAC */
 
-    /* Update the multi screen layout: */
+    /* Update the multi-screen layout: */
     m_pScreenLayout->update();
 
     /* Create machine window(s): */
-    for (int cScreenId = 0; cScreenId < m_pScreenLayout->guestScreenCount(); ++cScreenId)
+    for (uint cScreenId = 0; cScreenId < session().GetMachine().GetMonitorCount(); ++cScreenId)
         addMachineWindow(UIMachineWindow::create(this, cScreenId));
 
-    /* Connect screen-layout change handler: */
+    /* Connect multi-screen layout change handler: */
     for (int i = 0; i < machineWindows().size(); ++i)
-        connect(m_pScreenLayout, SIGNAL(screenLayoutChanged()),
-                static_cast<UIMachineWindowSeamless*>(machineWindows()[i]), SLOT(sltPlaceOnScreen()));
+        connect(m_pScreenLayout, SIGNAL(sigScreenLayoutChanged()),
+                static_cast<UIMachineWindowSeamless*>(machineWindows()[i]), SLOT(sltShowInNecessaryMode()));
 
-    /* Remember what machine window(s) created: */
+    /* Mark machine-window(s) created: */
     setMachineWindowsCreated(true);
+}
+
+void UIMachineLogicSeamless::prepareMenu()
+{
+    /* Call to base-class: */
+    UIMachineLogic::prepareMenu();
+
+    /* Finally update view-menu: */
+    m_pScreenLayout->setViewMenu(gActionPool->action(UIActionIndexRuntime_Menu_View)->menu());
 }
 
 void UIMachineLogicSeamless::cleanupMachineWindows()
 {
-    /* Do not cleanup machine window(s) if not present: */
+    /* Do not destroy machine-window(s) if they destroyed already: */
     if (!isMachineWindowsCreated())
         return;
 
-    /* Cleanup machine window(s): */
+    /* Mark machine-window(s) destroyed: */
+    setMachineWindowsCreated(false);
+
+    /* Cleanup machine-window(s): */
     foreach (UIMachineWindow *pMachineWindow, machineWindows())
         UIMachineWindow::destroy(pMachineWindow);
 }

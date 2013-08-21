@@ -1,4 +1,4 @@
-/* $Id: VBoxMediaComboBox.cpp 41615 2012-06-07 16:55:08Z vboxsync $ */
+/* $Id: VBoxMediaComboBox.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -89,7 +89,7 @@ void VBoxMediaComboBox::refresh()
 void VBoxMediaComboBox::repopulate()
 {
     if (!vboxGlobal().isMediaEnumerationStarted())
-        vboxGlobal().startEnumeratingMedia();
+        vboxGlobal().startEnumeratingMedia(true /*fReallyNecessary*/);
     else
         refresh();
 }

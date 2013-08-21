@@ -1,4 +1,4 @@
-/* $Id: VBoxMMR.cpp 42295 2012-07-21 00:19:53Z vboxsync $ */
+/* $Id: VBoxMMR.cpp $ */
 /** @file
  * VBoxMMR - Multimedia Redirection
  */
@@ -17,10 +17,11 @@
 
 #include "VBoxTray.h"
 #include "VBoxMMR.h"
+#include <iprt/ldr.h>
 
 struct VBOXMMRCONTEXT
 {
-    HINSTANCE hMod;
+    RTLDRMOD  hModHook;
     HHOOK     hHook;
 };
 
@@ -31,56 +32,54 @@ static const char *g_pszMMRPROC = "CBTProc";
 
 void VBoxMMRCleanup(VBOXMMRCONTEXT *pCtx)
 {
-    if (NULL != pCtx->hHook)
+    if (pCtx->hHook)
     {
         UnhookWindowsHookEx(pCtx->hHook);
+        pCtx->hHook = NULL;
     }
 
-    if (pCtx->hMod)
+    if (pCtx->hModHook != NIL_RTLDRMOD)
     {
-        FreeLibrary(pCtx->hMod);
+        RTLdrClose(pCtx->hModHook);
+        pCtx->hModHook = NIL_RTLDRMOD;
     }
-
-    return;
 }
 
-int VBoxMMRInit(
-    const VBOXSERVICEENV *pEnv,
-    void **ppInstance,
-    bool *pfStartThread)
+int VBoxMMRInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStartThread)
 {
-    HOOKPROC pHook = NULL;
-
     LogRel2(("VBoxMMR: Initializing\n"));
 
-    gCtx.hMod = LoadLibraryA(g_pszMMRDLL);
-    if (NULL == gCtx.hMod)
+    int rc = RTLdrLoadAppPriv(g_pszMMRDLL, &gCtx.hModHook);
+    if (RT_SUCCESS(rc))
     {
-        LogRel2(("VBoxMMR: Hooking library not found\n"));
-        VBoxMMRCleanup(&gCtx);
-        return VERR_NOT_FOUND;
+        HOOKPROC pHook = (HOOKPROC)RTLdrGetFunction(gCtx.hModHook, g_pszMMRPROC);
+        if (pHook)
+        {
+            HMODULE hMod = (HMODULE)RTLdrGetNativeHandle(gCtx.hModHook);
+            Assert(hMod != (HMODULE)~(uintptr_t)0);
+            gCtx.hHook = SetWindowsHookEx(WH_CBT, pHook, hMod, 0);
+            if (gCtx.hHook)
+            {
+                *ppInstance = &gCtx;
+                return VINF_SUCCESS;
+            }
+
+            rc = RTErrConvertFromWin32(GetLastError());
+            LogRel2(("VBoxMMR: Error installing hooking proc: %Rrc\n", rc));
+        }
+        else
+        {
+            LogRel2(("VBoxMMR: Hooking proc not found\n"));
+            rc = VERR_NOT_FOUND;
+        }
+
+        RTLdrClose(gCtx.hModHook);
+        gCtx.hModHook = NIL_RTLDRMOD;
     }
+    else
+        LogRel2(("VBoxMMR: Hooking library not found (%Rrc)\n", rc));
 
-    pHook = (HOOKPROC) GetProcAddress(gCtx.hMod, g_pszMMRPROC);
-    if (NULL == pHook)
-    {
-        LogRel2(("VBoxMMR: Hooking proc not found\n"));
-        VBoxMMRCleanup(&gCtx);
-        return VERR_NOT_FOUND;
-    }
-
-    gCtx.hHook = SetWindowsHookEx(WH_CBT, pHook, gCtx.hMod, 0);
-    if (NULL == gCtx.hHook)
-    {
-        int rc = RTErrConvertFromWin32(GetLastError());
-        LogRel2(("VBoxMMR: Error installing hooking proc: %d\n", rc));
-        VBoxMMRCleanup(&gCtx);
-        return rc;
-    }
-
-    *ppInstance = &gCtx;
-
-    return VINF_SUCCESS;
+    return rc;
 }
 
 void VBoxMMRDestroy(const VBOXSERVICEENV *pEnv, void *pInstance)
@@ -94,3 +93,4 @@ unsigned __stdcall VBoxMMRThread(void *pInstance)
 {
     return 0;
 }
+

@@ -1,10 +1,10 @@
-/* $Id: RTTimerLRCreate-generic.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: RTTimerLRCreate-generic.cpp $ */
 /** @file
  * IPRT - Low Resolution Timers, Generic RTTimerLRCreate() Implementation.
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/* $Id: VBoxServiceTimeSync.cpp 37608 2011-06-23 11:47:33Z vboxsync $ */
+/* $Id: VBoxServiceTimeSync.cpp $ */
 /** @file
  * VBoxService - Guest Additions TimeSync Service.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -410,7 +410,7 @@ static bool VBoxServiceTimeSyncAdjust(PCRTTIMESPEC pDrift)
     else if (g_cTimeSyncErrors++ < 10)
         VBoxServiceError("VBoxServiceTimeSyncAdjust: GetSystemTimeAdjustment failed, error=%ld\n", GetLastError());
 
-#elif defined(RT_OS_OS2)
+#elif defined(RT_OS_OS2) || defined(RT_OS_HAIKU)
     /* No API for doing gradual time adjustments. */
 
 #else /* PORTME */

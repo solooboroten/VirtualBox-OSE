@@ -1,4 +1,4 @@
-/* $Id: MachineDebuggerImpl.h 39712 2012-01-06 17:59:16Z vboxsync $ */
+/* $Id: MachineDebuggerImpl.h $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,6 +22,7 @@
 
 #include "VirtualBoxBase.h"
 #include <iprt/log.h>
+#include <VBox/vmm/em.h>
 
 class Console;
 
@@ -57,6 +58,8 @@ public:
     STDMETHOD(COMSETTER(RecompileUser))(BOOL a_fEnable);
     STDMETHOD(COMGETTER(RecompileSupervisor))(BOOL *a_pfEnabled);
     STDMETHOD(COMSETTER(RecompileSupervisor))(BOOL a_fEnable);
+    STDMETHOD(COMGETTER(ExecuteAllInIEM))(BOOL *a_pfEnabled);
+    STDMETHOD(COMSETTER(ExecuteAllInIEM))(BOOL a_fEnable);
     STDMETHOD(COMGETTER(PATMEnabled))(BOOL *a_pfEnabled);
     STDMETHOD(COMSETTER(PATMEnabled))(BOOL a_fEnable);
     STDMETHOD(COMGETTER(CSAMEnabled))(BOOL *a_pfEnabled);
@@ -72,6 +75,7 @@ public:
     STDMETHOD(COMGETTER(HWVirtExEnabled))(BOOL *a_pfEnabled);
     STDMETHOD(COMGETTER(HWVirtExNestedPagingEnabled))(BOOL *a_pfEnabled);
     STDMETHOD(COMGETTER(HWVirtExVPIDEnabled))(BOOL *a_pfEnabled);
+    STDMETHOD(COMGETTER(HWVirtExUXEnabled))(BOOL *a_pfEnabled);
     STDMETHOD(COMGETTER(PAEEnabled))(BOOL *a_pfEnabled);
     STDMETHOD(COMGETTER(OSName))(BSTR *a_pbstrName);
     STDMETHOD(COMGETTER(OSVersion))(BSTR *a_pbstrVersion);
@@ -108,6 +112,8 @@ public:
 private:
     // private methods
     bool queueSettings() const;
+    HRESULT getEmExecPolicyProperty(EMEXECPOLICY enmPolicy, BOOL *pfEnforced);
+    HRESULT setEmExecPolicyProperty(EMEXECPOLICY enmPolicy, BOOL fEnforce);
 
     /** RTLogGetFlags, RTLogGetGroupSettings and RTLogGetDestinations function. */
     typedef DECLCALLBACK(int) FNLOGGETSTR(PRTLOGGER, char *, size_t);
@@ -119,6 +125,7 @@ private:
     /** @name Flags whether settings have been queued because they could not be sent
      *        to the VM (not up yet, etc.)
      * @{ */
+    uint8_t maiQueuedEmExecPolicyParams[EMEXECPOLICY_END];
     int mSingleStepQueued;
     int mRecompileUserQueued;
     int mRecompileSupervisorQueued;

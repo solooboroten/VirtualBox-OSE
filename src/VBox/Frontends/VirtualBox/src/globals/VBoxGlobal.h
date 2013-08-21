@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -50,12 +50,12 @@ class UIMachine;
 class CMachine;
 class CMedium;
 class CUSBDevice;
+class QSpinBox;
 
 // VBoxGlobal class
 ////////////////////////////////////////////////////////////////////////////////
 
 class UISelectorWindow;
-class UIRegistrationWzd;
 class VBoxUpdateDlg;
 
 class VBoxGlobal : public QObject
@@ -64,7 +64,10 @@ class VBoxGlobal : public QObject
 
 public:
 
-    static VBoxGlobal &instance();
+    /* Static API: Create/destroy stuff: */
+    static VBoxGlobal* instance();
+    static void create();
+    static void destroy();
 
     bool isValid() { return mValid; }
 
@@ -90,13 +93,10 @@ public:
     /* VM stuff: */
     bool startMachine(const QString &strMachineId);
     UIMachine* virtualMachine();
-    QWidget* vmWindow();
+    QWidget* activeMachineWindow();
 
-    /* Main application window storage: */
-    void setMainWindow(QWidget *pMainWindow) { mMainWindow = pMainWindow; }
-    QWidget* mainWindow() const { return mMainWindow; }
-
-    bool is3DAvailable() const { return m3DAvailable; }
+    bool is3DAvailableWorker() const;
+    bool is3DAvailable() const { if (m3DAvailable < 0) return is3DAvailableWorker(); return m3DAvailable != 0; }
 
 #ifdef VBOX_GUI_WITH_PIDFILE
     void createPidfile();
@@ -114,12 +114,6 @@ public:
 
     bool isVMConsoleProcess() const { return !vmUuid.isNull(); }
     bool showStartVMErrors() const { return mShowStartVMErrors; }
-#ifdef VBOX_GUI_WITH_SYSTRAY
-    bool isTrayMenu() const;
-    void setTrayMenu(bool aIsTrayMenu);
-    void trayIconShowSelector();
-    bool trayIconInstall();
-#endif
     QString managedVMUuid() const { return vmUuid; }
     QList<QUrl> &argUrlList() { return m_ArgUrlList; }
 
@@ -129,10 +123,13 @@ public:
 
     const QRect availableGeometry(int iScreen = 0) const;
 
+    bool agressiveCaching() const { return mAgressiveCaching; }
+    bool shouldRestoreCurrentSnapshot() const { return mRestoreCurrentSnapshot; }
     bool isPatmDisabled() const { return mDisablePatm; }
     bool isCsamDisabled() const { return mDisableCsam; }
     bool isSupervisorCodeExecedRecompiled() const { return mRecompileSupervisor; }
     bool isUserCodeExecedRecompiled()       const { return mRecompileUser; }
+    bool areWeToExecuteAllInIem()           const { return mExecuteAllInIem; }
     bool isDefaultWarpPct() const { return mWarpPct == 100; }
     uint32_t getWarpPct()       const { return mWarpPct; }
 
@@ -238,17 +235,12 @@ public:
 
     /* VirtualBox helpers */
 
-#if defined(Q_WS_X11) && !defined(VBOX_OSE)
-    double findLicenseFile (const QStringList &aFilesList, QRegExp aPattern, QString &aLicenseFile) const;
-    bool showVirtualBoxLicense();
-#endif
-
     CSession openSession(const QString &aId, KLockType aLockType = KLockType_Write);
 
     /** Shortcut to openSession (aId, true). */
     CSession openExistingSession(const QString &aId) { return openSession(aId, KLockType_Shared); }
 
-    void startEnumeratingMedia();
+    void startEnumeratingMedia(bool fReallyNecessary);
 
     void reloadProxySettings();
 
@@ -299,9 +291,6 @@ public:
 
     void retranslateUi();
 
-    /** @internal made public for internal purposes */
-    void cleanup();
-
     /* public static stuff */
 
     static bool isDOSType (const QString &aOSTypeId);
@@ -323,8 +312,6 @@ public:
 
     static QChar decimalSep();
     static QString sizeRegexp();
-
-    static QString toHumanReadableList(const QStringList &list);
 
     static quint64 parseSize (const QString &);
     static QString formatSize (quint64 aSize, uint aDecimal = 2, FormatSize aMode = FormatSize_Round);
@@ -358,18 +345,6 @@ public:
     static QList <QPair <QString, QString> > DVDBackends();
     static QList <QPair <QString, QString> > FloppyBackends();
 
-    /* Qt 4.2.0 support function */
-    static inline void setLayoutMargin (QLayout *aLayout, int aMargin)
-    {
-#if QT_VERSION < 0x040300
-        /* Deprecated since > 4.2 */
-        aLayout->setMargin (aMargin);
-#else
-        /* New since > 4.2 */
-        aLayout->setContentsMargins (aMargin, aMargin, aMargin, aMargin);
-#endif
-    }
-
     static QString documentsPath();
 
 #ifdef VBOX_WITH_VIDEOHWACCEL
@@ -385,14 +360,37 @@ public:
     static quint64 required3DWddmOffscreenVideoMemory(const QString &strGuestOSTypeId, int cMonitors = 1);
 #endif /* VBOX_WITH_CRHGSMI */
 
-#ifdef Q_WS_MAC
-    bool isSheetWindowAllowed(QWidget *pParent) const;
-    void setSheetWindowUsed(QWidget *pParent, bool fUsed);
-    bool sheetWindowUsed(QWidget *pParent) const;
-#endif /* Q_WS_MAC */
-
     /* Returns full medium-format name for the given base medium-format name: */
     static QString fullMediumFormatName(const QString &strBaseMediumFormatName);
+
+    /* Extra-data settings stuff: */
+    static bool isApprovedByExtraData(CVirtualBox &vbox, const QString &strExtraDataKey);
+    static bool isApprovedByExtraData(CMachine &machine, const QString &strExtraDataKey);
+    static bool shouldWeAllowApplicationUpdate(CVirtualBox &vbox);
+    static bool shouldWeShowMachine(CMachine &machine);
+    static bool shouldWeAllowMachineReconfiguration(CMachine &machine,
+                                                    bool fIncludingMachineGeneralCheck = false,
+                                                    bool fIncludingMachineStateCheck = false);
+    static bool shouldWeShowDetails(CMachine &machine,
+                                    bool fIncludingMachineGeneralCheck = false);
+    static bool shouldWeAutoMountGuestScreens(CMachine &machine, bool fIncludingSanityCheck = true);
+    static bool shouldWeAllowSnapshotOperations(CMachine &machine, bool fIncludingSanityCheck = true);
+    static RuntimeMenuType restrictedRuntimeMenuTypes(CMachine &machine);
+    static UIVisualStateType restrictedVisualStateTypes(CMachine &machine);
+    static QList<IndicatorType> restrictedStatusBarIndicators(CMachine &machine);
+    static QList<MachineCloseAction> restrictedMachineCloseActions(CMachine &machine);
+    static QList<GlobalSettingsPageType> restrictedGlobalSettingsPages(CVirtualBox &vbox);
+    static QList<MachineSettingsPageType> restrictedMachineSettingsPages(CMachine &machine);
+
+#ifdef RT_OS_LINUX
+    static void checkForWrongUSBMounted();
+#endif /* RT_OS_LINUX */
+
+    /* Shame on Qt it hasn't stuff for tuning
+     * widget size suitable for reflecting content of desired size.
+     * For example QLineEdit, QSpinBox and similar widgets should have a methods
+     * to strict the minimum width to reflect at least [n] symbols. */
+    static void setMinimumWidthAccordingSymbolCount(QSpinBox *pSpinBox, int cCount);
 
 signals:
 
@@ -424,17 +422,18 @@ signals:
     /** Emitted when the media is removed using #removeMedia(). */
     void mediumRemoved (UIMediumType, const QString &);
 
-#ifdef VBOX_GUI_WITH_SYSTRAY
-    void sigTrayIconShow(bool fEnabled);
-#endif
-
 public slots:
 
     bool openURL (const QString &aURL);
 
-    void showRegistrationDialog (bool aForce = true);
     void sltGUILanguageChange(QString strLang);
     void sltProcessGlobalSettingChange();
+
+protected slots:
+
+    /* Handlers: Prepare/cleanup stuff: */
+    void prepare();
+    void cleanup();
 
 protected:
 
@@ -443,10 +442,10 @@ protected:
 
 private:
 
+    /* Constructor/destructor: */
     VBoxGlobal();
     ~VBoxGlobal();
 
-    void init();
 #ifdef VBOX_WITH_DEBUGGER_GUI
     void initDebuggerVar(int *piDbgCfgVar, const char *pszEnvVar, const char *pszExtraDataName, bool fDefault = false);
     void setDebuggerVar(int *piDbgCfgVar, bool fState);
@@ -462,19 +461,9 @@ private:
 
     UISelectorWindow *mSelectorWnd;
     UIMachine *m_pVirtualMachine;
-    QWidget* mMainWindow;
-
-#ifdef VBOX_WITH_REGISTRATION
-    UIRegistrationWzd *mRegDlg;
-#endif
 
     QString vmUuid;
     QList<QUrl> m_ArgUrlList;
-
-#ifdef VBOX_GUI_WITH_SYSTRAY
-    bool mIsTrayMenu : 1; /*< Tray icon active/desired? */
-    bool mIncreasedWindowCounter : 1;
-#endif
 
     /** Whether to show error message boxes for VM start errors. */
     bool mShowStartVMErrors;
@@ -486,6 +475,10 @@ private:
     const char * vm_render_mode_str;
     bool mIsKWinManaged;
 
+    /** The --aggressive-caching / --no-aggressive-caching option. */
+    bool mAgressiveCaching;
+    /** The --restore-current option. */
+    bool mRestoreCurrentSnapshot;
     /** The --disable-patm option. */
     bool mDisablePatm;
     /** The --disable-csam option. */
@@ -494,6 +487,8 @@ private:
     bool mRecompileSupervisor;
     /** The --recompile-user option. */
     bool mRecompileUser;
+    /** The --execute-all-in-iem option. */
+    bool mExecuteAllInIem;
     /** The --warp-factor option value. */
     uint32_t mWarpPct;
 
@@ -546,14 +541,14 @@ private:
     char mSettingsPw[256];
     bool mSettingsPwSet;
 
-#ifdef Q_WS_MAC
-    QSet<QWidget*> m_sheets;
-#endif /* Q_WS_MAC */
-
-    friend VBoxGlobal &vboxGlobal();
+    /* API: Instance stuff: */
+    static bool m_sfCleanupInProgress;
+    static VBoxGlobal* m_spInstance;
+    friend VBoxGlobal& vboxGlobal();
 };
 
-inline VBoxGlobal &vboxGlobal() { return VBoxGlobal::instance(); }
+/* Shortcut to the static VBoxGlobal::instance() method: */
+inline VBoxGlobal& vboxGlobal() { return *VBoxGlobal::instance(); }
 
 #endif /* __VBoxGlobal_h__ */
 

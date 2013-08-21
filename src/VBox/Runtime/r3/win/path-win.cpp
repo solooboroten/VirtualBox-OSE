@@ -1,10 +1,10 @@
-/* $Id: path-win.cpp 39612 2011-12-14 14:19:55Z vboxsync $ */
+/* $Id: path-win.cpp $ */
 /** @file
  * IPRT - Path manipulation.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -195,7 +195,7 @@ RTDECL(int) RTPathUserDocuments(char *pszPath, size_t cchPath)
     AssertReturn(cchPath, VERR_INVALID_PARAMETER);
 
     RTLDRMOD hShell32;
-    int rc = RTLdrLoad("Shell32.dll", &hShell32);
+    int rc = RTLdrLoadSystem("Shell32.dll", true /*fNoUnload*/, &hShell32);
     if (RT_SUCCESS(rc))
     {
         PFNSHGETFOLDERPATHW pfnSHGetFolderPathW;

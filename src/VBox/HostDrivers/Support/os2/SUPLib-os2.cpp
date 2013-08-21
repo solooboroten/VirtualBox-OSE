@@ -1,10 +1,10 @@
-/* $Id: SUPLib-os2.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: SUPLib-os2.cpp $ */
 /** @file
  * VirtualBox Support Library - OS/2 specific parts.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -65,7 +65,7 @@
 
 
 
-int suplibOsInit(PSUPLIBDATA pThis, bool fPreInited)
+int suplibOsInit(PSUPLIBDATA pThis, bool fPreInited, bool fUnrestricted)
 {
     /*
      * Nothing to do if pre-inited.
@@ -100,6 +100,7 @@ int suplibOsInit(PSUPLIBDATA pThis, bool fPreInited)
     }
 
     pThis->hDevice = hDevice;
+    pThis->fUnrestricted = true;
     return VINF_SUCCESS;
 }
 

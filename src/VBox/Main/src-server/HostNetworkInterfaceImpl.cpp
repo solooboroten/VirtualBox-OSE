@@ -1,4 +1,4 @@
-/* $Id: HostNetworkInterfaceImpl.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: HostNetworkInterfaceImpl.cpp $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,6 +21,10 @@
 #include "AutoCaller.h"
 #include "Logging.h"
 #include "netif.h"
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+# include "Performance.h"
+# include "PerformanceImpl.h"
+#endif
 
 #include <iprt/cpp/utils.h>
 
@@ -67,7 +71,7 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, Bstr aShortName, Guid aG
                       aInterfaceName.raw(), aGuid.toString().c_str()));
 
     ComAssertRet(!aInterfaceName.isEmpty(), E_INVALIDARG);
-    ComAssertRet(!aGuid.isEmpty(), E_INVALIDARG);
+    ComAssertRet(!aGuid.isValid(), E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan(this);
@@ -83,6 +87,64 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, Bstr aShortName, Guid aG
 
     return S_OK;
 }
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+
+void HostNetworkInterface::registerMetrics(PerformanceCollector *aCollector, ComPtr<IUnknown> objptr)
+{
+    LogFlowThisFunc(("mShortName={%ls}, mInterfaceName={%ls}, mGuid={%s}, mSpeedMbits=%u\n",
+                     mShortName.raw(), mInterfaceName.raw(), mGuid.toString().c_str(), m.speedMbits));
+    pm::CollectorHAL *hal = aCollector->getHAL();
+    /* Create sub metrics */
+    Utf8StrFmt strName("Net/%ls", mShortName.raw());
+    pm::SubMetric *networkLoadRx   = new pm::SubMetric(strName + "/Load/Rx",
+        "Percentage of network interface receive bandwidth used.");
+    pm::SubMetric *networkLoadTx   = new pm::SubMetric(strName + "/Load/Tx",
+        "Percentage of network interface transmit bandwidth used.");
+    pm::SubMetric *networkLinkSpeed = new pm::SubMetric(strName + "/LinkSpeed",
+        "Physical link speed.");
+
+    /* Create and register base metrics */
+    pm::BaseMetric *networkSpeed = new pm::HostNetworkSpeed(hal, objptr, strName + "/LinkSpeed", Utf8Str(mShortName), Utf8Str(mInterfaceName), m.speedMbits, networkLinkSpeed);
+    aCollector->registerBaseMetric(networkSpeed);
+    pm::BaseMetric *networkLoad = new pm::HostNetworkLoadRaw(hal, objptr, strName + "/Load", Utf8Str(mShortName), Utf8Str(mInterfaceName), m.speedMbits, networkLoadRx, networkLoadTx);
+    aCollector->registerBaseMetric(networkLoad);
+
+    aCollector->registerMetric(new pm::Metric(networkSpeed, networkLinkSpeed, 0));
+    aCollector->registerMetric(new pm::Metric(networkSpeed, networkLinkSpeed,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(networkSpeed, networkLinkSpeed,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(networkSpeed, networkLinkSpeed,
+                                              new pm::AggregateMax()));
+
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx, 0));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadRx,
+                                              new pm::AggregateMax()));
+
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx, 0));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx,
+                                              new pm::AggregateAvg()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx,
+                                              new pm::AggregateMin()));
+    aCollector->registerMetric(new pm::Metric(networkLoad, networkLoadTx,
+                                              new pm::AggregateMax()));
+}
+
+void HostNetworkInterface::unregisterMetrics(PerformanceCollector *aCollector, ComPtr<IUnknown> objptr)
+{
+    LogFlowThisFunc(("mShortName={%ls}, mInterfaceName={%ls}, mGuid={%s}\n",
+                     mShortName.raw(), mInterfaceName.raw(), mGuid.toString().c_str()));
+    Utf8StrFmt name("Net/%ls", mShortName.raw());
+    aCollector->unregisterMetricsFor(objptr, name + "/*");
+    aCollector->unregisterBaseMetricsFor(objptr, name);
+}
+
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 #ifdef VBOX_WITH_HOSTNETIF_API
 
@@ -104,8 +166,8 @@ HRESULT HostNetworkInterface::updateConfig()
 #else /* !RT_OS_WINDOWS */
         m.mediumType = info.enmMediumType;
         m.status = info.enmStatus;
-
 #endif /* !RT_OS_WINDOWS */
+        m.speedMbits = info.uSpeedMbits;
         return S_OK;
     }
     return rc == VERR_NOT_IMPLEMENTED ? E_NOTIMPL : E_FAIL;
@@ -128,7 +190,7 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, HostNetworkInterfaceType
 //                      aInterfaceName.raw(), aGuid.toString().raw()));
 
 //    ComAssertRet(aInterfaceName, E_INVALIDARG);
-//    ComAssertRet(!aGuid.isEmpty(), E_INVALIDARG);
+//    ComAssertRet(aGuid.isValid(), E_INVALIDARG);
     ComAssertRet(pIf, E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
@@ -138,9 +200,15 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, HostNetworkInterfaceType
     unconst(mInterfaceName) = aInterfaceName;
     unconst(mGuid) = pIf->Uuid;
     if (pIf->szShortName[0])
+    {
         unconst(mNetworkName) = composeNetworkName(pIf->szShortName);
+        unconst(mShortName)   = pIf->szShortName;
+    }
     else
+    {
         unconst(mNetworkName) = composeNetworkName(aInterfaceName);
+        unconst(mShortName)   = aInterfaceName;
+    }
     mIfType = ifType;
 
     m.realIPAddress = m.IPAddress = pIf->IPAddress.u;
@@ -156,6 +224,7 @@ HRESULT HostNetworkInterface::init(Bstr aInterfaceName, HostNetworkInterfaceType
     m.mediumType = pIf->enmMediumType;
     m.status = pIf->enmStatus;
 #endif /* !RT_OS_WINDOWS */
+    m.speedMbits = pIf->uSpeedMbits;
 
     /* Confirm a successful initialization */
     autoInitSpan.setSucceeded();
@@ -552,6 +621,8 @@ HRESULT HostNetworkInterface::setVirtualBox(VirtualBox *pVBox)
 {
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
+    AssertReturn(mVBox != pVBox, S_OK);
+
     unconst(mVBox) = pVBox;
 
 #if !defined(RT_OS_WINDOWS)

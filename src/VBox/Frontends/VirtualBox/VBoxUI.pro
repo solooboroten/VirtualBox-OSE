@@ -6,7 +6,7 @@
 #
 
 #
-# Copyright (C) 2006-2011 Oracle Corporation
+# Copyright (C) 2006-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -49,8 +49,7 @@ FORMS = \
     src/settings/machine/UIMachineSettingsSF.ui \
     src/settings/machine/UIMachineSettingsSFDetails.ui \
     src/widgets/UIApplianceEditorWidget.ui \
-    src/selector/VBoxSnapshotsWgt.ui \
-    src/runtime/UIVMCloseDialog.ui
+    src/selector/VBoxSnapshotsWgt.ui
 
 TRANSLATIONS = \
 	nls/VirtualBox_bg.ts \

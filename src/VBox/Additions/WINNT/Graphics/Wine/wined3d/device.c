@@ -41,6 +41,12 @@
 # include <float.h>
 #endif
 #include "wined3d_private.h"
+#ifdef VBOX_WITH_WDDM
+/* a hacky way to treat WINED3DBOX as D3DBOX */
+# define D3DBOX WINED3DBOX
+# include "../../common/VBoxVideoTools.h"
+# undef D3DBOX
+#endif
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 #define GLINFO_LOCATION This->adapter->gl_info
@@ -923,7 +929,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateTexture(IWineD3DDevice *iface,
 
 static HRESULT WINAPI IWineD3DDeviceImpl_CreateVolumeTexture(IWineD3DDevice *iface,
         UINT Width, UINT Height, UINT Depth, UINT Levels, DWORD Usage, WINED3DFORMAT Format, WINED3DPOOL Pool,
-        IWineD3DVolumeTexture **ppVolumeTexture, IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        IWineD3DVolumeTexture **ppVolumeTexture, IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void **pavClientMem
+#endif
+        )
 {
     IWineD3DDeviceImpl        *This = (IWineD3DDeviceImpl *)iface;
     IWineD3DVolumeTextureImpl *object;
@@ -940,7 +951,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateVolumeTexture(IWineD3DDevice *ifa
         return WINED3DERR_OUTOFVIDEOMEMORY;
     }
 
-    hr = volumetexture_init(object, Width, Height, Depth, Levels, This, Usage, Format, Pool, parent, parent_ops);
+    hr = volumetexture_init(object, Width, Height, Depth, Levels, This, Usage, Format, Pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+        , shared_handle
+        , pavClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize volumetexture, returning %#x\n", hr);
@@ -957,7 +973,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateVolumeTexture(IWineD3DDevice *ifa
 
 static HRESULT WINAPI IWineD3DDeviceImpl_CreateVolume(IWineD3DDevice *iface, UINT Width, UINT Height,
         UINT Depth, DWORD Usage, WINED3DFORMAT Format, WINED3DPOOL Pool, IWineD3DVolume **ppVolume,
-        IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *)iface;
     IWineD3DVolumeImpl *object;
@@ -974,7 +995,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateVolume(IWineD3DDevice *iface, UIN
         return WINED3DERR_OUTOFVIDEOMEMORY;
     }
 
-    hr = volume_init(object, This, Width, Height, Depth, Usage, Format, Pool, parent, parent_ops);
+    hr = volume_init(object, This, Width, Height, Depth, Usage, Format, Pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , shared_handle
+            , pvClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize volume, returning %#x.\n", hr);
@@ -1577,7 +1603,7 @@ static void WINAPI IWineD3DDeviceImpl_ReleaseFocusWindow(IWineD3DDevice *iface)
 #ifndef VBOX_WITH_WDDM
     IWineD3DDeviceImpl *device = (IWineD3DDeviceImpl *)iface;
 
-    if (device->focus_window) wined3d_unregister_window(device->focus_window);
+    if (device->focus_window) wined3d_unregister_window(device->focus_window, device);
     device->focus_window = NULL;
 #else
     ERR("should not be here");
@@ -1843,6 +1869,10 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Uninit3D(IWineD3DDevice *iface,
     TRACE("(%p)\n", This);
 
     if(!This->d3d_initialized) return WINED3DERR_INVALIDCALL;
+
+#ifdef VBOX_WINE_WITH_PROFILE
+    VBOXWINEPROFILE_DRAWPRIM_TERM(&This->DrawPrimProfile);
+#endif
 
     /* I don't think that the interface guarantees that the device is destroyed from the same thread
      * it was created. Thus make sure a context is active for the glDelete* calls
@@ -4938,6 +4968,159 @@ static HRESULT IWineD3DDeviceImpl_UpdateVolume(IWineD3DDevice *iface,
     return hr;
 }
 
+#ifdef VBOX_WITH_WDDM
+static HRESULT WINAPI IWineD3DDeviceImpl_VolBlt(IWineD3DDevice *iface,
+        IWineD3DVolume *pSourceVolume, IWineD3DVolume *pDestinationVolume,
+        const WINED3DBOX *pSrcBoxArg,
+        const VBOXPOINT3D *pDstPoin3D
+        )
+{
+    WINED3DLOCKED_BOX src;
+    WINED3DLOCKED_BOX dst;
+    HRESULT hr;
+    WINED3DBOX DstBox, SrcBox;
+    const WINED3DBOX *pDstBox;
+    const WINED3DBOX *pSrcBox;
+    int dstW, dstH, dstD, srcW, srcH, srcD;
+    int j, k;
+    uint8_t * pDstBits;
+    uint8_t * pSrcBits;
+
+
+    TRACE("iface %p, src_volume %p, dst_volume %p.\n",
+            iface, pSourceVolume, pDestinationVolume);
+
+    pSrcBox = pSrcBoxArg;
+    if (!pSrcBox)
+    {
+        IWineD3DVolumeImpl *pSrvVolImpl = (IWineD3DVolumeImpl*)pSourceVolume;
+        SrcBox.Left   = 0;
+        SrcBox.Top    = 0;
+        SrcBox.Front  = 0;
+        SrcBox.Right  = pSrvVolImpl->currentDesc.Width;
+        SrcBox.Bottom = pSrvVolImpl->currentDesc.Height;
+        SrcBox.Back   = pSrvVolImpl->currentDesc.Depth;
+        pSrcBox = &SrcBox;
+    }
+
+    if (!pDstPoin3D)
+        pDstBox = pSrcBox;
+    else
+    {
+        vboxWddmBoxTranslated(&DstBox, pSrcBox, pDstPoin3D->x, pDstPoin3D->y, pDstPoin3D->z);
+        pDstBox = &DstBox;
+    }
+
+    dstW = pDstBox->Right - pDstBox->Left;
+    dstH = pDstBox->Bottom - pDstBox->Top;
+    dstD = pDstBox->Back - pDstBox->Front;
+
+    srcW = pSrcBox->Right - pSrcBox->Left;
+    srcH = pSrcBox->Bottom - pSrcBox->Top;
+    srcD = pSrcBox->Back - pSrcBox->Front;
+
+    if (srcW != dstW || srcH != dstH || srcD != dstD)
+    {
+        ERR("dimensions do not match, stretching not supported for volumes!");
+        return WINED3DERR_INVALIDCALL;
+    }
+
+    /* TODO: Implement direct loading into the gl volume instead of using memcpy and
+     * dirtification to improve loading performance.
+     */
+    hr = IWineD3DVolume_LockBox(pSourceVolume, &src, pSrcBox, WINED3DLOCK_READONLY);
+    if(FAILED(hr)) return hr;
+    hr = IWineD3DVolume_LockBox(pDestinationVolume, &dst, pDstBox, WINED3DLOCK_DISCARD);
+    if(FAILED(hr)) {
+    IWineD3DVolume_UnlockBox(pSourceVolume);
+            return hr;
+    }
+
+    pDstBits = dst.pBits;
+    pSrcBits = src.pBits;
+    for (k = 0; k < srcD; ++k)
+    {
+        uint8_t * pRowDstBits = pDstBits;
+        uint8_t * pRowSrcBits = pSrcBits;
+
+        for (j = 0; j < srcH; ++j)
+        {
+            memcpy(pRowDstBits, pRowSrcBits, srcW * ((IWineD3DVolumeImpl *) pDestinationVolume)->resource.format_desc->byte_count);
+            pRowDstBits += dst.RowPitch;
+            pRowSrcBits += src.RowPitch;
+        }
+        pDstBits += dst.SlicePitch;
+        pSrcBits += src.SlicePitch;
+    }
+
+    hr = IWineD3DVolume_UnlockBox(pDestinationVolume);
+    if(FAILED(hr)) {
+        IWineD3DVolume_UnlockBox(pSourceVolume);
+    } else {
+        hr = IWineD3DVolume_UnlockBox(pSourceVolume);
+    }
+    return hr;
+}
+
+static HRESULT WINAPI IWineD3DDeviceImpl_VolTexBlt(IWineD3DDevice *iface,
+        IWineD3DVolumeTexture *pSourceTexture, IWineD3DVolumeTexture *pDestinationTexture,
+        const WINED3DBOX *pSrcBoxArg,
+        const VBOXPOINT3D *pDstPoin3D
+        )
+{
+    unsigned int level_count, i;
+    IWineD3DVolume *src_volume;
+    IWineD3DVolume *dst_volume;
+    HRESULT hr = S_OK;
+
+    level_count = IWineD3DBaseTexture_GetLevelCount(pSourceTexture);
+    if (IWineD3DBaseTexture_GetLevelCount(pDestinationTexture) != level_count)
+    {
+        ERR("Source and destination have different level counts, returning WINED3DERR_INVALIDCALL.\n");
+        return WINED3DERR_INVALIDCALL;
+    }
+
+    for (i = 0; i < level_count; ++i)
+    {
+        WINED3DBOX SrcBox, *pSrcBox;
+        VBOXPOINT3D DstPoint, *pDstPoint;
+
+        if (pSrcBoxArg)
+        {
+            vboxWddmBoxDivided(&SrcBox, pSrcBoxArg, i + 1, true);
+            pSrcBox = &SrcBox;
+        }
+        else
+        {
+            pSrcBox = NULL;
+        }
+
+        if (pDstPoin3D)
+        {
+            vboxWddmPoint3DDivided(&DstPoint, pDstPoin3D, i + 1, true);
+            pDstPoint = &DstPoint;
+        }
+        else
+        {
+            pDstPoint = NULL;
+        }
+
+        IWineD3DVolumeTexture_GetVolumeLevel(pSourceTexture, i, &src_volume);
+        IWineD3DVolumeTexture_GetVolumeLevel(pDestinationTexture, i, &dst_volume);
+        hr = IWineD3DDeviceImpl_VolBlt(iface, src_volume, dst_volume, pSrcBox, pDstPoint);
+        IWineD3DVolume_Release(dst_volume);
+        IWineD3DVolume_Release(src_volume);
+        if (FAILED(hr))
+        {
+            ERR("IWineD3DDeviceImpl_UpdateVolume failed, hr %#x.\n", hr);
+            return hr;
+        }
+    }
+
+    return hr;
+}
+#endif
+
 static HRESULT WINAPI IWineD3DDeviceImpl_UpdateTexture(IWineD3DDevice *iface,
         IWineD3DBaseTexture *src_texture, IWineD3DBaseTexture *dst_texture)
 {
@@ -5348,7 +5531,7 @@ static HRESULT WINAPI IWineD3DDeviceImpl_UpdateSurface(IWineD3DDevice *iface,
      * needed, use BltFast instead to copy in sysmem and use regular surface
      * loading. */
     d3dfmt_get_conv(dst_impl, FALSE, TRUE, &dummy_desc, &convert);
-    if (convert != NO_CONVERSION)
+    if (convert != NO_CONVERSION || dummy_desc.convert)
         return IWineD3DSurface_BltFast(dst_surface, dst_x, dst_y, src_surface, src_rect, 0);
 
     context = context_acquire(This, NULL, CTXUSAGE_RESOURCELOAD);
@@ -7090,6 +7273,52 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Flush(IWineD3DDevice *iface)
     return WINED3D_OK;
 }
 
+static HRESULT WINAPI IWineD3DDeviceImpl_Finish(IWineD3DDevice *iface)
+{
+    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
+    struct wined3d_context *context;
+    int i;
+
+    /* first call swapchain flush to ensure all swapchain-pending data gets flushed */
+    for (i = 0; i < This->NumberOfSwapChains; ++i)
+    {
+        IWineD3DSwapChain *pSwapchain = This->swapchains[i];
+        IWineD3DSwapChain_Flush(pSwapchain);
+    }
+
+    for (i = 0; i < This->numContexts; ++i)
+    {
+        context = This->contexts[i];
+        if (context_acquire_context(context, NULL, CTXUSAGE_RESOURCELOAD, TRUE))
+        {
+            Assert(context->valid);
+            wglFinish();
+            context_release(context);
+        }
+        else
+        {
+            WARN("Invalid context, skipping flush.\n");
+        }
+    }
+    return WINED3D_OK;
+}
+
+static HRESULT WINAPI IWineD3DDeviceImpl_FlushToHost(IWineD3DDevice *iface)
+{
+    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
+    struct wined3d_context *context;
+    int i;
+
+    /* no context acquisition is needed */
+    for (i = 0; i < This->numContexts; ++i)
+    {
+        context = This->contexts[i];
+        pVBoxFlushToHost(context->glCtx);
+    }
+    return WINED3D_OK;
+}
+
+
 /* context activation is done by the caller */
 void device_cleanup_durtify_texture_target(IWineD3DDeviceImpl *This, GLuint texture_target)
 {
@@ -7292,6 +7521,10 @@ static const IWineD3DDeviceVtbl IWineD3DDevice_Vtbl =
 #ifdef VBOX_WITH_WDDM
     /* VBox WDDM extensions */
     IWineD3DDeviceImpl_Flush,
+    IWineD3DDeviceImpl_VolBlt,
+    IWineD3DDeviceImpl_VolTexBlt,
+    IWineD3DDeviceImpl_FlushToHost,
+    IWineD3DDeviceImpl_Finish,
 #endif
 };
 
@@ -7337,6 +7570,10 @@ HRESULT device_init(IWineD3DDeviceImpl *device, IWineD3DImpl *wined3d,
     device->createParms.DeviceType = device_type;
     device->createParms.hFocusWindow = focus_window;
     device->createParms.BehaviorFlags = flags;
+
+#ifdef VBOX_WINE_WITH_PROFILE
+    VBOXWINEPROFILE_DRAWPRIM_INIT(&device->DrawPrimProfile);
+#endif
 
     device->devType = device_type;
     for (i = 0; i < PATCHMAP_SIZE; ++i) list_init(&device->patches[i]);
@@ -7429,7 +7666,7 @@ LRESULT device_process_message(IWineD3DDeviceImpl *device, HWND window,
     if (message == WM_DESTROY)
     {
         TRACE("unregister window %p.\n", window);
-        wined3d_unregister_window(window);
+        wined3d_unregister_window(window, NULL);
 
         if (device->focus_window == window) device->focus_window = NULL;
         else ERR("Window %p is not the focus window for device %p.\n", window, device);

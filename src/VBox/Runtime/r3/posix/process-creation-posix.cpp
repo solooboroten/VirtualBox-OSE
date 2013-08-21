@@ -1,10 +1,10 @@
-/* $Id: process-creation-posix.cpp 40825 2012-04-08 17:06:59Z vboxsync $ */
+/* $Id: process-creation-posix.cpp $ */
 /** @file
  * IPRT - Process Creation, POSIX.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,6 +29,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP RTLOGGROUP_PROCESS
+#include <iprt/cdefs.h>
+
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -42,15 +44,22 @@
 # include <pwd.h>
 # include <shadow.h>
 #endif
+
 #if defined(RT_OS_LINUX) || defined(RT_OS_OS2)
 /* While Solaris has posix_spawn() of course we don't want to use it as
  * we need to have the child in a different process contract, no matter
  * whether it is started detached or not. */
 # define HAVE_POSIX_SPAWN 1
 #endif
+#if defined(RT_OS_DARWIN) && defined(MAC_OS_X_VERSION_MIN_REQUIRED)
+# if MAC_OS_X_VERSION_MIN_REQUIRED >= 1050
+#  define HAVE_POSIX_SPAWN 1
+# endif
+#endif
 #ifdef HAVE_POSIX_SPAWN
 # include <spawn.h>
 #endif
+
 #ifdef RT_OS_DARWIN
 # include <mach-o/dyld.h>
 #endif
@@ -297,6 +306,10 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
     AssertReturn(!pszAsUser || *pszAsUser, VERR_INVALID_PARAMETER);
     AssertReturn(!pszPassword || pszAsUser, VERR_INVALID_PARAMETER);
     AssertPtrNullReturn(pszPassword, VERR_INVALID_POINTER);
+#if defined(RT_OS_OS2)
+    if (fFlags & RTPROC_FLAGS_DETACHED)
+        return VERR_PROC_DETACH_NOT_SUPPORTED;
+#endif
 
     /*
      * Get the file descriptors for the handles we've been passed.
@@ -462,20 +475,30 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
         rc = posix_spawnattr_init(&Attr);
         if (!rc)
         {
-# ifndef RT_OS_OS2 /* We don't need this on OS/2 and I don't recall if it's actually implemented. */
-            rc = posix_spawnattr_setflags(&Attr, POSIX_SPAWN_SETPGROUP);
+            /* Indicate that process group and signal mask are to be changed,
+               and that the child should use default signal actions. */
+            rc = posix_spawnattr_setflags(&Attr, POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
             Assert(rc == 0);
+
+            /* The child starts in its own process group. */
             if (!rc)
             {
                 rc = posix_spawnattr_setpgroup(&Attr, 0 /* pg == child pid */);
                 Assert(rc == 0);
             }
-# endif
+
+            /* Unmask all signals. */
+            if (!rc)
+            {
+                sigset_t SigMask;
+                sigemptyset(&SigMask);
+                rc = posix_spawnattr_setsigmask(&Attr, &SigMask); Assert(rc == 0);
+            }
 
             /* File changes. */
             posix_spawn_file_actions_t  FileActions;
             posix_spawn_file_actions_t *pFileActions = NULL;
-            if (aStdFds[0] != -1 || aStdFds[1] != -1 || aStdFds[2] != -1)
+            if ((aStdFds[0] != -1 || aStdFds[1] != -1 || aStdFds[2] != -1) && !rc)
             {
                 rc = posix_spawn_file_actions_init(&FileActions);
                 if (!rc)
@@ -525,7 +548,7 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
                 /* For a detached process this happens in the temp process, so
                  * it's not worth doing anything as this process must exit. */
                 if (fFlags & RTPROC_FLAGS_DETACHED)
-                _Exit(0);
+                    _Exit(0);
                 if (phProcess)
                     *phProcess = pid;
                 return VINF_SUCCESS;
@@ -540,15 +563,20 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
 #endif
     {
 #ifdef RT_OS_SOLARIS
-        int templateFd = rtSolarisContractPreFork();
-        if (templateFd == -1)
-            return VERR_OPEN_FAILED;
+        int templateFd = -1;
+        if (!(fFlags & RTPROC_FLAGS_SAME_CONTRACT))
+        {
+            templateFd = rtSolarisContractPreFork();
+            if (templateFd == -1)
+                return VERR_OPEN_FAILED;
+        }
 #endif /* RT_OS_SOLARIS */
         pid = fork();
         if (!pid)
         {
 #ifdef RT_OS_SOLARIS
-            rtSolarisContractPostForkChild(templateFd);
+            if (!(fFlags & RTPROC_FLAGS_SAME_CONTRACT))
+                rtSolarisContractPostForkChild(templateFd);
 #endif /* RT_OS_SOLARIS */
             if (!(fFlags & RTPROC_FLAGS_DETACHED))
                 setpgid(0, 0); /* see comment above */
@@ -579,6 +607,14 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
                 }
             }
 #endif
+
+            /*
+             * Unset the signal mask.
+             */
+            sigset_t SigMask;
+            sigemptyset(&SigMask);
+            rc = sigprocmask(SIG_SETMASK, &SigMask, NULL);
+            Assert(rc == 0);
 
             /*
              * Apply changes to the standard file descriptor and stuff.
@@ -627,7 +663,8 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
                 exit(127);
         }
 #ifdef RT_OS_SOLARIS
-        rtSolarisContractPostForkParent(templateFd, pid);
+        if (!(fFlags & RTPROC_FLAGS_SAME_CONTRACT))
+            rtSolarisContractPostForkParent(templateFd, pid);
 #endif /* RT_OS_SOLARIS */
         if (pid > 0)
         {

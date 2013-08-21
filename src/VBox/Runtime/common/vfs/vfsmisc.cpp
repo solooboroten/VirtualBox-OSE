@@ -1,10 +1,10 @@
-/* $Id: vfsmisc.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
+/* $Id: vfsmisc.cpp $ */
 /** @file
  * IPRT - Virtual File System, Misc functions with heavy dependencies.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,4 +1,4 @@
-/* $Id: fsw_hfs.h 29125 2010-05-06 09:43:05Z vboxsync $ */
+/* $Id: fsw_hfs.h $ */
 /** @file
  * fsw_hfs.h - HFS file system driver header.
  */
@@ -23,6 +23,13 @@
 
 #include "fsw_core.h"
 
+#define IN_RING0
+#if !defined(ARCH_BITS) || !defined(HC_ARCH_BITS)
+# error "please add right bitness"
+#endif
+#include "iprt/formats/hfs.h"
+#include "iprt/asm.h"           /* endian conversion */
+
 
 //! Block size for HFS volumes.
 #define HFS_BLOCKSIZE            512
@@ -30,43 +37,18 @@
 //! Block number where the HFS superblock resides.
 #define HFS_SUPERBLOCK_BLOCKNO   2
 
-/* Make world look Applish enough for the system header describing HFS layout  */
-#define __APPLE_API_PRIVATE
-#define __APPLE_API_UNSTABLE
-
-#define u_int8_t  fsw_u8
-#define u_int16_t fsw_u16
-#define u_int32_t fsw_u32
-#define u_int64_t fsw_u64
-#define int8_t    fsw_s8
-#define int16_t   fsw_s16
-#define int32_t   fsw_s32
-#define int64_t   fsw_s64
-
-#include "hfs_format.h"
-
-#undef u_int8_t
-#undef u_int16_t
-#undef u_int32_t
-#undef u_int64_t
-#undef int8_t
-#undef int16_t
-#undef int32_t
-#undef int64_t
-
-#pragma pack(1)
 #ifdef _MSC_VER
 /* vasily: disable warning for non-standard anonymous struct/union
  * declarations
  */
 # pragma warning (disable:4201)
-# define inline __inline
 #endif
 
 struct hfs_dirrec {
     fsw_u8      _dummy;
 };
 
+#pragma pack(1)
 struct fsw_hfs_key
 {
   union
@@ -76,7 +58,6 @@ struct fsw_hfs_key
     fsw_u16                  key_len; /* Length is at the beginning of all keys */
   };
 };
-
 #pragma pack()
 
 typedef enum {
@@ -91,7 +72,6 @@ typedef enum {
 /**
  * HFS: Dnode structure with HFS-specific data.
  */
-
 struct fsw_hfs_dnode
 {
   struct fsw_dnode          g;          //!< Generic dnode structure
@@ -130,63 +110,37 @@ struct fsw_hfs_volume
     fsw_u32                       emb_block_off;
 };
 
-/* Endianess swappers */
-static inline fsw_u16
-swab16(fsw_u16 x)
-{
-    return x<<8 | x>>8;
-}
-
-static inline fsw_u32
-swab32(fsw_u32 x)
-{
-    return x<<24 | x>>24 |
-            (x & (fsw_u32)0x0000ff00UL)<<8 |
-            (x & (fsw_u32)0x00ff0000UL)>>8;
-}
-
-
-static inline fsw_u64
-swab64(fsw_u64 x)
-{
-    return x<<56 | x>>56 |
-            (x & (fsw_u64)0x000000000000ff00ULL)<<40 |
-            (x & (fsw_u64)0x0000000000ff0000ULL)<<24 |
-            (x & (fsw_u64)0x00000000ff000000ULL)<< 8 |
-            (x & (fsw_u64)0x000000ff00000000ULL)>> 8 |
-            (x & (fsw_u64)0x0000ff0000000000ULL)>>24 |
-            (x & (fsw_u64)0x00ff000000000000ULL)>>40;
-}
-
-static inline fsw_u16
+/* Endianess swappers. */
+DECLINLINE(fsw_u16)
 be16_to_cpu(fsw_u16 x)
 {
-    return swab16(x);
+    return RT_BE2H_U16(x);
 }
 
-static inline fsw_u16
+DECLINLINE(fsw_u16)
 cpu_to_be16(fsw_u16 x)
 {
-    return swab16(x);
+    return RT_H2BE_U16(x);
 }
 
 
-static inline fsw_u32
+DECLINLINE(fsw_u32)
 cpu_to_be32(fsw_u32 x)
 {
-    return swab32(x);
+    return RT_H2BE_U32(x);
 }
 
-static inline fsw_u32
+DECLINLINE(fsw_u32)
 be32_to_cpu(fsw_u32 x)
 {
-    return swab32(x);
+    return RT_BE2H_U32(x);
 }
 
-static inline fsw_u64
+DECLINLINE(fsw_u64)
 be64_to_cpu(fsw_u64 x)
 {
-    return swab64(x);
+    return RT_BE2H_U64(x);
 }
 
 #endif
+

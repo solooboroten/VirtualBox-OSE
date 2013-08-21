@@ -1,10 +1,10 @@
-/* $Id: fsw_efi_base.h 36444 2011-03-28 03:14:24Z vboxsync $ */
+/* $Id: fsw_efi_base.h $ */
 /** @file
  * fsw_efi_base.h - Base definitions for the EFI host environment.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

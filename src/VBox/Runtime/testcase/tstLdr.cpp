@@ -1,10 +1,10 @@
-/* $Id: tstLdr.cpp 40289 2012-02-29 10:28:39Z vboxsync $ */
+/* $Id: tstLdr.cpp $ */
 /** @file
  * IPRT - Testcase for parts of RTLdr*.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -121,7 +121,7 @@ static int testLdrOne(const char *pszFilename)
 
         /* open it */
         int rc;
-        if (!strncmp(aLoads[i].pszName, "kLdr-", sizeof("kLdr-") - 1))
+        if (!strncmp(aLoads[i].pszName, RT_STR_TUPLE("kLdr-")))
             rc = RTLdrOpenkLdr(pszFilename, 0, RTLDRARCH_WHATEVER, &aLoads[i].hLdrMod);
         else
             rc = RTLdrOpen(pszFilename, 0, RTLDRARCH_WHATEVER, &aLoads[i].hLdrMod);

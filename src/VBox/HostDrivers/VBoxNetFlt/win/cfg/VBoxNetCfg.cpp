@@ -1,9 +1,9 @@
-/* $Id: VBoxNetCfg.cpp 41007 2012-04-20 13:13:04Z vboxsync $ */
+/* $Id: VBoxNetCfg.cpp $ */
 /** @file
  * VBoxNetCfg.cpp - Network Configuration API.
  */
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -2080,7 +2080,7 @@ static BOOL vboxNetCfgWinAdjustHostOnlyNetworkInterfacePriority(IN INetCfg *pNc,
                 }
                 else
                 {
-                    if (hr = S_FALSE) /* No more binding paths? */
+                    if (hr == S_FALSE) /* No more binding paths? */
                         hr = S_OK;
                     else
                         NonStandardLogFlow(("Next bind path failed, hr (0x%x)\n", hr));
@@ -2139,8 +2139,6 @@ static UINT WINAPI vboxNetCfgWinPspFileCallback(
 */
 
 
-#define NETSHELL_LIBRARY _T("netshell.dll")
-
 /**
  *  Use the IShellFolder API to rename the connection.
  */
@@ -2188,6 +2186,24 @@ static HRESULT rename_shellfolder (PCWSTR wGuid, PCWSTR wNewName)
     return hr;
 }
 
+/**
+ * Loads a system DLL.
+ *
+ * @returns Module handle or NULL
+ * @param   pszName             The DLL name.
+ */
+static HMODULE loadSystemDll(const char *pszName)
+{
+    char   szPath[MAX_PATH];
+    UINT   cchPath = GetSystemDirectoryA(szPath, sizeof(szPath));
+    size_t cbName  = strlen(pszName) + 1;
+    if (cchPath + 1 + cbName > sizeof(szPath))
+        return NULL;
+    szPath[cchPath] = '\\';
+    memcpy(&szPath[cchPath + 1], pszName, cbName);
+    return LoadLibraryA(szPath);
+}
+
 VBOXNETCFGWIN_DECL(HRESULT) VBoxNetCfgWinRenameConnection (LPWSTR pGuid, PCWSTR NewName)
 {
     typedef HRESULT (WINAPI *lpHrRenameConnection) (const GUID *, PCWSTR);
@@ -2208,7 +2224,7 @@ VBOXNETCFGWIN_DECL(HRESULT) VBoxNetCfgWinRenameConnection (LPWSTR pGuid, PCWSTR 
         status = CLSIDFromString ((LPOLESTR) pGuid, &clsid);
         if (FAILED(status))
             return E_FAIL;
-        hNetShell = LoadLibrary (NETSHELL_LIBRARY);
+        hNetShell = loadSystemDll("netshell.dll");
         if (hNetShell == NULL)
             return E_FAIL;
         RenameConnectionFunc =

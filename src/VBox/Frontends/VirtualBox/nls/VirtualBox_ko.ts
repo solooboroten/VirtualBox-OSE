@@ -3403,7 +3403,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>왼쪽 </translation>
@@ -11923,7 +11923,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>항상 도구 모음 보이기</translation>

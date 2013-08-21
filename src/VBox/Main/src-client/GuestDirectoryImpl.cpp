@@ -1,11 +1,11 @@
 
-/* $Id: GuestDirectoryImpl.cpp 43162 2012-09-04 13:53:59Z vboxsync $ */
+/* $Id: GuestDirectoryImpl.cpp $ */
 /** @file
- * VirtualBox Main - XXX.
+ * VirtualBox Main - Guest directory handling.
  */
 
 /*
- * Copyright (C) 2012 Oracle Corporation
+ * Copyright (C) 2012-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -177,8 +177,32 @@ STDMETHODIMP GuestDirectory::Close(void)
 
     AssertPtr(mData.mSession);
     int rc = mData.mSession->directoryRemoveFromList(this);
+    AssertRC(rc);
 
-    mData.mProcessTool.Terminate();
+    HRESULT hr = S_OK;
+
+    int guestRc;
+    rc = mData.mProcessTool.Terminate(30 * 1000, &guestRc);
+    if (RT_FAILURE(rc))
+    {
+        switch (rc)
+        {
+           case VERR_GSTCTL_GUEST_ERROR:
+                hr = GuestProcess::setErrorExternal(this, guestRc);
+                break;
+
+            case VERR_NOT_SUPPORTED:
+                /* Silently skip old Guest Additions which do not support killing the
+                 * the guest directory handling process. */
+                break;
+
+            default:
+                hr = setError(VBOX_E_IPRT_ERROR,
+                              tr("Terminating open guest directory \"%s\" failed: %Rrc"),
+                              mData.mName.c_str(), rc);
+                break;
+        }
+    }
 
     /*
      * Release autocaller before calling uninit.
@@ -187,8 +211,8 @@ STDMETHODIMP GuestDirectory::Close(void)
 
     uninit();
 
-    LogFlowFuncLeaveRC(rc);
-    return S_OK;
+    LogFlowThisFunc(("Returning rc=%Rrc\n", rc));
+    return hr;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
@@ -262,7 +286,7 @@ STDMETHODIMP GuestDirectory::Read(IFsObjInfo **aInfo)
     {
         switch (rc)
         {
-            case VERR_GENERAL_FAILURE: /** @todo Special guest control rc needed! */
+            case VERR_GSTCTL_GUEST_ERROR:
                 hr = GuestProcess::setErrorExternal(this, guestRc);
                 break;
 
@@ -289,7 +313,7 @@ STDMETHODIMP GuestDirectory::Read(IFsObjInfo **aInfo)
         }
     }
 
-    LogFlowFuncLeaveRC(rc);
+    LogFlowThisFunc(("Returning rc=%Rrc\n", rc));
     return hr;
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }

@@ -1,4 +1,4 @@
-/* $Id: tstRTMemWipe.cpp 41031 2012-04-23 18:36:11Z vboxsync $ */
+/* $Id: tstRTMemWipe.cpp $ */
 /** @file
  * IPRT Testcase - RTMemWipe* functions.
  */

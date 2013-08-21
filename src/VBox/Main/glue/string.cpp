@@ -1,10 +1,10 @@
-/* $Id: string.cpp 42570 2012-08-03 09:56:09Z vboxsync $ */
+/* $Id: string.cpp $ */
 /** @file
  * MS COM / XPCOM Abstraction Layer - UTF-8 and UTF-16 string classes.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -57,7 +57,7 @@ void Bstr::copyFromN(const char *a_pszSrc, size_t a_cchMax)
         throw std::bad_alloc();
     }
 
-    m_bstr = ::SysAllocStringByteLen(NULL, cwc * sizeof(OLECHAR));
+    m_bstr = ::SysAllocStringByteLen(NULL, (unsigned)(cwc * sizeof(OLECHAR)));
     if (RT_UNLIKELY(!m_bstr))
         throw std::bad_alloc();
 

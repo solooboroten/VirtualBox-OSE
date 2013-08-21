@@ -214,11 +214,45 @@ eoi_master_pic:
 		out	PIC_MASTER, al
 		ret
 
+		;; routine to write the pointer in DX:AX to memory starting
+		;; at DS:BX (repeat CX times)
+		;; - modifies BX, CX
+set_int_vects	proc	near
+
+		mov	[bx], ax
+		mov	[bx+2], dx
+		add	bx, 4
+		loop	set_int_vects
+		ret
+
+set_int_vects	endp
+
 ;; --------------------------------------------------------
 ;; POST entry point
 ;; --------------------------------------------------------
 		BIOSORG	0E05Bh
 post:
+		cli
+
+		;; Check if in protected (V86) mode. If so, the CPU needs
+		;; to be reset.
+		smsw	ax
+		test	ax, 1
+		jz	in_real_mode
+
+		;; Reset processor to get out of protected mode. Use system
+		;; port instead of KBC.
+		;; NB: We only need bit 0 to be set in AL, which we just
+		;; determined to be the case.
+		out	92h, al
+		jmp	$		; not strictly necessary in a VM
+		
+		
+in_real_mode:
+		;; TODO: This looks very iffy - we shouldn't mess with any
+		;; hardware until after we've established that cold boot
+		;; needs to be done.
+		
 		xor	ax, ax
 
 		;; reset the DMA controllers
@@ -262,23 +296,9 @@ post:
 		;; OpenSolaris sets the status to 0Ah in some cases?
 		jmp	normal_post
 
-
-		;; routine to write the pointer in DX:AX to memory starting
-		;; at DS:BX (repeat CX times)
-		;; - modifies BX, CX
-set_int_vects	proc	near
-
-		mov	[bx], ax
-		mov	[bx+2], dx
-		add	bx, 4
-		loop	set_int_vects
-		ret
-
-set_int_vects	endp
-
 normal_post:
 		;; shutdown code 0: normal startup
-		cli
+
 		;; Set up the stack top at 0:7800h. The stack should not be
 		;; located above 0:7C00h; that conflicts with PXE, which
 		;; considers anything above that address to be fair game.
@@ -316,7 +336,7 @@ memory_zero_loop:
 memory_cleared:
 		mov	es, bx
 		xor	di, di
-		mov	cx, 7E00h	; all but the last 1K
+		mov	cx, 7FF8h	; all but the last 16 bytes
 	rep	stosw
 		xor	bx, bx
 
@@ -517,11 +537,6 @@ int75_handler:
 
 
 hard_drive_post	proc	near
-
-		;; TODO Why? And what about secondary controllers?
-		mov	al, 0Ah		; disable IRQ 14
-		mov	dx, 03F6h
-		out	dx, al
 
 		xor	ax, ax
 		mov	ds, ax
@@ -1318,6 +1333,9 @@ _diskette_param_table:
 ;; INT 17h handler - Printer service
 ;; --------------------------------------------------------
 ;;		BIOSORG	0EFD2h - fixed WRT preceding code
+
+		jmp	int17_handler	; NT floppy boot workaround
+					; see @bugref{6481}
 int17_handler:
 		push	ds
 		push	es
@@ -1533,6 +1551,8 @@ int15_handler:
 		je	int15_handler32
 		cmp	ah, 0E8h
 		je	int15_handler32
+		cmp	ah, 0d0h
+		je	int15_handler32
 		pusha
 		cmp	ah, 53h		; APM function?
 		je	apm_call
@@ -1700,10 +1720,13 @@ int08_handler:
 		xor	ax, ax
 		mov	ds, ax
 
-		;; time to turn off floppy driv motor(s)?
+		;; time to turn off floppy drive motor(s)?
 		mov	al, ds:[440h]
 		or	al, al
 		jz	int08_floppy_off
+		dec	al
+		mov	ds:[440h], al
+		jnz	int08_floppy_off
 		;; turn motor(s) off
 		push	dx
 		mov	dx, 03F2h
@@ -1789,3 +1812,4 @@ cpu_reset:
 BIOSSEG		ends
 
 		end
+

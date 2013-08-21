@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -91,6 +91,33 @@ dsk_acc_t   dskacc[DSKTYP_CNT] = {
 #define DS      r.ds
 #define ES      r.es
 #define FLAGS   r.ra.flags.u.r16.flags
+
+
+/* 
+ * Build translated CHS geometry given a disk size in sectors. Based on
+ * Phoenix EDD 3.0. This is used as a fallback to generate sane logical
+ * geometry in case none was provided in CMOS.
+ */
+void set_geom_lba(chs_t __far *lgeo, uint32_t nsectors)
+{
+    uint32_t    limit = 8257536;    /* 1024 * 128 * 63 */
+    unsigned    heads = 255;
+    int         i;
+    
+    /* Start with ~4GB limit, go down to 504MB. */
+    for (i = 0; i < 4; ++i) {
+        if (nsectors <= limit)
+            heads = (heads + 1) / 2;
+        limit /= 2;
+    }
+
+    lgeo->cylinders = nsectors / (heads * 63UL);
+    if (lgeo->cylinders > 1024)
+        lgeo->cylinders = 1024;
+    lgeo->heads     = heads;
+    lgeo->spt       = 63;   /* Always 63 sectors per track, the maximum. */
+}
+
 
 void BIOSCALL int13_harddisk(disk_regs_t r)
 {

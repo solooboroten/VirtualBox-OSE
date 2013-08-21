@@ -1,10 +1,10 @@
-/* $Id: VBoxXPCOMC.cpp 39895 2012-01-27 09:58:56Z vboxsync $ */
+/* $Id: VBoxXPCOMC.cpp $ */
 /** @file VBoxXPCOMC.cpp
  * Utility functions to use with the C binding for XPCOM.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

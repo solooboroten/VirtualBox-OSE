@@ -1,4 +1,4 @@
-/* $Id: VBoxInternalManage.cpp 43207 2012-09-05 15:32:05Z vboxsync $ */
+/* $Id: VBoxInternalManage.cpp $ */
 /** @file
  * VBoxManage - The 'internalcommands' command.
  *
@@ -145,13 +145,13 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         "         incompatible ways without warning.\n",
 
         (u64Cmd & USAGE_LOADMAP)
-        ? "  loadmap <vmname>|<uuid> <symfile> <address> [module] [subtrahend] [segment]\n"
+        ? "  loadmap <vmname|uuid> <symfile> <address> [module] [subtrahend] [segment]\n"
           "      This will instruct DBGF to load the given map file\n"
           "      during initialization.  (See also loadmap in the debugger.)\n"
           "\n"
         : "",
         (u64Cmd & USAGE_LOADSYMS)
-        ? "  loadsyms <vmname>|<uuid> <symfile> [delta] [module] [module address]\n"
+        ? "  loadsyms <vmname|uuid> <symfile> [delta] [module] [module address]\n"
           "      This will instruct DBGF to load the given symbol file\n"
           "      during initialization.\n"
           "\n"
@@ -243,7 +243,7 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         "",
 #endif
         (u64Cmd & USAGE_DEBUGLOG)
-        ? "  debuglog <vmname>|<uuid> [--enable|--disable] [--flags todo]\n"
+        ? "  debuglog <vmname|uuid> [--enable|--disable] [--flags todo]\n"
           "           [--groups todo] [--destinations todo]\n"
           "       Controls debug logging.\n"
           "\n"
@@ -254,7 +254,7 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
           "\n"
         : "",
         (u64Cmd & USAGE_GUESTSTATS)
-        ? "  gueststats <vmname>|<uuid> [--interval <seconds>]\n"
+        ? "  gueststats <vmname|uuid> [--interval <seconds>]\n"
           "       Obtains and prints internal guest statistics.\n"
           "       Sets the update interval if specified.\n"
           "\n"
@@ -672,7 +672,7 @@ static int CmdSetHDUUID(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, 
     }
 
     /* Open the image */
-    rc = VDOpen(pDisk, pszFormat, argv[1], VD_OPEN_FLAGS_NORMAL, NULL);
+    rc = VDOpen(pDisk, pszFormat, argv[1], VD_OPEN_FLAGS_NORMAL | VD_OPEN_FLAGS_INFO, NULL);
     if (RT_FAILURE(rc))
     {
         RTMsgError("Cannot open the image: %Rrc", rc);

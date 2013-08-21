@@ -1,10 +1,10 @@
-/* $Id: PDMBlkCache.cpp 42892 2012-08-20 20:48:06Z vboxsync $ */
+/* $Id: PDMBlkCache.cpp $ */
 /** @file
  * PDM Block Cache.
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1241,9 +1241,8 @@ static int pdmR3BlkCacheRetain(PVM pVM, PPPDMBLKCACHE ppBlkCache, const char *pc
                         LogFlowFunc(("returns success\n"));
                         return VINF_SUCCESS;
                     }
-                    else
-                        rc = VERR_NO_MEMORY;
 
+                    rc = VERR_NO_MEMORY;
                     RTSemRWDestroy(pBlkCache->SemRWEntries);
                 }
 
@@ -1445,7 +1444,7 @@ VMMR3DECL(void) PDMR3BlkCacheRelease(PPDMBLKCACHE pBlkCache)
     RTSemRWDestroy(pBlkCache->SemRWEntries);
 
 #ifdef VBOX_WITH_STATISTICS
-    STAMR3Deregister(pCache->pVM, &pBlkCache->StatWriteDeferred);
+    STAMR3DeregisterF(pCache->pVM->pUVM, "/PDM/BlkCache/%s/Cache/DeferredWrites", pBlkCache->pszId);
 #endif
 
     RTStrFree(pBlkCache->pszId);

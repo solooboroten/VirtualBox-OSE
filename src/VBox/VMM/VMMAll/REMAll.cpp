@@ -1,10 +1,10 @@
-/* $Id: REMAll.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: REMAll.cpp $ */
 /** @file
  * REM - Recompiled Execution Monitor, all Contexts part.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -223,7 +223,7 @@ VMMDECL(void) REMNotifyHandlerPhysicalFlushIfAlmostFull(PVM pVM, PVMCPU pVCpu)
         if (++cFree >= 48)
             return;
     }
-    AssertRelease(VM_FF_ISSET(pVM, VM_FF_REM_HANDLER_NOTIFY));
+    AssertRelease(VM_FF_IS_SET(pVM, VM_FF_REM_HANDLER_NOTIFY));
     AssertRelease(pVM->rem.s.idxPendingList != UINT32_MAX);
 
     /* Ok, we gotta flush them. */

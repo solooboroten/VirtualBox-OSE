@@ -1,10 +1,10 @@
-/* $Id: GMMR0.cpp 43235 2012-09-06 23:53:40Z vboxsync $ */
+/* $Id: GMMR0.cpp $ */
 /** @file
  * GMM - Global Memory Manager.
  */
 
 /*
- * Copyright (C) 2007-2012 Oracle Corporation
+ * Copyright (C) 2007-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1959,7 +1959,7 @@ static uint32_t gmmR0AllocateChunkId(PGMM pGMM)
     if (    (uint32_t)idChunk < GMM_CHUNKID_LAST
         &&  idChunk > NIL_GMM_CHUNKID)
     {
-        idChunk = ASMBitNextClear(&pGMM->bmChunkId[0], GMM_CHUNKID_LAST + 1, idChunk);
+        idChunk = ASMBitNextClear(&pGMM->bmChunkId[0], GMM_CHUNKID_LAST + 1, idChunk - 1);
         if (idChunk > NIL_GMM_CHUNKID)
         {
             AssertMsgReturn(!ASMAtomicBitTestAndSet(&pGMM->bmChunkId[0], idChunk), ("%#x\n", idChunk), NIL_GMM_CHUNKID);
@@ -2380,12 +2380,13 @@ static uint32_t gmmR0AllocatePagesInBoundMode(PGVM pGVM, uint32_t iPage, uint32_
 
 
 /**
- * Checks if we should start picking pages from chunks of other VMs.
+ * Checks if we should start picking pages from chunks of other VMs because
+ * we're getting close to the system memory or reserved limit.
  *
  * @returns @c true if we should, @c false if we should first try allocate more
  *          chunks.
  */
-static bool gmmR0ShouldAllocatePagesInOtherChunks(PGVM pGVM)
+static bool gmmR0ShouldAllocatePagesInOtherChunksBecauseOfLimits(PGVM pGVM)
 {
     /*
      * Don't allocate a new chunk if we're
@@ -2408,6 +2409,24 @@ static bool gmmR0ShouldAllocatePagesInOtherChunks(PGVM pGVM)
      */
     /** @todo.  */
 
+    return false;
+}
+
+
+/**
+ * Checks if we should start picking pages from chunks of other VMs because
+ * there is a lot of free pages around.
+ *
+ * @returns @c true if we should, @c false if we should first try allocate more
+ *          chunks.
+ */
+static bool gmmR0ShouldAllocatePagesInOtherChunksBecauseOfLotsFree(PGMM pGMM)
+{
+    /*
+     * Setting the limit at 16 chunks (32 MB) at the moment.
+     */
+    if (pGMM->PrivateX.cFreePages >= GMM_CHUNK_NUM_PAGES * 16)
+        return true;
     return false;
 }
 
@@ -2536,8 +2555,12 @@ static int gmmR0AllocatePagesNew(PGMM pGMM, PGVM pGVM, uint32_t cPages, PGMMPAGE
         {
             /* Maybe we should try getting pages from chunks "belonging" to
                other VMs before allocating more chunks? */
-            if (gmmR0ShouldAllocatePagesInOtherChunks(pGVM))
+            bool fTriedOnSameAlready = false;
+            if (gmmR0ShouldAllocatePagesInOtherChunksBecauseOfLimits(pGVM))
+            {
                 iPage = gmmR0AllocatePagesFromSameNode(&pGMM->PrivateX, pGVM, iPage, cPages, paPages);
+                fTriedOnSameAlready = true;
+            }
 
             /* Allocate memory from empty chunks. */
             if (iPage < cPages)
@@ -2546,6 +2569,16 @@ static int gmmR0AllocatePagesNew(PGMM pGMM, PGVM pGVM, uint32_t cPages, PGMMPAGE
             /* Grab empty shared chunks. */
             if (iPage < cPages)
                 iPage = gmmR0AllocatePagesFromEmptyChunksOnSameNode(&pGMM->Shared, pGVM, iPage, cPages, paPages);
+
+            /* If there is a lof of free pages spread around, try not waste
+               system memory on more chunks. (Should trigger defragmentation.) */
+            if (   !fTriedOnSameAlready
+                && gmmR0ShouldAllocatePagesInOtherChunksBecauseOfLotsFree(pGMM))
+            {
+                iPage = gmmR0AllocatePagesFromSameNode(&pGMM->PrivateX, pGVM, iPage, cPages, paPages);
+                if (iPage < cPages)
+                    iPage = gmmR0AllocatePagesIndiscriminately(&pGMM->PrivateX, pGVM, iPage, cPages, paPages);
+            }
 
             /*
              * Ok, try allocate new chunks.

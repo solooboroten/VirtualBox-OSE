@@ -1,10 +1,10 @@
-/* $Id: udp.c 41987 2012-07-02 16:44:45Z vboxsync $ */
+/* $Id: udp.c $ */
 /** @file
  * NAT - UDP protocol.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -123,7 +123,6 @@ udp_input(PNATState pData, register struct mbuf *m, int iphlen)
      * If not enough data to reflect UDP length, drop.
      */
     len = RT_N2H_U16((u_int16_t)uh->uh_ulen);
-    Assert((ip->ip_len == len));
     Assert((ip->ip_len + iphlen == m_length(m, NULL)));
 
     if (ip->ip_len != len)
@@ -132,6 +131,7 @@ udp_input(PNATState pData, register struct mbuf *m, int iphlen)
         {
             udpstat.udps_badlen++;
             Log3(("NAT: IP(id: %hd) has bad size\n", ip->ip_id));
+            goto bad_free_mbuf;
         }
         m_adj(m, len - ip->ip_len);
         ip->ip_len = len;
@@ -277,7 +277,7 @@ udp_input(PNATState pData, register struct mbuf *m, int iphlen)
      * DNS proxy
      */
     if (   pData->fUseDnsProxy
-        && (ip->ip_dst.s_addr == RT_H2N_U32(RT_N2H_U32(pData->special_addr.s_addr) | CTL_DNS))
+        && CTL_CHECK(ip->ip_dst.s_addr, CTL_DNS)
         && (uh->uh_dport == RT_H2N_U16_C(53)))
     {
         dnsproxy_query(pData, so, m, iphlen);

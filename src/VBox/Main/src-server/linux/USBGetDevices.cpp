@@ -1,10 +1,10 @@
-/* $Id: USBGetDevices.cpp 41578 2012-06-05 14:01:18Z vboxsync $ */
+/* $Id: USBGetDevices.cpp $ */
 /** @file
  * VirtualBox Linux host USB device enumeration.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -357,11 +357,11 @@ static int usbReadSpeed(const char *pszValue, USBDEVICESPEED *pSpd, char **ppszN
 {
     pszValue = RTStrStripL(pszValue);
     /* verified with Linux 2.4.0 ... Linux 2.6.25 */
-    if (!strncmp(pszValue, "1.5", 3))
+    if (!strncmp(pszValue, RT_STR_TUPLE("1.5")))
         *pSpd = USBDEVICESPEED_LOW;
-    else if (!strncmp(pszValue, "12 ", 3))
+    else if (!strncmp(pszValue, RT_STR_TUPLE("12 ")))
         *pSpd = USBDEVICESPEED_FULL;
-    else if (!strncmp(pszValue, "480", 3))
+    else if (!strncmp(pszValue, RT_STR_TUPLE("480")))
         *pSpd = USBDEVICESPEED_HIGH;
     else
         *pSpd = USBDEVICESPEED_UNKNOWN;
@@ -593,7 +593,7 @@ static PUSBDEVICE getDevicesFromUsbfs(const char *pcszUsbfsRoot, bool testfs)
                         deviceFreeMembers(&Dev);
 
                     /* Reset device state */
-                    memset(&Dev, 0, sizeof (Dev));
+                    RT_ZERO(Dev);
                     Dev.enmState = USBDEVICESTATE_UNUSED;
                     cHits = 1;
 
@@ -1122,7 +1122,7 @@ static int usbGetPortFromSysfsPath(const char *pszPath, uint8_t *pu8Port)
     if (!pchDash && !pchDot)
     {
         /* No -/. so it must be a root hub. Check that it's usb<something>. */
-        if (strncmp(pszLastComp, "usb", sizeof("usb") - 1) != 0)
+        if (strncmp(pszLastComp, RT_STR_TUPLE("usb")) != 0)
         {
             Log(("usbGetPortFromSysfsPath(%s): failed [2]\n", pszPath));
             return VERR_INVALID_PARAMETER;
@@ -1430,7 +1430,7 @@ void TestUSBSetInotifyAvailable(bool fHaveInotifyLibC, bool fHaveInotifyKernel)
     s_fHaveInotifyKernel = fHaveInotifyKernel;
 }
 # define dlsym testDLSym
-# define close(a) do {} while(0)
+# define close(a) do {} while (0)
 #endif
 
 /** Is inotify available and working on this system?  This is a requirement

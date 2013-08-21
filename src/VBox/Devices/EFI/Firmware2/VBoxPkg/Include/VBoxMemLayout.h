@@ -1,10 +1,10 @@
-/* $Id: VBoxMemLayout.h 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: VBoxMemLayout.h $ */
 /** @file
  * VBoxMemLayout.h - Constants defining the memory layout. (Merge with DevEFI?)
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

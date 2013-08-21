@@ -112,6 +112,7 @@ VBoxWindowDestroy
 VBoxConCreate
 VBoxConDestroy
 VBoxConFlush
+VBoxPresentComposition
 ChromiumParameteriCR
 CompressedTexImage1DARB
 CompressedTexImage2DARB
@@ -119,3 +120,9 @@ CompressedTexImage3DARB
 CompressedTexSubImage1DARB
 CompressedTexSubImage2DARB
 CompressedTexSubImage3DARB
+GenFramebuffersEXT
+GenRenderbuffersEXT
+GenBuffersARB
+DeleteBuffersARB
+StringMarkerGREMEDY
+GenTextures

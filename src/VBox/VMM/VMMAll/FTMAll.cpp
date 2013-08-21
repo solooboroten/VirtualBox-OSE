@@ -1,10 +1,10 @@
-/* $Id: FTMAll.cpp 41801 2012-06-17 16:46:51Z vboxsync $ */
+/* $Id: FTMAll.cpp $ */
 /** @file
  * FTM - Fault Tolerance Manager - All contexts
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -38,7 +38,7 @@
  * @param   pVM         Pointer to the VM.
  * @param   enmType     Checkpoint type
  */
-VMMDECL(int)   FTMSetCheckpoint(PVM pVM, FTMCHECKPOINTTYPE enmType)
+VMM_INT_DECL(int) FTMSetCheckpoint(PVM pVM, FTMCHECKPOINTTYPE enmType)
 {
     if (!pVM->fFaultTolerantMaster)
         return VINF_SUCCESS;
@@ -58,7 +58,7 @@ VMMDECL(int)   FTMSetCheckpoint(PVM pVM, FTMCHECKPOINTTYPE enmType)
  *
  * @param   pVM         Pointer to the VM.
  */
-VMMDECL(bool)  FTMIsDeltaLoadSaveActive(PVM pVM)
+VMM_INT_DECL(bool) FTMIsDeltaLoadSaveActive(PVM pVM)
 {
     return pVM->ftm.s.fDeltaLoadSaveActive;
 }

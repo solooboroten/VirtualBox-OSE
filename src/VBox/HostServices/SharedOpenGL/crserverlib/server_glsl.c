@@ -1,11 +1,11 @@
-/* $Id: server_glsl.c 41928 2012-06-27 16:06:23Z vboxsync $ */
+/* $Id: server_glsl.c $ */
 
 /** @file
  * VBox OpenGL: GLSL related functions
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,13 +29,29 @@
 void SERVER_DISPATCH_APIENTRY crServerDispatchShaderSource(GLuint shader, GLsizei count, const char ** string, const GLint * length)
 {
     /*@todo?crStateShaderSource(shader...);*/
+#ifdef DEBUG_misha
+    GLenum err = cr_server.head_spu->dispatch_table.GetError();
+#endif
     cr_server.head_spu->dispatch_table.ShaderSource(crStateGetShaderHWID(shader), count, string, length);
+#ifdef DEBUG_misha
+    err = cr_server.head_spu->dispatch_table.GetError();
+    CRASSERT(err == GL_NO_ERROR);
+#endif
+    CR_SERVER_DUMP_SHADER_SOURCE(shader);
 }
 
 void SERVER_DISPATCH_APIENTRY crServerDispatchCompileShader(GLuint shader)
 {
+#ifdef DEBUG_misha
+    GLint iCompileStatus = GL_FALSE;
+#endif
     crStateCompileShader(shader);
     cr_server.head_spu->dispatch_table.CompileShader(crStateGetShaderHWID(shader));
+#ifdef DEBUG_misha
+    cr_server.head_spu->dispatch_table.GetShaderiv(crStateGetShaderHWID(shader), GL_COMPILE_STATUS, &iCompileStatus);
+    Assert(iCompileStatus == GL_TRUE);
+#endif
+    CR_SERVER_DUMP_COMPILE_SHADER(shader);
 }
 
 void SERVER_DISPATCH_APIENTRY crServerDispatchDeleteShader(GLuint shader)
@@ -64,6 +80,7 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchLinkProgram(GLuint program)
 {
     crStateLinkProgram(program);
     cr_server.head_spu->dispatch_table.LinkProgram(crStateGetProgramHWID(program));
+    CR_SERVER_DUMP_LINK_PROGRAM(program);
 }
 
 void SERVER_DISPATCH_APIENTRY crServerDispatchUseProgram(GLuint program)
@@ -96,21 +113,12 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchBindAttribLocation(GLuint program,
 
 void SERVER_DISPATCH_APIENTRY crServerDispatchDeleteObjectARB(GLhandleARB obj)
 {
-    GLuint hwid = crStateGetProgramHWID(obj);
-
-    if (!hwid)
-    {
-        hwid = crStateGetShaderHWID(obj);
-        CRASSERT(hwid);
-        crStateDeleteShader(obj);
-    }
-    else
-    {
-        crStateDeleteProgram(obj);
-    }
+    GLuint hwid =  crStateDeleteObjectARB(obj);
 
     if (hwid)
         cr_server.head_spu->dispatch_table.DeleteObjectARB(hwid);
+    else
+        crWarning("zero hwid for object %d", obj);
 }
 
 GLint SERVER_DISPATCH_APIENTRY crServerDispatchGetAttribLocation( GLuint program, const char * name )

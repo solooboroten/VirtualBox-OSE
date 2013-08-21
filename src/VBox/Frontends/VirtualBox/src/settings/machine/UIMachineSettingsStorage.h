@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -655,7 +655,7 @@ signals:
 
 protected:
 
-    /* Load data to cashe from corresponding external object(s),
+    /* Load data to cache from corresponding external object(s),
      * this task COULD be performed in other than GUI thread: */
     void loadToCacheFrom(QVariant &data);
     /* Load data to corresponding widgets from cache,
@@ -672,8 +672,8 @@ protected:
     /* Page changed: */
     bool changed() const { return m_cache.wasChanged(); }
 
-    void setValidator (QIWidgetValidator *aVal);
-    bool revalidate (QString &aWarning, QString &aTitle);
+    /* API: Validation stuff: */
+    bool validate(QString &strWarning, QString &strTitle);
 
     void retranslateUi();
 
@@ -754,8 +754,6 @@ private:
 
     void setDialogType(SettingsDialogType settingsDialogType);
     void polishPage();
-
-    QIWidgetValidator *mValidator;
 
     QString m_strMachineId;
     QString m_strMachineSettingsFilePath;

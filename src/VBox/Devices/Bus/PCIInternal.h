@@ -1,10 +1,10 @@
-/* $Id: PCIInternal.h 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: PCIInternal.h $ */
 /** @file
  * DevPCI - PCI Internal header - Only for hiding bits of PCIDEVICE.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

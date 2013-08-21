@@ -3,7 +3,7 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
-/* @(#) $Id: zconf.h.cmakein 40354 2012-03-05 13:39:00Z vboxsync $ */
+/* @(#) $Id: zconf.h.cmakein $ */
 
 #ifndef ZCONF_H
 #define ZCONF_H

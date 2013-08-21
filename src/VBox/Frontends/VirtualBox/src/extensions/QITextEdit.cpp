@@ -1,4 +1,4 @@
-/* $Id: QITextEdit.cpp 39593 2011-12-13 09:26:40Z vboxsync $ */
+/* $Id: QITextEdit.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-/* $Id: UIMedium.cpp 41819 2012-06-18 17:59:30Z vboxsync $ */
+/* $Id: UIMedium.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2009-2010 Oracle Corporation
+ * Copyright (C) 2009-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -41,6 +41,8 @@ QString UIMedium::mRow = QString ("<tr><td>%1</td></tr>");
 
 UIMedium& UIMedium::operator= (const UIMedium &aOther)
 {
+    m_fAttachedToHiddenMachinesOnly = aOther.isAttachedToHiddenMachinesOnly();
+
     mMedium = aOther.medium();
     mType = aOther.type();
     mState = aOther.state();
@@ -120,6 +122,9 @@ void UIMedium::blockAndQueryState()
  */
 void UIMedium::refresh()
 {
+    /* We assume this flag is 'false' by default: */
+    m_fAttachedToHiddenMachinesOnly = false;
+
     /* Detect basic parameters */
     mId = mMedium.isNull() ? QUuid().toString().remove ('{').remove ('}') : mMedium.GetId();
 
@@ -141,7 +146,13 @@ void UIMedium::refresh()
     {
         mHardDiskFormat = mMedium.GetFormat();
         mHardDiskType = vboxGlobal().mediumTypeString (mMedium);
-        mStorageDetails = gpConverter->toString((KMediumVariant)mMedium.GetVariant());
+
+        QVector<KMediumVariant> mediumVariants_QVector = mMedium.GetVariant();
+        qlonglong mediumVariants_qlonglong = 0;
+        for (int i = 0; i < mediumVariants_QVector.size(); i++)
+            mediumVariants_qlonglong |= mediumVariants_QVector[i];
+
+        mStorageDetails = gpConverter->toString((KMediumVariant)mediumVariants_qlonglong);
         mIsReadOnly = mMedium.GetReadOnly();
 
         /* Adjust the parent if its possible */
@@ -194,6 +205,9 @@ void UIMedium::refresh()
         QVector <QString> machineIds = mMedium.GetMachineIds();
         if (machineIds.size() > 0)
         {
+            /* We assume this flag is 'true' if at least one machine present: */
+            m_fAttachedToHiddenMachinesOnly = true;
+
             QString sUsage;
 
             CVirtualBox vbox = vboxGlobal().virtualBox();
@@ -201,6 +215,22 @@ void UIMedium::refresh()
             for (QVector <QString>::ConstIterator it = machineIds.begin(); it != machineIds.end(); ++ it)
             {
                 CMachine machine = vbox.FindMachine(*it);
+
+                /* UIMedium object can wrap newly created CMedium object which belongs to
+                 * not yet registered machine, like while creating VM clone.
+                 * We can skip such a machines in usage string.
+                 * CVirtualBox::FindMachine() will return null machine for such case. */
+                if (machine.isNull())
+                {
+                    /* We can't decide for that medium yet,
+                     * assume this flag is 'false' for now: */
+                    m_fAttachedToHiddenMachinesOnly = false;
+                    continue;
+                }
+
+                /* Finally, we are checking if current machine overrides this flag: */
+                if (m_fAttachedToHiddenMachinesOnly && vboxGlobal().shouldWeShowMachine(machine))
+                    m_fAttachedToHiddenMachinesOnly = false;
 
                 QString sName = machine.GetName();
                 QString sSnapshots;
@@ -240,8 +270,8 @@ void UIMedium::refresh()
                     mIsUsedInSnapshots = false;
             }
 
-            Assert (!sUsage.isEmpty());
-            mUsage = sUsage;
+            if (!sUsage.isEmpty())
+                mUsage = sUsage;
         }
     }
 
@@ -363,7 +393,7 @@ QPixmap UIMedium::icon (bool aNoDiffs /* = false */, bool aCheckRO /* = false */
         pixmap = result (aNoDiffs).isOk() ? vboxGlobal().warningIcon() : vboxGlobal().errorIcon();
 
     if (aCheckRO && mIsReadOnly)
-        pixmap = VBoxGlobal::joinPixmaps (pixmap, QPixmap (":/new_16px.png"));
+        pixmap = VBoxGlobal::joinPixmaps (pixmap, QPixmap (":/hd_new_16px.png"));
 
     return pixmap;
 }

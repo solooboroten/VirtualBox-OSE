@@ -1,10 +1,10 @@
-/* $Id: memobj-r0drv-nt.cpp 39744 2012-01-10 18:15:04Z vboxsync $ */
+/* $Id: memobj-r0drv-nt.cpp $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, NT.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

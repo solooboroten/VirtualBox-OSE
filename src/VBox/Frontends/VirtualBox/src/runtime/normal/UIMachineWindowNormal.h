@@ -49,6 +49,7 @@ private slots:
     void sltUSBDeviceStateChange();
     void sltNetworkAdapterChange();
     void sltSharedFolderChange();
+    void sltVideoCaptureChange();
     void sltCPUExecutionCapChange();
 
     /* LED connections: */
@@ -93,7 +94,6 @@ private:
 
     /* Widgets: */
     UIIndicatorsPool *m_pIndicatorsPool;
-    QWidget *m_pCntHostkey;
     QLabel *m_pNameHostkey;
 
     /* Variables: */

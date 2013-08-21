@@ -1,10 +1,10 @@
-/* $Id: SELM.cpp 42427 2012-07-26 23:48:01Z vboxsync $ */
+/* $Id: SELM.cpp $ */
 /** @file
  * SELM - The Selector Manager.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -62,6 +62,8 @@
 #include <VBox/vmm/selm.h>
 #include <VBox/vmm/cpum.h>
 #include <VBox/vmm/stam.h>
+#include <VBox/vmm/em.h>
+#include <VBox/vmm/hm.h>
 #include <VBox/vmm/mm.h>
 #include <VBox/vmm/ssm.h>
 #include <VBox/vmm/pgm.h>
@@ -79,15 +81,7 @@
 #include <iprt/thread.h>
 #include <iprt/string.h>
 
-
-/**
- * Enable or disable tracking of Shadow GDT/LDT/TSS.
- * @{
- */
-#define SELM_TRACK_SHADOW_GDT_CHANGES
-#define SELM_TRACK_SHADOW_LDT_CHANGES
-#define SELM_TRACK_SHADOW_TSS_CHANGES
-/** @} */
+#include "SELMInline.h"
 
 
 /** SELM saved state version. */
@@ -128,6 +122,7 @@ static char const g_aszSRegNms[X86_SREG_COUNT][4] = { "ES", "CS", "SS", "DS", "F
  */
 VMMR3DECL(int) SELMR3Init(PVM pVM)
 {
+    int rc;
     LogFlow(("SELMR3Init\n"));
 
     /*
@@ -154,18 +149,21 @@ VMMR3DECL(int) SELMR3Init(PVM pVM)
     pVM->selm.s.aHyperSel[SELM_HYPER_SEL_TSS]        = (SELM_GDT_ELEMENTS - 0x4) << 3;
     pVM->selm.s.aHyperSel[SELM_HYPER_SEL_TSS_TRAP08] = (SELM_GDT_ELEMENTS - 0x5) << 3;
 
-    /*
-     * Allocate GDT table.
-     */
-    int rc = MMR3HyperAllocOnceNoRel(pVM, sizeof(pVM->selm.s.paGdtR3[0]) * SELM_GDT_ELEMENTS,
+    if (HMIsRawModeCtxNeeded(pVM))
+    {
+        /*
+         * Allocate GDT table.
+         */
+        rc = MMR3HyperAllocOnceNoRel(pVM, sizeof(pVM->selm.s.paGdtR3[0]) * SELM_GDT_ELEMENTS,
                                      PAGE_SIZE, MM_TAG_SELM, (void **)&pVM->selm.s.paGdtR3);
-    AssertRCReturn(rc, rc);
+        AssertRCReturn(rc, rc);
 
-    /*
-     * Allocate LDT area.
-     */
-    rc = MMR3HyperAllocOnceNoRel(pVM, _64K + PAGE_SIZE, PAGE_SIZE, MM_TAG_SELM, &pVM->selm.s.pvLdtR3);
-    AssertRCReturn(rc, rc);
+        /*
+         * Allocate LDT area.
+         */
+        rc = MMR3HyperAllocOnceNoRel(pVM, _64K + PAGE_SIZE, PAGE_SIZE, MM_TAG_SELM, &pVM->selm.s.pvLdtR3);
+        AssertRCReturn(rc, rc);
+    }
 
     /*
      * Init Guest's and Shadow GDT, LDT, TSS changes control variables.
@@ -180,11 +178,11 @@ VMMR3DECL(int) SELMR3Init(PVM pVM)
     pVM->selm.s.pvMonShwTssRC      = RTRCPTR_MAX;
     pVM->selm.s.GCSelTss           = RTSEL_MAX;
 
-    pVM->selm.s.fDisableMonitoring = false;
     pVM->selm.s.fSyncTSSRing0Stack = false;
 
-    /* The I/O bitmap starts right after the virtual interrupt redirection bitmap. Outside the TSS on purpose; the CPU will not check it
-     * for I/O operations. */
+    /* The I/O bitmap starts right after the virtual interrupt redirection
+       bitmap. Outside the TSS on purpose; the CPU will not check it for
+       I/O operations. */
     pVM->selm.s.Tss.offIoBitmap = sizeof(VBOXTSS);
     /* bit set to 1 means no redirection */
     memset(pVM->selm.s.Tss.IntRedirBitmap, 0xff, sizeof(pVM->selm.s.Tss.IntRedirBitmap));
@@ -202,63 +200,74 @@ VMMR3DECL(int) SELMR3Init(PVM pVM)
     /*
      * Statistics.
      */
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestGDTHandled,     STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/GDTInt",  STAMUNIT_OCCURENCES,     "The number of handled writes to the Guest GDT.");
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestGDTUnhandled,   STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/GDTEmu",  STAMUNIT_OCCURENCES,     "The number of unhandled writes to the Guest GDT.");
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestLDT,            STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/LDT",     STAMUNIT_OCCURENCES,     "The number of writes to the Guest LDT was detected.");
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSHandled,     STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSInt",  STAMUNIT_OCCURENCES,     "The number of handled writes to the Guest TSS.");
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSRedir,       STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSRedir",STAMUNIT_OCCURENCES,     "The number of handled redir bitmap writes to the Guest TSS.");
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSHandledChanged,STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSIntChg", STAMUNIT_OCCURENCES, "The number of handled writes to the Guest TSS where the R0 stack changed.");
-    STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSUnhandled,   STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSEmu",  STAMUNIT_OCCURENCES,     "The number of unhandled writes to the Guest TSS.");
-    STAM_REG(pVM, &pVM->selm.s.StatTSSSync,                    STAMTYPE_PROFILE, "/PROF/SELM/TSSSync",           STAMUNIT_TICKS_PER_CALL, "Profiling of the SELMR3SyncTSS() body.");
-    STAM_REG(pVM, &pVM->selm.s.StatUpdateFromCPUM,             STAMTYPE_PROFILE, "/PROF/SELM/UpdateFromCPUM",    STAMUNIT_TICKS_PER_CALL, "Profiling of the SELMR3UpdateFromCPUM() body.");
+    if (!HMIsEnabled(pVM))
+    {
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestGDTHandled,     STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/GDTInt",  STAMUNIT_OCCURENCES,     "The number of handled writes to the Guest GDT.");
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestGDTUnhandled,   STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/GDTEmu",  STAMUNIT_OCCURENCES,     "The number of unhandled writes to the Guest GDT.");
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestLDT,            STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/LDT",     STAMUNIT_OCCURENCES,     "The number of writes to the Guest LDT was detected.");
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSHandled,     STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSInt",  STAMUNIT_OCCURENCES,     "The number of handled writes to the Guest TSS.");
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSRedir,       STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSRedir",STAMUNIT_OCCURENCES,     "The number of handled redir bitmap writes to the Guest TSS.");
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSHandledChanged,STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSIntChg", STAMUNIT_OCCURENCES, "The number of handled writes to the Guest TSS where the R0 stack changed.");
+        STAM_REG(pVM, &pVM->selm.s.StatRCWriteGuestTSSUnhandled,   STAMTYPE_COUNTER, "/SELM/GC/Write/Guest/TSSEmu",  STAMUNIT_OCCURENCES,     "The number of unhandled writes to the Guest TSS.");
+        STAM_REG(pVM, &pVM->selm.s.StatTSSSync,                    STAMTYPE_PROFILE, "/PROF/SELM/TSSSync",           STAMUNIT_TICKS_PER_CALL, "Profiling of the SELMR3SyncTSS() body.");
+        STAM_REG(pVM, &pVM->selm.s.StatUpdateFromCPUM,             STAMTYPE_PROFILE, "/PROF/SELM/UpdateFromCPUM",    STAMUNIT_TICKS_PER_CALL, "Profiling of the SELMR3UpdateFromCPUM() body.");
 
-    STAM_REL_REG(pVM, &pVM->selm.s.StatHyperSelsChanged,       STAMTYPE_COUNTER, "/SELM/HyperSels/Changed",      STAMUNIT_OCCURENCES,     "The number of times we had to relocate our hypervisor selectors.");
-    STAM_REL_REG(pVM, &pVM->selm.s.StatScanForHyperSels,       STAMTYPE_COUNTER, "/SELM/HyperSels/Scan",         STAMUNIT_OCCURENCES,     "The number of times we had find free hypervisor selectors.");
+        STAM_REL_REG(pVM, &pVM->selm.s.StatHyperSelsChanged,       STAMTYPE_COUNTER, "/SELM/HyperSels/Changed",      STAMUNIT_OCCURENCES,     "The number of times we had to relocate our hypervisor selectors.");
+        STAM_REL_REG(pVM, &pVM->selm.s.StatScanForHyperSels,       STAMTYPE_COUNTER, "/SELM/HyperSels/Scan",         STAMUNIT_OCCURENCES,     "The number of times we had find free hypervisor selectors.");
 
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_ES], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleES", STAMUNIT_OCCURENCES, "Stale ES was detected in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_CS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleCS", STAMUNIT_OCCURENCES, "Stale CS was detected in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_SS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleSS", STAMUNIT_OCCURENCES, "Stale SS was detected in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_DS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleDS", STAMUNIT_OCCURENCES, "Stale DS was detected in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_FS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleFS", STAMUNIT_OCCURENCES, "Stale FS was detected in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_GS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleGS", STAMUNIT_OCCURENCES, "Stale GS was detected in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_ES], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleES", STAMUNIT_OCCURENCES, "Stale ES was detected in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_CS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleCS", STAMUNIT_OCCURENCES, "Stale CS was detected in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_SS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleSS", STAMUNIT_OCCURENCES, "Stale SS was detected in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_DS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleDS", STAMUNIT_OCCURENCES, "Stale DS was detected in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_FS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleFS", STAMUNIT_OCCURENCES, "Stale FS was detected in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatDetectedStaleSReg[X86_SREG_GS], STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/DetectedStaleGS", STAMUNIT_OCCURENCES, "Stale GS was detected in UpdateFromCPUM.");
 
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_ES],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleES", STAMUNIT_OCCURENCES, "Already stale ES in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_CS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleCS", STAMUNIT_OCCURENCES, "Already stale CS in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_SS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleSS", STAMUNIT_OCCURENCES, "Already stale SS in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_DS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleDS", STAMUNIT_OCCURENCES, "Already stale DS in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_FS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleFS", STAMUNIT_OCCURENCES, "Already stale FS in UpdateFromCPUM.");
-    STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_GS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleGS", STAMUNIT_OCCURENCES, "Already stale GS in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_ES],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleES", STAMUNIT_OCCURENCES, "Already stale ES in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_CS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleCS", STAMUNIT_OCCURENCES, "Already stale CS in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_SS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleSS", STAMUNIT_OCCURENCES, "Already stale SS in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_DS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleDS", STAMUNIT_OCCURENCES, "Already stale DS in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_FS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleFS", STAMUNIT_OCCURENCES, "Already stale FS in UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.aStatAlreadyStaleSReg[X86_SREG_GS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/AlreadyStaleGS", STAMUNIT_OCCURENCES, "Already stale GS in UpdateFromCPUM.");
 
-    STAM_REL_REG(pVM, &pVM->selm.s.StatStaleToUnstaleSReg,              STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/StaleToUnstale", STAMUNIT_OCCURENCES, "Transitions from stale to unstale UpdateFromCPUM.");
+        STAM_REL_REG(pVM, &pVM->selm.s.StatStaleToUnstaleSReg,              STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/StaleToUnstale", STAMUNIT_OCCURENCES, "Transitions from stale to unstale UpdateFromCPUM.");
 
-    STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_ES],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedES", STAMUNIT_OCCURENCES, "Updated hidden ES values in UpdateFromCPUM.");
-    STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_CS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedCS", STAMUNIT_OCCURENCES, "Updated hidden CS values in UpdateFromCPUM.");
-    STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_SS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedSS", STAMUNIT_OCCURENCES, "Updated hidden SS values in UpdateFromCPUM.");
-    STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_DS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedDS", STAMUNIT_OCCURENCES, "Updated hidden DS values in UpdateFromCPUM.");
-    STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_FS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedFS", STAMUNIT_OCCURENCES, "Updated hidden FS values in UpdateFromCPUM.");
-    STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_GS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedGS", STAMUNIT_OCCURENCES, "Updated hidden GS values in UpdateFromCPUM.");
+        STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_ES],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedES", STAMUNIT_OCCURENCES, "Updated hidden ES values in UpdateFromCPUM.");
+        STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_CS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedCS", STAMUNIT_OCCURENCES, "Updated hidden CS values in UpdateFromCPUM.");
+        STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_SS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedSS", STAMUNIT_OCCURENCES, "Updated hidden SS values in UpdateFromCPUM.");
+        STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_DS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedDS", STAMUNIT_OCCURENCES, "Updated hidden DS values in UpdateFromCPUM.");
+        STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_FS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedFS", STAMUNIT_OCCURENCES, "Updated hidden FS values in UpdateFromCPUM.");
+        STAM_REG(    pVM, &pVM->selm.s.aStatUpdatedSReg[X86_SREG_GS],  STAMTYPE_COUNTER, "/SELM/UpdateFromCPUM/UpdatedGS", STAMUNIT_OCCURENCES, "Updated hidden GS values in UpdateFromCPUM.");
+    }
 
     STAM_REG(    pVM, &pVM->selm.s.StatLoadHidSelGst,              STAMTYPE_COUNTER, "/SELM/LoadHidSel/LoadedGuest",   STAMUNIT_OCCURENCES, "SELMLoadHiddenSelectorReg: Loaded from guest tables.");
     STAM_REG(    pVM, &pVM->selm.s.StatLoadHidSelShw,              STAMTYPE_COUNTER, "/SELM/LoadHidSel/LoadedShadow",  STAMUNIT_OCCURENCES, "SELMLoadHiddenSelectorReg: Loaded from shadow tables.");
     STAM_REL_REG(pVM, &pVM->selm.s.StatLoadHidSelReadErrors,       STAMTYPE_COUNTER, "/SELM/LoadHidSel/GstReadErrors", STAMUNIT_OCCURENCES, "SELMLoadHiddenSelectorReg: Guest table read errors.");
     STAM_REL_REG(pVM, &pVM->selm.s.StatLoadHidSelGstNoGood,        STAMTYPE_COUNTER, "/SELM/LoadHidSel/NoGoodGuest",   STAMUNIT_OCCURENCES, "SELMLoadHiddenSelectorReg: No good guest table entry.");
 
+#ifdef VBOX_WITH_RAW_MODE
     /*
      * Default action when entering raw mode for the first time
      */
-    PVMCPU pVCpu = &pVM->aCpus[0];  /* raw mode implies on VCPU */
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
+    if (!HMIsEnabled(pVM))
+    {
+        PVMCPU pVCpu = &pVM->aCpus[0];  /* raw mode implies on VCPU */
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
+    }
+#endif
 
     /*
      * Register info handlers.
      */
-    DBGFR3InfoRegisterInternal(pVM, "gdt",      "Displays the shadow GDT. No arguments.",   &selmR3InfoGdt);
+    if (HMIsRawModeCtxNeeded(pVM))
+    {
+        DBGFR3InfoRegisterInternal(pVM, "gdt",      "Displays the shadow GDT. No arguments.",   &selmR3InfoGdt);
+        DBGFR3InfoRegisterInternal(pVM, "ldt",      "Displays the shadow LDT. No arguments.",   &selmR3InfoLdt);
+        //DBGFR3InfoRegisterInternal(pVM, "tss",      "Displays the shadow TSS. No arguments.",   &selmR3InfoTss);
+    }
     DBGFR3InfoRegisterInternal(pVM, "gdtguest", "Displays the guest GDT. No arguments.",    &selmR3InfoGdtGuest);
-    DBGFR3InfoRegisterInternal(pVM, "ldt",      "Displays the shadow LDT. No arguments.",   &selmR3InfoLdt);
     DBGFR3InfoRegisterInternal(pVM, "ldtguest", "Displays the guest LDT. No arguments.",    &selmR3InfoLdtGuest);
-    //DBGFR3InfoRegisterInternal(pVM, "tss",      "Displays the shadow TSS. No arguments.",   &selmR3InfoTss);
     //DBGFR3InfoRegisterInternal(pVM, "tssguest", "Displays the guest TSS. No arguments.",    &selmR3InfoTssGuest);
 
     return rc;
@@ -273,6 +282,7 @@ VMMR3DECL(int) SELMR3Init(PVM pVM)
  */
 VMMR3DECL(int) SELMR3InitFinalize(PVM pVM)
 {
+#ifdef VBOX_WITH_RAW_MODE
     /** @cfgm{/DoubleFault,bool,false}
      * Enables catching of double faults in the raw-mode context VMM code.  This can
      * be used when the triple faults or hangs occur and one suspect an unhandled
@@ -283,13 +293,13 @@ VMMR3DECL(int) SELMR3InitFinalize(PVM pVM)
      * 8 TSS for the back link.
      */
     bool f;
-#if defined(DEBUG_bird)
+# if defined(DEBUG_bird)
     int rc = CFGMR3QueryBoolDef(CFGMR3GetRoot(pVM), "DoubleFault", &f, true);
-#else
+# else
     int rc = CFGMR3QueryBoolDef(CFGMR3GetRoot(pVM), "DoubleFault", &f, false);
-#endif
+# endif
     AssertLogRelRCReturn(rc, rc);
-    if (f)
+    if (f && HMIsRawModeCtxNeeded(pVM))
     {
         PX86DESC paGdt = pVM->selm.s.paGdtR3;
         rc = PGMMapSetPage(pVM, MMHyperR3ToRC(pVM, &paGdt[pVM->selm.s.aHyperSel[SELM_HYPER_SEL_TSS_TRAP08] >> 3]), sizeof(paGdt[0]),
@@ -305,6 +315,7 @@ VMMR3DECL(int) SELMR3InitFinalize(PVM pVM)
                            X86_PTE_RW | X86_PTE_P | X86_PTE_A | X86_PTE_D);
         AssertRC(rc);
     }
+#endif /* VBOX_WITH_RAW_MODE */
     return VINF_SUCCESS;
 }
 
@@ -420,72 +431,74 @@ VMMR3DECL(void) SELMR3Relocate(PVM pVM)
     PX86DESC paGdt = pVM->selm.s.paGdtR3;
     LogFlow(("SELMR3Relocate\n"));
 
-    for (VMCPUID i = 0; i < pVM->cCpus; i++)
+    if (HMIsRawModeCtxNeeded(pVM))
     {
-        PVMCPU pVCpu = &pVM->aCpus[i];
+        for (VMCPUID i = 0; i < pVM->cCpus; i++)
+        {
+            PVMCPU pVCpu = &pVM->aCpus[i];
 
-        /*
-         * Update GDTR and selector.
-         */
-        CPUMSetHyperGDTR(pVCpu, MMHyperR3ToRC(pVM, paGdt), SELM_GDT_ELEMENTS * sizeof(paGdt[0]) - 1);
+            /*
+             * Update GDTR and selector.
+             */
+            CPUMSetHyperGDTR(pVCpu, MMHyperR3ToRC(pVM, paGdt), SELM_GDT_ELEMENTS * sizeof(paGdt[0]) - 1);
 
-        /** @todo selector relocations should be a separate operation? */
-        CPUMSetHyperCS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS]);
-        CPUMSetHyperDS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
-        CPUMSetHyperES(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
-        CPUMSetHyperSS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
-        CPUMSetHyperTR(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_TSS]);
-    }
+            /** @todo selector relocations should be a separate operation? */
+            CPUMSetHyperCS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS]);
+            CPUMSetHyperDS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
+            CPUMSetHyperES(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
+            CPUMSetHyperSS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
+            CPUMSetHyperTR(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_TSS]);
+        }
 
-    selmR3SetupHyperGDTSelectors(pVM);
+        selmR3SetupHyperGDTSelectors(pVM);
 
 /** @todo SELM must be called when any of the CR3s changes during a cpu mode change. */
 /** @todo PGM knows the proper CR3 values these days, not CPUM. */
-    /*
-     * Update the TSSes.
-     */
-    /* Only applies to raw mode which supports only 1 VCPU */
-    PVMCPU pVCpu = &pVM->aCpus[0];
+        /*
+         * Update the TSSes.
+         */
+        /* Only applies to raw mode which supports only 1 VCPU */
+        PVMCPU pVCpu = &pVM->aCpus[0];
 
-    /* Current TSS */
-    pVM->selm.s.Tss.cr3     = PGMGetHyperCR3(pVCpu);
-    pVM->selm.s.Tss.ss0     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.Tss.esp0    = VMMGetStackRC(pVCpu);
-    pVM->selm.s.Tss.cs      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS];
-    pVM->selm.s.Tss.ds      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.Tss.es      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.Tss.offIoBitmap = sizeof(VBOXTSS);
+        /* Current TSS */
+        pVM->selm.s.Tss.cr3     = PGMGetHyperCR3(pVCpu);
+        pVM->selm.s.Tss.ss0     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.Tss.esp0    = VMMGetStackRC(pVCpu);
+        pVM->selm.s.Tss.cs      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS];
+        pVM->selm.s.Tss.ds      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.Tss.es      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.Tss.offIoBitmap = sizeof(VBOXTSS);
 
-    /* trap 08 */
-    pVM->selm.s.TssTrap08.cr3    = PGMGetInterRCCR3(pVM, pVCpu);                   /* this should give use better survival chances. */
-    pVM->selm.s.TssTrap08.ss0    = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.TssTrap08.ss     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.TssTrap08.esp0   = VMMGetStackRC(pVCpu) - PAGE_SIZE / 2;  /* upper half can be analysed this way. */
-    pVM->selm.s.TssTrap08.esp    = pVM->selm.s.TssTrap08.esp0;
-    pVM->selm.s.TssTrap08.ebp    = pVM->selm.s.TssTrap08.esp0;
-    pVM->selm.s.TssTrap08.cs     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS];
-    pVM->selm.s.TssTrap08.ds     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.TssTrap08.es     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.TssTrap08.fs     = 0;
-    pVM->selm.s.TssTrap08.gs     = 0;
-    pVM->selm.s.TssTrap08.selLdt = 0;
-    pVM->selm.s.TssTrap08.eflags = 0x2;    /* all cleared */
-    pVM->selm.s.TssTrap08.ecx    = VM_RC_ADDR(pVM, &pVM->selm.s.Tss);       /* setup ecx to normal Hypervisor TSS address. */
-    pVM->selm.s.TssTrap08.edi    = pVM->selm.s.TssTrap08.ecx;
-    pVM->selm.s.TssTrap08.eax    = pVM->selm.s.TssTrap08.ecx;
-    pVM->selm.s.TssTrap08.edx    = VM_RC_ADDR(pVM, pVM);                    /* setup edx VM address. */
-    pVM->selm.s.TssTrap08.edi    = pVM->selm.s.TssTrap08.edx;
-    pVM->selm.s.TssTrap08.ebx    = pVM->selm.s.TssTrap08.edx;
-    pVM->selm.s.TssTrap08.offIoBitmap = sizeof(VBOXTSS);
-    /* TRPM will be updating the eip */
+        /* trap 08 */
+        pVM->selm.s.TssTrap08.cr3    = PGMGetInterRCCR3(pVM, pVCpu);                   /* this should give use better survival chances. */
+        pVM->selm.s.TssTrap08.ss0    = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.TssTrap08.ss     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.TssTrap08.esp0   = VMMGetStackRC(pVCpu) - PAGE_SIZE / 2;  /* upper half can be analysed this way. */
+        pVM->selm.s.TssTrap08.esp    = pVM->selm.s.TssTrap08.esp0;
+        pVM->selm.s.TssTrap08.ebp    = pVM->selm.s.TssTrap08.esp0;
+        pVM->selm.s.TssTrap08.cs     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS];
+        pVM->selm.s.TssTrap08.ds     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.TssTrap08.es     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
+        pVM->selm.s.TssTrap08.fs     = 0;
+        pVM->selm.s.TssTrap08.gs     = 0;
+        pVM->selm.s.TssTrap08.selLdt = 0;
+        pVM->selm.s.TssTrap08.eflags = 0x2;    /* all cleared */
+        pVM->selm.s.TssTrap08.ecx    = VM_RC_ADDR(pVM, &pVM->selm.s.Tss);       /* setup ecx to normal Hypervisor TSS address. */
+        pVM->selm.s.TssTrap08.edi    = pVM->selm.s.TssTrap08.ecx;
+        pVM->selm.s.TssTrap08.eax    = pVM->selm.s.TssTrap08.ecx;
+        pVM->selm.s.TssTrap08.edx    = VM_RC_ADDR(pVM, pVM);                    /* setup edx VM address. */
+        pVM->selm.s.TssTrap08.edi    = pVM->selm.s.TssTrap08.edx;
+        pVM->selm.s.TssTrap08.ebx    = pVM->selm.s.TssTrap08.edx;
+        pVM->selm.s.TssTrap08.offIoBitmap = sizeof(VBOXTSS);
+        /* TRPM will be updating the eip */
+    }
 
-    if (    !pVM->selm.s.fDisableMonitoring
-        &&  !VMMIsHwVirtExtForced(pVM))
+    if (!HMIsEnabled(pVM))
     {
         /*
          * Update shadow GDT/LDT/TSS write access handlers.
          */
-        int rc;
+        int rc; NOREF(rc);
 #ifdef SELM_TRACK_SHADOW_GDT_CHANGES
         if (pVM->selm.s.paGdtRC != NIL_RTRCPTR)
         {
@@ -544,7 +557,7 @@ VMMR3DECL(void) SELMR3Relocate(PVM pVM)
 VMMR3DECL(int) SELMR3Term(PVM pVM)
 {
     NOREF(pVM);
-    return 0;
+    return VINF_SUCCESS;
 }
 
 
@@ -564,25 +577,31 @@ VMMR3DECL(void) SELMR3Reset(PVM pVM)
     /*
      * Uninstall guest GDT/LDT/TSS write access handlers.
      */
-    int rc;
+    int rc = VINF_SUCCESS;
     if (pVM->selm.s.GuestGdtr.pGdt != RTRCPTR_MAX && pVM->selm.s.fGDTRangeRegistered)
     {
+#ifdef SELM_TRACK_GUEST_GDT_CHANGES
         rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GuestGdtr.pGdt);
         AssertRC(rc);
+#endif
         pVM->selm.s.GuestGdtr.pGdt = RTRCPTR_MAX;
         pVM->selm.s.GuestGdtr.cbGdt = 0;
     }
     pVM->selm.s.fGDTRangeRegistered = false;
     if (pVM->selm.s.GCPtrGuestLdt != RTRCPTR_MAX)
     {
+#ifdef SELM_TRACK_GUEST_LDT_CHANGES
         rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GCPtrGuestLdt);
         AssertRC(rc);
+#endif
         pVM->selm.s.GCPtrGuestLdt = RTRCPTR_MAX;
     }
     if (pVM->selm.s.GCPtrGuestTss != RTRCPTR_MAX)
     {
+#ifdef SELM_TRACK_GUEST_TSS_CHANGES
         rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GCPtrGuestTss);
         AssertRC(rc);
+#endif
         pVM->selm.s.GCPtrGuestTss = RTRCPTR_MAX;
         pVM->selm.s.GCSelTss      = RTSEL_MAX;
     }
@@ -596,82 +615,18 @@ VMMR3DECL(void) SELMR3Reset(PVM pVM)
 
     pVM->selm.s.fSyncTSSRing0Stack = false;
 
-    /*
-     * Default action when entering raw mode for the first time
-     */
-    PVMCPU pVCpu = &pVM->aCpus[0];  /* raw mode implies on VCPU */
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
-}
-
-/**
- * Disable GDT/LDT/TSS monitoring and syncing
- *
- * @param   pVM         Pointer to the VM.
- */
-VMMR3DECL(void) SELMR3DisableMonitoring(PVM pVM)
-{
-    /*
-     * Uninstall guest GDT/LDT/TSS write access handlers.
-     */
-    int rc;
-    if (pVM->selm.s.GuestGdtr.pGdt != RTRCPTR_MAX && pVM->selm.s.fGDTRangeRegistered)
+#ifdef VBOX_WITH_RAW_MODE
+    if (!HMIsEnabled(pVM))
     {
-        rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GuestGdtr.pGdt);
-        AssertRC(rc);
-        pVM->selm.s.GuestGdtr.pGdt = RTRCPTR_MAX;
-        pVM->selm.s.GuestGdtr.cbGdt = 0;
-    }
-    pVM->selm.s.fGDTRangeRegistered = false;
-    if (pVM->selm.s.GCPtrGuestLdt != RTRCPTR_MAX)
-    {
-        rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GCPtrGuestLdt);
-        AssertRC(rc);
-        pVM->selm.s.GCPtrGuestLdt = RTRCPTR_MAX;
-    }
-    if (pVM->selm.s.GCPtrGuestTss != RTRCPTR_MAX)
-    {
-        rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GCPtrGuestTss);
-        AssertRC(rc);
-        pVM->selm.s.GCPtrGuestTss = RTRCPTR_MAX;
-        pVM->selm.s.GCSelTss      = RTSEL_MAX;
-    }
-
-    /*
-     * Unregister shadow GDT/LDT/TSS write access handlers.
-     */
-#ifdef SELM_TRACK_SHADOW_GDT_CHANGES
-    if (pVM->selm.s.paGdtRC != NIL_RTRCPTR)
-    {
-        rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.paGdtRC);
-        AssertRC(rc);
-        pVM->selm.s.paGdtRC = NIL_RTRCPTR;
+        /*
+         * Default action when entering raw mode for the first time
+         */
+        PVMCPU pVCpu = &pVM->aCpus[0];  /* raw mode implies on VCPU */
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
+        VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
     }
 #endif
-#ifdef SELM_TRACK_SHADOW_TSS_CHANGES
-    if (pVM->selm.s.pvMonShwTssRC != RTRCPTR_MAX)
-    {
-        rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.pvMonShwTssRC);
-        AssertRC(rc);
-        pVM->selm.s.pvMonShwTssRC = RTRCPTR_MAX;
-    }
-#endif
-#ifdef SELM_TRACK_SHADOW_LDT_CHANGES
-    if (pVM->selm.s.pvLdtRC != RTRCPTR_MAX)
-    {
-        rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.pvLdtRC);
-        AssertRC(rc);
-        pVM->selm.s.pvLdtRC = RTRCPTR_MAX;
-    }
-#endif
-
-    PVMCPU pVCpu = &pVM->aCpus[0];  /* raw mode implies on VCPU */
-    VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-    VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
-    VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
-
-    pVM->selm.s.fDisableMonitoring = true;
 }
 
 
@@ -691,7 +646,7 @@ static DECLCALLBACK(int) selmR3Save(PVM pVM, PSSMHANDLE pSSM)
      */
     PSELM pSelm = &pVM->selm.s;
 
-    SSMR3PutBool(pSSM, pSelm->fDisableMonitoring);
+    SSMR3PutBool(pSSM, HMIsEnabled(pVM));
     SSMR3PutBool(pSSM, pSelm->fSyncTSSRing0Stack);
     SSMR3PutSel(pSSM, pSelm->aHyperSel[SELM_HYPER_SEL_CS]);
     SSMR3PutSel(pSSM, pSelm->aHyperSel[SELM_HYPER_SEL_DS]);
@@ -731,7 +686,8 @@ static DECLCALLBACK(int) selmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion,
     SELMR3Reset(pVM);
 
     /* Get the monitoring flag. */
-    SSMR3GetBool(pSSM, &pVM->selm.s.fDisableMonitoring);
+    bool fIgnored;
+    SSMR3GetBool(pSSM, &fIgnored);
 
     /* Get the TSS state flag. */
     SSMR3GetBool(pSSM, &pVM->selm.s.fSyncTSSRing0Stack);
@@ -776,38 +732,43 @@ static DECLCALLBACK(int) selmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion,
  */
 static DECLCALLBACK(int) selmR3LoadDone(PVM pVM, PSSMHANDLE pSSM)
 {
-    PVMCPU pVCpu = VMMGetCpu(pVM);
-
-    LogFlow(("selmR3LoadDone:\n"));
-
-    /*
-     * Don't do anything if it's a load failure.
-     */
-    int rc = SSMR3HandleGetStatus(pSSM);
-    if (RT_FAILURE(rc))
-        return VINF_SUCCESS;
-
-    /*
-     * Do the syncing if we're in protected mode.
-     */
-    if (PGMGetGuestMode(pVCpu) != PGMMODE_REAL)
+#ifdef VBOX_WITH_RAW_MODE
+    if (!HMIsEnabled(pVM))
     {
+        PVMCPU pVCpu = VMMGetCpu(pVM);
+
+        LogFlow(("selmR3LoadDone:\n"));
+
+        /*
+         * Don't do anything if it's a load failure.
+         */
+        int rc = SSMR3HandleGetStatus(pSSM);
+        if (RT_FAILURE(rc))
+            return VINF_SUCCESS;
+
+        /*
+         * Do the syncing if we're in protected mode and using raw-mode.
+         */
+        if (PGMGetGuestMode(pVCpu) != PGMMODE_REAL)
+        {
+            VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
+            VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
+            VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
+            SELMR3UpdateFromCPUM(pVM, pVCpu);
+        }
+
+        /*
+         * Flag everything for resync on next raw mode entry.
+         */
         VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
         VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
         VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-        SELMR3UpdateFromCPUM(pVM, pVCpu);
     }
-
-    /*
-     * Flag everything for resync on next raw mode entry.
-     */
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
-    VMCPU_FF_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-
+#endif /*VBOX_WITH_RAW_MODE*/
     return VINF_SUCCESS;
 }
 
+#ifdef VBOX_WITH_RAW_MODE
 
 /**
  * Updates (syncs) the shadow GDT.
@@ -818,6 +779,8 @@ static DECLCALLBACK(int) selmR3LoadDone(PVM pVM, PSSMHANDLE pSSM)
  */
 static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
 {
+    Assert(!HMIsEnabled(pVM));
+
     /*
      * Always assume the best...
      */
@@ -921,7 +884,7 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
 
         Log(("Internal SELM GDT conflict: use non-present entries\n"));
         STAM_REL_COUNTER_INC(&pVM->selm.s.StatScanForHyperSels);
-        while (pGDTECur > pGDTEStart)
+        while ((uintptr_t)pGDTECur > (uintptr_t)pGDTEStart)
         {
             /* We can reuse non-present entries */
             if (!pGDTECur->Gen.u1Present)
@@ -951,6 +914,15 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
         aHyperSel[SELM_HYPER_SEL_TSS_TRAP08] = SELM_HYPER_DEFAULT_SEL_TSS_TRAP08;
     }
 
+# ifdef VBOX_WITH_SAFE_STR
+    /* Use the guest's TR selector to plug the str virtualization hole. */
+    if (CPUMGetGuestTR(pVCpu, NULL) != 0)
+    {
+        Log(("SELM: Use guest TSS selector %x\n", CPUMGetGuestTR(pVCpu, NULL)));
+        aHyperSel[SELM_HYPER_SEL_TSS] = CPUMGetGuestTR(pVCpu, NULL);
+    }
+# endif
+
     /*
      * Work thru the copied GDT entries adjusting them for correct virtualization.
      */
@@ -958,7 +930,7 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
     while (pGDTE < pGDTEEnd)
     {
         if (pGDTE->Gen.u1Present)
-            selmGuestToShadowDesc(pGDTE);
+            selmGuestToShadowDesc(pVM, pGDTE);
 
         /* Next GDT entry. */
         pGDTE++;
@@ -988,7 +960,12 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
          */
         VMR3Relocate(pVM, 0);
     }
+# ifdef VBOX_WITH_SAFE_STR
+    else if (   cbEffLimit >= SELM_HYPER_DEFAULT_BASE
+             || CPUMGetGuestTR(pVCpu, NULL) != 0) /* Our shadow TR entry was overwritten when we synced the guest's GDT. */
+# else
     else if (cbEffLimit >= SELM_HYPER_DEFAULT_BASE)
+# endif
         /* We overwrote all entries above, so we have to save them again. */
         selmR3SetupHyperGDTSelectors(pVM);
 
@@ -1010,6 +987,7 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
     {
         Log(("SELMR3UpdateFromCPUM: Guest's GDT is changed to pGdt=%016RX64 cbGdt=%08X\n", GDTR.pGdt, GDTR.cbGdt));
 
+# ifdef SELM_TRACK_GUEST_GDT_CHANGES
         /*
          * [Re]Register write virtual handler for guest's GDT.
          */
@@ -1023,8 +1001,28 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
                                          GDTR.pGdt, GDTR.pGdt + GDTR.cbGdt /* already inclusive */,
                                          0, selmR3GuestGDTWriteHandler, "selmRCGuestGDTWriteHandler", 0,
                                          "Guest GDT write access handler");
+#  ifdef VBOX_WITH_RAW_RING1
+        /** @todo !HACK ALERT!
+         * Some guest OSes (QNX) share code and the GDT on the same page;
+         * PGMR3HandlerVirtualRegister doesn't support more than one handler,
+         * so we kick out the  PATM handler as this one is more important.
+         * Fix this properly in PGMR3HandlerVirtualRegister?
+         */
+        if (rc == VERR_PGM_HANDLER_VIRTUAL_CONFLICT)
+        {
+            LogRel(("selmR3UpdateShadowGdt: Virtual handler conflict %RGv -> kick out PATM handler for the higher priority GDT page monitor\n", GDTR.pGdt));
+            rc = PGMHandlerVirtualDeregister(pVM, GDTR.pGdt & PAGE_BASE_GC_MASK);
+            AssertRC(rc);
+
+            rc = PGMR3HandlerVirtualRegister(pVM, PGMVIRTHANDLERTYPE_WRITE,
+                                             GDTR.pGdt, GDTR.pGdt + GDTR.cbGdt /* already inclusive */,
+                                             0, selmR3GuestGDTWriteHandler, "selmRCGuestGDTWriteHandler", 0,
+                                             "Guest GDT write access handler");
+        }
+#  endif
         if (RT_FAILURE(rc))
             return rc;
+# endif /* SELM_TRACK_GUEST_GDT_CHANGES */
 
         /* Update saved Guest GDTR. */
         pVM->selm.s.GuestGdtr = GDTR;
@@ -1045,6 +1043,7 @@ static int selmR3UpdateShadowGdt(PVM pVM, PVMCPU pVCpu)
 static int selmR3UpdateShadowLdt(PVM pVM, PVMCPU pVCpu)
 {
     int rc = VINF_SUCCESS;
+    Assert(!HMIsEnabled(pVM));
 
     /*
      * Always assume the best...
@@ -1135,6 +1134,7 @@ static int selmR3UpdateShadowLdt(PVM pVM, PVMCPU pVCpu)
             Log(("SELMR3UpdateFromCPUM: Guest LDT changed to from %RGv:%04x to %RGv:%04x. (GDTR=%016RX64:%04x)\n",
                  pVM->selm.s.GCPtrGuestLdt, pVM->selm.s.cbLdtLimit, GCPtrLdt, cbLdt, pVM->selm.s.GuestGdtr.pGdt, pVM->selm.s.GuestGdtr.cbGdt));
 
+# ifdef SELM_TRACK_GUEST_LDT_CHANGES
             /*
              * [Re]Register write virtual handler for guest's GDT.
              * In the event of LDT overlapping something, don't install it just assume it's being updated.
@@ -1144,10 +1144,10 @@ static int selmR3UpdateShadowLdt(PVM pVM, PVMCPU pVCpu)
                 rc = PGMHandlerVirtualDeregister(pVM, pVM->selm.s.GCPtrGuestLdt);
                 AssertRC(rc);
             }
-#ifdef DEBUG
+#  ifdef LOG_ENABLED
             if (pDesc->Gen.u1Present)
                 Log(("LDT selector marked not present!!\n"));
-#endif
+#  endif
             rc = PGMR3HandlerVirtualRegister(pVM, PGMVIRTHANDLERTYPE_WRITE, GCPtrLdt, GCPtrLdt + cbLdt /* already inclusive */,
                                              0, selmR3GuestLDTWriteHandler, "selmRCGuestLDTWriteHandler", 0, "Guest LDT write access handler");
             if (rc == VERR_PGM_HANDLER_VIRTUAL_CONFLICT)
@@ -1164,7 +1164,9 @@ static int selmR3UpdateShadowLdt(PVM pVM, PVMCPU pVCpu)
                 CPUMSetHyperLDTR(pVCpu, 0);
                 return rc;
             }
-
+# else
+            pVM->selm.s.GCPtrGuestLdt = GCPtrLdt;
+# endif
             pVM->selm.s.cbLdtLimit = cbLdt;
         }
     }
@@ -1237,7 +1239,7 @@ static int selmR3UpdateShadowLdt(PVM pVM, PVMCPU pVCpu)
             while (pLDTE <= pLDTEEnd)
             {
                 if (pLDTE->Gen.u1Present)
-                    selmGuestToShadowDesc(pLDTE);
+                    selmGuestToShadowDesc(pVM, pLDTE);
 
                 /* Next LDT entry. */
                 pLDTE++;
@@ -1276,6 +1278,7 @@ static int selmR3UpdateShadowLdt(PVM pVM, PVMCPU pVCpu)
 static VBOXSTRICTRC selmR3UpdateSegmentRegisters(PVM pVM, PVMCPU pVCpu)
 {
     Assert(CPUMIsGuestInProtectedMode(pVCpu));
+    Assert(!HMIsEnabled(pVM));
 
     /*
      * No stale selectors in V8086 mode.
@@ -1377,21 +1380,14 @@ static VBOXSTRICTRC selmR3UpdateSegmentRegisters(PVM pVM, PVMCPU pVCpu)
  */
 VMMR3DECL(VBOXSTRICTRC) SELMR3UpdateFromCPUM(PVM pVM, PVMCPU pVCpu)
 {
-    if (pVM->selm.s.fDisableMonitoring)
-    {
-        VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_GDT);
-        VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_LDT);
-        VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-        return VINF_SUCCESS;
-    }
-
     STAM_PROFILE_START(&pVM->selm.s.StatUpdateFromCPUM, a);
+    AssertReturn(!HMIsEnabled(pVM), VERR_SELM_HM_IPE);
 
     /*
      * GDT sync
      */
     int rc;
-    if (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_SELM_SYNC_GDT))
+    if (VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_SELM_SYNC_GDT))
     {
         rc = selmR3UpdateShadowGdt(pVM, pVCpu);
         if (RT_FAILURE(rc))
@@ -1402,7 +1398,7 @@ VMMR3DECL(VBOXSTRICTRC) SELMR3UpdateFromCPUM(PVM pVM, PVMCPU pVCpu)
     /*
      * TSS sync
      */
-    if (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_SELM_SYNC_TSS))
+    if (VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS))
     {
         rc = SELMR3SyncTSS(pVM, pVCpu);
         if (RT_FAILURE(rc))
@@ -1413,7 +1409,7 @@ VMMR3DECL(VBOXSTRICTRC) SELMR3UpdateFromCPUM(PVM pVM, PVMCPU pVCpu)
     /*
      * LDT sync
      */
-    if (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_SELM_SYNC_LDT))
+    if (VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_SELM_SYNC_LDT))
     {
         rc = selmR3UpdateShadowLdt(pVM, pVCpu);
         if (RT_FAILURE(rc))
@@ -1430,7 +1426,9 @@ VMMR3DECL(VBOXSTRICTRC) SELMR3UpdateFromCPUM(PVM pVM, PVMCPU pVCpu)
     return rcStrict;
 }
 
+#endif /*VBOX_WITH_RAW_MODE*/
 
+#ifdef SELM_TRACK_GUEST_GDT_CHANGES
 /**
  * \#PF Handler callback for virtual access handler ranges.
  *
@@ -1457,8 +1455,9 @@ static DECLCALLBACK(int) selmR3GuestGDTWriteHandler(PVM pVM, RTGCPTR GCPtr, void
     VMCPU_FF_SET(VMMGetCpu(pVM), VMCPU_FF_SELM_SYNC_GDT);
     return VINF_PGM_HANDLER_DO_DEFAULT;
 }
+#endif
 
-
+#ifdef SELM_TRACK_GUEST_LDT_CHANGES
 /**
  * \#PF Handler callback for virtual access handler ranges.
  *
@@ -1485,8 +1484,10 @@ static DECLCALLBACK(int) selmR3GuestLDTWriteHandler(PVM pVM, RTGCPTR GCPtr, void
     VMCPU_FF_SET(VMMGetCpu(pVM), VMCPU_FF_SELM_SYNC_LDT);
     return VINF_PGM_HANDLER_DO_DEFAULT;
 }
+#endif
 
 
+#ifdef SELM_TRACK_GUEST_TSS_CHANGES
 /**
  * \#PF Handler callback for virtual access handler ranges.
  *
@@ -1518,7 +1519,9 @@ static DECLCALLBACK(int) selmR3GuestTSSWriteHandler(PVM pVM, RTGCPTR GCPtr, void
     VMCPU_FF_SET(VMMGetCpu(pVM), VMCPU_FF_SELM_SYNC_TSS);
     return VINF_PGM_HANDLER_DO_DEFAULT;
 }
+#endif
 
+#ifdef VBOX_WITH_RAW_MODE
 
 /**
  * Synchronize the shadowed fields in the TSS.
@@ -1534,16 +1537,11 @@ static DECLCALLBACK(int) selmR3GuestTSSWriteHandler(PVM pVM, RTGCPTR GCPtr, void
  */
 VMMR3DECL(int) SELMR3SyncTSS(PVM pVM, PVMCPU pVCpu)
 {
-    int    rc;
-
-    if (pVM->selm.s.fDisableMonitoring)
-    {
-        VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_TSS);
-        return VINF_SUCCESS;
-    }
+    int rc;
+    AssertReturnStmt(!HMIsEnabled(pVM), VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_SELM_SYNC_TSS), VINF_SUCCESS);
 
     STAM_PROFILE_START(&pVM->selm.s.StatTSSSync, a);
-    Assert(VMCPU_FF_ISSET(pVCpu, VMCPU_FF_SELM_SYNC_TSS));
+    Assert(VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS));
 
     /*
      * Get TR and extract and store the basic info.
@@ -1641,7 +1639,7 @@ VMMR3DECL(int) SELMR3SyncTSS(PVM pVM, PVMCPU pVCpu)
          */
         if (RT_SUCCESS(rc))
         {
-#ifdef LOG_ENABLED
+# ifdef LOG_ENABLED
             if (LogIsEnabled())
             {
                 uint32_t ssr0, espr0;
@@ -1658,12 +1656,23 @@ VMMR3DECL(int) SELMR3SyncTSS(PVM pVM, PVMCPU pVCpu)
                 }
                 Log(("offIoBitmap=%#x\n", Tss.offIoBitmap));
             }
-#endif /* LOG_ENABLED */
+# endif /* LOG_ENABLED */
             AssertMsg(!(Tss.ss0 & 3), ("ring-1 leak into TSS.SS0? %04X:%08X\n", Tss.ss0, Tss.esp0));
 
             /* Update our TSS structure for the guest's ring 1 stack */
             selmSetRing1Stack(pVM, Tss.ss0 | 1, Tss.esp0);
             pVM->selm.s.fSyncTSSRing0Stack = fNoRing1Stack = false;
+
+# ifdef VBOX_WITH_RAW_RING1
+            /* Update our TSS structure for the guest's ring 2 stack */
+            if (EMIsRawRing1Enabled(pVM))
+            {
+                if (    (pVM->selm.s.Tss.ss2 != ((Tss.ss1 & ~2) | 1))
+                    ||  pVM->selm.s.Tss.esp2 != Tss.esp1)
+                    Log(("SELMR3SyncTSS: Updating TSS ring 1 stack to %04X:%08X from %04X:%08X\n", Tss.ss1, Tss.esp1, (pVM->selm.s.Tss.ss2 & ~2) | 1, pVM->selm.s.Tss.esp2));
+                selmSetRing2Stack(pVM, (Tss.ss1 & ~1) | 2, Tss.esp1);
+            }
+# endif
         }
     }
 
@@ -1700,14 +1709,40 @@ VMMR3DECL(int) SELMR3SyncTSS(PVM pVM, PVMCPU pVCpu)
         /* Register the write handler if TS != 0. */
         if (cbMonitoredTss != 0)
         {
+# ifdef SELM_TRACK_GUEST_TSS_CHANGES
             rc = PGMR3HandlerVirtualRegister(pVM, PGMVIRTHANDLERTYPE_WRITE, GCPtrTss, GCPtrTss + cbMonitoredTss - 1,
                                              0, selmR3GuestTSSWriteHandler,
                                              "selmRCGuestTSSWriteHandler", 0, "Guest TSS write access handler");
             if (RT_FAILURE(rc))
             {
+#  ifdef VBOX_WITH_RAW_RING1
+                /** @todo !HACK ALERT!
+                 * Some guest OSes (QNX) share code and the TSS on the same page;
+                 * PGMR3HandlerVirtualRegister doesn't support more than one
+                 * handler, so we kick out the PATM handler as this one is more
+                 * important. Fix this properly in PGMR3HandlerVirtualRegister?
+                 */
+                if (rc == VERR_PGM_HANDLER_VIRTUAL_CONFLICT)
+                {
+                    LogRel(("SELMR3SyncTSS: Virtual handler conflict %RGv -> kick out PATM handler for the higher priority TSS page monitor\n", GCPtrTss));
+                    rc = PGMHandlerVirtualDeregister(pVM, GCPtrTss & PAGE_BASE_GC_MASK);
+                    AssertRC(rc);
+
+                    rc = PGMR3HandlerVirtualRegister(pVM, PGMVIRTHANDLERTYPE_WRITE, GCPtrTss, GCPtrTss + cbMonitoredTss - 1,
+                                                     0, selmR3GuestTSSWriteHandler,
+                                                     "selmRCGuestTSSWriteHandler", 0, "Guest TSS write access handler");
+                    if (RT_FAILURE(rc))
+                    {
+                        STAM_PROFILE_STOP(&pVM->selm.s.StatUpdateFromCPUM, a);
+                        return rc;
+                    }
+                }
+#  else
                 STAM_PROFILE_STOP(&pVM->selm.s.StatUpdateFromCPUM, a);
                 return rc;
-            }
+#  endif
+           }
+# endif /* SELM_TRACK_GUEST_TSS_CHANGES */
 
             /* Update saved Guest TSS info. */
             pVM->selm.s.GCPtrGuestTss       = GCPtrTss;
@@ -1740,6 +1775,7 @@ VMMR3DECL(int) SELMR3DebugCheck(PVM pVM)
 {
 #ifdef VBOX_STRICT
     PVMCPU pVCpu = VMMGetCpu(pVM);
+    AssertReturn(!HMIsEnabled(pVM), VERR_SELM_HM_IPE);
 
     /*
      * Get GDTR and check for conflict.
@@ -1875,10 +1911,10 @@ VMMR3DECL(int) SELMR3DebugCheck(PVM pVM)
  */
 VMMR3DECL(bool) SELMR3CheckTSS(PVM pVM)
 {
-#ifdef VBOX_STRICT
+#if defined(VBOX_STRICT) && defined(SELM_TRACK_GUEST_TSS_CHANGES)
     PVMCPU pVCpu = VMMGetCpu(pVM);
 
-    if (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_SELM_SYNC_TSS))
+    if (VMCPU_FF_IS_SET(pVCpu, VMCPU_FF_SELM_SYNC_TSS))
         return true;
 
     /*
@@ -2007,6 +2043,50 @@ VMMR3DECL(bool) SELMR3CheckTSS(PVM pVM)
 #endif /* !VBOX_STRICT */
 }
 
+
+# ifdef VBOX_WITH_SAFE_STR
+/**
+ * Validates the RawR0 TR shadow GDT entry.
+ *
+ * @returns true if it matches.
+ * @returns false and assertions on mismatch..
+ * @param   pVM     Pointer to the VM.
+ */
+VMMR3DECL(bool) SELMR3CheckShadowTR(PVM pVM)
+{
+#  ifdef VBOX_STRICT
+    PX86DESC paGdt = pVM->selm.s.paGdtR3;
+
+    /*
+     * TSS descriptor
+     */
+    PX86DESC pDesc = &paGdt[pVM->selm.s.aHyperSel[SELM_HYPER_SEL_TSS] >> 3];
+    RTRCPTR RCPtrTSS = VM_RC_ADDR(pVM, &pVM->selm.s.Tss);
+
+    if (    pDesc->Gen.u16BaseLow      != RT_LOWORD(RCPtrTSS)
+        ||  pDesc->Gen.u8BaseHigh1     != RT_BYTE3(RCPtrTSS)
+        ||  pDesc->Gen.u8BaseHigh2     != RT_BYTE4(RCPtrTSS)
+        ||  pDesc->Gen.u16LimitLow     != sizeof(VBOXTSS) - 1
+        ||  pDesc->Gen.u4LimitHigh     != 0
+        ||  (pDesc->Gen.u4Type         != X86_SEL_TYPE_SYS_386_TSS_AVAIL && pDesc->Gen.u4Type != X86_SEL_TYPE_SYS_386_TSS_BUSY)
+        ||  pDesc->Gen.u1DescType      != 0 /* system */
+        ||  pDesc->Gen.u2Dpl           != 0 /* supervisor */
+        ||  pDesc->Gen.u1Present       != 1
+        ||  pDesc->Gen.u1Available     != 0
+        ||  pDesc->Gen.u1Long          != 0
+        ||  pDesc->Gen.u1DefBig        != 0
+        ||  pDesc->Gen.u1Granularity   != 0 /* byte limit */
+        )
+    {
+        AssertFailed();
+        return false;
+    }
+#  endif
+    return true;
+}
+# endif /* VBOX_WITH_SAFE_STR */
+
+#endif /* VBOX_WITH_RAW_MODE */
 
 /**
  * Gets information about a 64-bit selector, SELMR3GetSelectorInfo helper.
@@ -2627,7 +2707,7 @@ static DECLCALLBACK(void) selmR3InfoLdtGuest(PVM pVM, PCDBGFINFOHLP pHlp, const 
  */
 VMMR3DECL(void) SELMR3DumpHyperGDT(PVM pVM)
 {
-    DBGFR3Info(pVM, "gdt", NULL, NULL);
+    DBGFR3Info(pVM->pUVM, "gdt", NULL, NULL);
 }
 
 
@@ -2638,7 +2718,7 @@ VMMR3DECL(void) SELMR3DumpHyperGDT(PVM pVM)
  */
 VMMR3DECL(void) SELMR3DumpHyperLDT(PVM pVM)
 {
-    DBGFR3Info(pVM, "ldt", NULL, NULL);
+    DBGFR3Info(pVM->pUVM, "ldt", NULL, NULL);
 }
 
 
@@ -2649,7 +2729,7 @@ VMMR3DECL(void) SELMR3DumpHyperLDT(PVM pVM)
  */
 VMMR3DECL(void) SELMR3DumpGuestGDT(PVM pVM)
 {
-    DBGFR3Info(pVM, "gdtguest", NULL, NULL);
+    DBGFR3Info(pVM->pUVM, "gdtguest", NULL, NULL);
 }
 
 
@@ -2660,6 +2740,6 @@ VMMR3DECL(void) SELMR3DumpGuestGDT(PVM pVM)
  */
 VMMR3DECL(void) SELMR3DumpGuestLDT(PVM pVM)
 {
-    DBGFR3Info(pVM, "ldtguest", NULL, NULL);
+    DBGFR3Info(pVM->pUVM, "ldtguest", NULL, NULL);
 }
 

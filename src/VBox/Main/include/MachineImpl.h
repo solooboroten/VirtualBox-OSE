@@ -1,10 +1,10 @@
-/* $Id: MachineImpl.h 43041 2012-08-28 13:58:40Z vboxsync $ */
+/* $Id: MachineImpl.h $ */
 /** @file
  * Implementation of IMachine in VBoxSVC - Header.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -31,6 +31,7 @@
 #include "ParallelPortImpl.h"
 #include "BIOSSettingsImpl.h"
 #include "StorageControllerImpl.h"          // required for MachineImpl.h to compile on Windows
+#include "USBControllerImpl.h"              // required for MachineImpl.h to compile on Windows
 #include "BandwidthControlImpl.h"
 #include "BandwidthGroupImpl.h"
 #include "VBox/settings.h"
@@ -64,6 +65,7 @@ class Mouse;
 class Display;
 class MachineDebugger;
 class USBController;
+class USBDeviceFilters;
 class Snapshot;
 class SharedFolder;
 class HostUSBDevice;
@@ -222,6 +224,8 @@ public:
     struct UserData
     {
         settings::MachineUserData s;
+        typedef  std::vector<uint8_t> IconBlob;
+        IconBlob mIcon;
     };
 
     /**
@@ -238,8 +242,6 @@ public:
          * Data structure to hold information about a guest property.
          */
         struct GuestProperty {
-            /** Property name */
-            Utf8Str strName;
             /** Property value */
             Utf8Str strValue;
             /** Property timestamp */
@@ -251,67 +253,76 @@ public:
         HWData();
         ~HWData();
 
-        Bstr                 mHWVersion;
-        Guid                 mHardwareUUID;   /**< If Null, use mData.mUuid. */
-        ULONG                mMemorySize;
-        ULONG                mMemoryBalloonSize;
-        BOOL                 mPageFusionEnabled;
-        ULONG                mVRAMSize;
-        ULONG                mVideoCaptureWidth;
-        ULONG                mVideoCaptureHeight;
-        Bstr                 mVideoCaptureFile;
-        BOOL                 mVideoCaptureEnabled;
-        ULONG                mMonitorCount;
-        BOOL                 mHWVirtExEnabled;
-        BOOL                 mHWVirtExExclusive;
-        BOOL                 mHWVirtExNestedPagingEnabled;
-        BOOL                 mHWVirtExLargePagesEnabled;
-        BOOL                 mHWVirtExVPIDEnabled;
-        BOOL                 mHWVirtExForceEnabled;
-        BOOL                 mAccelerate2DVideoEnabled;
-        BOOL                 mPAEEnabled;
-        BOOL                 mSyntheticCpu;
-        ULONG                mCPUCount;
-        BOOL                 mCPUHotPlugEnabled;
-        ULONG                mCpuExecutionCap;
-        BOOL                 mAccelerate3DEnabled;
-        BOOL                 mHPETEnabled;
+        Bstr                mHWVersion;
+        Guid                mHardwareUUID;  /**< If Null, use mData.mUuid. */
+        ULONG               mMemorySize;
+        ULONG               mMemoryBalloonSize;
+        BOOL                mPageFusionEnabled;
+        GraphicsControllerType_T mGraphicsControllerType;
+        ULONG               mVRAMSize;
+        ULONG               mVideoCaptureWidth;
+        ULONG               mVideoCaptureHeight;
+        ULONG               mVideoCaptureRate;
+        ULONG               mVideoCaptureFPS;
+        Utf8Str             mVideoCaptureFile;
+        BOOL                mVideoCaptureEnabled;
+        BOOL                maVideoCaptureScreens[SchemaDefs::MaxGuestMonitors];
+        ULONG               mMonitorCount;
+        BOOL                mHWVirtExEnabled;
+        BOOL                mHWVirtExExclusive;
+        BOOL                mHWVirtExNestedPagingEnabled;
+        BOOL                mHWVirtExLargePagesEnabled;
+        BOOL                mHWVirtExVPIDEnabled;
+        BOOL                mHWVirtExUXEnabled;
+        BOOL                mHWVirtExForceEnabled;
+        BOOL                mAccelerate2DVideoEnabled;
+        BOOL                mPAEEnabled;
+        settings::Hardware::LongModeType mLongMode;
+        BOOL                mSyntheticCpu;
+        ULONG               mCPUCount;
+        BOOL                mCPUHotPlugEnabled;
+        ULONG               mCpuExecutionCap;
+        BOOL                mAccelerate3DEnabled;
+        BOOL                mHPETEnabled;
 
-        BOOL                 mCPUAttached[SchemaDefs::MaxCPUCount];
+        BOOL                mCPUAttached[SchemaDefs::MaxCPUCount];
 
-        settings::CpuIdLeaf  mCpuIdStdLeafs[11];
-        settings::CpuIdLeaf  mCpuIdExtLeafs[11];
+        settings::CpuIdLeaf mCpuIdStdLeafs[11];
+        settings::CpuIdLeaf mCpuIdExtLeafs[11];
 
-        DeviceType_T         mBootOrder[SchemaDefs::MaxBootPosition];
+        DeviceType_T        mBootOrder[SchemaDefs::MaxBootPosition];
 
         typedef std::list<ComObjPtr<SharedFolder> > SharedFolderList;
-        SharedFolderList     mSharedFolders;
+        SharedFolderList    mSharedFolders;
 
-        ClipboardMode_T      mClipboardMode;
-        DragAndDropMode_T    mDragAndDropMode;
+        ClipboardMode_T     mClipboardMode;
+        DragAndDropMode_T   mDragAndDropMode;
 
-        typedef std::list<GuestProperty> GuestPropertyList;
-        GuestPropertyList    mGuestProperties;
-        Utf8Str              mGuestPropertyNotificationPatterns;
+        typedef std::map<Utf8Str, GuestProperty> GuestPropertyMap;
+        GuestPropertyMap    mGuestProperties;
+        Utf8Str             mGuestPropertyNotificationPatterns;
 
-        FirmwareType_T       mFirmwareType;
-        KeyboardHIDType_T    mKeyboardHIDType;
-        PointingHIDType_T    mPointingHIDType;
-        ChipsetType_T        mChipsetType;
-        BOOL                 mEmulatedUSBCardReaderEnabled;
+        FirmwareType_T      mFirmwareType;
+        KeyboardHIDType_T   mKeyboardHIDType;
+        PointingHIDType_T   mPointingHIDType;
+        ChipsetType_T       mChipsetType;
+        BOOL                mEmulatedUSBWebcamEnabled;
+        BOOL                mEmulatedUSBCardReaderEnabled;
 
-        BOOL                 mIOCacheEnabled;
-        ULONG                mIOCacheSize;
+        BOOL                mIOCacheEnabled;
+        ULONG               mIOCacheSize;
 
         typedef std::list<ComObjPtr<PCIDeviceAttachment> > PCIDeviceAssignmentList;
         PCIDeviceAssignmentList mPCIDeviceAssignments;
 
-        settings::Debugging  mDebugging;
-        settings::Autostart  mAutostart;
+        settings::Debugging mDebugging;
+        settings::Autostart mAutostart;
+
+        Utf8Str             mDefaultFrontend;
     };
 
     /**
-   *  Hard disk and other media data.
+     *  Hard disk and other media data.
      *
      *  The usage policy is the same as for HWData, but a separate structure
      *  is necessary because hard disk data requires different procedures when
@@ -406,39 +417,48 @@ public:
     STDMETHOD(COMSETTER(CPUHotPlugEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(CPUExecutionCap))(ULONG *aExecutionCap);
     STDMETHOD(COMSETTER(CPUExecutionCap))(ULONG aExecutionCap);
-    STDMETHOD(COMGETTER(EmulatedUSBCardReaderEnabled))(BOOL *enabled);
-    STDMETHOD(COMSETTER(EmulatedUSBCardReaderEnabled))(BOOL enabled);
-    STDMETHOD(COMGETTER(EmulatedUSBWebcameraEnabled))(BOOL *enabled);
-    STDMETHOD(COMSETTER(EmulatedUSBWebcameraEnabled))(BOOL enabled);
+    STDMETHOD(COMGETTER(EmulatedUSBCardReaderEnabled))(BOOL *aEnabled);
+    STDMETHOD(COMSETTER(EmulatedUSBCardReaderEnabled))(BOOL aEnabled);
+    STDMETHOD(COMGETTER(EmulatedUSBWebcameraEnabled))(BOOL *aEnabled);
+    STDMETHOD(COMSETTER(EmulatedUSBWebcameraEnabled))(BOOL aEnabled);
     STDMETHOD(COMGETTER(HPETEnabled))(BOOL *enabled);
     STDMETHOD(COMSETTER(HPETEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(MemoryBalloonSize))(ULONG *memoryBalloonSize);
     STDMETHOD(COMSETTER(MemoryBalloonSize))(ULONG memoryBalloonSize);
     STDMETHOD(COMGETTER(PageFusionEnabled))(BOOL *enabled);
     STDMETHOD(COMSETTER(PageFusionEnabled))(BOOL enabled);
+    STDMETHOD(COMGETTER(GraphicsControllerType))(GraphicsControllerType_T *aGraphicsController);
+    STDMETHOD(COMSETTER(GraphicsControllerType))(GraphicsControllerType_T aGraphicsController);
     STDMETHOD(COMGETTER(VRAMSize))(ULONG *memorySize);
     STDMETHOD(COMSETTER(VRAMSize))(ULONG memorySize);
-    STDMETHOD(COMGETTER(VideoCaptureEnabled))(BOOL *u8VideoRecEnabled);
-    STDMETHOD(COMSETTER(VideoCaptureEnabled))(BOOL  u8VideoRecEnabled);
-    STDMETHOD(COMGETTER(VideoCaptureFile))(BSTR * ppChVideoRecFilename);
-    STDMETHOD(COMSETTER(VideoCaptureFile))(IN_BSTR pChVideoRecFilename);
-    STDMETHOD(COMGETTER(VideoCaptureWidth))(ULONG *u32VideoRecHorzRes);
-    STDMETHOD(COMSETTER(VideoCaptureWidth))(ULONG u32VideoRecHorzRes);
-    STDMETHOD(COMGETTER(VideoCaptureHeight))(ULONG *u32VideoRecVertRes);
-    STDMETHOD(COMSETTER(VideoCaptureHeight))(ULONG u32VideoRecVertRes);
+    STDMETHOD(COMGETTER(Accelerate3DEnabled))(BOOL *aEnabled);
+    STDMETHOD(COMSETTER(Accelerate3DEnabled))(BOOL aEnabled);
+    STDMETHOD(COMGETTER(Accelerate2DVideoEnabled))(BOOL *aEnabled);
+    STDMETHOD(COMSETTER(Accelerate2DVideoEnabled))(BOOL aEnabled);
     STDMETHOD(COMGETTER(MonitorCount))(ULONG *monitorCount);
     STDMETHOD(COMSETTER(MonitorCount))(ULONG monitorCount);
-    STDMETHOD(COMGETTER(Accelerate3DEnabled))(BOOL *enabled);
-    STDMETHOD(COMSETTER(Accelerate3DEnabled))(BOOL enabled);
-    STDMETHOD(COMGETTER(Accelerate2DVideoEnabled))(BOOL *enabled);
-    STDMETHOD(COMSETTER(Accelerate2DVideoEnabled))(BOOL enabled);
+    STDMETHOD(COMGETTER(VideoCaptureEnabled))(BOOL *u8VideoRecEnabled);
+    STDMETHOD(COMSETTER(VideoCaptureEnabled))(BOOL  u8VideoRecEnabled);
+    STDMETHOD(COMGETTER(VideoCaptureScreens))(ComSafeArrayOut(BOOL, aScreens));
+    STDMETHOD(COMSETTER(VideoCaptureScreens))(ComSafeArrayIn(BOOL, aScreens));
+    STDMETHOD(COMGETTER(VideoCaptureFile))(BSTR * ppChVideoRecFilename);
+    STDMETHOD(COMSETTER(VideoCaptureFile))(IN_BSTR pChVideoRecFilename);
+    STDMETHOD(COMGETTER(VideoCaptureWidth))(ULONG *aHorzRes);
+    STDMETHOD(COMSETTER(VideoCaptureWidth))(ULONG aorzRes);
+    STDMETHOD(COMGETTER(VideoCaptureHeight))(ULONG *aVertRes);
+    STDMETHOD(COMSETTER(VideoCaptureHeight))(ULONG aVertRes);
+    STDMETHOD(COMGETTER(VideoCaptureRate))(ULONG *aRate);
+    STDMETHOD(COMSETTER(VideoCaptureRate))(ULONG aRate);
+    STDMETHOD(COMGETTER(VideoCaptureFPS))(ULONG *aFPS);
+    STDMETHOD(COMSETTER(VideoCaptureFPS))(ULONG aFPS);
     STDMETHOD(COMGETTER(BIOSSettings))(IBIOSSettings **biosSettings);
     STDMETHOD(COMGETTER(SnapshotFolder))(BSTR *aSavedStateFolder);
     STDMETHOD(COMSETTER(SnapshotFolder))(IN_BSTR aSavedStateFolder);
     STDMETHOD(COMGETTER(MediumAttachments))(ComSafeArrayOut(IMediumAttachment *, aAttachments));
     STDMETHOD(COMGETTER(VRDEServer))(IVRDEServer **vrdeServer);
     STDMETHOD(COMGETTER(AudioAdapter))(IAudioAdapter **audioAdapter);
-    STDMETHOD(COMGETTER(USBController))(IUSBController * *aUSBController);
+    STDMETHOD(COMGETTER(USBControllers))(ComSafeArrayOut(IUSBController *, aUSBControllers));
+    STDMETHOD(COMGETTER(USBDeviceFilters))(IUSBDeviceFilters * *aUSBDeviceFilters);
     STDMETHOD(COMGETTER(SettingsFilePath))(BSTR *aFilePath);
     STDMETHOD(COMGETTER(SettingsModified))(BOOL *aModified);
     STDMETHOD(COMGETTER(SessionState))(SessionState_T *aSessionState);
@@ -505,6 +525,11 @@ public:
     STDMETHOD(COMSETTER(AutostartDelay))(ULONG uDelay);
     STDMETHOD(COMGETTER(AutostopType))(AutostopType_T *penmAutostopType);
     STDMETHOD(COMSETTER(AutostopType))(AutostopType_T enmAutostopType);
+    STDMETHOD(COMGETTER(DefaultFrontend))(BSTR *aDefaultFrontend);
+    STDMETHOD(COMSETTER(DefaultFrontend))(IN_BSTR aDefaultFrontend);
+    STDMETHOD(COMGETTER(Icon))(ComSafeArrayOut(BYTE, aIcon));
+    STDMETHOD(COMSETTER(Icon))(ComSafeArrayIn(BYTE, aIcon));
+    STDMETHOD(COMGETTER(USBProxyAvailable))(BOOL *aAvailable);
 
     // IMachine methods
     STDMETHOD(LockMachine)(ISession *aSession, LockType_T lockType);
@@ -548,8 +573,8 @@ public:
     STDMETHOD(SaveSettings)();
     STDMETHOD(DiscardSettings)();
     STDMETHOD(Unregister)(CleanupMode_T cleanupMode, ComSafeArrayOut(IMedium*, aMedia));
-    STDMETHOD(Delete)(ComSafeArrayIn(IMedium*, aMedia), IProgress **aProgress);
-    STDMETHOD(Export)(IAppliance *aAppliance, IN_BSTR location, IVirtualSystemDescription **aDescription);
+    STDMETHOD(DeleteConfig)(ComSafeArrayIn(IMedium*, aMedia), IProgress **aProgress);
+    STDMETHOD(ExportTo)(IAppliance *aAppliance, IN_BSTR location, IVirtualSystemDescription **aDescription);
     STDMETHOD(FindSnapshot)(IN_BSTR aNameOrId, ISnapshot **aSnapshot);
     STDMETHOD(CreateSharedFolder)(IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable, BOOL aAutoMount);
     STDMETHOD(RemoveSharedFolder)(IN_BSTR aName);
@@ -569,6 +594,10 @@ public:
     STDMETHOD(GetStorageControllerByName(IN_BSTR aName, IStorageController **storageController));
     STDMETHOD(GetStorageControllerByInstance(ULONG aInstance, IStorageController **storageController));
     STDMETHOD(SetStorageControllerBootable)(IN_BSTR aName, BOOL fBootable);
+    STDMETHOD(AddUSBController)(IN_BSTR aName, USBControllerType_T aConnectionType, IUSBController **controller);
+    STDMETHOD(RemoveUSBController(IN_BSTR aName));
+    STDMETHOD(GetUSBControllerByName(IN_BSTR aName, IUSBController **usbController));
+    STDMETHOD(GetUSBControllerCountByType(USBControllerType_T aType, ULONG *aControllers));
     STDMETHOD(QuerySavedGuestScreenInfo)(ULONG uScreenId, ULONG *puOriginX, ULONG *puOriginY, ULONG *puWidth, ULONG *puHeight, BOOL *pfEnabled);
     STDMETHOD(QuerySavedThumbnailSize)(ULONG aScreenId, ULONG *aSize, ULONG *aWidth, ULONG *aHeight);
     STDMETHOD(ReadSavedThumbnailToArray)(ULONG aScreenId, BOOL aBGR, ULONG *aWidth, ULONG *aHeight, ComSafeArrayOut(BYTE, aData));
@@ -718,7 +747,8 @@ public:
     virtual HRESULT onClipboardModeChange(ClipboardMode_T /* aClipboardMode */) { return S_OK; }
     virtual HRESULT onDragAndDropModeChange(DragAndDropMode_T /* aDragAndDropMode */) { return S_OK; }
     virtual HRESULT onBandwidthGroupChange(IBandwidthGroup * /* aBandwidthGroup */) { return S_OK; }
-    virtual HRESULT onStorageDeviceChange(IMediumAttachment * /* mediumAttachment */, BOOL /* remove */) { return S_OK; }
+    virtual HRESULT onStorageDeviceChange(IMediumAttachment * /* mediumAttachment */, BOOL /* remove */, BOOL /* silent */) { return S_OK; }
+    virtual HRESULT onVideoCaptureChange() { return S_OK; }
 
     HRESULT saveRegistryEntry(settings::MachineRegistryEntry &data);
 
@@ -729,6 +759,10 @@ public:
     Utf8Str queryLogFilename(ULONG idx);
 
     void composeSavedStateFilename(Utf8Str &strStateFilePath);
+
+    void getDefaultVideoCaptureFile(Utf8Str &strFile);
+
+    bool isUSBControllerPresent();
 
     HRESULT launchVMProcess(IInternalSessionControl *aControl,
                             const Utf8Str &strType,
@@ -748,33 +782,6 @@ public:
         return rc;
     }
 
-#if defined(RT_OS_WINDOWS)
-
-    bool isSessionOpen(ComObjPtr<SessionMachine> &aMachine,
-                       ComPtr<IInternalSessionControl> *aControl = NULL,
-                       HANDLE *aIPCSem = NULL, bool aAllowClosing = false);
-    bool isSessionSpawning(RTPROCESS *aPID = NULL);
-
-    bool isSessionOpenOrClosing(ComObjPtr<SessionMachine> &aMachine,
-                                ComPtr<IInternalSessionControl> *aControl = NULL,
-                                HANDLE *aIPCSem = NULL)
-    { return isSessionOpen(aMachine, aControl, aIPCSem, true /* aAllowClosing */); }
-
-#elif defined(RT_OS_OS2)
-
-    bool isSessionOpen(ComObjPtr<SessionMachine> &aMachine,
-                       ComPtr<IInternalSessionControl> *aControl = NULL,
-                       HMTX *aIPCSem = NULL, bool aAllowClosing = false);
-
-    bool isSessionSpawning(RTPROCESS *aPID = NULL);
-
-    bool isSessionOpenOrClosing(ComObjPtr<SessionMachine> &aMachine,
-                                 ComPtr<IInternalSessionControl> *aControl = NULL,
-                                 HMTX *aIPCSem = NULL)
-    { return isSessionOpen(aMachine, aControl, aIPCSem, true /* aAllowClosing */); }
-
-#else
-
     bool isSessionOpen(ComObjPtr<SessionMachine> &aMachine,
                        ComPtr<IInternalSessionControl> *aControl = NULL,
                        bool aAllowClosing = false);
@@ -783,8 +790,6 @@ public:
     bool isSessionOpenOrClosing(ComObjPtr<SessionMachine> &aMachine,
                                 ComPtr<IInternalSessionControl> *aControl = NULL)
     { return isSessionOpen(aMachine, aControl, true /* aAllowClosing */); }
-
-#endif
 
     bool checkForSpawnFailure();
 
@@ -813,6 +818,8 @@ public:
     }
 
 protected:
+
+    class ClientToken;
 
     HRESULT checkStateDependency(StateDependency aDepType);
 
@@ -858,6 +865,12 @@ protected:
     HRESULT getMediumAttachmentsOfController(CBSTR aName,
                                              MediaData::AttachmentList &aAttachments);
 
+    HRESULT getUSBControllerByName(const Utf8Str &aName,
+                                   ComObjPtr<USBController> &aUSBController,
+                                   bool aSetError = false);
+
+    ULONG   getUSBControllerCountByType(USBControllerType_T enmType);
+
     enum
     {
         /* flags for #saveSettings() */
@@ -887,7 +900,7 @@ protected:
     HRESULT createImplicitDiffs(IProgress *aProgress,
                                 ULONG aWeight,
                                 bool aOnline);
-    HRESULT deleteImplicitDiffs();
+    HRESULT deleteImplicitDiffs(bool aOnline);
 
     MediumAttachment* findAttachment(const MediaData::AttachmentList &ll,
                                      IN_BSTR aControllerName,
@@ -921,6 +934,8 @@ protected:
     static DECLCALLBACK(int) deleteThread(RTTHREAD Thread, void *pvUser);
     HRESULT deleteTaskWorker(DeleteTask &task);
 
+    Utf8Str getExtraData(const Utf8Str &strKey);
+
 #ifdef VBOX_WITH_GUEST_PROPS
     HRESULT getGuestPropertyFromService(IN_BSTR aName, BSTR *aValue,
                                         LONG64 *aTimestamp, BSTR *aFlags) const;
@@ -943,6 +958,7 @@ protected:
 #endif /* VBOX_WITH_GUEST_PROPS */
 
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
+    void getDiskList(MediaList &list);
     void registerMetrics(PerformanceCollector *aCollector, Machine *aMachine, RTPROCESS pid);
 
     pm::CollectorGuest     *mCollectorGuest;
@@ -962,18 +978,22 @@ protected:
     // the following fields need special backup/rollback/commit handling,
     // so they cannot be a part of HWData
 
-    const ComObjPtr<VRDEServer>     mVRDEServer;
-    const ComObjPtr<SerialPort>     mSerialPorts[SchemaDefs::SerialPortCount];
-    const ComObjPtr<ParallelPort>   mParallelPorts[SchemaDefs::ParallelPortCount];
-    const ComObjPtr<AudioAdapter>   mAudioAdapter;
-    const ComObjPtr<USBController>  mUSBController;
-    const ComObjPtr<BIOSSettings>   mBIOSSettings;
+    const ComObjPtr<VRDEServer>        mVRDEServer;
+    const ComObjPtr<SerialPort>        mSerialPorts[SchemaDefs::SerialPortCount];
+    const ComObjPtr<ParallelPort>      mParallelPorts[SchemaDefs::ParallelPortCount];
+    const ComObjPtr<AudioAdapter>      mAudioAdapter;
+    const ComObjPtr<USBDeviceFilters>  mUSBDeviceFilters;
+    const ComObjPtr<BIOSSettings>      mBIOSSettings;
+    const ComObjPtr<BandwidthControl>  mBandwidthControl;
+
     typedef std::vector<ComObjPtr<NetworkAdapter> > NetworkAdapterVector;
-    NetworkAdapterVector            mNetworkAdapters;
-    const ComObjPtr<BandwidthControl> mBandwidthControl;
+    NetworkAdapterVector               mNetworkAdapters;
 
     typedef std::list<ComObjPtr<StorageController> > StorageControllerList;
-    Backupable<StorageControllerList> mStorageControllers;
+    Backupable<StorageControllerList>  mStorageControllers;
+
+    typedef std::list<ComObjPtr<USBController> > USBControllerList;
+    Backupable<USBControllerList>      mUSBControllers;
 
     uint64_t                        uRegistryNeedsSaving;
 
@@ -1027,7 +1047,6 @@ public:
     // IInternalMachineControl methods
     STDMETHOD(SetRemoveSavedStateFile)(BOOL aRemove);
     STDMETHOD(UpdateState)(MachineState_T machineState);
-    STDMETHOD(GetIPCId)(BSTR *id);
     STDMETHOD(BeginPowerUp)(IProgress *aProgress);
     STDMETHOD(EndPowerUp)(LONG iResult);
     STDMETHOD(BeginPoweringDown)(IProgress **aProgress);
@@ -1064,17 +1083,18 @@ public:
               ComSafeArrayOut(LONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags));
     STDMETHOD(PushGuestProperty)(IN_BSTR aName, IN_BSTR aValue,
                                   LONG64 aTimestamp, IN_BSTR aFlags);
-    STDMETHOD(LockMedia)()   { return lockMedia(); }
-    STDMETHOD(UnlockMedia)() { unlockMedia(); return S_OK; }
+    STDMETHOD(LockMedia)();
+    STDMETHOD(UnlockMedia)();
     STDMETHOD(EjectMedium)(IMediumAttachment *aAttachment,
                            IMediumAttachment **aNewAttachment);
-    STDMETHOD(ReportGuestStatistics)(ULONG aValidStats, ULONG aCpuUser,
-                                     ULONG aCpuKernel, ULONG aCpuIdle,
-                                     ULONG aMemTotal, ULONG aMemFree,
-                                     ULONG aMemBalloon, ULONG aMemShared,
-                                     ULONG aMemCache, ULONG aPageTotal,
-                                     ULONG aAllocVMM, ULONG aFreeVMM,
-                                     ULONG aBalloonedVMM, ULONG aSharedVMM);
+    STDMETHOD(ReportVmStatistics)(ULONG aValidStats, ULONG aCpuUser,
+                                  ULONG aCpuKernel, ULONG aCpuIdle,
+                                  ULONG aMemTotal, ULONG aMemFree,
+                                  ULONG aMemBalloon, ULONG aMemShared,
+                                  ULONG aMemCache, ULONG aPageTotal,
+                                  ULONG aAllocVMM, ULONG aFreeVMM,
+                                  ULONG aBalloonedVMM, ULONG aSharedVMM,
+                                  ULONG aVmNetRx, ULONG aVmNetTx);
 
     // public methods only for internal purposes
 
@@ -1085,6 +1105,11 @@ public:
 
     bool checkForDeath();
 
+    void getTokenId(Utf8Str &strTokenId);
+    // getClientToken must be only used by callers who can guarantee that
+    // the object cannot be deleted in the mean time, i.e. have a caller/lock.
+    ClientToken *getClientToken();
+
     HRESULT onNetworkAdapterChange(INetworkAdapter *networkAdapter, BOOL changeAdapter);
     HRESULT onNATRedirectRuleChange(ULONG ulSlot, BOOL aNatRuleRemove, IN_BSTR aRuleName,
                                  NATProtocol_T aProto, IN_BSTR aHostIp, LONG aHostPort, IN_BSTR aGuestIp, LONG aGuestPort);
@@ -1093,8 +1118,8 @@ public:
     HRESULT onSerialPortChange(ISerialPort *serialPort);
     HRESULT onParallelPortChange(IParallelPort *parallelPort);
     HRESULT onCPUChange(ULONG aCPU, BOOL aRemove);
-    HRESULT onCPUExecutionCapChange(ULONG aCpuExecutionCap);
     HRESULT onVRDEServerChange(BOOL aRestart);
+    HRESULT onVideoCaptureChange();
     HRESULT onUSBControllerChange();
     HRESULT onUSBDeviceAttach(IUSBDevice *aDevice,
                               IVirtualBoxErrorInfo *aError,
@@ -1105,9 +1130,13 @@ public:
     HRESULT onClipboardModeChange(ClipboardMode_T aClipboardMode);
     HRESULT onDragAndDropModeChange(DragAndDropMode_T aDragAndDropMode);
     HRESULT onBandwidthGroupChange(IBandwidthGroup *aBandwidthGroup);
-    HRESULT onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOOL aRemove);
+    HRESULT onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOOL aRemove, BOOL aSilent);
+    HRESULT onCPUExecutionCapChange(ULONG aCpuExecutionCap);
 
     bool hasMatchingUSBFilter(const ComObjPtr<HostUSBDevice> &aDevice, ULONG *aMaskedIfs);
+
+    HRESULT lockMedia();
+    void unlockMedia();
 
 private:
 
@@ -1176,9 +1205,6 @@ private:
                               ComObjPtr<Progress> &aProgress,
                               bool *pfNeedsMachineSaveSettings);
 
-    HRESULT lockMedia();
-    void unlockMedia();
-
     HRESULT setMachineState(MachineState_T aMachineState);
     HRESULT updateMachineStateOnClient();
 
@@ -1186,27 +1212,8 @@ private:
 
     ConsoleTaskData mConsoleTaskData;
 
-    /** interprocess semaphore handle for this machine */
-#if defined(RT_OS_WINDOWS)
-    HANDLE mIPCSem;
-    Bstr mIPCSemName;
-    friend bool Machine::isSessionOpen(ComObjPtr<SessionMachine> &aMachine,
-                                       ComPtr<IInternalSessionControl> *aControl,
-                                       HANDLE *aIPCSem, bool aAllowClosing);
-#elif defined(RT_OS_OS2)
-    HMTX mIPCSem;
-    Bstr mIPCSemName;
-    friend bool Machine::isSessionOpen(ComObjPtr<SessionMachine> &aMachine,
-                                       ComPtr<IInternalSessionControl> *aControl,
-                                       HMTX *aIPCSem, bool aAllowClosing);
-#elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-    int mIPCSem;
-# ifdef VBOX_WITH_NEW_SYS_V_KEYGEN
-    Bstr mIPCKey;
-# endif /*VBOX_WITH_NEW_SYS_V_KEYGEN */
-#else
-# error "Port me!"
-#endif
+    /** client token for this machine */
+    ClientToken *mClientToken;
 
     static DECLCALLBACK(int) taskHandler(RTTHREAD thread, void *pvUser);
 };

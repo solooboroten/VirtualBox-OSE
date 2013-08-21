@@ -1,4 +1,4 @@
-/* $Id: the-freebsd-kernel.h 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: the-freebsd-kernel.h $ */
 /** @file
  * IPRT - Ring-0 Driver, The FreeBSD Kernel Headers.
  */
@@ -66,6 +66,7 @@
 #include <vm/vm_page.h>
 #include <vm/vm_phys.h>         /* vm_phys_alloc_* */
 #include <vm/vm_extern.h>       /* kmem_alloc_attr */
+#include <vm/vm_pageout.h>      /* vm_contig_grow_cache */
 #include <sys/vmmeter.h>        /* cnt */
 #include <sys/resourcevar.h>
 #include <machine/cpu.h>

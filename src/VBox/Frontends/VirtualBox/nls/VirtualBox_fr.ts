@@ -3036,7 +3036,7 @@
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Gauche </translation>
@@ -10050,7 +10050,7 @@ And the size is not necessarily &quot;in megabytes&quot;, the slider chooses the
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Toujours afficher la barre d&apos;outils</translation>

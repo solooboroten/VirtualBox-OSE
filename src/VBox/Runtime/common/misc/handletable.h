@@ -1,10 +1,10 @@
-/* $Id: handletable.h 40938 2012-04-16 11:58:26Z vboxsync $ */
+/* $Id: handletable.h $ */
 /** @file
  * IPRT - Handle Tables, internal header.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -222,9 +222,7 @@ DECLINLINE(PRTHTENTRYCTX) rtHandleTableLookupWithCtx(PRTHANDLETABLEINT pThis, ui
 DECLINLINE(void) rtHandleTableLock(PRTHANDLETABLEINT pThis)
 {
     if (pThis->hSpinlock != NIL_RTSPINLOCK)
-    {
         RTSpinlockAcquire(pThis->hSpinlock);
-    }
 }
 
 

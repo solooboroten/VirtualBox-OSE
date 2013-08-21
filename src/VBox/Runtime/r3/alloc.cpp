@@ -1,10 +1,10 @@
-/* $Id: alloc.cpp 39083 2011-10-22 00:28:46Z vboxsync $ */
+/* $Id: alloc.cpp $ */
 /** @file
  * IPRT - Memory Allocation.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -37,6 +37,10 @@
 /* Don't enable the tracker when building the minimal IPRT. */
 #ifdef RT_MINI
 # undef RTMEMALLOC_USE_TRACKER
+#endif
+
+#if defined(RTMEMALLOC_USE_TRACKER) && defined(RTALLOC_USE_EFENCE)
+# error "Cannot define both RTMEMALLOC_USE_TRACKER and RTALLOC_USE_EFENCE!"
 #endif
 
 

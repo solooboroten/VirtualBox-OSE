@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 41477 2012-05-29 11:43:27Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Top-level makefile for the VBox Host Services.
 #
@@ -41,6 +41,9 @@ ifdef VBOX_WITH_GUEST_CONTROL
 endif
 ifdef VBOX_WITH_DRAG_AND_DROP
  include $(PATH_SUB_CURRENT)/DragAndDrop/Makefile.kmk
+endif
+ifdef VBOX_WITH_HOST_CHANNEL
+ include $(PATH_SUB_CURRENT)/HostChannel/Makefile.kmk
 endif
 include $(PATH_SUB_CURRENT)/testcase/Makefile.kmk
 

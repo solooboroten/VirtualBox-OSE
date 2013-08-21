@@ -1,4 +1,4 @@
-/* $Id: HostNetworkInterfaceImpl.h 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: HostNetworkInterfaceImpl.h $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -78,6 +78,10 @@ public:
     STDMETHOD(DHCPRediscover)();
 
     HRESULT setVirtualBox(VirtualBox *pVBox);
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    void registerMetrics(PerformanceCollector *aCollector, ComPtr<IUnknown> objptr);
+    void unregisterMetrics(PerformanceCollector *aCollector, ComPtr<IUnknown> objptr);
+#endif
 
 private:
     Bstr composeNetworkName(const Utf8Str szShortName);
@@ -85,6 +89,7 @@ private:
     const Bstr mInterfaceName;
     const Guid mGuid;
     const Bstr mNetworkName;
+    const Bstr mShortName;
     HostNetworkInterfaceType_T mIfType;
 
     VirtualBox * const  mVBox;
@@ -107,9 +112,12 @@ private:
         Bstr hardwareAddress;
         HostNetworkInterfaceMediumType_T mediumType;
         HostNetworkInterfaceStatus_T status;
+        ULONG speedMbits;
     } m;
 
 };
+
+typedef std::list<ComObjPtr<HostNetworkInterface> > HostNetworkInterfaceList;
 
 #endif // ____H_H_HOSTNETWORKINTERFACEIMPL
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

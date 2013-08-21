@@ -1,4 +1,4 @@
-/* $Id: UIApplianceEditorWidget.cpp 41819 2012-06-18 17:59:30Z vboxsync $ */
+/* $Id: UIApplianceEditorWidget.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2009-2011 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,6 +25,7 @@
 #include <QTextEdit>
 #include <QSpinBox>
 #include <QComboBox>
+#include <QDir>
 
 /* GUI includes: */
 #include "UIApplianceEditorWidget.h"
@@ -620,7 +621,11 @@ bool HardwareItem::setModelData(QWidget *pEditor, QAbstractItemModel *pModel, co
                 QModelIndex c0Index = pModel->index(idx.row(), 0, idx.parent());
                 /* Query all items with the type HardDiskImage and which
                  * are child's of this item. */
-                QModelIndexList list = pModel->match(c0Index, HardwareItem::TypeRole, KVirtualSystemDescriptionType_HardDiskImage, -1, Qt::MatchExactly | Qt::MatchWrap | Qt::MatchRecursive);
+                QModelIndexList list = pModel->match(c0Index,
+                                                     HardwareItem::TypeRole,
+                                                     KVirtualSystemDescriptionType_HardDiskImage,
+                                                     -1,
+                                                     Qt::MatchExactly | Qt::MatchWrap | Qt::MatchRecursive);
                 for (int i = 0; i < list.count(); ++i)
                 {
                     /* Get the index for the config value column. */
@@ -629,7 +634,21 @@ bool HardwareItem::setModelData(QWidget *pEditor, QAbstractItemModel *pModel, co
                     if (!hdIndex.data(ModifiedRole).toBool())
                         /* Replace any occurrence of the old VM name with
                          * the new VM name. */
-                        pModel->setData(hdIndex, hdIndex.data(Qt::EditRole).toString().replace(m_strConfigValue, e->text()), Qt::EditRole);
+                    {
+                        QStringList splittedOriginalPath = hdIndex.data(Qt::EditRole).toString().split(QDir::separator());
+                        QStringList splittedNewPath;
+
+                        foreach (QString a, splittedOriginalPath)
+                        {
+                            (a.compare(m_strConfigValue) == 0) ? splittedNewPath << e->text() : splittedNewPath << a;
+                        }
+
+                        QString newPath = splittedNewPath.join(QDir::separator());
+
+                        pModel->setData(hdIndex,
+                                        newPath,
+                                        Qt::EditRole);
+                    }
                 }
                 m_strConfigValue = e->text();
                 fDone = true;

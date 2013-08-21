@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -350,6 +350,30 @@ DECLINLINE(RTSEL) ASMGetTR(void)
 
 
 /**
+ * Get the LDTR register.
+ * @returns LDTR.
+ */
+#if RT_INLINE_ASM_EXTERNAL
+DECLASM(RTSEL) ASMGetLDTR(void);
+#else
+DECLINLINE(RTSEL) ASMGetLDTR(void)
+{
+    RTSEL SelLDTR;
+# if RT_INLINE_ASM_GNU_STYLE
+    __asm__ __volatile__("sldt %w0\n\t" : "=r" (SelLDTR));
+# else
+    __asm
+    {
+        sldt    ax
+        mov     [SelLDTR], ax
+    }
+# endif
+    return SelLDTR;
+}
+#endif
+
+
+/**
  * Get the [RE]FLAGS register.
  * @returns [RE]FLAGS.
  */
@@ -524,8 +548,8 @@ DECLINLINE(void) ASMCpuId(uint32_t uOperator, void *pvEAX, void *pvEBX, void *pv
 
 
 /**
- * Performs the cpuid instruction returning all registers.
- * Some subfunctions of cpuid take ECX as additional parameter (currently known for EAX=4)
+ * Performs the CPUID instruction with EAX and ECX input returning ALL output
+ * registers.
  *
  * @param   uOperator   CPUID operation (eax).
  * @param   uIdxECX     ecx index
@@ -535,7 +559,7 @@ DECLINLINE(void) ASMCpuId(uint32_t uOperator, void *pvEAX, void *pvEBX, void *pv
  * @param   pvEDX       Where to store edx.
  * @remark  We're using void pointers to ease the use of special bitfield structures and such.
  */
-#if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
+#if RT_INLINE_ASM_EXTERNAL || RT_INLINE_ASM_USES_INTRIN
 DECLASM(void) ASMCpuId_Idx_ECX(uint32_t uOperator, uint32_t uIdxECX, void *pvEAX, void *pvEBX, void *pvECX, void *pvEDX);
 #else
 DECLINLINE(void) ASMCpuId_Idx_ECX(uint32_t uOperator, uint32_t uIdxECX, void *pvEAX, void *pvEBX, void *pvECX, void *pvEDX)
@@ -568,8 +592,7 @@ DECLINLINE(void) ASMCpuId_Idx_ECX(uint32_t uOperator, uint32_t uIdxECX, void *pv
 
 # elif RT_INLINE_ASM_USES_INTRIN
     int aInfo[4];
-    /* ??? another intrinsic ??? */
-    __cpuid(aInfo, uOperator);
+    __cpuidex(aInfo, uOperator, uIdxECX);
     *(uint32_t *)pvEAX = aInfo[0];
     *(uint32_t *)pvEBX = aInfo[1];
     *(uint32_t *)pvECX = aInfo[2];
@@ -979,7 +1002,7 @@ DECLINLINE(bool) ASMIsIntelCpu(void)
 
 
 /**
- * Tests if it a authentic AMD CPU based on the ASMCpuId(0) output.
+ * Tests if it an authentic AMD CPU based on the ASMCpuId(0) output.
  *
  * @returns true/false.
  * @param   uEBX    EBX return from ASMCpuId(0)
@@ -1005,6 +1028,71 @@ DECLINLINE(bool) ASMIsAmdCpu(void)
     uint32_t uEAX, uEBX, uECX, uEDX;
     ASMCpuId(0, &uEAX, &uEBX, &uECX, &uEDX);
     return ASMIsAmdCpuEx(uEBX, uECX, uEDX);
+}
+
+
+/**
+ * Tests if it a centaur hauling VIA CPU based on the ASMCpuId(0) output.
+ *
+ * @returns true/false.
+ * @param   uEBX    EBX return from ASMCpuId(0).
+ * @param   uECX    ECX return from ASMCpuId(0).
+ * @param   uEDX    EDX return from ASMCpuId(0).
+ */
+DECLINLINE(bool) ASMIsViaCentaurCpuEx(uint32_t uEBX, uint32_t uECX, uint32_t uEDX)
+{
+    return uEBX == UINT32_C(0x746e6543)
+        && uECX == UINT32_C(0x736c7561)
+        && uEDX == UINT32_C(0x48727561);
+}
+
+
+/**
+ * Tests if this is a centaur hauling VIA CPU.
+ *
+ * @returns true/false.
+ * @remarks ASSUMES that cpuid is supported by the CPU.
+ */
+DECLINLINE(bool) ASMIsViaCentaurCpu(void)
+{
+    uint32_t uEAX, uEBX, uECX, uEDX;
+    ASMCpuId(0, &uEAX, &uEBX, &uECX, &uEDX);
+    return ASMIsAmdCpuEx(uEBX, uECX, uEDX);
+}
+
+
+/**
+ * Checks whether ASMCpuId_EAX(0x00000000) indicates a valid range.
+ *
+ *
+ * @returns true/false.
+ * @param   uEAX    The EAX value of CPUID leaf 0x00000000.
+ *
+ * @note    This only succeeds if there are at least two leaves in the range.
+ * @remarks The upper range limit is just some half reasonable value we've
+ *          picked out of thin air.
+ */
+DECLINLINE(bool) ASMIsValidStdRange(uint32_t uEAX)
+{
+    return uEAX >= UINT32_C(0x00000001) && uEAX <= UINT32_C(0x000fffff);
+}
+
+
+/**
+ * Checks whether ASMCpuId_EAX(0x80000000) indicates a valid range.
+ *
+ * This only succeeds if there are at least two leaves in the range.
+ *
+ * @returns true/false.
+ * @param   uEAX    The EAX value of CPUID leaf 0x80000000.
+ *
+ * @note    This only succeeds if there are at least two leaves in the range.
+ * @remarks The upper range limit is just some half reasonable value we've
+ *          picked out of thin air.
+ */
+DECLINLINE(bool) ASMIsValidExtRange(uint32_t uEAX)
+{
+    return uEAX >= UINT32_C(0x80000001) && uEAX <= UINT32_C(0x800fffff);
 }
 
 

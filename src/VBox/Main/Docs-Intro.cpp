@@ -1,10 +1,10 @@
-/* $Id: Docs-Intro.cpp 39683 2011-12-29 16:13:02Z vboxsync $ */
+/* $Id: Docs-Intro.cpp $ */
 /** @file
  * This file contains the introduction to Main for developers.
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

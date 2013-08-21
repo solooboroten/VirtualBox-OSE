@@ -1,4 +1,4 @@
-/* $Rev: 41722 $ */
+/* $Rev: 83575 $ */
 /** @file
  * VBoxGuest - Linux specifics.
  *
@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -196,7 +196,11 @@ static struct miscdevice        g_MiscDeviceUser =
 
 
 /** PCI hotplug structure. */
-static const struct pci_device_id __devinitdata g_VBoxGuestPciId[] =
+static const struct pci_device_id
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
+__devinitdata
+#endif
+g_VBoxGuestPciId[] =
 {
     {
         vendor:     VMMDEV_VENDORID,
@@ -750,6 +754,11 @@ static int vboxguestLinuxRelease(struct inode *pInode, struct file *pFilp)
     Log(("vboxguestLinuxRelease: pFilp=%p pSession=%p pid=%d/%d %s\n",
          pFilp, pFilp->private_data, RTProcSelf(), current->pid, current->comm));
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
+    /* This housekeeping was needed in older kernel versions to ensure that
+     * the file pointer didn't get left on the polling queue. */
+    vboxguestFAsync(-1, pFilp, 0);
+#endif
     VBoxGuestCloseSession(&g_DevExt, (PVBOXGUESTSESSION)pFilp->private_data);
     pFilp->private_data = NULL;
     return 0;

@@ -1,4 +1,4 @@
-/* $Revision: 42227 $ */
+/* $Revision: 79259 $ */
 /** @file
  * VBoxGuestLibR0 - Mouse Integration.
  */

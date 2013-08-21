@@ -1,10 +1,10 @@
-/* $Id: ip_icmp.c 40582 2012-03-23 04:18:12Z vboxsync $ */
+/* $Id: ip_icmp.c $ */
 /** @file
  * NAT - IP/ICMP handling.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -56,8 +56,9 @@
 #include "slirp.h"
 #include "ip_icmp.h"
 #ifdef RT_OS_WINDOWS
-#include <Icmpapi.h>
-#include <Iphlpapi.h>
+# include <Icmpapi.h>
+# include <Iphlpapi.h>
+# include <iprt/ldr.h>
 #endif
 
 /* The message sent when emulating PING */
@@ -115,54 +116,52 @@ icmp_init(PNATState pData, int iIcmpCacheLimit)
     }
     fd_nonblock(pData->icmp_socket.s);
     NSOCK_INC();
-#else /* RT_OS_WINDOWS */
-    pData->hmIcmpLibrary = LoadLibrary("Iphlpapi.dll");
-    if (pData->hmIcmpLibrary != NULL)
-    {
-        pData->pfIcmpParseReplies = (long (WINAPI *)(void *, long))
-                                    GetProcAddress(pData->hmIcmpLibrary, "IcmpParseReplies");
-        pData->pfIcmpCloseHandle = (BOOL (WINAPI *)(HANDLE))
-                                    GetProcAddress(pData->hmIcmpLibrary, "IcmpCloseHandle");
-        pData->pfGetAdaptersAddresses = (ULONG (WINAPI *)(ULONG, ULONG, PVOID, PIP_ADAPTER_ADDRESSES, PULONG))
-                                    GetProcAddress(pData->hmIcmpLibrary, "GetAdaptersAddresses");
-        if (pData->pfGetAdaptersAddresses == NULL)
-        {
-            LogRel(("NAT: Can't find GetAdapterAddresses in Iphlpapi.dll\n"));
-        }
-    }
 
-    if (pData->pfIcmpParseReplies == NULL)
+#else /* RT_OS_WINDOWS */
+    /* Resolve symbols we need. */
     {
-        if(pData->pfGetAdaptersAddresses == NULL)
-            FreeLibrary(pData->hmIcmpLibrary);
-        pData->hmIcmpLibrary = LoadLibrary("Icmp.dll");
-        if (pData->hmIcmpLibrary == NULL)
+        RTLDRMOD hLdrMod;
+        int rc = RTLdrLoadSystem("Iphlpapi.dll", true /*fNoUnload*/, &hLdrMod);
+        if (RT_SUCCESS(rc))
         {
-            LogRel(("NAT: Icmp.dll could not be loaded\n"));
-            return 1;
+            pData->pfIcmpParseReplies = (long (WINAPI *)(void *, long))RTLdrGetFunction(hLdrMod, "IcmpParseReplies");
+            pData->pfIcmpCloseHandle = (BOOL (WINAPI *)(HANDLE))RTLdrGetFunction(hLdrMod, "IcmpCloseHandle");
+            rc = RTLdrGetSymbol(hLdrMod, "GetAdaptersAddresses", (void **)&pData->pfGetAdaptersAddresses);
+            if (RT_FAILURE(rc))
+                LogRel(("NAT: Can't find GetAdapterAddresses in Iphlpapi.dll\n"));
+            RTLdrClose(hLdrMod);
         }
-        pData->pfIcmpParseReplies = (long (WINAPI *)(void *, long))
-                                    GetProcAddress(pData->hmIcmpLibrary, "IcmpParseReplies");
-        pData->pfIcmpCloseHandle = (BOOL (WINAPI *)(HANDLE))
-                                    GetProcAddress(pData->hmIcmpLibrary, "IcmpCloseHandle");
+
+        if (pData->pfIcmpParseReplies == NULL)
+        {
+            int rc = RTLdrLoadSystem("Icmp.dll", true /*fNoUnload*/, &hLdrMod);
+            if (RT_FAILURE(rc))
+            {
+                LogRel(("NAT: Icmp.dll could not be loaded: %Rrc\n", rc));
+                return 1;
+            }
+            pData->pfIcmpParseReplies = (long (WINAPI *)(void *, long))RTLdrGetFunction(hLdrMod, "IcmpParseReplies");
+            pData->pfIcmpCloseHandle = (BOOL (WINAPI *)(HANDLE))RTLdrGetFunction(hLdrMod, "IcmpCloseHandle");
+            RTLdrClose(hLdrMod);
+        }
     }
     if (pData->pfIcmpParseReplies == NULL)
     {
         LogRel(("NAT: Can't find IcmpParseReplies symbol\n"));
-        FreeLibrary(pData->hmIcmpLibrary);
         return 1;
     }
     if (pData->pfIcmpCloseHandle == NULL)
     {
         LogRel(("NAT: Can't find IcmpCloseHandle symbol\n"));
-        FreeLibrary(pData->hmIcmpLibrary);
         return 1;
     }
+
     pData->icmp_socket.sh = IcmpCreateFile();
     pData->phEvents[VBOX_ICMP_EVENT_INDEX] = CreateEvent(NULL, FALSE, FALSE, NULL);
-    pData->szIcmpBuffer = sizeof(ICMP_ECHO_REPLY) * 10;
-    pData->pvIcmpBuffer = RTMemAlloc(pData->szIcmpBuffer);
+    pData->cbIcmpBuffer = sizeof(ICMP_ECHO_REPLY) * 10;
+    pData->pvIcmpBuffer = RTMemAlloc(pData->cbIcmpBuffer);
 #endif /* RT_OS_WINDOWS */
+
     LIST_INIT(&pData->icmp_msg_head);
     return 0;
 }
@@ -176,7 +175,6 @@ icmp_finit(PNATState pData)
     icmp_cache_clean(pData, -1);
 #ifdef RT_OS_WINDOWS
     pData->pfIcmpCloseHandle(pData->icmp_socket.sh);
-    FreeLibrary(pData->hmIcmpLibrary);
     RTMemFree(pData->pvIcmpBuffer);
 #else
     closesocket(pData->icmp_socket.s);
@@ -450,7 +448,9 @@ icmp_input(PNATState pData, struct mbuf *m, int hlen)
         case ICMP_ECHO:
             ip->ip_len += hlen;              /* since ip_input subtracts this */
             dst = ip->ip_dst.s_addr;
-            if (dst == alias_addr.s_addr)
+            if (   CTL_CHECK(dst, CTL_ALIAS)
+		|| CTL_CHECK(dst, CTL_DNS)
+		|| CTL_CHECK(dst, CTL_TFTP))
             {
                 icp->icmp_type = ICMP_ECHOREPLY;
                 ip->ip_dst.s_addr = ip->ip_src.s_addr;
@@ -526,7 +526,7 @@ icmp_input(PNATState pData, struct mbuf *m, int hlen)
                                        icmplen - ICMP_MINLEN /*=RequestSize*/,
                                        &ipopt /*=RequestOptions*/,
                                        pData->pvIcmpBuffer /*=ReplyBuffer*/,
-                                       pData->szIcmpBuffer /*=ReplySize*/,
+                                       pData->cbIcmpBuffer /*=ReplySize*/,
                                        1 /*=Timeout in ms*/);
                 error = GetLastError();
                 if (   status != 0
@@ -612,6 +612,7 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     register struct ip *ip;
     register struct icmp *icp;
     register struct mbuf *m;
+    int new_ip_size = 0;
     int new_m_size = 0;
     int size = 0;
 
@@ -652,7 +653,8 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
             goto end_error;
     }
 
-    new_m_size = sizeof(struct ip) + ICMP_MINLEN + msrc->m_len + ICMP_MAXDATALEN;
+    new_ip_size = sizeof(struct ip) + ICMP_MINLEN + ICMP_MAXDATALEN;
+    new_m_size = if_maxlinkhdr + new_ip_size;
     if (new_m_size < MSIZE)
         size = MCLBYTES;
     else if (new_m_size < MCLBYTES)
@@ -670,8 +672,8 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     m->m_data += if_maxlinkhdr;
     m->m_pkthdr.header = mtod(m, void *);
 
-    memcpy(m->m_data, msrc->m_data, msrc->m_len);
-    m->m_len = msrc->m_len;                /* copy msrc to m */
+    m->m_len = msrc->m_len < new_ip_size ? msrc->m_len : new_ip_size;
+    memcpy(m->m_data, msrc->m_data, m->m_len);   /* copy msrc to m */
 
     /* make the header of the reply packet */
     ip   = mtod(m, struct ip *);
@@ -707,11 +709,11 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     if (message)
     {
         /* DEBUG : append message to ICMP packet */
-        int message_len;
+        size_t message_len;
         message_len = strlen(message);
         if (message_len > ICMP_MAXDATALEN)
             message_len = ICMP_MAXDATALEN;
-        m_append(pData, m, message_len, message);
+        m_append(pData, m, (int)message_len, message);
     }
 #else
     NOREF(message);

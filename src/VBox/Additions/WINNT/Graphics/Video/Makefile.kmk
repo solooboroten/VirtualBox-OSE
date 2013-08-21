@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 42280 2012-07-20 15:26:51Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Windows guest video driver.
 #

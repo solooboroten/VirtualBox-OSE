@@ -1,10 +1,10 @@
-/* $Id: VMMSwitcher.h 41976 2012-07-01 14:16:40Z vboxsync $ */
+/* $Id: VMMSwitcher.h $ */
 /** @file
  * VMM - World Switchers.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -127,12 +127,14 @@ typedef struct VMMSWITCHERDEF
 #pragma pack()
 
 RT_C_DECLS_BEGIN
+extern VMMSWITCHERDEF vmmR3SwitcherX86Stub_Def;
 extern VMMSWITCHERDEF vmmR3Switcher32BitTo32Bit_Def;
 extern VMMSWITCHERDEF vmmR3Switcher32BitToPAE_Def;
 extern VMMSWITCHERDEF vmmR3Switcher32BitToAMD64_Def;
 extern VMMSWITCHERDEF vmmR3SwitcherPAETo32Bit_Def;
 extern VMMSWITCHERDEF vmmR3SwitcherPAEToPAE_Def;
 extern VMMSWITCHERDEF vmmR3SwitcherPAEToAMD64_Def;
+extern VMMSWITCHERDEF vmmR3SwitcherAMD64Stub_Def;
 extern VMMSWITCHERDEF vmmR3SwitcherAMD64To32Bit_Def;
 extern VMMSWITCHERDEF vmmR3SwitcherAMD64ToPAE_Def;
 extern VMMSWITCHERDEF vmmR3SwitcherAMD64ToAMD64_Def;

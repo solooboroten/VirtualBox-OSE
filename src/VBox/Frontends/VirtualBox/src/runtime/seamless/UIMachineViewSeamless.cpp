@@ -1,4 +1,4 @@
-/* $Id: UIMachineViewSeamless.cpp 42323 2012-07-23 12:33:32Z vboxsync $ */
+/* $Id: UIMachineViewSeamless.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -58,9 +58,6 @@ UIMachineViewSeamless::UIMachineViewSeamless(  UIMachineWindow *pMachineWindow
 {
     /* Prepare seamless view: */
     prepareSeamless();
-
-    /* Initialization: */
-    sltAdditionsStateChanged();
 }
 
 UIMachineViewSeamless::~UIMachineViewSeamless()
@@ -72,38 +69,10 @@ UIMachineViewSeamless::~UIMachineViewSeamless()
     cleanupFrameBuffer();
 }
 
-void UIMachineViewSeamless::sltAdditionsStateChanged()
+void UIMachineViewSeamless::sltHandleSetVisibleRegion(QRegion region)
 {
-    // TODO: Exit seamless if additions doesn't support it!
-}
-
-bool UIMachineViewSeamless::event(QEvent *pEvent)
-{
-    switch (pEvent->type())
-    {
-        case SetRegionEventType:
-        {
-            /* Get region-update event: */
-            UISetRegionEvent *pSetRegionEvent = static_cast<UISetRegionEvent*>(pEvent);
-
-            /* Apply new region: */
-            if (pSetRegionEvent->region() != m_lastVisibleRegion)
-            {
-                m_lastVisibleRegion = pSetRegionEvent->region();
-                machineWindow()->setMask(m_lastVisibleRegion);
-            }
-            return true;
-        }
-
-        case ResizeEventType:
-        {
-            return guestResizeEvent(pEvent, true);
-        }
-
-        default:
-            break;
-    }
-    return UIMachineView::event(pEvent);
+    /* Apply new seamless-region: */
+    m_pFrameBuffer->applyVisibleRegion(region);
 }
 
 bool UIMachineViewSeamless::eventFilter(QObject *pWatched, QEvent *pEvent)
@@ -151,20 +120,6 @@ void UIMachineViewSeamless::prepareFilters()
 {
     /* Base class filters: */
     UIMachineView::prepareFilters();
-
-#ifdef Q_WS_MAC // TODO: Is it really needed? See UIMachineViewSeamless::eventFilter(...);
-    /* Menu bar filter: */
-    machineWindow()->menuBar()->installEventFilter(this);
-#endif /* Q_WS_MAC */
-}
-
-void UIMachineViewSeamless::prepareConsoleConnections()
-{
-    /* Base class connections: */
-    UIMachineView::prepareConsoleConnections();
-
-    /* Guest additions state-change updater: */
-    connect(uisession(), SIGNAL(sigAdditionsStateChange()), this, SLOT(sltAdditionsStateChanged()));
 }
 
 void UIMachineViewSeamless::prepareSeamless()

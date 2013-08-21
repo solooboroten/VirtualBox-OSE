@@ -1,4 +1,4 @@
-/* $Id: UIMachineWindow.cpp 41819 2012-06-18 17:59:30Z vboxsync $ */
+/* $Id: UIMachineWindow.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2010-2012 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -37,6 +37,7 @@
 #include "UISession.h"
 #include "UIVMCloseDialog.h"
 #include "UIConverter.h"
+#include "UIModalWindowManager.h"
 
 /* COM includes: */
 #include "CConsole.h"
@@ -160,31 +161,6 @@ void UIMachineWindow::sltMachineStateChanged()
     updateAppearanceOf(UIVisualElement_WindowTitle);
 }
 
-void UIMachineWindow::sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect /* screenGeo */)
-{
-    /* Ignore change events for other screens: */
-    if (uScreenId != m_uScreenId)
-        return;
-    /* Ignore KGuestMonitorChangedEventType_NewOrigin change event: */
-    if (changeType == KGuestMonitorChangedEventType_NewOrigin)
-        return;
-    /* Ignore KGuestMonitorChangedEventType_Disabled event if there is only one window visible: */
-    AssertMsg(uisession()->countOfVisibleWindows() > 0, ("All machine windows are hidden!"));
-    if ((changeType == KGuestMonitorChangedEventType_Disabled) &&
-        (uisession()->countOfVisibleWindows() == 1))
-        return;
-
-    /* Process KGuestMonitorChangedEventType_Enabled change event: */
-    if (isHidden() && changeType == KGuestMonitorChangedEventType_Enabled)
-        uisession()->setScreenVisible(m_uScreenId, true);
-    /* Process KGuestMonitorChangedEventType_Disabled change event: */
-    else if (!isHidden() && changeType == KGuestMonitorChangedEventType_Disabled)
-        uisession()->setScreenVisible(m_uScreenId, false);
-
-    /* Update screen visibility status: */
-    showInNecessaryMode();
-}
-
 UIMachineWindow::UIMachineWindow(UIMachineLogic *pMachineLogic, ulong uScreenId)
     : QIWithRetranslateUI2<QMainWindow>(0, windowFlags(pMachineLogic->visualStateType()))
     , m_pMachineLogic(pMachineLogic)
@@ -205,10 +181,6 @@ UIMachineWindow::UIMachineWindow(UIMachineLogic *pMachineLogic, ulong uScreenId)
     /* Set VM-specific application icon: */
     setWindowIcon(vboxGlobal().vmGuestOSTypeIcon(machine().GetOSTypeId()));
 #endif /* !Q_WS_MAC */
-
-    /* Set the main application window for VBoxGlobal: */
-    if (m_uScreenId == 0)
-        vboxGlobal().setMainWindow(this);
 }
 
 UISession* UIMachineWindow::uisession() const
@@ -224,6 +196,12 @@ CSession& UIMachineWindow::session() const
 CMachine UIMachineWindow::machine() const
 {
     return session().GetMachine();
+}
+
+void UIMachineWindow::setMask(const QRegion &region)
+{
+    /* Call to base-class: */
+    QMainWindow::setMask(region);
 }
 
 void UIMachineWindow::retranslateUi()
@@ -265,247 +243,111 @@ bool UIMachineWindow::x11Event(XEvent *pEvent)
 
 void UIMachineWindow::closeEvent(QCloseEvent *pEvent)
 {
-    /* Always ignore close-event: */
+    /* Always ignore close-event first: */
     pEvent->ignore();
 
-    /* Should we close application? */
-    bool fCloseApplication = false;
-    switch (uisession()->machineState())
+    /* Make sure machine is in one of the allowed states: */
+    if (!uisession()->isRunning() && !uisession()->isPaused() && !uisession()->isStuck())
+        return;
+
+    /* If there is a close hook script defined: */
+    QString strScript = machine().GetExtraData(GUI_CloseActionHook);
+    if (!strScript.isEmpty())
     {
-        case KMachineState_Running:
-        case KMachineState_Paused:
-        case KMachineState_Stuck:
-        case KMachineState_LiveSnapshotting:
-        case KMachineState_Teleporting: // TODO: Test this!
-        case KMachineState_TeleportingPausedVM: // TODO: Test this!
+        /* Execute asynchronously and leave: */
+        QProcess::startDetached(strScript, QStringList() << machine().GetId());
+        return;
+    }
+
+    /* Choose the close action: */
+    MachineCloseAction closeAction = MachineCloseAction_Invalid;
+
+    /* If there IS default close-action defined: */
+    QString strDefaultAction = machine().GetExtraData(GUI_DefaultCloseAction);
+    if (!strDefaultAction.isEmpty())
+    {
+        /* Parse the close-action which was defined: */
+        closeAction = gpConverter->fromInternalString<MachineCloseAction>(strDefaultAction);
+        /* If VM is stuck, and the default close-action is not 'power-off',
+         * we should ask the user about what to do: */
+        if (uisession()->isStuck() &&
+            closeAction != MachineCloseAction_PowerOff)
+            closeAction = MachineCloseAction_Invalid;
+        /* If the default-action is 'power-off',
+         * we should check if its possible to discard machine-state: */
+        if (closeAction == MachineCloseAction_PowerOff &&
+            machine().GetSnapshotCount() > 0)
+            closeAction = MachineCloseAction_PowerOff_RestoringSnapshot;
+    }
+
+    /* If the close-action still undefined: */
+    if (closeAction == MachineCloseAction_Invalid)
+    {
+        /* Prepare close-dialog: */
+        QWidget *pParentDlg = windowManager().realParentWindow(this);
+        QPointer<UIVMCloseDialog> pCloseDlg = new UIVMCloseDialog(pParentDlg, machine(), session());
+
+        /* Make sure close-dialog is valid: */
+        if (pCloseDlg->isValid())
         {
-            /* Get the machine: */
-            CMachine m = machine();
-
-            /* Check if there is a close hock script defined. */
-            const QString& strScript = m.GetExtraData(GUI_CloseActionHook);
-            if (!strScript.isEmpty())
+            /* If VM is not paused and not stuck, we should pause it first: */
+            bool fWasPaused = uisession()->isPaused() || uisession()->isStuck();
+            if (fWasPaused || uisession()->pause())
             {
-                QProcess::startDetached(strScript, QStringList() << m.GetId());
-                return;
-            }
+                /* Show close-dialog to let the user make the choice: */
+                windowManager().registerNewParent(pCloseDlg, pParentDlg);
+                closeAction = static_cast<MachineCloseAction>(pCloseDlg->exec());
 
-            /* Prepare close-dialog: */
-            UIVMCloseDialog dlg(this);
+                /* Make sure the dialog still valid: */
+                if (!pCloseDlg)
+                    return;
 
-            /* Assign close-dialog pixmap: */
-            dlg.pmIcon->setPixmap(vboxGlobal().vmGuestOSTypeIcon(m.GetOSTypeId()));
-
-            /* Check which close actions are disallowed: */
-            QStringList restictedActionsList = m.GetExtraData(GUI_RestrictedCloseActions).split(',');
-            bool fIsStateSavingAllowed = !restictedActionsList.contains("SaveState", Qt::CaseInsensitive);
-            bool fIsACPIShutdownAllowed = !restictedActionsList.contains("Shutdown", Qt::CaseInsensitive);
-            bool fIsPowerOffAllowed = !restictedActionsList.contains("PowerOff", Qt::CaseInsensitive);
-            bool fIsPowerOffAndRestoreAllowed = fIsPowerOffAllowed && !restictedActionsList.contains("Restore", Qt::CaseInsensitive);
-
-            /* Make Save State button visible/hidden depending on restriction: */
-            dlg.mRbSave->setVisible(fIsStateSavingAllowed);
-            dlg.mTxSave->setVisible(fIsStateSavingAllowed);
-            /* Make Save State button enabled/disabled depending on machine state: */
-            dlg.mRbSave->setEnabled(uisession()->machineState() != KMachineState_Stuck);
-
-            /* Make ACPI shutdown button visible/hidden depending on restriction: */
-            dlg.mRbShutdown->setVisible(fIsACPIShutdownAllowed);
-            dlg.mTxShutdown->setVisible(fIsACPIShutdownAllowed);
-            /* Make ACPI shutdown button enabled/disabled depending on ACPI state & machine state: */
-            bool isACPIEnabled = session().GetConsole().GetGuestEnteredACPIMode();
-            dlg.mRbShutdown->setEnabled(isACPIEnabled && uisession()->machineState() != KMachineState_Stuck);
-
-            /* Make Power Off button visible/hidden depending on restriction: */
-            dlg.mRbPowerOff->setVisible(fIsPowerOffAllowed);
-            dlg.mTxPowerOff->setVisible(fIsPowerOffAllowed);
-
-            /* Make the Restore Snapshot checkbox visible/hidden depending on snapshots count & restrictions: */
-            dlg.mCbDiscardCurState->setVisible(fIsPowerOffAndRestoreAllowed && m.GetSnapshotCount() > 0);
-            if (!m.GetCurrentSnapshot().isNull())
-                dlg.mCbDiscardCurState->setText(dlg.mCbDiscardCurState->text().arg(m.GetCurrentSnapshot().GetName()));
-
-            /* Choice string tags for close-dialog: */
-            QString strSave("save");
-            QString strShutdown("shutdown");
-            QString strPowerOff("powerOff");
-            QString strDiscardCurState("discardCurState");
-
-            /* Read the last user's choice for the given VM: */
-            QStringList lastAction = m.GetExtraData(GUI_LastCloseAction).split(',');
-
-            /* Check which button should be initially chosen: */
-            QRadioButton *pRadioButton = 0;
-
-            /* If choosing 'last choice' is possible: */
-            if (lastAction[0] == strSave && fIsStateSavingAllowed)
-            {
-                pRadioButton = dlg.mRbSave;
-            }
-            else if (lastAction[0] == strShutdown && fIsACPIShutdownAllowed && isACPIEnabled)
-            {
-                pRadioButton = dlg.mRbShutdown;
-            }
-            else if (lastAction[0] == strPowerOff && fIsPowerOffAllowed)
-            {
-                pRadioButton = dlg.mRbPowerOff;
-                if (fIsPowerOffAndRestoreAllowed)
-                    dlg.mCbDiscardCurState->setChecked(lastAction.count() > 1 && lastAction[1] == strDiscardCurState);
-            }
-            /* Else 'default choice' will be used: */
-            else
-            {
-                if (fIsACPIShutdownAllowed && isACPIEnabled)
-                    pRadioButton = dlg.mRbShutdown;
-                else if (fIsPowerOffAllowed)
-                    pRadioButton = dlg.mRbPowerOff;
-                else if (fIsStateSavingAllowed)
-                    pRadioButton = dlg.mRbSave;
-            }
-
-            /* If some radio button was chosen: */
-            if (pRadioButton)
-            {
-                /* Check and focus it: */
-                pRadioButton->setChecked(true);
-                pRadioButton->setFocus();
-            }
-            /* If no one of radio buttons was chosen: */
-            else
-            {
-                /* Just break and leave: */
-                break;
-            }
-
-            /* This flag will keep the status of every further logical operation: */
-            bool fSuccess = true;
-
-            /* Pause before showing dialog if necessary: */
-            bool fWasPaused = uisession()->isPaused() || uisession()->machineState() == KMachineState_Stuck;
-            if (!fWasPaused)
-                fSuccess = uisession()->pause();
-
-            if (fSuccess)
-            {
-                /* Preventing auto-closure: */
-                machineLogic()->setPreventAutoClose(true);
-
-                /* If close-dialog accepted: */
-                if (dlg.exec() == QDialog::Accepted)
+                /* If VM was not paused before but paused now,
+                 * we should resume it if user canceled dialog or chosen shutdown: */
+                if (!fWasPaused && uisession()->isPaused() &&
+                    (closeAction == MachineCloseAction_Invalid ||
+                     closeAction == MachineCloseAction_Shutdown))
                 {
-                    /* Get current console: */
-                    CConsole console = session().GetConsole();
-
-                    fSuccess = false;
-
-                    if (dlg.mRbSave->isChecked())
-                    {
-                        CProgress progress = console.SaveState();
-
-                        if (!console.isOk())
-                            msgCenter().cannotSaveMachineState(console);
-                        else
-                        {
-                            /* Show the "VM saving" progress dialog: */
-                            msgCenter().showModalProgressDialog(progress, m.GetName(), ":/progress_state_save_90px.png", 0, true);
-                            if (progress.GetResultCode() != 0)
-                                msgCenter().cannotSaveMachineState(progress);
-                            else
-                                fSuccess = true;
-                        }
-
-                        if (fSuccess)
-                            fCloseApplication = true;
-                    }
-                    else if (dlg.mRbShutdown->isChecked())
-                    {
-                        /* Unpause the VM to let it grab the ACPI shutdown event: */
-                        uisession()->unpause();
-                        /* Prevent the subsequent unpause request: */
-                        fWasPaused = true;
-                        /* Signal ACPI shutdown (if there is no ACPI device, the operation will fail): */
-                        console.PowerButton();
-                        if (!console.isOk())
-                            msgCenter().cannotACPIShutdownMachine(console);
-                        else
-                            fSuccess = true;
-                    }
-                    else if (dlg.mRbPowerOff->isChecked())
-                    {
-                        CProgress progress = console.PowerDown();
-
-                        if (!console.isOk())
-                            msgCenter().cannotStopMachine(console);
-                        else
-                        {
-                            /* Show the power down progress dialog: */
-                            msgCenter().showModalProgressDialog(progress, m.GetName(), ":/progress_poweroff_90px.png", 0, true);
-                            if (progress.GetResultCode() != 0)
-                                msgCenter().cannotStopMachine(progress);
-                            else
-                                fSuccess = true;
-                        }
-
-                        if (fSuccess)
-                        {
-                            /* Discard the current state if requested: */
-                            if (dlg.mCbDiscardCurState->isChecked() && dlg.mCbDiscardCurState->isVisibleTo(&dlg))
-                            {
-                                CSnapshot snapshot = m.GetCurrentSnapshot();
-                                CProgress progress = console.RestoreSnapshot(snapshot);
-                                if (!console.isOk())
-                                    msgCenter().cannotRestoreSnapshot(console, snapshot.GetName());
-                                else
-                                {
-                                    /* Show the progress dialog: */
-                                    msgCenter().showModalProgressDialog(progress, m.GetName(), ":/progress_snapshot_discard_90px.png", 0, true);
-                                    if (progress.GetResultCode() != 0)
-                                        msgCenter().cannotRestoreSnapshot(progress, snapshot.GetName());
-                                }
-                            }
-                        }
-
-                        if (fSuccess)
-                            fCloseApplication = true;
-                    }
-
-                    if (fSuccess)
-                    {
-                        /* Read the last user's choice for the given VM: */
-                        QStringList prevAction = m.GetExtraData(GUI_LastCloseAction).split(',');
-                        /* Memorize the last user's choice for the given VM: */
-                        QString lastAction = strPowerOff;
-                        if (dlg.mRbSave->isChecked())
-                            lastAction = strSave;
-                        else if ((dlg.mRbShutdown->isChecked()) ||
-                                 (dlg.mRbPowerOff->isChecked() && prevAction[0] == strShutdown && !isACPIEnabled))
-                            lastAction = strShutdown;
-                        else if (dlg.mRbPowerOff->isChecked())
-                            lastAction = strPowerOff;
-                        else
-                            AssertFailed();
-                        if (dlg.mCbDiscardCurState->isChecked())
-                            (lastAction += ",") += strDiscardCurState;
-                        m.SetExtraData(GUI_LastCloseAction, lastAction);
-                    }
+                    /* If we unable to resume VM, cancel closing: */
+                    if (!uisession()->unpause())
+                        closeAction = MachineCloseAction_Invalid;
                 }
-
-                /* Restore the running state if needed: */
-                if (fSuccess && !fCloseApplication && !fWasPaused && uisession()->machineState() == KMachineState_Paused)
-                    uisession()->unpause();
-
-                /* Allowing auto-closure: */
-                machineLogic()->setPreventAutoClose(false);
             }
+        }
+        else
+        {
+            /* Else user misconfigured .vbox file, 'power-off' will be the action: */
+            closeAction = MachineCloseAction_PowerOff;
+        }
+
+        /* Cleanup close-dialog: */
+        delete pCloseDlg;
+    }
+
+    /* Depending on chosen result: */
+    switch (closeAction)
+    {
+        case MachineCloseAction_SaveState:
+        {
+            /* Save VM state: */
+            machineLogic()->saveState();
+            break;
+        }
+        case MachineCloseAction_Shutdown:
+        {
+            /* Shutdown VM: */
+            machineLogic()->shutdown();
+            break;
+        }
+        case MachineCloseAction_PowerOff:
+        case MachineCloseAction_PowerOff_RestoringSnapshot:
+        {
+            /* Power VM off: */
+            machineLogic()->powerOff(closeAction == MachineCloseAction_PowerOff_RestoringSnapshot);
             break;
         }
         default:
             break;
-    }
-    if (fCloseApplication)
-    {
-        /* VM has been powered off or saved. We must *safely* close VM window(s): */
-        QTimer::singleShot(0, uisession(), SLOT(sltCloseVirtualSession()));
     }
 }
 
@@ -513,10 +355,6 @@ void UIMachineWindow::prepareSessionConnections()
 {
     /* Machine state-change updater: */
     connect(uisession(), SIGNAL(sigMachineStateChange()), this, SLOT(sltMachineStateChanged()));
-
-    /* Guest monitor-change updater: */
-    connect(uisession(), SIGNAL(sigGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)),
-            this, SLOT(sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)));
 }
 
 void UIMachineWindow::prepareMainLayout()
@@ -563,6 +401,9 @@ void UIMachineWindow::prepareMachineView()
 
     /* Add machine-view into main-layout: */
     m_pMainLayout->addWidget(m_pMachineView, 1, 1, viewAlignment(visualStateType));
+
+    /* Install focus-proxy: */
+    setFocusProxy(m_pMachineView);
 }
 
 void UIMachineWindow::prepareHandlers()
@@ -588,6 +429,11 @@ void UIMachineWindow::cleanupMachineView()
     /* Destroy machine-view: */
     UIMachineView::destroy(m_pMachineView);
     m_pMachineView = 0;
+}
+
+void UIMachineWindow::handleScreenCountChange()
+{
+    showInNecessaryMode();
 }
 
 void UIMachineWindow::updateAppearanceOf(int iElement)

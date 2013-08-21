@@ -1,4 +1,4 @@
-/* $Id: tstRTR0DbgKrnlInfo.h 41947 2012-06-28 06:29:36Z vboxsync $ */
+/* $Id: tstRTR0DbgKrnlInfo.h $ */
 /** @file
  * IPRT R0 Testcase - Debug kernel information, common header.
  */

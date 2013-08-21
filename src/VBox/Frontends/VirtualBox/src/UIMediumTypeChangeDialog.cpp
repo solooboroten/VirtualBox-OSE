@@ -1,4 +1,4 @@
-/* $Id: UIMediumTypeChangeDialog.cpp 41819 2012-06-18 17:59:30Z vboxsync $ */
+/* $Id: UIMediumTypeChangeDialog.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -91,7 +91,7 @@ void UIMediumTypeChangeDialog::sltAccept()
     if (!m_medium.isOk())
     {
         /* Show error message: */
-        msgCenter().cannotChangeMediumType(this, m_medium, m_oldMediumType, m_newMediumType);
+        msgCenter().cannotChangeMediumType(m_medium, m_oldMediumType, m_newMediumType, this);
         return;
     }
     /* Accept dialog with parent class method: */

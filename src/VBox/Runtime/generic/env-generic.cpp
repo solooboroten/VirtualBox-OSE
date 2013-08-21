@@ -1,10 +1,10 @@
-/* $Id: env-generic.cpp 41723 2012-06-14 20:00:32Z vboxsync $ */
+/* $Id: env-generic.cpp $ */
 /** @file
  * IPRT - Environment, Generic.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -101,9 +101,6 @@ static const char * const *rtEnvDefault(void)
 {
 #ifdef RT_OS_DARWIN
     return *(_NSGetEnviron());
-#elif defined(RT_OS_L4)
-    /* So far, our L4 libraries do not include environment support. */
-    return NULL;
 #else
     return environ;
 #endif

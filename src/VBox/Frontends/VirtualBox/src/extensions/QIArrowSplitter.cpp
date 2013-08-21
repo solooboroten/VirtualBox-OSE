@@ -1,4 +1,4 @@
-/* $Id: QIArrowSplitter.cpp 41175 2012-05-05 14:29:39Z vboxsync $ */
+/* $Id: QIArrowSplitter.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -18,10 +18,10 @@
  */
 
 /* VBox includes */
-#include "VBoxGlobal.h"
 #include "QIArrowSplitter.h"
 
 /* Qt includes */
+#include <QApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 
@@ -34,7 +34,8 @@ QIArrowSplitter::QIArrowSplitter (QWidget *aChild, QWidget *aParent)
     , mChild (aChild)
 {
     /* Setup main-layout */
-    VBoxGlobal::setLayoutMargin (mMainLayout, 0);
+    mMainLayout->setContentsMargins(0, 0, 0, 0);
+    mMainLayout->setSpacing(3);
 
     /* Setup buttons */
     mBackButton->setVisible (false);
@@ -47,7 +48,7 @@ QIArrowSplitter::QIArrowSplitter (QWidget *aChild, QWidget *aParent)
 
     /* Setup button layout */
     QHBoxLayout *buttonLayout = new QHBoxLayout();
-    VBoxGlobal::setLayoutMargin (buttonLayout, 0);
+    buttonLayout->setContentsMargins(0, 0, 0, 0);
     buttonLayout->setSpacing (0);
     buttonLayout->addWidget (mSwitchButton);
     buttonLayout->addStretch();
@@ -60,6 +61,9 @@ QIArrowSplitter::QIArrowSplitter (QWidget *aChild, QWidget *aParent)
 
     /* Install event-filter */
     qApp->installEventFilter (this);
+
+    /* Hide child initially: */
+    toggleWidget();
 }
 
 void QIArrowSplitter::setMultiPaging (bool aMultiPage)
@@ -78,6 +82,43 @@ void QIArrowSplitter::setName (const QString &aName)
 {
     mSwitchButton->setText (aName);
     emit sigSizeChanged();
+}
+
+QSize QIArrowSplitter::minimumSizeHint() const
+{
+    /* Get size-hints: */
+    QSize switchButtonHint = mSwitchButton->minimumSizeHint();
+    QSize backButtonHint = mBackButton->minimumSizeHint();
+    QSize nextButtonHint = mNextButton->minimumSizeHint();
+    int iChildWidthHint = 0;
+    int iChildHeightHint = 0;
+    if (mChild)
+    {
+        QSize childHint = mChild->minimumSize();
+        if (childHint.isNull())
+            childHint = mChild->minimumSizeHint();
+        iChildWidthHint = childHint.width();
+        iChildHeightHint = childHint.height();
+    }
+
+    /* Calculate width-hint: */
+    int iWidthHint = 0;
+    iWidthHint += switchButtonHint.width();
+    iWidthHint += backButtonHint.width();
+    iWidthHint += nextButtonHint.width();
+    if (mChild)
+        iWidthHint = qMax(iWidthHint, iChildWidthHint);
+
+    /* Calculate height-hint: */
+    int iHeightHint = 0;
+    iHeightHint = qMax(iHeightHint, switchButtonHint.height());
+    iHeightHint = qMax(iHeightHint, backButtonHint.height());
+    iHeightHint = qMax(iHeightHint, nextButtonHint.height());
+    if (mChild && mChild->isVisible())
+        iHeightHint += mMainLayout->spacing() + iChildHeightHint;
+
+    /* Return result: */
+    return QSize(iWidthHint, iHeightHint);
 }
 
 void QIArrowSplitter::toggleWidget()

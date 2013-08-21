@@ -1,4 +1,4 @@
-/* $Id: TRPMInternal.h 41943 2012-06-28 02:33:43Z vboxsync $ */
+/* $Id: TRPMInternal.h $ */
 /** @file
  * TRPM - Internal header file.
  */
@@ -26,7 +26,9 @@
 
 
 /** Enable to allow trap forwarding in GC. */
-#define TRPM_FORWARD_TRAPS_IN_GC
+#ifdef VBOX_WITH_RAW_MODE
+# define TRPM_FORWARD_TRAPS_IN_GC
+#endif
 
 /** First interrupt handler. Used for validating input. */
 #define TRPM_HANDLER_INT_BASE  0x20
@@ -93,9 +95,6 @@ typedef struct TRPM
      * See TRPM2TRPMCPU(). */
     RTINT                   offTRPMCPU;
 
-    /** IDT monitoring and sync flag (HWACC). */
-    bool                    fDisableMonitoring; /** @todo r=bird: bool and 7 byte achPadding1. */
-
     /** Whether monitoring of the guest IDT is enabled or not.
      *
      * This configuration option is provided for speeding up guest like Solaris
@@ -111,7 +110,7 @@ typedef struct TRPM
     bool                    fSafeToDropGuestIDTMonitoring;
 
     /** Padding to get the IDTs at a 16 byte alignment. */
-    uint8_t                 abPadding1[6];
+    uint8_t                 abPadding1[7];
     /** IDTs. Aligned at 16 byte offset for speed. */
     VBOXIDTE                aIdt[256];
 
@@ -156,8 +155,6 @@ typedef struct TRPM
     /** Statistics for interrupt handlers (allocated on the hypervisor heap) - R3
      * pointer. */
     R3PTRTYPE(PSTAMCOUNTER) paStatForwardedIRQR3;
-    /** Statistics for interrupt handlers - R0 pointer. */
-    R0PTRTYPE(PSTAMCOUNTER) paStatForwardedIRQR0;
     /** Statistics for interrupt handlers - RC pointer. */
     RCPTRTYPE(PSTAMCOUNTER) paStatForwardedIRQRC;
 
@@ -165,8 +162,6 @@ typedef struct TRPM
     RCPTRTYPE(PSTAMCOUNTER) paStatHostIrqRC;
     /** Host interrupt statistics (allocated on the hypervisor heap) - R3 ptr. */
     R3PTRTYPE(PSTAMCOUNTER) paStatHostIrqR3;
-    /** Host interrupt statistics (allocated on the hypervisor heap) - R0 ptr. */
-    R0PTRTYPE(PSTAMCOUNTER) paStatHostIrqR0;
 #endif
 } TRPM;
 
@@ -231,6 +226,16 @@ typedef struct TRPMCPU
 
     /** Previous trap vector # - for debugging. */
     RTGCUINT                uPrevVector;
+
+    /** Instruction length for software interrupts and software exceptions (#BP,
+     *  #OF) */
+    uint8_t                 cbInstr;
+
+    /** Saved instruction length. */
+    uint8_t                 cbSavedInstr;
+
+    /** Padding. */
+    uint8_t                 au8Padding[2];
 } TRPMCPU;
 
 /** Pointer to TRPMCPU Data. */
@@ -253,16 +258,7 @@ VMMDECL(int) trpmClearGuestTrapHandler(PVM pVM, unsigned iTrap);
 
 
 #ifdef IN_RING3
-
-/**
- * Clear passthrough interrupt gate handler (reset to default handler)
- *
- * @returns VBox status code.
- * @param   pVM         Pointer to the VM.
- * @param   iTrap       Trap/interrupt gate number.
- */
-VMMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap);
-
+int trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap);
 #endif
 
 

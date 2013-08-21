@@ -1,10 +1,10 @@
-/* $Id: buildconfig.cpp 33680 2010-11-02 11:08:08Z vboxsync $ */
+/* $Id: buildconfig.cpp $ */
 /** @file
  * IPRT - Build Configuration Information.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

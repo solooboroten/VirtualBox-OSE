@@ -12,9 +12,14 @@ EXPORTS
   Direct3DCreate9
   Direct3DCreate9Ex
   VBoxWineExD3DDev9Flush
+  VBoxWineExD3DDev9FlushToHost
+  VBoxWineExD3DDev9Finish
   VBoxWineExD3DDev9CreateTexture
   VBoxWineExD3DDev9CreateCubeTexture
+  VBoxWineExD3DDev9CreateVolumeTexture
   VBoxWineExD3DDev9Update
   VBoxWineExD3DDev9Term
   VBoxWineExD3DSwapchain9Present
+  VBoxWineExD3DDev9VolBlt
+  VBoxWineExD3DDev9VolTexBlt
   VBoxWineExD3DRc9SetShRcState

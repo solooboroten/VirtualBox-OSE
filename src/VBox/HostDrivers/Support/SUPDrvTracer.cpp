@@ -1,10 +1,10 @@
-/* $Id: SUPDrvTracer.cpp 42011 2012-07-04 05:25:31Z vboxsync $ */
+/* $Id: SUPDrvTracer.cpp $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Tracer Interface.
  */
 
 /*
- * Copyright (C) 2012 Oracle Corporation
+ * Copyright (C) 2012-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -345,7 +345,9 @@ static int supdrvVtgValidateHdr(PVTGOBJHDR pVtgHdr, RTUINTPTR uVtgHdrAddr, const
 #ifdef RT_OS_DARWIN
         /* The loader and/or ld64-97.17 seems not to generate fixups for our
            __VTGObj section. Detect this by comparing them with the
-           u64VtgObjSectionStart member and assume max image size of 4MB. */
+           u64VtgObjSectionStart member and assume max image size of 4MB.
+           Seems to be worked around by the __VTGPrLc.End and __VTGPrLc.Begin
+           padding fudge, meaning that the linker misplaced the relocations. */
         if (   (int64_t)u64Tmp != (int32_t)u64Tmp
             && pVtgHdr->u64VtgObjSectionStart != uVtgHdrAddr
             && pVtgHdr->u64VtgObjSectionStart < _4M
@@ -635,7 +637,6 @@ static int supdrvVtgValidate(PVTGOBJHDR pVtgHdr, RTUINTPTR uVtgHdrAddr, const ui
             MY_CHECK_RET(paProbeLocs[i].uLine < _1G, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
             MY_CHECK_RET(paProbeLocs[i].fEnabled == false, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
             MY_CHECK_RET(paProbeLocs[i].idProbe == 0, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
-            MY_WITHIN_IMAGE(paProbeLocs[i].pszFunction, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
             offTmp = (uintptr_t)paProbeLocs[i].pProbe - (uintptr_t)pVtgHdr->offProbes - (uintptr_t)pVtgHdr;
 #ifdef RT_OS_DARWIN /* See header validation code. */
             if (   offTmp >= pVtgHdr->cbProbes
@@ -645,12 +646,17 @@ static int supdrvVtgValidate(PVTGOBJHDR pVtgHdr, RTUINTPTR uVtgHdrAddr, const ui
                 && !fUmod )
             {
                 uint64_t offDelta = uVtgHdrAddr - pVtgHdr->u64VtgObjSectionStart;
+
                 paProbeLocs[i].pProbe = (PVTGDESCPROBE)((uintptr_t)paProbeLocs[i].pProbe + offDelta);
+                if ((uintptr_t)paProbeLocs[i].pszFunction < _4M)
+                    paProbeLocs[i].pszFunction = (const char *)((uintptr_t)paProbeLocs[i].pszFunction + offDelta);
+
                 offTmp += offDelta;
             }
 #endif
             MY_CHECK_RET(offTmp < pVtgHdr->cbProbes, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
             MY_CHECK_RET(offTmp / sizeof(VTGDESCPROBE) * sizeof(VTGDESCPROBE) == offTmp, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
+            MY_WITHIN_IMAGE(paProbeLocs[i].pszFunction, VERR_SUPDRV_VTG_BAD_PROBE_LOC);
         }
     }
 
@@ -2132,6 +2138,7 @@ int  VBOXCALL   supdrvIOCtl_TracerUmodDeregister(PSUPDRVDEVEXT pDevExt, PSUPDRVS
         RTR0MemObjFree(pUmod->hMemObjMap, false /*fFreeMappings*/);
         RTR0MemObjFree(pUmod->hMemObjLock, false /*fFreeMappings*/);
         RTMemFree(pUmod);
+        rc = VINF_SUCCESS;
     }
     else
         rc = VERR_NOT_FOUND;

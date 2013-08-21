@@ -1,4 +1,4 @@
-/* $Id: tstRTReqPool.cpp 39636 2011-12-16 00:19:35Z vboxsync $ */
+/* $Id: tstRTReqPool.cpp $ */
 /** @file
  * IPRT Testcase - Request Thread Pool.
  */

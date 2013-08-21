@@ -1,4 +1,4 @@
-/* $Id: UIIconPool.cpp 30206 2010-06-15 15:41:05Z vboxsync $ */
+/* $Id: UIIconPool.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -159,8 +159,7 @@ QIcon UIIconPool::defaultIcon(UIDefaultIcon def, const QWidget *pWidget /* = 0 *
         {
             icon = pStyle->standardIcon(QStyle::SP_DialogCancelButton, 0, pWidget);
             if (icon.isNull())
-                icon = iconSet(":/delete_16px.png",
-                               ":/delete_dis_16px.png");
+                icon = iconSet(":/cancel_16px.png");
             break;
         }
         case DialogHelpIcon:

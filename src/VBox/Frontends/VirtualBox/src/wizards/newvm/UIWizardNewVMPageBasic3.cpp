@@ -1,4 +1,4 @@
-/* $Id: UIWizardNewVMPageBasic3.cpp 42950 2012-08-23 13:11:52Z vboxsync $ */
+/* $Id: UIWizardNewVMPageBasic3.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -76,49 +76,50 @@ void UIWizardNewVMPage3::getWithFileOpenDialog()
 bool UIWizardNewVMPage3::getWithNewVirtualDiskWizard()
 {
     /* Create New Virtual Hard Drive wizard: */
-    UIWizardNewVD dlg(thisImp(),
-                      fieldImp("machineBaseName").toString(),
-                      fieldImp("machineFolder").toString(),
-                      fieldImp("type").value<CGuestOSType>().GetRecommendedHDD(),
-                      wizardImp()->mode());
-    if (dlg.exec() == QDialog::Accepted)
+    UISafePointerWizardNewVD pWizard = new UIWizardNewVD(thisImp(),
+                                                         fieldImp("machineBaseName").toString(),
+                                                         fieldImp("machineFolder").toString(),
+                                                         fieldImp("type").value<CGuestOSType>().GetRecommendedHDD(),
+                                                         wizardImp()->mode());
+    pWizard->prepare();
+    bool fResult = false;
+    if (pWizard->exec() == QDialog::Accepted)
     {
-        m_virtualDisk = dlg.virtualDisk();
+        fResult = true;
+        m_virtualDisk = pWizard->virtualDisk();
         m_pDiskSelector->setCurrentItem(m_virtualDisk.GetId());
         m_pDiskPresent->click();
-        return true;
     }
-    return false;
+    if (pWizard)
+        delete pWizard;
+    return fResult;
 }
 
 void UIWizardNewVMPage3::ensureNewVirtualDiskDeleted()
 {
-    /* Make sure virtual-disk exists: */
+    /* Make sure virtual-disk valid: */
     if (m_virtualDisk.isNull())
         return;
 
-    /* Remember virtual-disk ID: */
+    /* Remember virtual-disk attributes: */
     QString strId = m_virtualDisk.GetId();
-
-    /* 1st step: start delete-storage progress: */
+    QString strLocation = m_virtualDisk.GetLocation();
+    /* Prepare delete storage progress: */
     CProgress progress = m_virtualDisk.DeleteStorage();
-    /* Get initial state: */
-    bool fSuccess = m_virtualDisk.isOk();
-
-    /* 2nd step: show delete-storage progress: */
-    if (fSuccess)
+    if (m_virtualDisk.isOk())
     {
-        msgCenter().showModalProgressDialog(progress, thisImp()->windowTitle(), ":/progress_media_delete_90px.png", thisImp(), true);
-        fSuccess = progress.isOk() && progress.GetResultCode() == S_OK;
+        /* Show delete storage progress: */
+        msgCenter().showModalProgressDialog(progress, thisImp()->windowTitle(), ":/progress_media_delete_90px.png", thisImp());
+        if (!progress.isOk() || progress.GetResultCode() != 0)
+            msgCenter().cannotDeleteHardDiskStorage(progress, strLocation, thisImp());
     }
-
-    /* 3rd step: notify GUI about virtual-disk was deleted or show error if any: */
-    if (fSuccess)
-        vboxGlobal().removeMedium(UIMediumType_HardDisk, strId);
     else
-        msgCenter().cannotDeleteHardDiskStorage(thisImp(), m_virtualDisk, progress);
+        msgCenter().cannotDeleteHardDiskStorage(m_virtualDisk, strLocation, thisImp());
 
-    /* Detach virtual-disk finally: */
+    /* Remove virtual-disk from GUI anyway: */
+    vboxGlobal().removeMedium(UIMediumType_HardDisk, strId);
+
+    /* Detach virtual-disk anyway: */
     m_virtualDisk.detach();
 }
 
@@ -145,7 +146,7 @@ UIWizardNewVMPageBasic3::UIWizardNewVMPageBasic3()
             m_pVMMButton = new QIToolButton(this);
             {
                 m_pVMMButton->setAutoRaise(true);
-                m_pVMMButton->setIcon(UIIconPool::iconSet(":/select_file_16px.png", ":/select_file_dis_16px.png"));
+                m_pVMMButton->setIcon(UIIconPool::iconSet(":/select_file_16px.png", ":/select_file_disabled_16px.png"));
             }
             pDiskLayout->addWidget(m_pDiskSkip, 0, 0, 1, 3);
             pDiskLayout->addWidget(m_pDiskCreate, 1, 0, 1, 3);
@@ -249,7 +250,7 @@ bool UIWizardNewVMPageBasic3::validatePage()
     if (m_pDiskSkip->isChecked())
     {
         /* Ask user about disk-less machine: */
-        fResult = msgCenter().confirmHardDisklessMachine(this);
+        fResult = msgCenter().confirmHardDisklessMachine(thisImp());
     }
     else if (m_pDiskCreate->isChecked())
     {

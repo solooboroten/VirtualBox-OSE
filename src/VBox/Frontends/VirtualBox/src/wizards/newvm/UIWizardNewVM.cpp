@@ -1,4 +1,4 @@
-/* $Id: UIWizardNewVM.cpp 43041 2012-08-28 13:58:40Z vboxsync $ */
+/* $Id: UIWizardNewVM.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,6 +29,7 @@
 /* COM includes: */
 #include "CAudioAdapter.h"
 #include "CUSBController.h"
+#include "CUSBDeviceFilters.h"
 #include "CExtPackManager.h"
 #include "CStorageController.h"
 
@@ -93,10 +94,12 @@ bool UIWizardNewVM::createVM()
     m_machine.GetAudioAdapter().SetEnabled(true);
 
     /* Enable the OHCI and EHCI controller by default for new VMs. (new in 2.2): */
-    CUSBController usbController = m_machine.GetUSBController();
-    if (!usbController.isNull() && type.GetRecommendedUSB() && usbController.GetProxyAvailable())
+    CUSBDeviceFilters usbDeviceFilters = m_machine.GetUSBDeviceFilters();
+    bool fOhciEnabled = false;
+    if (!usbDeviceFilters.isNull() && type.GetRecommendedUSB() && m_machine.GetUSBProxyAvailable())
     {
-        usbController.SetEnabled(true);
+        m_machine.AddUSBController("OHCI", KUSBControllerType_OHCI);
+        fOhciEnabled = true;
         /* USB 2.0 is only available if the proper ExtPack is installed.
          * Note. Configuring EHCI here and providing messages about
          * the missing extpack isn't exactly clean, but it is a
@@ -104,7 +107,7 @@ bool UIWizardNewVM::createVM()
          * introduced by the new distribution model. */
         CExtPackManager manager = vboxGlobal().virtualBox().GetExtensionPackManager();
         if (manager.IsExtPackUsable(GUI_ExtPackName))
-            usbController.SetEnabledEHCI(true);
+            m_machine.AddUSBController("EHCI", KUSBControllerType_EHCI);
     }
 
     /* Create a floppy controller if recommended: */
@@ -161,15 +164,15 @@ bool UIWizardNewVM::createVM()
     {
         m_machine.SetKeyboardHIDType(KKeyboardHIDType_USBKeyboard);
         m_machine.SetPointingHIDType(KPointingHIDType_USBMouse);
-        if (!usbController.isNull())
-            usbController.SetEnabled(true);
+        if (!fOhciEnabled && !usbDeviceFilters.isNull())
+            m_machine.AddUSBController("OHCI", KUSBControllerType_OHCI);
     }
 
     if (type.GetRecommendedUSBTablet())
     {
         m_machine.SetPointingHIDType(KPointingHIDType_USBTablet);
-        if (!usbController.isNull())
-            usbController.SetEnabled(true);
+        if (!fOhciEnabled && !usbDeviceFilters.isNull())
+            m_machine.AddUSBController("OHCI", KUSBControllerType_OHCI);
     }
 
     /* Set HPET flag: */
@@ -189,7 +192,7 @@ bool UIWizardNewVM::createVM()
     vbox.RegisterMachine(m_machine);
     if (!vbox.isOk())
     {
-        msgCenter().cannotCreateMachine(vbox, m_machine, this);
+        msgCenter().cannotRegisterMachine(vbox, m_machine.GetName(), this);
         return false;
     }
 
@@ -245,7 +248,7 @@ bool UIWizardNewVM::createVM()
             QVector<CMedium> aMedia = m_machine.Unregister(KCleanupMode_UnregisterOnly);   //  @todo replace with DetachAllReturnHardDisksOnly once a progress dialog is in place below
             if (vbox.isOk())
             {
-                CProgress progress = m_machine.Delete(aMedia);
+                CProgress progress = m_machine.DeleteConfig(aMedia);
                 progress.WaitForCompletion(-1);         // @todo do this nicely with a progress dialog, this can delete lots of files
             }
             return false;
@@ -303,7 +306,7 @@ QString UIWizardNewVM::getNextControllerName(KStorageBus type)
     {
         case KStorageBus_IDE:
         {
-            strControllerName = tr("IDE Controller");
+            strControllerName = "IDE";
             ++m_iIDECount;
             if (m_iIDECount > 1)
                 strControllerName = QString("%1 %2").arg(strControllerName).arg(m_iIDECount);
@@ -311,7 +314,7 @@ QString UIWizardNewVM::getNextControllerName(KStorageBus type)
         }
         case KStorageBus_SATA:
         {
-            strControllerName = tr("SATA Controller");
+            strControllerName = "SATA";
             ++m_iSATACount;
             if (m_iSATACount > 1)
                 strControllerName = QString("%1 %2").arg(strControllerName).arg(m_iSATACount);
@@ -319,7 +322,7 @@ QString UIWizardNewVM::getNextControllerName(KStorageBus type)
         }
         case KStorageBus_SCSI:
         {
-            strControllerName = tr("SCSI Controller");
+            strControllerName = "SCSI";
             ++m_iSCSICount;
             if (m_iSCSICount > 1)
                 strControllerName = QString("%1 %2").arg(strControllerName).arg(m_iSCSICount);
@@ -327,7 +330,7 @@ QString UIWizardNewVM::getNextControllerName(KStorageBus type)
         }
         case KStorageBus_Floppy:
         {
-            strControllerName = tr("Floppy Controller");
+            strControllerName = "Floppy";
             ++m_iFloppyCount;
             if (m_iFloppyCount > 1)
                 strControllerName = QString("%1 %2").arg(strControllerName).arg(m_iFloppyCount);
@@ -335,7 +338,7 @@ QString UIWizardNewVM::getNextControllerName(KStorageBus type)
         }
         case KStorageBus_SAS:
         {
-            strControllerName = tr("SAS Controller");
+            strControllerName = "SAS";
             ++m_iSASCount;
             if (m_iSASCount > 1)
                 strControllerName = QString("%1 %2").arg(strControllerName).arg(m_iSASCount);

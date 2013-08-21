@@ -1,11 +1,11 @@
-/* $Id: cr_framebuffer.h 41160 2012-05-04 09:55:53Z vboxsync $ */
+/* $Id: cr_framebuffer.h $ */
 
 /** @file
  * VBox crOpenGL: FBO related state info
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -74,8 +74,8 @@ DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectInit(CRContext *ctx);
 DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectDestroy(CRContext *ctx);
 DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectSwitch(CRContext *from, CRContext *to);
 
-DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectDisableHW(CRContext *ctx, GLuint idFBO);
-DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectReenableHW(CRContext *fromCtx, CRContext *toCtx, GLuint idFBO);
+DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectDisableHW(CRContext *ctx, GLuint idDrawFBO, GLuint idReadFBO);
+DECLEXPORT(void) STATE_APIENTRY crStateFramebufferObjectReenableHW(CRContext *fromCtx, CRContext *toCtx, GLuint idDrawFBO, GLuint idReadFBO);
 
 DECLEXPORT(GLuint) STATE_APIENTRY crStateGetFramebufferHWID(GLuint id);
 DECLEXPORT(GLuint) STATE_APIENTRY crStateGetRenderbufferHWID(GLuint id);
@@ -95,6 +95,9 @@ DECLEXPORT(void) STATE_APIENTRY crStateGenerateMipmapEXT(GLenum target);
 
 DECLEXPORT(GLuint) STATE_APIENTRY crStateFBOHWIDtoID(GLuint hwid);
 DECLEXPORT(GLuint) STATE_APIENTRY crStateRBOHWIDtoID(GLuint hwid);
+
+DECLEXPORT(void) crStateRegFramebuffers(GLsizei n, GLuint *buffers);
+DECLEXPORT(void) crStateRegRenderbuffers(GLsizei n, GLuint *buffers);
 
 #ifdef IN_GUEST
 DECLEXPORT(GLenum) STATE_APIENTRY crStateCheckFramebufferStatusEXT(GLenum target);

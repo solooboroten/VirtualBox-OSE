@@ -1,10 +1,10 @@
-/* $Id: MsiCommon.cpp 40907 2012-04-13 20:50:14Z vboxsync $ */
+/* $Id: MsiCommon.cpp $ */
 /** @file
  * MSI support routines
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/* $Id: RTFileReadAllByHandle-generic.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: RTFileReadAllByHandle-generic.cpp $ */
 /** @file
  * IPRT - RTFileReadAllByHandle, generic implementation.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

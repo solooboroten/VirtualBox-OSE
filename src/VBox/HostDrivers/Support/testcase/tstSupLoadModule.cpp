@@ -1,10 +1,10 @@
-/* $Id: tstSupLoadModule.cpp 40812 2012-04-07 10:13:10Z vboxsync $ */
+/* $Id: tstSupLoadModule.cpp $ */
 /** @file
  * SUP Testcase - Test SUPR3LoadModule.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -101,11 +101,11 @@ int main(int argc, char **argv)
                 break;
 
             case 'h':
-                RTPrintf("%s [mod1 [mod2...]]\n");
+                RTPrintf("%s [mod1 [mod2...]]\n", argv[0]);
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: 40812 $\n");
+                RTPrintf("$Revision: 83575 $\n");
                 return 0;
 
             default:

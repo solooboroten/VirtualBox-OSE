@@ -1,10 +1,10 @@
-/* $Id: thread-posix.cpp 41881 2012-06-22 10:53:32Z vboxsync $ */
+/* $Id: thread-posix.cpp $ */
 /** @file
  * IPRT - Threads, POSIX.
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -47,10 +47,14 @@
 # include <mach/mach_init.h>
 # include <mach/mach_host.h>
 #endif
-#if defined(RT_OS_DARWIN) /*|| defined(RT_OS_FREEBSD) - later */ || defined(RT_OS_LINUX) \
+#if defined(RT_OS_DARWIN) /*|| defined(RT_OS_FREEBSD) - later */ \
+ || (defined(RT_OS_LINUX) && !defined(IN_RT_STATIC) /* static + dlsym = trouble */) \
  || defined(IPRT_MAY_HAVE_PTHREAD_SET_NAME_NP)
 # define IPRT_MAY_HAVE_PTHREAD_SET_NAME_NP
 # include <dlfcn.h>
+#endif
+#if defined(RT_OS_HAIKU)
+# include <OS.h>
 #endif
 
 #include <iprt/thread.h>
@@ -58,6 +62,7 @@
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/err.h>
+#include <iprt/initterm.h>
 #include <iprt/string.h>
 #include "internal/thread.h"
 
@@ -115,20 +120,14 @@ static void rtThreadKeyDestruct(void *pvValue);
 static void rtThreadPosixPokeSignal(int iSignal);
 
 
-DECLHIDDEN(int) rtThreadNativeInit(void)
+#ifdef RTTHREAD_POSIX_WITH_POKE
+/**
+ * Try register the dummy signal handler for RTThreadPoke.
+ */
+static void rtThreadPosixSelectPokeSignal(void)
 {
     /*
-     * Allocate the TLS (key in posix terms) where we store the pointer to
-     * a threads RTTHREADINT structure.
-     */
-    int rc = pthread_key_create(&g_SelfKey, rtThreadKeyDestruct);
-    if (rc)
-        return VERR_NO_TLS_FOR_SELF;
-
-#ifdef RTTHREAD_POSIX_WITH_POKE
-    /*
-     * Try register the dummy signal handler for RTThreadPoke.
-     * Avoid SIGRTMIN thru SIGRTMIN+2 because of LinuxThreads.
+     * Note! Avoid SIGRTMIN thru SIGRTMIN+2 because of LinuxThreads.
      */
     static const int s_aiSigCandidates[] =
     {
@@ -144,39 +143,87 @@ DECLHIDDEN(int) rtThreadNativeInit(void)
     };
 
     g_iSigPokeThread = -1;
-    for (unsigned iSig = 0; iSig < RT_ELEMENTS(s_aiSigCandidates); iSig++)
+    if (!RTR3InitIsUnobtrusive())
     {
-        struct sigaction SigActOld;
-        if (!sigaction(s_aiSigCandidates[iSig], NULL, &SigActOld))
+        for (unsigned iSig = 0; iSig < RT_ELEMENTS(s_aiSigCandidates); iSig++)
         {
-            if (   SigActOld.sa_handler == SIG_DFL
-                || SigActOld.sa_handler == rtThreadPosixPokeSignal)
+            struct sigaction SigActOld;
+            if (!sigaction(s_aiSigCandidates[iSig], NULL, &SigActOld))
             {
-                struct sigaction SigAct;
-                RT_ZERO(SigAct);
-                SigAct.sa_handler = rtThreadPosixPokeSignal;
-                SigAct.sa_flags   = 0;
-                sigfillset(&SigAct.sa_mask);
-
-                /* ASSUMES no sigaction race... (lazy bird) */
-                if (!sigaction(s_aiSigCandidates[iSig], &SigAct, NULL))
+                if (   SigActOld.sa_handler == SIG_DFL
+                    || SigActOld.sa_handler == rtThreadPosixPokeSignal)
                 {
-                    g_iSigPokeThread = s_aiSigCandidates[iSig];
-                    break;
+                    struct sigaction SigAct;
+                    RT_ZERO(SigAct);
+                    SigAct.sa_handler = rtThreadPosixPokeSignal;
+                    SigAct.sa_flags   = 0;
+                    sigfillset(&SigAct.sa_mask);
+
+                    /* ASSUMES no sigaction race... (lazy bird) */
+                    if (!sigaction(s_aiSigCandidates[iSig], &SigAct, NULL))
+                    {
+                        g_iSigPokeThread = s_aiSigCandidates[iSig];
+                        break;
+                    }
+                    AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
                 }
-                AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
             }
+            else
+                AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
         }
-        else
-            AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
     }
+}
 #endif /* RTTHREAD_POSIX_WITH_POKE */
+
+
+DECLHIDDEN(int) rtThreadNativeInit(void)
+{
+    /*
+     * Allocate the TLS (key in posix terms) where we store the pointer to
+     * a threads RTTHREADINT structure.
+     */
+    int rc = pthread_key_create(&g_SelfKey, rtThreadKeyDestruct);
+    if (rc)
+        return VERR_NO_TLS_FOR_SELF;
+
+#ifdef RTTHREAD_POSIX_WITH_POKE
+    rtThreadPosixSelectPokeSignal();
+#endif
 
 #ifdef IPRT_MAY_HAVE_PTHREAD_SET_NAME_NP
     if (RT_SUCCESS(rc))
         g_pfnThreadSetName = (PFNPTHREADSETNAME)(uintptr_t)dlsym(RTLD_DEFAULT, "pthread_setname_np");
 #endif
     return rc;
+}
+
+static void rtThreadPosixBlockSignals(void)
+{
+    /*
+     * Block SIGALRM - required for timer-posix.cpp.
+     * This is done to limit harm done by OSes which doesn't do special SIGALRM scheduling.
+     * It will not help much if someone creates threads directly using pthread_create. :/
+     */
+    if (!RTR3InitIsUnobtrusive())
+    {
+        sigset_t SigSet;
+        sigemptyset(&SigSet);
+        sigaddset(&SigSet, SIGALRM);
+        sigprocmask(SIG_BLOCK, &SigSet, NULL);
+    }
+#ifdef RTTHREAD_POSIX_WITH_POKE
+    if (g_iSigPokeThread != -1)
+        siginterrupt(g_iSigPokeThread, 1);
+#endif
+}
+
+DECLHIDDEN(void) rtThreadNativeReInitObtrusive(void)
+{
+#ifdef RTTHREAD_POSIX_WITH_POKE
+    Assert(!RTR3InitIsUnobtrusive());
+    rtThreadPosixSelectPokeSignal();
+#endif
+    rtThreadPosixBlockSignals();
 }
 
 
@@ -221,19 +268,7 @@ static void rtThreadPosixPokeSignal(int iSignal)
  */
 DECLHIDDEN(int) rtThreadNativeAdopt(PRTTHREADINT pThread)
 {
-    /*
-     * Block SIGALRM - required for timer-posix.cpp.
-     * This is done to limit harm done by OSes which doesn't do special SIGALRM scheduling.
-     * It will not help much if someone creates threads directly using pthread_create. :/
-     */
-    sigset_t SigSet;
-    sigemptyset(&SigSet);
-    sigaddset(&SigSet, SIGALRM);
-    sigprocmask(SIG_BLOCK, &SigSet, NULL);
-#ifdef RTTHREAD_POSIX_WITH_POKE
-    if (g_iSigPokeThread != -1)
-        siginterrupt(g_iSigPokeThread, 1);
-#endif
+    rtThreadPosixBlockSignals();
 
     int rc = pthread_setspecific(g_SelfKey, pThread);
     if (!rc)
@@ -266,19 +301,7 @@ static void *rtThreadNativeMain(void *pvArgs)
     ASMMemoryFence();
 #endif
 
-    /*
-     * Block SIGALRM - required for timer-posix.cpp.
-     * This is done to limit harm done by OSes which doesn't do special SIGALRM scheduling.
-     * It will not help much if someone creates threads directly using pthread_create. :/
-     */
-    sigset_t SigSet;
-    sigemptyset(&SigSet);
-    sigaddset(&SigSet, SIGALRM);
-    sigprocmask(SIG_BLOCK, &SigSet, NULL);
-#ifdef RTTHREAD_POSIX_WITH_POKE
-    if (g_iSigPokeThread != -1)
-        siginterrupt(g_iSigPokeThread, 1);
-#endif
+    rtThreadPosixBlockSignals();
 
     /*
      * Set the TLS entry and, if possible, the thread name.
@@ -410,6 +433,15 @@ RTR3DECL(int) RTThreadGetExecutionTimeMilli(uint64_t *pKernelTime, uint64_t *pUs
 
     *pKernelTime = ThreadInfo.system_time.seconds * 1000 + ThreadInfo.system_time.microseconds / 1000;
     *pUserTime   = ThreadInfo.user_time.seconds   * 1000 + ThreadInfo.user_time.microseconds   / 1000;
+
+    return VINF_SUCCESS;
+#elif defined(RT_OS_HAIKU)
+    thread_info       ThreadInfo;
+    status_t status = get_thread_info(find_thread(NULL), &ThreadInfo);
+    AssertReturn(status == B_OK, RTErrConvertFromErrno(status));
+
+    *pKernelTime = ThreadInfo.kernel_time / 1000;
+    *pUserTime   = ThreadInfo.user_time / 1000;
 
     return VINF_SUCCESS;
 #else

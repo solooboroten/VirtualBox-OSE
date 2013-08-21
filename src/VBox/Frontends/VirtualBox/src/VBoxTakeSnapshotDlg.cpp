@@ -1,4 +1,4 @@
-/* $Id: VBoxTakeSnapshotDlg.cpp 43104 2012-08-30 14:02:28Z vboxsync $ */
+/* $Id: VBoxTakeSnapshotDlg.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -44,15 +44,6 @@
 VBoxTakeSnapshotDlg::VBoxTakeSnapshotDlg(QWidget *pParent, const CMachine &machine)
     : QIWithRetranslateUI<QIDialog>(pParent)
 {
-#ifdef Q_WS_MAC
-    /* Check if Mac Sheet is allowed: */
-    if (vboxGlobal().isSheetWindowAllowed(pParent))
-    {
-        vboxGlobal().setSheetWindowUsed(pParent, true);
-        setWindowFlags(Qt::Sheet);
-    }
-#endif /* Q_WS_MAC */
-
     /* Apply UI decorations */
     Ui::VBoxTakeSnapshotDlg::setupUi(this);
 
@@ -96,15 +87,6 @@ VBoxTakeSnapshotDlg::VBoxTakeSnapshotDlg(QWidget *pParent, const CMachine &machi
     }
 
     retranslateUi();
-}
-
-VBoxTakeSnapshotDlg::~VBoxTakeSnapshotDlg()
-{
-#ifdef Q_WS_MAC
-    /* Check if Mac Sheet was used: */
-    if ((windowFlags() & Qt::Sheet) == Qt::Sheet)
-        vboxGlobal().setSheetWindowUsed(parentWidget(), false);
-#endif /* Q_WS_MAC */
 }
 
 void VBoxTakeSnapshotDlg::retranslateUi()

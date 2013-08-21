@@ -1,4 +1,4 @@
-/* $Id: DisasmReg.cpp 42186 2012-07-17 13:32:15Z vboxsync $ */
+/* $Id: DisasmReg.cpp $ */
 /** @file
  * VBox disassembler- Register Info Helpers.
  */

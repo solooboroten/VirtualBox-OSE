@@ -1,10 +1,10 @@
-/* $Id: DevPS2.cpp 41560 2012-06-04 12:07:32Z vboxsync $ */
+/* $Id: DevPS2.cpp $ */
 /** @file
  * DevPS2 - PS/2 keyboard & mouse controller device.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -164,12 +164,21 @@ typedef struct {
 
 #define MOUSE_EVENT_QUEUE_SIZE 256
 
-typedef struct {
+typedef struct
+{
     uint8_t data[MOUSE_EVENT_QUEUE_SIZE];
-    int rptr, wptr, count;
+    int     rptr;
+    int     wptr;
+    int     count;
 } MouseEventQueue;
 
-typedef struct KBDState {
+/**
+ * The keyboard controller/device state.
+ *
+ * @note We use the default critical section for serialize data access.
+ */
+typedef struct KBDState
+{
     MouseCmdQueue mouse_command_queue;
     MouseEventQueue mouse_event_queue;
     uint8_t write_cmd; /* if non zero, write data to port 60 is expected */
@@ -203,9 +212,6 @@ typedef struct KBDState {
     PPDMDEVINSR3                pDevInsR3;
     /** Pointer to the device instance. */
     PPDMDEVINSR0                pDevInsR0;
-
-    /** Critical section protecting the state. */
-    PDMCRITSECT                 CritSect;
 
     /** Keyboard state (implemented in separate PS2K module). */
 #ifdef VBOX_DEVICE_STRUCT_TESTCASE
@@ -542,7 +548,7 @@ static uint32_t kbd_read_data(void *opaque, uint32_t addr)
     return val;
 }
 
-PS2K *GetPS2KFromDevIns(PPDMDEVINS pDevIns)
+PS2K *KBDGetPS2KFromDevIns(PPDMDEVINS pDevIns)
 {
     KBDState *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     return &pThis->Kbd;
@@ -698,7 +704,8 @@ static void kbd_mouse_update_downstream_status(KBDState *pThis)
 {
     PPDMIMOUSECONNECTOR pDrv = pThis->Mouse.pDrv;
     bool fEnabled = !!(pThis->mouse_status & MOUSE_STATUS_ENABLED);
-    pDrv->pfnReportModes(pDrv, fEnabled, false);
+    if (pDrv)
+        pDrv->pfnReportModes(pDrv, fEnabled, false, false);
 }
 
 #endif /* IN_RING3 */
@@ -1199,14 +1206,9 @@ PDMBOTHCBDECL(int) kbdIOPortDataRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT 
     if (cb == 1)
     {
         KBDState *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
-        int rc = PDMCritSectEnter(&pThis->CritSect, VINF_IOM_R3_IOPORT_READ);
-        if (RT_LIKELY(rc == VINF_SUCCESS))
-        {
-            *pu32 = kbd_read_data(pThis, Port);
-            PDMCritSectLeave(&pThis->CritSect);
-            Log2(("kbdIOPortDataRead: Port=%#x cb=%d *pu32=%#x\n", Port, cb, *pu32));
-        }
-        return rc;
+        *pu32 = kbd_read_data(pThis, Port);
+        Log2(("kbdIOPortDataRead: Port=%#x cb=%d *pu32=%#x\n", Port, cb, *pu32));
+        return VINF_SUCCESS;
     }
     AssertMsgFailed(("Port=%#x cb=%d\n", Port, cb));
     return VERR_IOM_IOPORT_UNUSED;
@@ -1230,13 +1232,8 @@ PDMBOTHCBDECL(int) kbdIOPortDataWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT
     if (cb == 1)
     {
         KBDState *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
-        rc = PDMCritSectEnter(&pThis->CritSect, VINF_IOM_R3_IOPORT_WRITE);
-        if (RT_LIKELY(rc == VINF_SUCCESS))
-        {
-            rc = kbd_write_data(pThis, Port, u32);
-            PDMCritSectLeave(&pThis->CritSect);
-            Log2(("kbdIOPortDataWrite: Port=%#x cb=%d u32=%#x\n", Port, cb, u32));
-        }
+        rc = kbd_write_data(pThis, Port, u32);
+        Log2(("kbdIOPortDataWrite: Port=%#x cb=%d u32=%#x\n", Port, cb, u32));
     }
     else
         AssertMsgFailed(("Port=%#x cb=%d\n", Port, cb));
@@ -1260,14 +1257,9 @@ PDMBOTHCBDECL(int) kbdIOPortStatusRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPOR
     if (cb == 1)
     {
         KBDState *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
-        int rc = PDMCritSectEnter(&pThis->CritSect, VINF_IOM_R3_IOPORT_READ);
-        if (RT_LIKELY(rc == VINF_SUCCESS))
-        {
-            *pu32 = kbd_read_status(pThis, Port);
-            PDMCritSectLeave(&pThis->CritSect);
-            Log2(("kbdIOPortStatusRead: Port=%#x cb=%d -> *pu32=%#x\n", Port, cb, *pu32));
-        }
-        return rc;
+        *pu32 = kbd_read_status(pThis, Port);
+        Log2(("kbdIOPortStatusRead: Port=%#x cb=%d -> *pu32=%#x\n", Port, cb, *pu32));
+        return VINF_SUCCESS;
     }
     AssertMsgFailed(("Port=%#x cb=%d\n", Port, cb));
     return VERR_IOM_IOPORT_UNUSED;
@@ -1291,13 +1283,8 @@ PDMBOTHCBDECL(int) kbdIOPortCommandWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOP
     if (cb == 1)
     {
         KBDState *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
-        rc = PDMCritSectEnter(&pThis->CritSect, VINF_IOM_R3_IOPORT_WRITE);
-        if (RT_LIKELY(rc == VINF_SUCCESS))
-        {
-            rc = kbd_write_command(pThis, Port, u32);
-            PDMCritSectLeave(&pThis->CritSect);
-            Log2(("kbdIOPortCommandWrite: Port=%#x cb=%d u32=%#x rc=%Rrc\n", Port, cb, u32, rc));
-        }
+        rc = kbd_write_command(pThis, Port, u32);
+        Log2(("kbdIOPortCommandWrite: Port=%#x cb=%d u32=%#x rc=%Rrc\n", Port, cb, u32, rc));
     }
     else
         AssertMsgFailed(("Port=%#x cb=%d\n", Port, cb));
@@ -1311,13 +1298,13 @@ PDMBOTHCBDECL(int) kbdIOPortCommandWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOP
  *
  * @returns VBox status code.
  * @param   pDevIns     The device instance.
- * @param   pSSMHandle  The handle to save the state to.
+ * @param   pSSM  The handle to save the state to.
  */
-static DECLCALLBACK(int) kbdSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
+static DECLCALLBACK(int) kbdSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 {
     KBDState    *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
-    kbd_save(pSSMHandle, pThis);
-    PS2KSaveState(pSSMHandle, &pThis->Kbd);
+    kbd_save(pSSM, pThis);
+    PS2KSaveState(&pThis->Kbd, pSSM);
     return VINF_SUCCESS;
 }
 
@@ -1327,19 +1314,19 @@ static DECLCALLBACK(int) kbdSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  *
  * @returns VBox status code.
  * @param   pDevIns     The device instance.
- * @param   pSSMHandle  The handle to the saved state.
+ * @param   pSSM  The handle to the saved state.
  * @param   uVersion    The data unit version number.
  * @param   uPass       The data pass.
  */
-static DECLCALLBACK(int) kbdLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t uVersion, uint32_t uPass)
+static DECLCALLBACK(int) kbdLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
     KBDState    *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     int rc;
 
     Assert(uPass == SSM_PASS_FINAL); NOREF(uPass);
-    rc = kbd_load(pSSMHandle, pThis, uVersion);
+    rc = kbd_load(pSSM, pThis, uVersion);
     if (uVersion >= 6)
-        rc = PS2KLoadState(pSSMHandle, &pThis->Kbd, uVersion);
+        rc = PS2KLoadState(&pThis->Kbd, pSSM, uVersion);
     return rc;
 }
 
@@ -1377,26 +1364,41 @@ static DECLCALLBACK(void *)  kbdMouseQueryInterface(PPDMIBASE pInterface, const 
 /**
  * @interface_method_impl{PDMIMOUSEPORT, pfnPutEvent}
  */
-static DECLCALLBACK(int) kbdMousePutEvent(PPDMIMOUSEPORT pInterface, int32_t iDeltaX, int32_t iDeltaY,
-                                          int32_t iDeltaZ, int32_t iDeltaW, uint32_t fButtonStates)
+static DECLCALLBACK(int) kbdMousePutEvent(PPDMIMOUSEPORT pInterface, int32_t dx,
+                                          int32_t dy, int32_t dz, int32_t dw,
+                                          uint32_t fButtons)
 {
     KBDState *pThis = RT_FROM_MEMBER(pInterface, KBDState, Mouse.IPort);
-    int rc = PDMCritSectEnter(&pThis->CritSect, VERR_SEM_BUSY);
+    int rc = PDMCritSectEnter(pThis->pDevInsR3->pCritSectRoR3, VERR_SEM_BUSY);
     AssertReleaseRC(rc);
 
-    pc_kbd_mouse_event(pThis, iDeltaX, iDeltaY, iDeltaZ, iDeltaW, fButtonStates);
+    pc_kbd_mouse_event(pThis, dx, dy, dz, dw, fButtons);
 
-    PDMCritSectLeave(&pThis->CritSect);
+    PDMCritSectLeave(pThis->pDevInsR3->pCritSectRoR3);
     return VINF_SUCCESS;
 }
 
 /**
  * @interface_method_impl{PDMIMOUSEPORT, pfnPutEventAbs}
  */
-static DECLCALLBACK(int) kbdMousePutEventAbs(PPDMIMOUSEPORT pInterface, uint32_t uX, uint32_t uY, int32_t iDeltaZ, int32_t iDeltaW, uint32_t fButtons)
+static DECLCALLBACK(int) kbdMousePutEventAbs(PPDMIMOUSEPORT pInterface,
+                                             uint32_t x, uint32_t y, int32_t dz,
+                                             int32_t dw, uint32_t fButtons)
 {
     AssertFailedReturn(VERR_NOT_SUPPORTED);
-    NOREF(pInterface); NOREF(uX); NOREF(uY); NOREF(iDeltaZ); NOREF(iDeltaW); NOREF(fButtons);
+    NOREF(pInterface); NOREF(x); NOREF(y); NOREF(dz); NOREF(dw); NOREF(fButtons);
+}
+
+/**
+ * @interface_method_impl{PDMIMOUSEPORT, pfnPutEventMultiTouch}
+ */
+static DECLCALLBACK(int) kbdMousePutEventMultiTouch(PPDMIMOUSEPORT pInterface,
+                                                    uint8_t cContacts,
+                                                    const uint64_t *pau64Contacts,
+                                                    uint32_t u32ScanTime)
+{
+    AssertFailedReturn(VERR_NOT_SUPPORTED);
+    NOREF(pInterface); NOREF(cContacts); NOREF(pau64Contacts); NOREF(u32ScanTime);
 }
 
 
@@ -1432,7 +1434,7 @@ static DECLCALLBACK(int)  kbdAttach(PPDMDEVINS pDevIns, unsigned iLUN, uint32_t 
     {
         /* LUN #0: keyboard */
         case 0:
-            rc = PS2KAttach(pDevIns, &pThis->Kbd, iLUN, fFlags);
+            rc = PS2KAttach(&pThis->Kbd, pDevIns, iLUN, fFlags);
             if (RT_FAILURE(rc))
                 return rc;
             break;
@@ -1520,24 +1522,7 @@ static DECLCALLBACK(void) kbdRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
     KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
-    PS2KRelocate(&pThis->Kbd, offDelta);
-}
-
-
-/**
- * Destruct a device instance for a VM.
- *
- * @returns VBox status.
- * @param   pDevIns     The device instance data.
- */
-static DECLCALLBACK(int) kbdDestruct(PPDMDEVINS pDevIns)
-{
-    KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
-    PDMDEV_CHECK_VERSIONS_RETURN_QUIET(pDevIns);
-
-    PDMR3CritSectDelete(&pThis->CritSect);
-
-    return VINF_SUCCESS;
+    PS2KRelocate(&pThis->Kbd, offDelta, pDevIns);
 }
 
 
@@ -1575,20 +1560,14 @@ static DECLCALLBACK(int) kbdConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNO
     pThis->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
     pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
 
-    rc = PS2KConstruct(pDevIns, &pThis->Kbd, pThis, iInstance);
+    rc = PS2KConstruct(&pThis->Kbd, pDevIns, pThis, iInstance);
     if (RT_FAILURE(rc))
         return rc;
 
     pThis->Mouse.IBase.pfnQueryInterface    = kbdMouseQueryInterface;
     pThis->Mouse.IPort.pfnPutEvent          = kbdMousePutEvent;
     pThis->Mouse.IPort.pfnPutEventAbs       = kbdMousePutEventAbs;
-
-    /*
-     * Initialize the critical section.
-     */
-    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->CritSect, RT_SRC_POS, "PS2KM#%u", iInstance);
-    if (RT_FAILURE(rc))
-        return rc;
+    pThis->Mouse.IPort.pfnPutEventMultiTouch = kbdMousePutEventMultiTouch;
 
     /*
      * Register I/O ports, save state, keyboard event handler and mouse event handlers.
@@ -1668,10 +1647,10 @@ const PDMDEVREG g_DevicePS2KeyboardMouse =
     /* pfnConstruct */
     kbdConstruct,
     /* pfnDestruct */
-    kbdDestruct,
+    NULL,
     /* pfnRelocate */
     kbdRelocate,
-    /* pfnIOCtl */
+    /* pfnMemSetup */
     NULL,
     /* pfnPowerOn */
     NULL,

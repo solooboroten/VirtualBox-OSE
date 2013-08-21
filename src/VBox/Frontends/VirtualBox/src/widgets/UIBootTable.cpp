@@ -1,4 +1,4 @@
-/* $Id: UIBootTable.cpp 41819 2012-06-18 17:59:30Z vboxsync $ */
+/* $Id: UIBootTable.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -80,14 +80,7 @@ void UIBootTable::adjustSizeToFitContent()
     int h = 2 * frameWidth();
     int w = h;
 #if QT_VERSION < 0x040700
-# ifdef Q_WS_MAC
-    int left, top, right, bottom;
-    getContentsMargins(&left, &top, &right, &bottom);
-    h += top + bottom;
-    w += left + right;
-# else /* Q_WS_MAC */
-    w += 4;
-# endif /* !Q_WS_MAC */
+    w += 4; // WTF?
 #endif /* QT_VERSION < 0x040700 */
     setFixedSize(sizeHintForColumn(0) + w,
                  sizeHintForRow(0) * count() + h);

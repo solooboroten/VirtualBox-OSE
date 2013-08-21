@@ -1,4 +1,4 @@
-/* $Id: UIVMLogViewer.cpp 41587 2012-06-06 04:19:03Z vboxsync $ */
+/* $Id: UIVMLogViewer.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2011 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -385,7 +385,7 @@ UIVMLogViewer::UIVMLogViewer(QWidget *pParent, Qt::WindowFlags flags, const CMac
     /* Apply window icons: */
     setWindowIcon(UIIconPool::iconSetFull(QSize(32, 32), QSize(16, 16),
                                           ":/vm_show_logs_32px.png",
-                                          ":/show_logs_16px.png"));
+                                          ":/vm_show_logs_16px.png"));
 
     /* Create VM Log Vewer container: */
     m_pViewerContainer = new QITabWidget(centralWidget());

@@ -1,10 +1,10 @@
-/* $Id: DrvRawFile.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvRawFile.cpp $ */
 /** @file
  * VBox stream drivers - Raw file output.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -139,8 +139,11 @@ static DECLCALLBACK(void) drvRawFileDestruct(PPDMDRVINS pDrvIns)
     if (pThis->pszLocation)
         MMR3HeapFree(pThis->pszLocation);
 
-    RTFileClose(pThis->hOutputFile);
-    pThis->hOutputFile = NIL_RTFILE;
+    if (pThis->hOutputFile != NIL_RTFILE)
+    {
+        RTFileClose(pThis->hOutputFile);
+        pThis->hOutputFile = NIL_RTFILE;
+    }
 }
 
 

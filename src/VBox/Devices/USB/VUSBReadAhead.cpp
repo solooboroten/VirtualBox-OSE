@@ -1,10 +1,10 @@
-/* $Id: VUSBReadAhead.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: VUSBReadAhead.cpp $ */
 /** @file
  * Virtual USB - Read-ahead buffering for periodic endpoints.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -368,10 +368,11 @@ void vusbReadAheadStart(PVUSBDEV pDev, PVUSBPIPE pPipe)
 
     if (pArgs)
     {
+        PVUSBROOTHUB pRh = vusbDevGetRh(pDev);
         pArgs->pDev  = pDev;
         pArgs->pPipe = pPipe;
         pArgs->fTerminate = false;
-        pArgs->fHighSpeed = ((vusbDevGetRh(pDev)->fHcVersions & VUSB_STDVER_20) != 0);
+        pArgs->fHighSpeed = pRh && ((pRh->fHcVersions & VUSB_STDVER_20) != 0);
         if (pArgs->fHighSpeed)
             rc = RTThreadCreate(&pPipe->ReadAheadThread, vusbDevReadAheadThread, pArgs, 0, RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE, "USBISOC");
         else

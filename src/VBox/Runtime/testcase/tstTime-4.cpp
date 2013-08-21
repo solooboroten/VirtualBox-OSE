@@ -1,10 +1,10 @@
-/* $Id: tstTime-4.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstTime-4.cpp $ */
 /** @file
  * IPRT Testcase - Simple RTTime vs. RTTimeSystem test.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -64,11 +64,12 @@ int main()
             cErrors++;
             RTPrintf("tstTime-4: Bad Gip time!\n");
         }
-        int64_t Delta = GipPrevTS - SysPrevTS;
-        if (Delta > 0 ? Delta > 100000000 /* 100 ms */ : Delta < -100000000 /* -100 ms */)
+        uint64_t Delta = GipPrevTS > SysPrevTS ? GipPrevTS - SysPrevTS :
+                                                 SysPrevTS - GipPrevTS;
+        if (Delta > 100000000ULL /* 100 ms */ )
         {
             cErrors++;
-            RTPrintf("tstTime-4: Delta=%lld!\n", Delta);
+            RTPrintf("tstTime-4: Delta=%llu (GipPrevTS=%llu, SysPrevTS=%llu)!\n", Delta, GipPrevTS, SysPrevTS);
         }
 
     } while (SysPrevTS - SysStartTS < 2000000000 /* 2s */);

@@ -1,10 +1,10 @@
-/* $Id: RTMpCpuIdToSetIndex-generic.cpp 36232 2011-03-09 16:41:09Z vboxsync $ */
+/* $Id: RTMpCpuIdToSetIndex-generic.cpp $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpCpuIdToSetIndex.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

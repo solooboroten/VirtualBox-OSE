@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010-2011 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -66,43 +66,6 @@ private:
 };
 
 /**
- *  Frame buffer repaint event.
- */
-class UIRepaintEvent : public QEvent
-{
-public:
-
-    UIRepaintEvent(int iX, int iY, int iW, int iH)
-        : QEvent((QEvent::Type)RepaintEventType)
-        , m_iX(iX), m_iY(iY), m_iW(iW), m_iH(iH) {}
-    int x() { return m_iX; }
-    int y() { return m_iY; }
-    int width() { return m_iW; }
-    int height() { return m_iH; }
-
-private:
-
-    int m_iX, m_iY, m_iW, m_iH;
-};
-
-/**
- *  Frame buffer set region event.
- */
-class UISetRegionEvent : public QEvent
-{
-public:
-
-    UISetRegionEvent(const QRegion &region)
-        : QEvent((QEvent::Type)SetRegionEventType)
-        , m_region(region) {}
-    QRegion region() { return m_region; }
-
-private:
-
-    QRegion m_region;
-};
-
-/**
  *  Common IFramebuffer implementation for all methods used by GUI to maintain
  *  the VM display video memory.
  *
@@ -123,18 +86,30 @@ private:
  *
  *  See IFramebuffer documentation for more info.
  */
-class UIFrameBuffer : VBOX_SCRIPTABLE_IMPL(IFramebuffer)
+class UIFrameBuffer : public QObject, VBOX_SCRIPTABLE_IMPL(IFramebuffer)
 {
+    Q_OBJECT;
+
+signals:
+
+    /* Notifiers: EMT<->GUI interthread stuff: */
+    void sigRequestResize(int iPixelFormat, uchar *pVRAM,
+                          int iBitsPerPixel, int iBytesPerLine,
+                          int iWidth, int iHeight);
+    void sigNotifyUpdate(int iX, int iY, int iWidth, int iHeight);
+    void sigSetVisibleRegion(QRegion region);
+    void sigNotifyAbout3DOverlayVisibilityChange(bool fVisible);
+
 public:
 
     UIFrameBuffer(UIMachineView *aView);
     virtual ~UIFrameBuffer();
 
-    void setDeleted(bool fIsDeleted) { m_fIsDeleted = fIsDeleted; }
+    void setScheduledToDelete(bool fIsScheduledToDelete) { m_fIsScheduledToDelete = fIsScheduledToDelete; }
 
     NS_DECL_ISUPPORTS
 
-#if defined (Q_OS_WIN32)
+#ifdef Q_OS_WIN
     STDMETHOD_(ULONG, AddRef)()
     {
         return ::InterlockedIncrement(&m_iRefCnt);
@@ -147,7 +122,7 @@ public:
             delete this;
         return cnt;
     }
-#endif
+#endif /* Q_OS_WIN */
 
     VBOX_SCRIPTABLE_DISPATCH_IMPL(IFramebuffer)
 
@@ -171,6 +146,8 @@ public:
                               ULONG uWidth, ULONG uHeight,
                               BOOL *pbFinished);
 
+    STDMETHOD(NotifyUpdate) (ULONG uX, ULONG uY, ULONG uWidth, ULONG uHeight);
+
     STDMETHOD(VideoModeSupported) (ULONG uWidth, ULONG uHeight, ULONG uBPP,
                                    BOOL *pbSupported);
 
@@ -178,6 +155,8 @@ public:
     STDMETHOD(SetVisibleRegion)(BYTE *pRectangles, ULONG uCount);
 
     STDMETHOD(ProcessVHWACommand)(BYTE *pCommand);
+
+    STDMETHOD(Notify3DEvent)(ULONG uType, BYTE *pData);
 
     ulong width() { return m_width; }
     ulong height() { return m_height; }
@@ -207,27 +186,11 @@ public:
     virtual ulong bitsPerPixel() = 0;
     virtual ulong bytesPerLine() = 0;
 
-    /**
-     *  Called on the GUI thread (from VBoxConsoleView) when some part of the
-     *  VM display viewport needs to be repainted on the host screen.
-     */
+    /* API: Event-delegate stuff: */
+    virtual void moveEvent(QMoveEvent* /*pEvent*/) {}
+    virtual void resizeEvent(UIResizeEvent *pEvent) = 0;
     virtual void paintEvent(QPaintEvent *pEvent) = 0;
-
-    /**
-     *  Called on the GUI thread (from VBoxConsoleView) after it gets a
-     *  UIResizeEvent posted from the RequestResize() method implementation.
-     */
-    virtual void resizeEvent(UIResizeEvent *pEvent)
-    {
-        m_width = pEvent->width();
-        m_height = pEvent->height();
-    }
-
-    /**
-     *  Called on the GUI thread (from VBoxConsoleView) when the VM console
-     *  window is moved.
-     */
-    virtual void moveEvent(QMoveEvent * /* pEvent */) {}
+    virtual void applyVisibleRegion(const QRegion &region);
 
 #ifdef VBOX_WITH_VIDEOHWACCEL
     /* this method is called from the GUI thread
@@ -238,7 +201,7 @@ public:
     virtual void viewportResized(QResizeEvent * /* pEvent */) {}
 
     virtual void viewportScrolled(int /* iX */, int /* iY */) {}
-#endif
+#endif /* VBOX_WITH_VIDEOHWACCEL */
 
     virtual void setView(UIMachineView * pView);
 
@@ -250,13 +213,30 @@ protected:
     ulong m_height;
     QSize m_scaledSize;
     int64_t m_WinId;
-    bool m_fIsDeleted;
+    bool m_fIsScheduledToDelete;
 
-#if defined (Q_OS_WIN32)
+    /* To avoid a seamless flicker,
+     * which caused by the latency between the
+     * initial visible-region arriving from EMT thread
+     * and actual visible-region application on GUI thread
+     * it was decided to use two visible-region instances:
+     * 1. 'Sync-one' which being updated synchronously by locking EMT thread,
+     *               and used for immediate manual clipping of the painting operations.
+     * 2. 'Async-one' which updated asynchronously by posting async-event from EMT to GUI thread,
+                      which is used to update viewport parts for visible-region changes,
+                      because NotifyUpdate doesn't take into account these changes. */
+    QRegion m_syncVisibleRegion;
+    QRegion m_asyncVisibleRegion;
+
 private:
 
+    /* Helpers: Prepare/cleanup stuff: */
+    void prepareConnections();
+    void cleanupConnections();
+
+#ifdef Q_OS_WIN
     long m_iRefCnt;
-#endif
+#endif /* Q_OS_WIN */
 };
 
 #endif // !___UIFrameBuffer_h___

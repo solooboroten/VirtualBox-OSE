@@ -1,4 +1,4 @@
-/* $Id: iokit.cpp 41774 2012-06-16 14:44:06Z vboxsync $ */
+/* $Id: iokit.cpp $ */
 /** @file
  * Main - Darwin IOKit Routines.
  *
@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -373,7 +373,7 @@ static void darwinDumpDictCallback(const void *pvKey, const void *pvValue, void 
             double rd;
             CFIndex iCF;
         } u;
-        memset(&u, 0, sizeof(u));
+        RT_ZERO(u);
         CFNumberType NumType = CFNumberGetType((CFNumberRef)pvValue);
         if (CFNumberGetValue((CFNumberRef)pvValue, NumType, &u))
         {

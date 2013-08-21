@@ -27,8 +27,21 @@
 #include "cr_spu.h"
 #include "cr_hash.h"
 #include "cr_server.h"
+#include "cr_blitter.h"
 
 #include <iprt/cdefs.h>
+#include <iprt/critsect.h>
+#if defined(GLX) /* @todo: unify windows and glx thread creation code */
+#include <iprt/thread.h>
+#include <iprt/semaphore.h>
+
+/* special window id used for representing the command window CRWindowInfo */
+#define CR_RENDER_WINCMD_ID (INT32_MAX-2)
+AssertCompile(CR_RENDER_WINCMD_ID != CR_RENDER_DEFAULT_WINDOW_ID);
+/* CRHashTable is using unsigned long keys, we use it to trore X Window -> CRWindowInfo association */
+AssertCompile(sizeof (Window) == sizeof (unsigned long));
+#endif
+
 
 #define MAX_VISUALS 32
 
@@ -76,19 +89,32 @@ typedef struct {
 /**
  * Window info
  */
-typedef struct {
+typedef struct WindowInfo {
     int x, y;
-    int width, height;
-    int id; /**< integer window ID */
+//    int width, height;
+//    int id; /**< integer window ID */
+    CR_BLITTER_WINDOW BltInfo;
+
     VisualInfo *visual;
     GLboolean mapPending;
     GLboolean visible;
     GLboolean everCurrent; /**< has this window ever been bound? */
+    GLboolean fCompositorPresentEmpty;
     char *title;
+
+    PVBOXVR_SCR_COMPOSITOR pCompositor;
+    /* the composotor lock is used to synchronize the current compositor access,
+     * i.e. the compositor can be accessed by a gui refraw thread,
+     * while chromium thread might try to set a new compositor
+     * note that the compositor internally has its own lock to be used for accessing its data
+     * see CrVrScrCompositorLock/Unlock; renderspu and crserverlib would use it for compositor data access */
+    RTCRITSECT CompositorLock;
+    PCR_BLITTER pBlitter;
 #if defined(WINDOWS)
     HDC nativeWindow; /**< for render_to_app_window */
     HWND hWnd;
     HDC device_context;
+    HDC redraw_device_context;
     HRGN hRgn;
 #elif defined(DARWIN)
 # ifndef VBOX_WITH_COCOA_QT
@@ -124,7 +150,8 @@ typedef struct {
  * Context Info
  */
 typedef struct _ContextInfo {
-    int id; /**< integer context ID */
+//    int id; /**< integer context ID */
+    CR_BLITTER_CONTEXT BltInfo;
     VisualInfo *visual;
     GLboolean everCurrent;
     GLboolean haveWindowPosARB;
@@ -142,6 +169,7 @@ typedef struct _ContextInfo {
 #endif
     struct _ContextInfo *shared;
     char *extensionString;
+    volatile uint32_t cRefs;
 } ContextInfo;
 
 /**
@@ -152,15 +180,41 @@ typedef struct {
     GLuint count;
 } Barrier;
 
+#ifdef GLX
+typedef enum
+{
+	CR_RENDER_WINCMD_TYPE_UNDEFINED = 0,
+	/* create the window (not used for now) */
+	CR_RENDER_WINCMD_TYPE_WIN_CREATE,
+	/* destroy the window (not used for now) */
+	CR_RENDER_WINCMD_TYPE_WIN_DESTROY,
+        /* notify the WinCmd thread about window creation */
+        CR_RENDER_WINCMD_TYPE_WIN_ON_CREATE,
+        /* notify the WinCmd thread about window destroy */
+        CR_RENDER_WINCMD_TYPE_WIN_ON_DESTROY,
+        /* nop used to synchronize with the WinCmd thread */
+        CR_RENDER_WINCMD_TYPE_NOP,
+	/* exit Win Cmd thread */
+	CR_RENDER_WINCMD_TYPE_EXIT,
+} CR_RENDER_WINCMD_TYPE;
+
+typedef struct CR_RENDER_WINCMD
+{
+    /* command type */
+	CR_RENDER_WINCMD_TYPE enmCmd;
+	/* command result */
+	int rc;
+	/* valid for WIN_CREATE & WIN_DESTROY only */
+	WindowInfo *pWindow;
+} CR_RENDER_WINCMD, *PCR_RENDER_WINCMD;
+#endif
+
 /**
  * Renderspu state info
  */
 typedef struct {
     SPUDispatchTable self;
     int id;
-
-    unsigned int window_id;
-    unsigned int context_id;
 
     /** config options */
     /*@{*/
@@ -217,6 +271,9 @@ typedef struct {
     char *swap_master_url;
     CRConnection **swap_conns;
 
+    SPUDispatchTable *blitterDispatch;
+    CRHashTable *blitterTable;
+
 #ifdef USE_OSMESA
     /** Off screen rendering hooks.  */
     int use_osmesa;
@@ -228,6 +285,18 @@ typedef struct {
                      GLsizei width,
                      GLsizei height );
     void (*OSMesaDestroyContext)( OSMesaContext ctx );
+#endif
+
+#if defined(GLX)
+    RTTHREAD hWinCmdThread;
+    VisualInfo WinCmdVisual;
+    WindowInfo WinCmdWindow;
+    RTSEMEVENT hWinCmdCompleteEvent;
+    /* display connection used to send data to the WinCmd thread */
+    Display *pCommunicationDisplay;
+    Atom WinCmdAtom;
+    /* X Window -> CRWindowInfo table */
+    CRHashTable *pWinToInfoTable;
 #endif
 
 #ifdef RT_OS_WINDOWS
@@ -247,8 +316,6 @@ typedef struct {
     bool fInit;
 # endif
 #endif /* RT_OS_DARWIN */
-
-    int force_hidden_wdn_create;
 } RenderSPU;
 
 #ifdef RT_OS_WINDOWS
@@ -279,10 +346,21 @@ extern uint64_t render_spu_parent_window_id;
 
 #ifdef CHROMIUM_THREADSAFE
 extern CRtsd _RenderTSD;
-#define GET_CONTEXT(T)  ContextInfo *T = (ContextInfo *) crGetTSD(&_RenderTSD)
+#define GET_CONTEXT_VAL() ((ContextInfo *) crGetTSD(&_RenderTSD))
+#define SET_CONTEXT_VAL(_v) do { \
+        crSetTSD(&_RenderTSD, (_v)); \
+    } while (0)
 #else
-#define GET_CONTEXT(T)  ContextInfo *T = render_spu.currentContext
+#define GET_CONTEXT_VAL() (render_spu.currentContext)
+#define SET_CONTEXT_VAL(_v) do { \
+        render_spu.currentContext = (_v); \
+    } while (0)
+
 #endif
+
+#define GET_CONTEXT(T)  ContextInfo *T = GET_CONTEXT_VAL()
+
+
 
 extern void renderspuSetVBoxConfiguration( RenderSPU *spu );
 extern void renderspuMakeVisString( GLbitfield visAttribs, char *s );
@@ -297,26 +375,39 @@ extern void renderspu_SystemWindowSize( WindowInfo *window, GLint w, GLint h );
 extern void renderspu_SystemGetWindowGeometry( WindowInfo *window, GLint *x, GLint *y, GLint *w, GLint *h );
 extern void renderspu_SystemGetMaxWindowSize( WindowInfo *window, GLint *w, GLint *h );
 extern void renderspu_SystemWindowPosition( WindowInfo *window, GLint x, GLint y );
-extern void renderspu_SystemWindowVisibleRegion(WindowInfo *window, GLint cRects, GLint* pRects);
-extern void renderspu_SystemWindowApplyVisibleRegion(WindowInfo *window);
-#ifdef RT_OS_DARWIN
-extern void renderspu_SystemSetRootVisibleRegion(GLint cRects, GLint *pRects);
-# ifdef VBOX_WITH_COCOA_QT
-extern void renderspu_SystemFlush();
-extern void renderspu_SystemFinish();
-extern void renderspu_SystemBindFramebufferEXT(GLenum target, GLuint framebuffer);
-extern void renderspu_SystemCopyPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum type);
-extern void renderspu_SystemGetIntegerv(GLenum pname, GLint *params);
-extern void renderspu_SystemReadBuffer(GLenum mode);
-extern void renderspu_SystemDrawBuffer(GLenum mode);
-# endif
+extern void renderspu_SystemWindowVisibleRegion(WindowInfo *window, GLint cRects, const GLint* pRects);
+
+#ifdef GLX
+extern int renderspu_SystemInit();
+extern int renderspu_SystemTerm();
 #endif
 extern void renderspu_SystemShowWindow( WindowInfo *window, GLboolean showIt );
 extern void renderspu_SystemMakeCurrent( WindowInfo *window, GLint windowInfor, ContextInfo *context );
 extern void renderspu_SystemSwapBuffers( WindowInfo *window, GLint flags );
 extern void renderspu_SystemReparentWindow(WindowInfo *window);
+extern void renderspu_SystemVBoxPresentComposition( WindowInfo *window, struct VBOXVR_SCR_COMPOSITOR_ENTRY *pChangedEntry );
 extern void renderspu_GCWindow(void);
 extern int renderspuCreateFunctions( SPUNamedFunctionTable table[] );
+extern void renderspuVBoxCompositorSet( WindowInfo *window, struct VBOXVR_SCR_COMPOSITOR * pCompositor);
+extern void renderspuVBoxCompositorClearAll();
+extern int renderspuVBoxCompositorLock(WindowInfo *window);
+extern int renderspuVBoxCompositorUnlock(WindowInfo *window);
+extern struct VBOXVR_SCR_COMPOSITOR * renderspuVBoxCompositorAcquire( WindowInfo *window);
+extern int renderspuVBoxCompositorTryAcquire(WindowInfo *window, struct VBOXVR_SCR_COMPOSITOR **ppCompositor);
+extern void renderspuVBoxCompositorRelease( WindowInfo *window);
+extern void renderspuVBoxPresentCompositionGeneric( WindowInfo *window, struct VBOXVR_SCR_COMPOSITOR * pCompositor, struct VBOXVR_SCR_COMPOSITOR_ENTRY *pChangedEntry, int32_t i32MakeCurrentUserData );
+extern PCR_BLITTER renderspuVBoxPresentBlitterGet( WindowInfo *window );
+void renderspuVBoxPresentBlitterCleanup( WindowInfo *window );
+extern int renderspuVBoxPresentBlitterEnter( PCR_BLITTER pBlitter, int32_t i32MakeCurrentUserData );
+extern PCR_BLITTER renderspuVBoxPresentBlitterGetAndEnter( WindowInfo *window, int32_t i32MakeCurrentUserData );
+extern PCR_BLITTER renderspuVBoxPresentBlitterEnsureCreated( WindowInfo *window, int32_t i32MakeCurrentUserData );
+extern void renderspuWindowTerm( WindowInfo *window );
+extern GLboolean renderspuWindowInit( WindowInfo *window, VisualInfo *visual, GLboolean showIt, GLint id );
+extern GLboolean renderspuInitVisual(VisualInfo *pVisInfo, const char *displayName, GLbitfield visAttribs);
+extern void renderspuVBoxCompositorBlit ( struct VBOXVR_SCR_COMPOSITOR * pCompositor, PCR_BLITTER pBlitter);
+extern void renderspuVBoxCompositorBlitStretched ( struct VBOXVR_SCR_COMPOSITOR * pCompositor, PCR_BLITTER pBlitter, GLfloat scaleX, GLfloat scaleY);
+extern GLint renderspuCreateContextEx(const char *dpyName, GLint visBits, GLint id, GLint shareCtx);
+extern GLint renderspuWindowCreateEx( const char *dpyName, GLint visBits, GLint id );
 
 extern GLint RENDER_APIENTRY renderspuWindowCreate( const char *dpyName, GLint visBits );
 void RENDER_APIENTRY renderspuWindowDestroy( GLint win );
@@ -324,11 +415,12 @@ extern GLint RENDER_APIENTRY renderspuCreateContext( const char *dpyname, GLint 
 extern void RENDER_APIENTRY renderspuMakeCurrent(GLint crWindow, GLint nativeWindow, GLint ctx);
 extern void RENDER_APIENTRY renderspuSwapBuffers( GLint window, GLint flags );
 
+extern uint32_t renderspuContextMarkDeletedAndRelease( ContextInfo *context );
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 DECLEXPORT(void) renderspuSetWindowId(uint64_t winId);
-DECLEXPORT(void) renderspuSetRootVisibleRegion(GLint cRects, GLint *pRects);
 DECLEXPORT(void) renderspuReparentWindow(GLint window);
 #ifdef __cplusplus
 }

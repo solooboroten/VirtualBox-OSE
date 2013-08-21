@@ -5,7 +5,7 @@
         XSLT stylesheet that generates docbook from
         VirtualBox.xidl.
 
-    Copyright (C) 2006-2008 Oracle Corporation
+    Copyright (C) 2006-2012 Oracle Corporation
 
     This file is part of VirtualBox Open Source Edition (OSE), as
     available from http://www.virtualbox.org. This file is free software;
@@ -95,8 +95,8 @@
  - - - - - - - - - - - - - - - - - - - - - - -->
 
 <xsl:template match="/idl">
-  <chapter>
-    <title id="sdkref_classes">Classes (interfaces)</title>
+  <chapter id="sdkref_classes">
+    <title>Classes (interfaces)</title>
     <xsl:for-each select="//interface">
       <xsl:sort select="@name"/>
 
@@ -289,8 +289,8 @@
     </xsl:for-each>
   </chapter>
 
-  <chapter>
-    <title id="sdkref_enums">Enumerations (enums)</title>
+  <chapter id="sdkref_enums">
+    <title>Enumerations (enums)</title>
     <xsl:for-each select="//enum">
       <xsl:sort select="@name"/>
 

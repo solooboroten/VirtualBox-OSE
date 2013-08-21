@@ -1,4 +1,4 @@
-# $Id: Makefile 41354 2012-05-19 18:18:42Z vboxsync $
+# $Id: Makefile $
 ## @file
 # Makefile for the VirtualBox Linux Host Driver.
 #
@@ -94,6 +94,7 @@ OBJS   = \
 	r0drv/linux/spinlock-r0drv-linux.o \
 	r0drv/linux/thread-r0drv-linux.o \
 	r0drv/linux/thread2-r0drv-linux.o \
+	r0drv/linux/threadctxhooks-r0drv-linux.o \
 	r0drv/linux/time-r0drv-linux.o \
 	r0drv/linux/timer-r0drv-linux.o \
 	r0drv/generic/semspinmutex-r0drv-generic.o \
@@ -139,6 +140,7 @@ OBJS   = \
 	generic/RTLogWriteStdOut-stub-generic.o \
 	generic/RTLogWriteUser-generic.o \
 	generic/RTMpGetArraySize-generic.o \
+	generic/RTMpGetCoreCount-generic.o \
 	generic/RTSemEventWait-2-ex-generic.o \
 	generic/RTSemEventWaitNoResume-2-ex-generic.o \
 	generic/RTSemEventMultiWait-2-ex-generic.o \

@@ -1,10 +1,10 @@
-/* $Id: DevPcBios.h 40277 2012-02-28 14:10:07Z vboxsync $ */
+/* $Id: DevPcBios.h $ */
 /** @file
  * DevPcBios - PC BIOS Device, header shared with the BIOS code.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,13 +21,6 @@
 /** @def VBOX_DMI_TABLE_BASE */
 #define VBOX_DMI_TABLE_BASE         0xe1000
 #define VBOX_DMI_TABLE_VER          0x25
-
-/** define VBOX_DMI_TABLE_ENTR
- *
- * This is the number of DMI structures.
- */
-#define VBOX_DMI_TABLE_ENTR         9
-#define VBOX_DMI_TABLE_OFFSET       0xff40
 
 /** def VBOX_DMI_TABLE_SIZE
  *

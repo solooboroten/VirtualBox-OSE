@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -56,6 +56,7 @@ public:
                 const QStringList &aUsedMediaIds = QStringList());
 
     static void showModeless (QWidget *aParent = NULL, bool aRefresh = true);
+    static UIMediumManager* modelessInstance();
 
     QString selectedId() const;
     QString selectedLocation() const;
@@ -130,6 +131,9 @@ private:
     void prepareToRefresh (int aTotal = 0);
 
     QString formatPaneText (const QString &aText, bool aCompact = true, const QString &aElipsis = "middle");
+
+    /* Helper: Enumeration stuff: */
+    static bool isMediumAttachedToHiddenMachinesOnly(const UIMedium &medium);
 
     /* Private member vars */
     /* Window status */

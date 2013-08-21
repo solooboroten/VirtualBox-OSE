@@ -1,10 +1,10 @@
-/* $Id: PGMInline.h 41805 2012-06-17 17:29:20Z vboxsync $ */
+/* $Id: PGMInline.h $ */
 /** @file
  * PGM - Inlined functions.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -31,7 +31,7 @@
 #include <VBox/vmm/dbgf.h>
 #include <VBox/log.h>
 #include <VBox/vmm/gmm.h>
-#include <VBox/vmm/hwaccm.h>
+#include <VBox/vmm/hm.h>
 #include <iprt/asm.h>
 #include <iprt/assert.h>
 #include <iprt/avl.h>
@@ -1484,10 +1484,11 @@ DECL_FORCE_INLINE(bool) pgmMapAreMappingsEnabled(PVM pVM)
 {
 #ifdef PGM_WITHOUT_MAPPINGS
     /* There are no mappings in VT-x and AMD-V mode. */
-    Assert(pVM->pgm.s.fMappingsDisabled);
+    Assert(HMIsEnabled(pVM));
     return false;
 #else
-    return !pVM->pgm.s.fMappingsDisabled;
+    Assert(pVM->cCpus == 1 || HMIsEnabled(pVM));
+    return !HMIsEnabled(pVM);
 #endif
 }
 
@@ -1502,11 +1503,11 @@ DECL_FORCE_INLINE(bool) pgmMapAreMappingsFloating(PVM pVM)
 {
 #ifdef PGM_WITHOUT_MAPPINGS
     /* There are no mappings in VT-x and AMD-V mode. */
-    Assert(pVM->pgm.s.fMappingsDisabled);
+    Assert(HMIsEnabled(pVM));
     return false;
 #else
-    return !pVM->pgm.s.fMappingsDisabled
-        && !pVM->pgm.s.fMappingsFixed;
+    return !pVM->pgm.s.fMappingsFixed
+        && pgmMapAreMappingsEnabled(pVM);
 #endif
 }
 

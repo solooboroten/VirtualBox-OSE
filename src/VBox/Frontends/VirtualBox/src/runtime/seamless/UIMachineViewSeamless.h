@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,11 +26,6 @@ class UIMachineViewSeamless : public UIMachineView
 {
     Q_OBJECT;
 
-public:
-
-    /* Public getters: */
-    QRegion lastVisibleRegion() const { return m_lastVisibleRegion; }
-
 protected:
 
     /* Seamless machine-view constructor: */
@@ -45,24 +40,21 @@ protected:
 
 private slots:
 
-    /* Console callback handlers: */
-    void sltAdditionsStateChanged();
+    /* Handler: Frame-buffer SetVisibleRegion stuff: */
+    virtual void sltHandleSetVisibleRegion(QRegion region);
 
 private:
 
     /* Event handlers: */
-    bool event(QEvent *pEvent);
     bool eventFilter(QObject *pWatched, QEvent *pEvent);
 
     /* Prepare helpers: */
     void prepareCommon();
     void prepareFilters();
-    void prepareConsoleConnections();
     void prepareSeamless();
 
     /* Cleanup helpers: */
     void cleanupSeamless();
-    //void cleanupConsoleConnections() {}
     //void cleanupFilters() {}
     //void cleanupCommon() {}
 
@@ -70,10 +62,6 @@ private:
     void normalizeGeometry(bool /* fAdjustPosition */) {}
     QRect workingArea() const;
     QSize calculateMaxGuestSize() const;
-    void maybeRestrictMinimumSize() {}
-
-    /* Private variables: */
-    QRegion m_lastVisibleRegion;
 
     /* Friend classes: */
     friend class UIMachineView;

@@ -1,10 +1,10 @@
-/* $Id: internal-r0drv-nt.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: internal-r0drv-nt.h $ */
 /** @file
  * IPRT - Internal Header for the NT Ring-0 Driver Code.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,6 +40,7 @@ typedef VOID (__stdcall *PFNHALREQUESTIPI)(KAFFINITY TargetSet);
 typedef VOID (__stdcall *PFNHALSENDSOFTWAREINTERRUPT)(ULONG ProcessorNumber, KIRQL Irql);
 typedef int (__stdcall *PFNRTSENDIPI)(RTCPUID idCpu);
 typedef ULONG_PTR (__stdcall *PFNRTKEIPIGENERICCALL)(PKIPI_BROADCAST_WORKER BroadcastFunction, ULONG_PTR  Context);
+typedef ULONG (__stdcall *PFNRTRTLGETVERSION)(PRTL_OSVERSIONINFOEXW pVerInfo);
 
 /*******************************************************************************
 *   Global Variables                                                           *
@@ -51,6 +52,7 @@ extern PFNHALREQUESTIPI             g_pfnrtNtHalRequestIpi;
 extern PFNHALSENDSOFTWAREINTERRUPT  g_pfnrtNtHalSendSoftwareInterrupt;
 extern PFNRTSENDIPI                 g_pfnrtSendIpi;
 extern PFNRTKEIPIGENERICCALL        g_pfnrtKeIpiGenericCall;
+extern PFNRTRTLGETVERSION             g_pfnrtRtlGetVersion;
 extern uint32_t                     g_offrtNtPbQuantumEnd;
 extern uint32_t                     g_cbrtNtPbQuantumEnd;
 extern uint32_t                     g_offrtNtPbDpcQueueDepth;

@@ -1,11 +1,11 @@
-/* $Id: packspu_glsl.c 42528 2012-08-02 11:32:51Z vboxsync $ */
+/* $Id: packspu_glsl.c $ */
 
 /** @file
  * VBox OpenGL GLSL related functions
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -135,6 +135,8 @@ void PACK_APIENTRY packspu_DeleteObjectARB(GLhandleARB obj)
 
     CRASSERT(obj);
 
+    /* we do not track shader creation inside guest since it is not needed currently.
+     * this is why we only care about programs here */
     if (hwid)
     {
         crStateDeleteProgram(obj);

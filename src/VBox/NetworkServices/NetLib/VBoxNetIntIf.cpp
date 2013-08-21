@@ -1,10 +1,10 @@
-/* $Id: VBoxNetIntIf.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: VBoxNetIntIf.cpp $ */
 /** @file
  * VBoxNetIntIf - IntNet Interface Client Routines.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -3839,86 +3839,86 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="126"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="126"/>
         <source>Left </source>
         <translation>左</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="132"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="132"/>
         <source>Right </source>
         <translation>右</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="247"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="247"/>
         <source>Left Shift</source>
         <translation>左 Shift</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="248"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="248"/>
         <source>Right Shift</source>
         <translation>右 Shift</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="249"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="249"/>
         <source>Left Ctrl</source>
         <translation>左 Ctrl</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="250"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="250"/>
         <source>Right Ctrl</source>
         <translation>右 Ctrl</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="251"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="251"/>
         <source>Left Alt</source>
         <translation>左 Alt</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="252"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="252"/>
         <source>Right Alt</source>
         <translation>右 Alt</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="253"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="253"/>
         <source>Left WinKey</source>
         <translation>左 Windowsキー</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="254"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="254"/>
         <source>Right WinKey</source>
         <translation>右 Windowsキー</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="255"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="255"/>
         <source>Menu key</source>
         <translation>メニューキー</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="256"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="256"/>
         <source>Alt Gr</source>
         <translation>Alt Gr</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="257"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="257"/>
         <source>Caps Lock</source>
         <translation>Caps Lock</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="258"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="258"/>
         <source>Scroll Lock</source>
         <translation>Scroll Lock</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="275"/>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="616"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="275"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="616"/>
         <source>None</source>
         <translation>なし</translation>
     </message>
     <message>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="100"/>
-        <location filename="../src/widgets/UIHotKeyEditor.cpp" line="114"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="100"/>
+        <location filename="../src/widgets/UIHostComboEditor.cpp" line="114"/>
         <source>&lt;key_%1&gt;</source>
         <translation>&lt;キー %1&gt;</translation>
     </message>
@@ -15048,24 +15048,24 @@ USB フィルターを追加または除去するにはコンテキストメニ�
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
-        <location filename="../src/widgets/VBoxMiniToolBar.cpp" line="72"/>
+        <location filename="../src/widgets/UIMiniToolBar.cpp" line="72"/>
         <source>Always show the toolbar</source>
         <translation>常にツールバーを表示する</translation>
     </message>
     <message>
-        <location filename="../src/widgets/VBoxMiniToolBar.cpp" line="99"/>
+        <location filename="../src/widgets/UIMiniToolBar.cpp" line="99"/>
         <source>Minimize Window</source>
         <translation>ウィンドウを最小化</translation>
     </message>
     <message>
-        <location filename="../src/widgets/VBoxMiniToolBar.cpp" line="106"/>
+        <location filename="../src/widgets/UIMiniToolBar.cpp" line="106"/>
         <source>Exit Full Screen or Seamless Mode</source>
         <translation>フルスクリーンモードまたはシームレスモードを終了する</translation>
     </message>
     <message>
-        <location filename="../src/widgets/VBoxMiniToolBar.cpp" line="113"/>
+        <location filename="../src/widgets/UIMiniToolBar.cpp" line="113"/>
         <source>Close VM</source>
         <translation>仮想マシンを閉じる</translation>
     </message>

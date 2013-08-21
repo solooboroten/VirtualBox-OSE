@@ -1,10 +1,10 @@
-/* $Id: DevFwCommon.cpp 40277 2012-02-28 14:10:07Z vboxsync $ */
+/* $Id: DevFwCommon.cpp $ */
 /** @file
  * FwCommon - Shared firmware code (used by DevPcBios & DevEFI).
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -33,6 +33,7 @@
 #include <iprt/string.h>
 #include <iprt/uuid.h>
 #include <iprt/system.h>
+#include <iprt/cdefs.h>
 
 #include "VBoxDD.h"
 #include "VBoxDD2.h"
@@ -73,6 +74,7 @@ static const char   *s_szDefDmiBoardLocInChass  = "";
 static const int32_t s_iDefDmiBoardBoardType    = 0x0A; /* Motherboard */
 /* type 3 -- DMI chassis information */
 static const char   *s_szDefDmiChassisVendor    = "Oracle Corporation";
+static const int32_t s_iDefDmiChassisType       = 0x01; /* ''other'', no chassis lock present */
 static const char   *s_szDefDmiChassisVersion   = "";
 static const char   *s_szDefDmiChassisSerial    = "";
 static const char   *s_szDefDmiChassisAssetTag  = "";
@@ -238,6 +240,14 @@ typedef struct DMIOEMSTRINGS
     uint8_t         u8VBoxRevision;
 } *PDMIOEMSTRINGS;
 AssertCompileSize(DMIOEMSTRINGS, 0x7);
+
+/** DMI OEM-specific table (Type 128) */
+typedef struct DMIOEMSPECIFIC
+{
+    DMIHDR          header;
+    uint32_t        u32CpuFreqKHz;
+} *PDMIOEMSPECIFIC;
+AssertCompileSize(DMIOEMSPECIFIC, 0x8);
 
 /** Physical memory array (Type 16) */
 typedef struct DMIRAMARRAY
@@ -415,8 +425,11 @@ static void fwCommonUseHostDMIStrings(void)
  * @param   pUuid               Pointer to the UUID to use if the DmiUuid
  *                              configuration string isn't present.
  * @param   pCfg                The handle to our config node.
+ * @param   cCpus               Number of VCPUs.
+ * @param   pcbDmiTables        Size of DMI data in bytes.
+ * @param   pcNumDmiTables      Number of DMI tables.
  */
-int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, PCRTUUID pUuid, PCFGMNODE pCfg, uint16_t cCpus, uint16_t *pcbDmiTables)
+int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, PCRTUUID pUuid, PCFGMNODE pCfg, uint16_t cCpus, uint16_t *pcbDmiTables, uint16_t *pcNumDmiTables)
 {
 #define CHECKSIZE(cbWant) \
     { \
@@ -630,7 +643,6 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         PDMISYSTEMINF pSystemInf     = (PDMISYSTEMINF)pszStr;
         CHECKSIZE(sizeof(*pSystemInf));
         START_STRUCT(pSystemInf);
-        iStrNr                       = 1;
         pSystemInf->header.u8Type    = 1; /* System Information */
         pSystemInf->header.u8Length  = sizeof(*pSystemInf);
         pSystemInf->header.u16Handle = 0x0001;
@@ -670,8 +682,7 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
          **********************************/
         PDMIBOARDINF pBoardInf       = (PDMIBOARDINF)pszStr;
         CHECKSIZE(sizeof(*pBoardInf));
-        pszStr                       = (char *)(pBoardInf + 1);
-        iStrNr                       = 1;
+        START_STRUCT(pBoardInf);
         int iDmiBoardBoardType;
         pBoardInf->header.u8Type     = 2; /* Board Information */
         pBoardInf->header.u8Length   = sizeof(*pBoardInf);
@@ -706,7 +717,9 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         pChassis->header.u8Length    = RT_OFFSETOF(DMICHASSIS, u32OEMdefined);
         pChassis->header.u16Handle   = 0x0003;
         READCFGSTR(pChassis->u8Manufacturer, DmiChassisVendor);
-        pChassis->u8Type             = 0x01; /* ''other'', no chassis lock present */
+        int iDmiChassisType;
+        READCFGINT(iDmiChassisType, DmiChassisType);
+        pChassis->u8Type             = iDmiChassisType;
         READCFGSTR(pChassis->u8Version, DmiChassisVersion);
         READCFGSTR(pChassis->u8SerialNumber, DmiChassisSerial);
         READCFGSTR(pChassis->u8AssetTag, DmiChassisAssetTag);
@@ -736,7 +749,6 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         PDMIPROCESSORINF pProcessorInf = (PDMIPROCESSORINF)pszStr;
         CHECKSIZE(sizeof(*pProcessorInf));
         START_STRUCT(pProcessorInf);
-        iStrNr                             = 1;
         if (fDmiExposeProcessorInf)
             pProcessorInf->header.u8Type   = 4; /* Processor Information */
         else
@@ -774,9 +786,9 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
                                            | RT_BIT(0)  /* CPU enabled */
                                            ;
         pProcessorInf->u8ProcessorUpgrade  = 0x04;   /* ZIF Socket */
-        pProcessorInf->u16L1CacheHandle    = 0x001C;
-        pProcessorInf->u16L2CacheHandle    = 0x001D;
-        pProcessorInf->u16L3CacheHandle    = 0xFFFF; /* unknown */
+        pProcessorInf->u16L1CacheHandle    = 0xFFFF; /* not specified */
+        pProcessorInf->u16L2CacheHandle    = 0xFFFF; /* not specified */
+        pProcessorInf->u16L3CacheHandle    = 0xFFFF; /* not specified */
         pProcessorInf->u8SerialNumber      = 0;      /* not specified */
         pProcessorInf->u8AssetTag          = 0;      /* not specified */
         pProcessorInf->u8PartNumber        = 0;      /* not specified */
@@ -854,7 +866,6 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         PDMIOEMSTRINGS pOEMStrings    = (PDMIOEMSTRINGS)pszStr;
         CHECKSIZE(sizeof(*pOEMStrings));
         START_STRUCT(pOEMStrings);
-        iStrNr                        = 1;
 #ifdef VBOX_WITH_DMI_OEMSTRINGS
         pOEMStrings->header.u8Type    = 0xb; /* OEM Strings */
 #else
@@ -872,6 +883,18 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         READCFGSTRDEF(pOEMStrings->u8VBoxRevision, "DmiOEMVBoxRev", szTmp);
         TERM_STRUCT;
 
+        /*************************************
+         * DMI OEM specific table (Type 128) *
+         ************************************/
+        PDMIOEMSPECIFIC pOEMSpecific = (PDMIOEMSPECIFIC)pszStr;
+        CHECKSIZE(sizeof(*pOEMSpecific));
+        START_STRUCT(pOEMSpecific);
+        pOEMSpecific->header.u8Type    = 0x80; /* OEM specific */
+        pOEMSpecific->header.u8Length  = sizeof(*pOEMSpecific);
+        pOEMSpecific->header.u16Handle = 0x0008; /* Just next free handle */
+        pOEMSpecific->u32CpuFreqKHz    = RT_H2LE_U32((uint32_t)((uint64_t)TMCpuTicksPerSecond(PDMDevHlpGetVM(pDevIns)) / 1000));
+        TERM_STRUCT;
+
         /* End-of-table marker - includes padding to account for fixed table size. */
         PDMIHDR pEndOfTable          = (PDMIHDR)pszStr;
         pszStr                       = (char *)(pEndOfTable + 1);
@@ -880,6 +903,9 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
         pEndOfTable->u8Length        = sizeof(*pEndOfTable);
         pEndOfTable->u16Handle       = 0xFEFF;
         *pcbDmiTables = ((uintptr_t)pszStr - (uintptr_t)pTable) + 2;
+
+        /* We currently plant 10 DMI tables. Update this if tables number changed. */
+        *pcNumDmiTables = 10;
 
         /* If more fields are added here, fix the size check in READCFGSTR */
 
@@ -899,13 +925,14 @@ int FwCommonPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbMax, P
  *
  * @param   pDevIns    The device instance data.
  */
-void FwCommonPlantSmbiosAndDmiHdrs(PPDMDEVINS pDevIns)
+void FwCommonPlantSmbiosAndDmiHdrs(PPDMDEVINS pDevIns, uint16_t cbDmiTables, uint16_t cNumDmiTables)
 {
     struct
     {
         struct SMBIOSHDR     smbios;
         struct DMIMAINHDR    dmi;
-    } aBiosHeaders =
+    }
+    aBiosHeaders =
     {
         // The SMBIOS header
         {
@@ -922,19 +949,20 @@ void FwCommonPlantSmbiosAndDmiHdrs(PPDMDEVINS pDevIns)
         {
             { 0x5f, 0x44, 0x4d, 0x49, 0x5f },  // "_DMI_" signature
             0x00,                              // checksum
-            VBOX_DMI_TABLE_SIZE,               // DMI tables length
+            0,                                 // DMI tables length
             VBOX_DMI_TABLE_BASE,               // DMI tables base
-            VBOX_DMI_TABLE_ENTR,               // DMI tables entries
+            0,                                 // DMI tables entries
             VBOX_DMI_TABLE_VER,                // DMI version
         }
     };
 
-    aBiosHeaders.smbios.u8Checksum = fwCommonChecksum((uint8_t*)&aBiosHeaders.smbios, sizeof(aBiosHeaders.smbios));
-    aBiosHeaders.dmi.u8Checksum    = fwCommonChecksum((uint8_t*)&aBiosHeaders.dmi,    sizeof(aBiosHeaders.dmi));
+    aBiosHeaders.dmi.u16TablesLength = cbDmiTables;
+    aBiosHeaders.dmi.u16TableEntries = cNumDmiTables;
+    aBiosHeaders.smbios.u8Checksum   = fwCommonChecksum((uint8_t*)&aBiosHeaders.smbios, sizeof(aBiosHeaders.smbios));
+    aBiosHeaders.dmi.u8Checksum      = fwCommonChecksum((uint8_t*)&aBiosHeaders.dmi,    sizeof(aBiosHeaders.dmi));
 
     PDMDevHlpPhysWrite(pDevIns, 0xfe300, &aBiosHeaders, sizeof(aBiosHeaders));
 }
-AssertCompile(VBOX_DMI_TABLE_ENTR == 9);
 
 /**
  * Construct the MPS table for implanting as a ROM page.

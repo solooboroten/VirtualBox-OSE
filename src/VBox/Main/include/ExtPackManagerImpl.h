@@ -1,10 +1,10 @@
-/* $Id: ExtPackManagerImpl.h 39878 2012-01-25 16:30:07Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.h $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,6 +22,7 @@
 #include <VBox/ExtPack/ExtPack.h>
 #include <iprt/fs.h>
 
+#if !defined(VBOX_COM_INPROC)
 /**
  * An extension pack file.
  */
@@ -84,6 +85,7 @@ private:
 
     friend class ExtPackManager;
 };
+#endif
 
 
 /**
@@ -214,10 +216,12 @@ class ATL_NO_VTABLE ExtPackManager :
 
     /** @name Internal interfaces used by other Main classes.
      * @{ */
+#if !defined(VBOX_COM_INPROC)
     static DECLCALLBACK(int) doInstallThreadProc(RTTHREAD hThread, void *pvJob);
     HRESULT     doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, Utf8Str const *a_pstrDisplayInfo);
     static DECLCALLBACK(int) doUninstallThreadProc(RTTHREAD hThread, void *pvJob);
     HRESULT     doUninstall(const Utf8Str *a_pstrName, bool a_fForcedRemoval, const Utf8Str *a_pstrDisplayInfo);
+#endif
     void        callAllVirtualBoxReadyHooks(void);
     void        callAllConsoleReadyHooks(IConsole *a_pConsole);
     void        callAllVmCreatedHooks(IMachine *a_pMachine);

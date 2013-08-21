@@ -1,10 +1,10 @@
-/* $Id: KeyboardImpl.h 35638 2011-01-19 19:10:49Z vboxsync $ */
+/* $Id: KeyboardImpl.h $ */
 /** @file
  * VirtualBox COM class implementation
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -85,8 +85,9 @@ public:
 
 private:
 
-    static DECLCALLBACK(void *) drvQueryInterface(PPDMIBASE pInterface, const char *pszIID);
+    static DECLCALLBACK(void)   keyboardLedStatusChange(PPDMIKEYBOARDCONNECTOR pInterface, PDMKEYBLEDS enmLeds);
     static DECLCALLBACK(void)   keyboardSetActive(PPDMIKEYBOARDCONNECTOR pInterface, bool fActive);
+    static DECLCALLBACK(void *) drvQueryInterface(PPDMIBASE pInterface, const char *pszIID);
     static DECLCALLBACK(int)    drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uint32_t fFlags);
     static DECLCALLBACK(void)   drvDestruct(PPDMDRVINS pDrvIns);
 

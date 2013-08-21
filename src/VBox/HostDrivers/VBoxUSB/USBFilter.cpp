@@ -1,10 +1,10 @@
-/* $Id: USBFilter.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: USBFilter.cpp $ */
 /** @file
  * VirtualBox USB filter abstraction.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

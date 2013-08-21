@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsGeneral.cpp 42261 2012-07-20 13:27:47Z vboxsync $ */
+/* $Id: UIMachineSettingsGeneral.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -28,8 +28,7 @@
 #include "UIConverter.h"
 
 UIMachineSettingsGeneral::UIMachineSettingsGeneral()
-    : mValidator(0)
-    , m_fHWVirtExEnabled(false)
+    : m_fHWVirtExEnabled(false)
 {
     /* Apply UI decorations */
     Ui::UIMachineSettingsGeneral::setupUi (this);
@@ -53,6 +52,9 @@ UIMachineSettingsGeneral::UIMachineSettingsGeneral()
     mTeDescription->setMinimumHeight (150);
 #endif /* Q_WS_MAC */
 
+    /* Prepare validation: */
+    prepareValidation();
+
     /* Applying language settings */
     retranslateUi();
 }
@@ -64,7 +66,15 @@ CGuestOSType UIMachineSettingsGeneral::guestOSType() const
 
 void UIMachineSettingsGeneral::setHWVirtExEnabled(bool fEnabled)
 {
+    /* Make sure hardware virtualization extension has changed: */
+    if (m_fHWVirtExEnabled == fEnabled)
+        return;
+
+    /* Update hardware virtualization extension value: */
     m_fHWVirtExEnabled = fEnabled;
+
+    /* Revalidate: */
+    revalidate();
 }
 
 bool UIMachineSettingsGeneral::is64BitOSTypeSelected() const
@@ -79,7 +89,7 @@ bool UIMachineSettingsGeneral::isWindowsOSTypeSelected() const
 }
 #endif /* VBOX_WITH_VIDEOHWACCEL */
 
-/* Load data to cashe from corresponding external object(s),
+/* Load data to cache from corresponding external object(s),
  * this task COULD be performed in other than GUI thread: */
 void UIMachineSettingsGeneral::loadToCacheFrom(QVariant &data)
 {
@@ -136,9 +146,8 @@ void UIMachineSettingsGeneral::getFromCache()
     /* Polish page finally: */
     polishPage();
 
-    /* Revalidate if possible: */
-    if (mValidator)
-        mValidator->revalidate();
+    /* Revalidate: */
+    revalidate();
 }
 
 /* Save data from corresponding widgets to cache,
@@ -191,8 +200,16 @@ void UIMachineSettingsGeneral::saveFromCacheTo(QVariant &data)
         }
         if (isMachineOffline())
         {
-            /* Basic tab: */
-            m_machine.SetOSTypeId(generalData.m_strGuestOsTypeId);
+            /* Basic tab: Must update long mode CPU feature bit when os type changes. */
+            if (generalData.m_strGuestOsTypeId != m_cache.base().m_strGuestOsTypeId)
+            {
+                m_machine.SetOSTypeId(generalData.m_strGuestOsTypeId);
+
+                CVirtualBox vbox = vboxGlobal().virtualBox();
+                CGuestOSType newType = vbox.GetGuestOSType(generalData.m_strGuestOsTypeId);
+                m_machine.SetCPUProperty(KCPUPropertyType_LongMode, newType.GetIs64Bit());
+            }
+
             /* Advanced tab: */
             m_machine.SetSnapshotFolder(generalData.m_strSnapshotsFolder);
             /* Basic (again) tab: */
@@ -206,18 +223,25 @@ void UIMachineSettingsGeneral::saveFromCacheTo(QVariant &data)
     UISettingsPageMachine::uploadData(data);
 }
 
-void UIMachineSettingsGeneral::setValidator (QIWidgetValidator *aVal)
+bool UIMachineSettingsGeneral::validate(QString &strWarning, QString&)
 {
-    mValidator = aVal;
-    connect (m_pNameAndSystemEditor, SIGNAL (sigOsTypeChanged()), mValidator, SLOT (revalidate()));
-}
+    /* VM name validation: */
+    if (m_pNameAndSystemEditor->name().trimmed().isEmpty())
+    {
+        strWarning = tr("No name specified for the virtual machine.");
+        return false;
+    }
 
-bool UIMachineSettingsGeneral::revalidate(QString &strWarning, QString& /* strTitle */)
-{
+    /* OS type & VT-x/AMD-v correlation: */
     if (is64BitOSTypeSelected() && !m_fHWVirtExEnabled)
-        strWarning = tr("you have selected a 64-bit guest OS type for this VM. As such guests "
-                        "require hardware virtualization (VT-x/AMD-V), this feature will be enabled "
-                        "automatically.");
+    {
+        strWarning = tr("The virtual machine operating system hint is set to a 64-bit type. "
+                        "64-bit guest systems require hardware virtualization, "
+                        "so this will be enabled automatically if you confirm the changes.");
+        return true;
+    }
+
+    /* Pass by default: */
     return true;
 }
 
@@ -261,6 +285,13 @@ void UIMachineSettingsGeneral::retranslateUi()
     mCbDragAndDrop->setItemText (1, gpConverter->toString (KDragAndDropMode_HostToGuest));
     mCbDragAndDrop->setItemText (2, gpConverter->toString (KDragAndDropMode_GuestToHost));
     mCbDragAndDrop->setItemText (3, gpConverter->toString (KDragAndDropMode_Bidirectional));
+}
+
+void UIMachineSettingsGeneral::prepareValidation()
+{
+    /* Prepare validation: */
+    connect(m_pNameAndSystemEditor, SIGNAL(sigOsTypeChanged()), this, SLOT(revalidate()));
+    connect(m_pNameAndSystemEditor, SIGNAL(sigNameChanged(const QString&)), this, SLOT(revalidate()));
 }
 
 void UIMachineSettingsGeneral::polishPage()

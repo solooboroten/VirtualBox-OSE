@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -654,6 +654,8 @@ RT_C_DECLS_END
 #define VERR_VERSION_MISMATCH               (-11)
 /** The request function is not implemented. */
 #define VERR_NOT_IMPLEMENTED                (-12)
+/** Invalid flags was given. */
+#define VERR_INVALID_FLAGS                  (-13)
 
 /** Not equal. */
 #define VERR_NOT_EQUAL                      (-18)
@@ -875,6 +877,12 @@ RT_C_DECLS_END
 #define VERR_UNEVEN_INPUT                   (-22402)
 /** Something is not available or not working properly. */
 #define VERR_NOT_AVAILABLE                  (-22403)
+/** The RTPROC_FLAGS_DETACHED flag isn't supported. */
+#define VERR_PROC_DETACH_NOT_SUPPORTED      (-22404)
+/** An account is restricted in a certain way. */
+#define VERR_ACCOUNT_RESTRICTED             (-22405)
+/** An account is restricted in a certain way. */
+#define VINF_ACCOUNT_RESTRICTED             22405
 /** @} */
 
 
@@ -976,6 +984,8 @@ RT_C_DECLS_END
 #define VERR_PATH_IS_RELATIVE               (-143)
 /** A path is not relative (start with root), expected an relative path. */
 #define VERR_PATH_IS_NOT_RELATIVE           (-144)
+/** Zero length path. */
+#define VERR_PATH_ZERO_LENGTH               (-145)
 /** @} */
 
 
@@ -1238,6 +1248,8 @@ RT_C_DECLS_END
 #define VERR_NET_HOST_UNREACHABLE               (-465)
 /** Protocol error. */
 #define VERR_NET_PROTOCOL_ERROR                 (-466)
+/** Incomplete packet was submitted by guest. */
+#define VERR_NET_INCOMPLETE_TX_PACKET           (-467)
 /** @} */
 
 
@@ -1471,6 +1483,36 @@ RT_C_DECLS_END
 #define VERR_DWARF_UNKNOWN_FORM                 (-677)
 /** Encountered an unexpected attribute form. */
 #define VERR_DWARF_UNEXPECTED_FORM              (-678)
+/** Unfinished code. */
+#define VERR_DWARF_TODO                         (-679)
+/** Unknown location opcode. */
+#define VERR_DWARF_UNKNOWN_LOC_OPCODE           (-680)
+/** Expression stack overflow. */
+#define VERR_DWARF_STACK_OVERFLOW               (-681)
+/** Expression stack underflow. */
+#define VERR_DWARF_STACK_UNDERFLOW              (-682)
+/** Internal processing error in the DWARF code. */
+#define VERR_DWARF_IPE                          (-683)
+/** Invalid configuration property value. */
+#define VERR_DBG_CFG_INVALID_VALUE              (-684)
+/** Not an integer property. */
+#define VERR_DBG_CFG_NOT_UINT_PROP              (-685)
+/** Deferred loading of information failed. */
+#define VERR_DBG_DEFERRED_LOAD_FAILED           (-686)
+/** Unfinished debug info reader code. */
+#define VERR_DBG_TODO                           (-687)
+/** Found file, but it didn't match the search criteria. */
+#define VERR_DBG_FILE_MISMATCH                  (-688)
+/** Internal processing error in the debug module reader code. */
+#define VERR_DBG_MOD_IPE                        (-689)
+/** The symbol size was adjusted while adding it. */
+#define VINF_DBG_ADJUSTED_SYM_SIZE              690
+/** Unable to parse the CodeView debug information. */
+#define VERR_CV_BAD_FORMAT                      (-691)
+/** Unfinished CodeView debug information feature. */
+#define VERR_CV_TODO                            (-692)
+/** Internal processing error the CodeView debug information reader. */
+#define VERR_CV_IPE                             (-693)
 /** @} */
 
 /** @name Request Packet Status Codes.
@@ -1561,6 +1603,28 @@ RT_C_DECLS_END
 #define VERR_S3_CANCELED                        (-879)
 /** @} */
 
+/** @name HTTP status codes
+ * @{ */
+/** HTTP initialization failed. */
+#define VERR_HTTP_INIT_FAILED                   (-885)
+/** The server has not found anything matching the URI given. */
+#define VERR_HTTP_NOT_FOUND                     (-886)
+/** The request is for something forbidden. Authorization will not help. */
+#define VERR_HTTP_ACCESS_DENIED                 (-887)
+/** The server did not understand the request due to bad syntax. */
+#define VERR_HTTP_BAD_REQUEST                   (-888)
+/** Couldn't connect to the server (proxy?). */
+#define VERR_HTTP_COULDNT_CONNECT               (-889)
+/** SSL connection error. */
+#define VERR_HTTP_SSL_CONNECT_ERROR             (-890)
+/** CAcert is missing or has the wrong format. */
+#define VERR_HTTP_CACERT_WRONG_FORMAT           (-891)
+/** Certificate cannot be authenticated with the given CA certificates. */
+#define VERR_HTTP_CACERT_CANNOT_AUTHENTICATE    (-892)
+/** The current HTTP request was forcefully aborted */
+#define VERR_HTTP_ABORTED                       (-893)
+/** @} */
+
 /** @name RTManifest status codes
  * @{ */
 /** A digest type used in the manifest file isn't supported. */
@@ -1631,6 +1695,8 @@ RT_C_DECLS_END
 #define VERR_TAR_MALFORMED_GNU_LONGXXXX         (-946)
 /** Too long name or link string. */
 #define VERR_TAR_NAME_TOO_LONG                  (-947)
+/** A directory entry in the archive. */
+#define VINF_TAR_DIR_PATH                        (925)
 /** @} */
 
 /** @name RTPoll status codes

@@ -1,10 +1,10 @@
-/* $Id: tstTime-3.cpp 38636 2011-09-05 13:49:45Z vboxsync $ */
+/* $Id: tstTime-3.cpp $ */
 /** @file
  * IPRT Testcase - Simple RTTime test.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,8 +30,6 @@
 #ifdef RT_OS_WINDOWS
 # include <Windows.h>
 
-#elif defined RT_OS_L4
-
 #else /* posix */
 # include <sys/time.h>
 #endif
@@ -50,10 +48,6 @@ DECLINLINE(uint64_t) OSNanoTS(void)
     uint64_t u64; /* manual say larger integer, should be safe to assume it's the same. */
     GetSystemTimeAsFileTime((LPFILETIME)&u64);
     return u64 * 100;
-
-#elif defined RT_OS_L4
-    /** @todo fix a different timesource on l4. */
-    return RTTimeNanoTS();
 
 #else /* posix */
 

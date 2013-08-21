@@ -1,10 +1,10 @@
-/* $Id: SUPR3HardenedVerify.cpp 42477 2012-07-31 11:57:18Z vboxsync $ */
+/* $Id: SUPR3HardenedVerify.cpp $ */
 /** @file
  * VirtualBox Support Library - Verification of Hardened Installation.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -141,6 +141,7 @@ static SUPINSTFILE const    g_aSupInstallFiles[] =
 //#ifdef VBOX_WITH_GUEST_CONTROL
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxGuestControlSvc" SUPLIB_DLL_SUFF },
 //#endif
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxHostChannel" SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxSharedCrOpenGL" SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxOGLhostcrutil" SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxOGLhosterrorspu" SUPLIB_DLL_SUFF },
@@ -185,11 +186,6 @@ static SUPINSTFILE const    g_aSupInstallFiles[] =
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxSDL" SUPLIB_DLL_SUFF },
 //#endif
 
-//#ifdef VBOX_WITH_VBOXBFE
-    {   kSupIFT_Exe,  kSupID_AppBin,             true, "VBoxBFE" SUPLIB_EXE_SUFF },
-    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxBFE" SUPLIB_DLL_SUFF },
-//#endif
-
 //#ifdef VBOX_WITH_WEBSERVICES
     {   kSupIFT_Exe,  kSupID_AppBin,             true, "vboxwebsrv" SUPLIB_EXE_SUFF },
 //#endif
@@ -201,6 +197,11 @@ static SUPINSTFILE const    g_aSupInstallFiles[] =
 //#ifdef VBOX_WITH_NETFLT
     {   kSupIFT_Exe,  kSupID_AppBin,             true, "VBoxNetDHCP" SUPLIB_EXE_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxNetDHCP" SUPLIB_DLL_SUFF },
+//#endif
+
+//#ifdef VBOX_WITH_LWIP_NAT
+    {   kSupIFT_Exe,  kSupID_AppBin,             true, "VBoxNetNAT" SUPLIB_EXE_SUFF },
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxNetNAT" SUPLIB_DLL_SUFF },
 //#endif
 };
 

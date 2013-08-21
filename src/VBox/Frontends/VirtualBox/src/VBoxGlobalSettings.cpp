@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobalSettings.cpp 41689 2012-06-13 17:13:36Z vboxsync $ */
+/* $Id: VBoxGlobalSettings.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,7 +29,7 @@
 /* GUI includes: */
 #include "UIDefs.h"
 #include "VBoxGlobalSettings.h"
-#include "UIHotKeyEditor.h"
+#include "UIHostComboEditor.h"
 
 /* COM includes: */
 #include "COMEnums.h"
@@ -61,7 +61,6 @@ VBoxGlobalSettingsData::VBoxGlobalSettingsData()
     maxGuestRes = "auto";
     remapScancodes = QString::null;
     proxySettings = QString::null;
-    trayIconEnabled = false;
     presentationModeEnabled = false;
     hostScreenSaverDisabled = false;
 }
@@ -75,7 +74,6 @@ VBoxGlobalSettingsData::VBoxGlobalSettingsData (const VBoxGlobalSettingsData &th
     maxGuestRes = that.maxGuestRes;
     remapScancodes = that.remapScancodes;
     proxySettings = that.proxySettings;
-    trayIconEnabled = that.trayIconEnabled;
     presentationModeEnabled = that.presentationModeEnabled;
     hostScreenSaverDisabled = that.hostScreenSaverDisabled;
 }
@@ -94,7 +92,6 @@ bool VBoxGlobalSettingsData::operator== (const VBoxGlobalSettingsData &that) con
          maxGuestRes == that.maxGuestRes &&
          remapScancodes == that.remapScancodes &&
          proxySettings == that.proxySettings &&
-         trayIconEnabled == that.trayIconEnabled &&
          presentationModeEnabled == that.presentationModeEnabled &&
          hostScreenSaverDisabled == that.hostScreenSaverDisabled
         );
@@ -125,7 +122,6 @@ gPropertyMap[] =
     { "GUI/MaxGuestResolution",                    "maxGuestRes",             "\\d*[1-9]\\d*,\\d*[1-9]\\d*|any|auto", true },
     { "GUI/RemapScancodes",                        "remapScancodes",          "(\\d+=\\d+,)*\\d+=\\d+", true },
     { "GUI/ProxySettings",                         "proxySettings",           "[\\s\\S]*", true },
-    { "GUI/TrayIcon/Enabled",                      "trayIconEnabled",         "true|false", true },
 #ifdef Q_WS_MAC
     { GUI_PresentationModeEnabled,                 "presentationModeEnabled", "true|false", true },
 #endif /* Q_WS_MAC */
@@ -134,7 +130,7 @@ gPropertyMap[] =
 
 void VBoxGlobalSettings::setHostCombo (const QString &hostCombo)
 {
-    if (!UIHotKeyCombination::isValidKeyCombo (hostCombo))
+    if (!UIHostCombo::isValidKeyCombo (hostCombo))
     {
         last_err = tr ("'%1' is an invalid host-combination code-sequence.").arg (hostCombo);
         return;

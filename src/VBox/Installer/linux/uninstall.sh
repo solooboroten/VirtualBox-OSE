@@ -4,7 +4,7 @@
 # VirtualBox linux uninstallation script
 
 #
-# Copyright (C) 2009-2010 Oracle Corporation
+# Copyright (C) 2009-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -57,6 +57,8 @@ stop_init_script vboxweb-service
 check_running
 # Terminate VBoxNetDHCP if running
 terminate_proc VBoxNetDHCP
+# Terminate VBoxNetNAT if running
+terminate_proc VBoxNetNAT
 delrunlevel vboxballoonctrl-service > /dev/null 2>&1
 remove_init_script vboxballoonctrl-service
 delrunlevel vboxautostart-service > /dev/null 2>&1
@@ -98,6 +100,7 @@ rm -f \
   /usr/bin/VBoxBalloonCtrl \
   /usr/bin/VBoxAutostart \
   /usr/bin/VBoxNetDHCP \
+  /usr/bin/VBoxNetNAT \
   /usr/bin/vboxwebsrv \
   /usr/bin/VBoxAddIF \
   /usr/bin/VBoxDeleteIf \

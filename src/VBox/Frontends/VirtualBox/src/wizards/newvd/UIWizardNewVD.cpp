@@ -1,4 +1,4 @@
-/* $Id: UIWizardNewVD.cpp 41615 2012-06-07 16:55:08Z vboxsync $ */
+/* $Id: UIWizardNewVD.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -61,33 +61,41 @@ bool UIWizardNewVD::createVirtualDisk()
     AssertReturn(!strMediumPath.isNull(), false);
     AssertReturn(uSize > 0, false);
 
-    /* Get vbox object: */
+    /* Get VBox object: */
     CVirtualBox vbox = vboxGlobal().virtualBox();
 
-    /* Create new virtual disk: */
+    /* Create new virtual hard-disk: */
     CMedium virtualDisk = vbox.CreateHardDisk(mediumFormat.GetName(), strMediumPath);
-    CProgress progress;
     if (!vbox.isOk())
     {
-        msgCenter().cannotCreateHardDiskStorage(this, vbox, strMediumPath, virtualDisk, progress);
+        msgCenter().cannotCreateHardDiskStorage(vbox, strMediumPath, this);
         return false;
     }
 
-    /* Create base storage for the new hard disk: */
-    progress = virtualDisk.CreateBaseStorage(uSize, uVariant);
+    /* Compose medium-variant: */
+    QVector<KMediumVariant> variants(sizeof(qulonglong)*8);
+    for (int i = 0; i < variants.size(); ++i)
+    {
+        qulonglong temp = uVariant;
+        temp &= UINT64_C(1)<<i;
+        variants[i] = (KMediumVariant)temp;
+    }
+
+    /* Create base storage for the new virtual-disk: */
+    CProgress progress = virtualDisk.CreateBaseStorage(uSize, variants);
     if (!virtualDisk.isOk())
     {
-        msgCenter().cannotCreateHardDiskStorage(this, vbox, strMediumPath, virtualDisk, progress);
+        msgCenter().cannotCreateHardDiskStorage(virtualDisk, strMediumPath, this);
         return false;
     }
 
     /* Show creation progress: */
-    msgCenter().showModalProgressDialog(progress, windowTitle(), ":/progress_media_create_90px.png", this, true);
+    msgCenter().showModalProgressDialog(progress, windowTitle(), ":/progress_media_create_90px.png", this);
     if (progress.GetCanceled())
         return false;
     if (!progress.isOk() || progress.GetResultCode() != 0)
     {
-        msgCenter().cannotCreateHardDiskStorage(this, vbox, strMediumPath, virtualDisk, progress);
+        msgCenter().cannotCreateHardDiskStorage(progress, strMediumPath, this);
         return false;
     }
 

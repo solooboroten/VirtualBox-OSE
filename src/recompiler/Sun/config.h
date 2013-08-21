@@ -1,10 +1,10 @@
-/* $Id: config.h 36175 2011-03-04 16:21:09Z vboxsync $ */
+/* $Id: config.h $ */
 /** @file
  * Sun config - Maintained by hand
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo.h 43113 2012-08-30 15:56:06Z vboxsync $
+/** @file $Id: vboxvideo.h $
  *
  * VirtualBox Additions Linux kernel video driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -46,13 +46,13 @@
 #define __DRM_VBOXVIDEO_H__
 
 #include "vboxvideo_mode.h"
+#include <VBox/VBoxVideoGuest.h>
 #include "drm/drmP.h"
 
 struct vboxvideo_mc
 {
-    resource_size_t    aper_size;
-    resource_size_t    aper_base;
-    u32                vram_size;
+    resource_size_t    vram_size;
+    resource_size_t    vram_base;
 };
 
 struct vboxvideo_device
@@ -61,13 +61,18 @@ struct vboxvideo_device
     struct drm_device  *ddev;
     struct pci_dev     *pdev;
     unsigned long       flags;
-    /** @todo move this into flags */
+    HGSMIGUESTCOMMANDCONTEXT Ctx;
     bool                fAnyX;
+    bool                fHaveHGSMI;
+    size_t              offViewInfo;
+    size_t              offCommandBuffers;
+
+    drm_local_map_t    *framebuffer;
 
     struct vboxvideo_mc mc;
     struct vboxvideo_mode_info  mode_info;
 
-    int				    num_crtc;
+    int                 num_crtc;
 };
 
-#endif                /* __DRM_VBOXVIDEO_H__ */
+#endif /* __DRM_VBOXVIDEO_H__ */

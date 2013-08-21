@@ -1,10 +1,10 @@
-# $Id: ApprovedLanguages.kmk 43222 2012-09-06 10:45:00Z vboxsync $
+# $Id: ApprovedLanguages.kmk $
 ## @file
 # ApprovedLanguages.kmk - List of approved GUI translations
 #
 
 #
-# Copyright (C) 2007-2008 Oracle Corporation
+# Copyright (C) 2007-2012 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -29,6 +29,7 @@ VBOX_APPROVED_GUI_LANGUAGES := \
 	nl    \
 	pt_BR \
 	ru    \
+	tr    \
 	uk    \
 	zh_CN \
 	zh_TW

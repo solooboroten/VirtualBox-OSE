@@ -195,12 +195,17 @@ typedef const X86RFLAGS *PCX86RFLAGS;
 #define X86_EFL_VIP         RT_BIT(20)
 /** Bit 21 - ID - CPUID flag - System flag. If this responds to flipping CPUID is supported. */
 #define X86_EFL_ID          RT_BIT(21)
+/** All live bits. */
+#define X86_EFL_LIVE_MASK   UINT32_C(0x003f7fd5)
+/** Read as 1 bits. */
+#define X86_EFL_RA1_MASK    RT_BIT_32(1)
 /** IOPL shift. */
 #define X86_EFL_IOPL_SHIFT  12
 /** The the IOPL level from the flags. */
 #define X86_EFL_GET_IOPL(efl)   (((efl) >> X86_EFL_IOPL_SHIFT) & 3)
 /** Bits restored by popf */
-#define X86_EFL_POPF_BITS       (X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_TF | X86_EFL_IF | X86_EFL_DF | X86_EFL_OF | X86_EFL_IOPL | X86_EFL_NT | X86_EFL_AC | X86_EFL_ID)
+#define X86_EFL_POPF_BITS       (  X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_TF | X86_EFL_IF \
+                                 | X86_EFL_DF | X86_EFL_OF | X86_EFL_IOPL | X86_EFL_NT | X86_EFL_AC | X86_EFL_ID )
 /** @} */
 
 
@@ -736,6 +741,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_DR6_B2                          RT_BIT(2)
 /** Bit 3 - B3 - Breakpoint 3 condition detected. */
 #define X86_DR6_B3                          RT_BIT(3)
+/** Mask of all the Bx bits. */
+#define X86_DR6_B_MASK                      UINT64_C(0x0000000f)
 /** Bit 13 - BD - Debug register access detected. Corresponds to the X86_DR7_GD bit. */
 #define X86_DR6_BD                          RT_BIT(13)
 /** Bit 14 - BS - Single step */
@@ -744,7 +751,16 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_DR6_BT                          RT_BIT(15)
 /** Value of DR6 after powerup/reset. */
 #define X86_DR6_INIT_VAL                    UINT64_C(0xFFFF0FF0)
+/** Bits which must be 1s in DR6. */
+#define X86_DR6_RA1_MASK                    UINT64_C(0xffff0ff0)
+/** Bits which must be 0s in DR6. */
+#define X86_DR6_RAZ_MASK                    RT_BIT_64(12)
+/** Bits which must be 0s on writes to DR6. */
+#define X86_DR6_MBZ_MASK                    UINT64_C(0xffffffff00000000)
 /** @} */
+
+/** Get the DR6.Bx bit for a the given breakpoint. */
+#define X86_DR6_B(iBp)                      RT_BIT_64(iBp)
 
 
 /** @name DR7
@@ -770,6 +786,11 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** Bit 9 - GE - Local breakpoint exact. (Not supported (read ignored) by P6 and later.) */
 #define X86_DR7_GE                          RT_BIT(9)
 
+/** L0, L1, L2, and L3.  */
+#define X86_DR7_LE_ALL                      UINT64_C(0x0000000000000055)
+/** L0, L1, L2, and L3.  */
+#define X86_DR7_GE_ALL                      UINT64_C(0x00000000000000aa)
+
 /** Bit 13 - GD - General detect enable. Enables emulators to get exceptions when
  * any DR register is accessed. */
 #define X86_DR7_GD                          RT_BIT(13)
@@ -790,8 +811,12 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** Bit 30 & 31 - LEN3 - Length field 0. Values X86_DR7_LEN_*. */
 #define X86_DR7_LEN3_MASK                   (3 << 30)
 
-/** Bits which must be 1s. */
-#define X86_DR7_MB1_MASK                    (RT_BIT(10))
+/** Bits which reads as 1s. */
+#define X86_DR7_RA1_MASK                    (RT_BIT(10))
+/** Bits which reads as zeros. */
+#define X86_DR7_RAZ_MASK                    UINT64_C(0x0000d800)
+/** Bits which must be 0s when writing to DR7. */
+#define X86_DR7_MBZ_MASK                    UINT64_C(0xffffffff00000000)
 
 /** Calcs the L bit of Nth breakpoint.
  * @param   iBp     The breakpoint number [0..3].
@@ -802,6 +827,11 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
  * @param   iBp     The breakpoint number [0..3].
  */
 #define X86_DR7_G(iBp)                      ( UINT32_C(1) << (iBp * 2 + 1) )
+
+/** Calcs the L and G bits of Nth breakpoint.
+ * @param   iBp     The breakpoint number [0..3].
+ */
+#define X86_DR7_L_G(iBp)                    ( UINT32_C(3) << (iBp * 2) )
 
 /** @name Read/Write values.
  * @{ */
@@ -821,6 +851,33 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
  */
 #define X86_DR7_RW(iBp, fRw)                ( (fRw) << ((iBp) * 4 + 16) )
 
+/** Fetch the the R/Wx bits for a given breakpoint (so it can be compared with
+ * one of the X86_DR7_RW_XXX constants).
+ *
+ * @returns X86_DR7_RW_XXX
+ * @param   uDR7    DR7 value
+ * @param   iBp     The breakpoint number [0..3].
+ */
+#define X86_DR7_GET_RW(uDR7, iBp)            ( ( (uDR7) >> ((iBp) * 4 + 16) ) & UINT32_C(3) )
+
+/** R/W0, R/W1, R/W2, and R/W3. */
+#define X86_DR7_RW_ALL_MASKS                UINT32_C(0x33330000)
+
+/** Checks if there are any I/O breakpoint types configured in the RW
+ * registers.  Does NOT check if these are enabled, sorry. */
+#define X86_DR7_ANY_RW_IO(uDR7) \
+    (   (    UINT32_C(0x22220000) & (uDR7) ) /* any candidates? */ \
+     && ( ( (UINT32_C(0x22220000) & (uDR7) ) >> 1 )  &  ~(uDR7) ) )
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x33330000)) == 0);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x22220000)) == 1);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x32320000)) == 1);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x23230000)) == 1);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00000000)) == 0);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00010000)) == 0);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00020000)) == 1);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00030000)) == 0);
+AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
+
 /** @name Length values.
  * @{ */
 #define X86_DR7_LEN_BYTE                    0U
@@ -839,13 +896,15 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
  * @param   uDR7    DR7 value
  * @param   iBp     The breakpoint number [0..3].
  */
-#define X86_DR7_GET_LEN(uDR7, iBp)          ( ( (uDR7) >> ((iBp) * 4 + 18) ) & 0x3U)
+#define X86_DR7_GET_LEN(uDR7, iBp)          ( ( (uDR7) >> ((iBp) * 4 + 18) ) & UINT32_C(0x3) )
 
 /** Mask used to check if any breakpoints are enabled. */
-#define X86_DR7_ENABLED_MASK                (RT_BIT(0) | RT_BIT(1) | RT_BIT(2) | RT_BIT(3) | RT_BIT(4) | RT_BIT(5) | RT_BIT(6) | RT_BIT(7))
+#define X86_DR7_ENABLED_MASK                UINT32_C(0x000000ff)
 
-/** Mask used to check if any io breakpoints are set. */
-#define X86_DR7_IO_ENABLED_MASK             (X86_DR7_RW(0, X86_DR7_RW_IO) | X86_DR7_RW(1, X86_DR7_RW_IO) | X86_DR7_RW(2, X86_DR7_RW_IO) | X86_DR7_RW(3, X86_DR7_RW_IO))
+/** LEN0, LEN1, LEN2, and LEN3. */
+#define X86_DR7_LEN_ALL_MASKS               UINT32_C(0xcccc0000)
+/** R/W0, R/W1, R/W2, R/W3,LEN0, LEN1, LEN2, and LEN3. */
+#define X86_DR7_RW_LEN_ALL_MASKS            UINT32_C(0xffff0000)
 
 /** Value of DR7 after powerup/reset. */
 #define X86_DR7_INIT_VAL                    0x400
@@ -862,7 +921,16 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_PLATFORM_ID                0x17
 
 #ifndef MSR_IA32_APICBASE /* qemu cpu.h kludge */
-#define MSR_IA32_APICBASE                   0x1b
+# define MSR_IA32_APICBASE                  0x1b
+/** Local APIC enabled. */
+# define MSR_IA32_APICBASE_EN               RT_BIT_64(11)
+/** X2APIC enabled (requires the EN bit to be set). */
+# define MSR_IA32_APICBASE_EXTD             RT_BIT_64(10)
+/** The processor is the boot strap processor (BSP). */
+# define MSR_IA32_APICBASE_BSP              RT_BIT_64(8)
+/** Minimum base address mask, consult CPUID leaf 0x80000008 for the actual
+ *  width. */
+# define MSR_IA32_APICBASE_BASE_MIN         UINT64_C(0x0000000ffffff000)
 #endif
 
 /** CPU Feature control. */
@@ -1016,15 +1084,18 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_VMX_CR4_FIXED1             0x489
 /** Information for enumerating fields in the VMCS. */
 #define MSR_IA32_VMX_VMCS_ENUM              0x48A
+/** Allowed settings for the VM-functions controls. */
+#define MSR_IA32_VMX_VMFUNC                 0x491
 /** Allowed settings for secondary proc-based VM execution controls */
 #define MSR_IA32_VMX_PROCBASED_CTLS2        0x48B
 /** EPT capabilities. */
-#define MSR_IA32_VMX_EPT_CAPS               0x48C
+#define MSR_IA32_VMX_EPT_VPID_CAP           0x48C
 /** DS Save Area (R/W). */
 #define MSR_IA32_DS_AREA                    0x600
 /** X2APIC MSR ranges. */
-#define MSR_IA32_APIC_START                 0x800
-#define MSR_IA32_APIC_END                   0x900
+#define MSR_IA32_X2APIC_START               0x800
+#define MSR_IA32_X2APIC_TPR                 0x808
+#define MSR_IA32_X2APIC_END                 0xBFF
 
 /** K6 EFER - Extended Feature Enable Register. */
 #define MSR_K6_EFER                         0xc0000080
@@ -2219,6 +2290,55 @@ typedef const X86FXSTATE *PCX86FXSTATE;
 #define X86_FCW_ZERO_MASK   UINT16_C(0xf080)
 /** @} */
 
+/** @name SSE MXCSR
+ * @{ */
+/** Exception Flag: Invalid operation.  */
+#define X86_MSXCR_IE          RT_BIT(0)
+/** Exception Flag: Denormalized operand.  */
+#define X86_MSXCR_DE          RT_BIT(1)
+/** Exception Flag: Zero divide.  */
+#define X86_MSXCR_ZE          RT_BIT(2)
+/** Exception Flag: Overflow.  */
+#define X86_MSXCR_OE          RT_BIT(3)
+/** Exception Flag: Underflow.  */
+#define X86_MSXCR_UE          RT_BIT(4)
+/** Exception Flag: Precision.  */
+#define X86_MSXCR_PE          RT_BIT(5)
+
+/** Denormals are zero. */
+#define X86_MSXCR_DAZ         RT_BIT(6)
+
+/** Exception Mask: Invalid operation. */
+#define X86_MSXCR_IM          RT_BIT(7)
+/** Exception Mask: Denormalized operand. */
+#define X86_MSXCR_DM          RT_BIT(8)
+/** Exception Mask: Zero divide.  */
+#define X86_MSXCR_ZM          RT_BIT(9)
+/** Exception Mask: Overflow.  */
+#define X86_MSXCR_OM          RT_BIT(10)
+/** Exception Mask: Underflow.  */
+#define X86_MSXCR_UM          RT_BIT(11)
+/** Exception Mask: Precision.  */
+#define X86_MSXCR_PM          RT_BIT(12)
+
+/** Rounding control mask. */
+#define X86_MSXCR_RC_MASK     UINT16_C(0x6000)
+/** Rounding control: To nearest. */
+#define X86_MSXCR_RC_NEAREST  UINT16_C(0x0000)
+/** Rounding control: Down. */
+#define X86_MSXCR_RC_DOWN     UINT16_C(0x2000)
+/** Rounding control: Up. */
+#define X86_MSXCR_RC_UP       UINT16_C(0x4000)
+/** Rounding control: Towards zero. */
+#define X86_MSXCR_RC_ZERO     UINT16_C(0x6000)
+
+/** Flush-to-zero for masked underflow.  */
+#define X86_MSXCR_FZ          RT_BIT(15)
+
+/** Misaligned Exception Mask.  */
+#define X86_MSXCR_MM          RT_BIT(16)
+/** @} */
+
 
 /** @name Selector Descriptor
  * @{
@@ -2226,7 +2346,7 @@ typedef const X86FXSTATE *PCX86FXSTATE;
 
 #ifndef VBOX_FOR_DTRACE_LIB
 /**
- * Descriptor attributes.
+ * Descriptor attributes (as seen by VT-x).
  */
 typedef struct X86DESCATTRBITS
 {
@@ -2250,8 +2370,25 @@ typedef struct X86DESCATTRBITS
     /** 0f - Granularity of the limit. If set 4KB granularity is used, if
      * clear byte. */
     unsigned    u1Granularity : 1;
+    /** 10 - "Unusable" selector, special Intel (VT-x only?) bit. */
+    unsigned    u1Unusable : 1;
 } X86DESCATTRBITS;
 #endif /* !VBOX_FOR_DTRACE_LIB */
+
+/** @name X86DESCATTR masks
+ * @{ */
+#define X86DESCATTR_TYPE            UINT32_C(0x0000000f)
+#define X86DESCATTR_DT              UINT32_C(0x00000010)
+#define X86DESCATTR_DPL             UINT32_C(0x00000060)
+#define X86DESCATTR_DPL_SHIFT       5 /**< Shift count for the DPL value. */
+#define X86DESCATTR_P               UINT32_C(0x00000080)
+#define X86DESCATTR_LIMIT_HIGH      UINT32_C(0x00000f00)
+#define X86DESCATTR_AVL             UINT32_C(0x00001000)
+#define X86DESCATTR_L               UINT32_C(0x00002000)
+#define X86DESCATTR_D               UINT32_C(0x00004000)
+#define X86DESCATTR_G               UINT32_C(0x00008000)
+#define X86DESCATTR_UNUSABLE        UINT32_C(0x00010000)
+/** @}  */
 
 #pragma pack(1)
 typedef union X86DESCATTR
@@ -2277,34 +2414,34 @@ typedef const X86DESCATTR *PCX86DESCATTR;
 #pragma pack(1)
 typedef struct X86DESCGENERIC
 {
-    /** Limit - Low word. */
+    /** 00 - Limit - Low word. */
     unsigned    u16LimitLow : 16;
-    /** Base address - lowe word.
+    /** 10 - Base address - lowe word.
      * Don't try set this to 24 because MSC is doing stupid things then. */
     unsigned    u16BaseLow : 16;
-    /** Base address - first 8 bits of high word. */
+    /** 20 - Base address - first 8 bits of high word. */
     unsigned    u8BaseHigh1 : 8;
-    /** Segment Type. */
+    /** 28 - Segment Type. */
     unsigned    u4Type : 4;
-    /** Descriptor Type. System(=0) or code/data selector */
+    /** 2c - Descriptor Type. System(=0) or code/data selector */
     unsigned    u1DescType : 1;
-    /** Descriptor Privelege level. */
+    /** 2d - Descriptor Privelege level. */
     unsigned    u2Dpl : 2;
-    /** Flags selector present(=1) or not. */
+    /** 2f - Flags selector present(=1) or not. */
     unsigned    u1Present : 1;
-    /** Segment limit 16-19. */
+    /** 30 - Segment limit 16-19. */
     unsigned    u4LimitHigh : 4;
-    /** Available for system software. */
+    /** 34 - Available for system software. */
     unsigned    u1Available : 1;
-    /** 32 bits mode: Reserved - 0, long mode: Long Attribute Bit. */
+    /** 35 - 32 bits mode: Reserved - 0, long mode: Long Attribute Bit. */
     unsigned    u1Long : 1;
-    /** This flags meaning depends on the segment type. Try make sense out
+    /** 36 - This flags meaning depends on the segment type. Try make sense out
      * of the intel manual yourself.  */
     unsigned    u1DefBig : 1;
-    /** Granularity of the limit. If set 4KB granularity is used, if
+    /** 37 - Granularity of the limit. If set 4KB granularity is used, if
      * clear byte. */
     unsigned    u1Granularity : 1;
-    /** Base address - highest 8 bits. */
+    /** 38 - Base address - highest 8 bits. */
     unsigned    u8BaseHigh2 : 8;
 } X86DESCGENERIC;
 #pragma pack()
@@ -3041,7 +3178,7 @@ typedef enum X86XCPT
     X86_XCPT_GP = 0x0d,
     /** \#PF - Page fault. */
     X86_XCPT_PF = 0x0e,
-    /* 0x0f is reserved. */
+    /* 0x0f is reserved (to avoid conflict with spurious interrupts in BIOS setup). */
     /** \#MF - Math fault (FPU). */
     X86_XCPT_MF = 0x10,
     /** \#AC - Alignment check. */
@@ -3049,12 +3186,18 @@ typedef enum X86XCPT
     /** \#MC - Machine check. */
     X86_XCPT_MC = 0x12,
     /** \#XF - SIMD Floating-Pointer Exception. */
-    X86_XCPT_XF = 0x13
+    X86_XCPT_XF = 0x13,
+    /** \#VE - Virtualzation Exception. */
+    X86_XCPT_VE = 0x14,
+    /** \#SX - Security Exception. */
+    X86_XCPT_SX = 0x1f
 } X86XCPT;
 /** Pointer to a x86 exception code. */
 typedef X86XCPT *PX86XCPT;
 /** Pointer to a const x86 exception code. */
 typedef const X86XCPT *PCX86XCPT;
+/** The maximum exception value. */
+#define X86_XCPT_MAX                (X86_XCPT_SX)
 
 
 /** @name Trap Error Codes
@@ -3186,6 +3329,26 @@ AssertCompile((X86_SIB_SCALE_MASK >> X86_SIB_SCALE_SHIFT) == X86_SIB_SCALE_SMASK
 /** @} */
 /** Segment register count. */
 #define X86_SREG_COUNT          6
+
+
+/** @name X86_OP_XXX - Prefixes
+ * @{ */
+#define X86_OP_PRF_CS           UINT8_C(0x2e)
+#define X86_OP_PRF_SS           UINT8_C(0x36)
+#define X86_OP_PRF_DS           UINT8_C(0x3e)
+#define X86_OP_PRF_ES           UINT8_C(0x26)
+#define X86_OP_PRF_FS           UINT8_C(0x64)
+#define X86_OP_PRF_GS           UINT8_C(0x65)
+#define X86_OP_PRF_SIZE_OP      UINT8_C(0x66)
+#define X86_OP_PRF_SIZE_ADDR    UINT8_C(0x67)
+#define X86_OP_PRF_LOCK         UINT8_C(0xf0)
+#define X86_OP_PRF_REPZ         UINT8_C(0xf2)
+#define X86_OP_PRF_REPNZ        UINT8_C(0xf3)
+#define X86_OP_REX_B            UINT8_C(0x41)
+#define X86_OP_REX_X            UINT8_C(0x42)
+#define X86_OP_REX_R            UINT8_C(0x44)
+#define X86_OP_REX_W            UINT8_C(0x48)
+/** @} */
 
 
 /** @} */

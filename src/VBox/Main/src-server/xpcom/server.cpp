@@ -1,4 +1,4 @@
-/* $Id: server.cpp 41100 2012-04-30 15:18:06Z vboxsync $ */
+/* $Id: server.cpp $ */
 /** @file
  * XPCOM server process (VBoxSVC) start point.
  */
@@ -66,7 +66,7 @@
 #include "AudioAdapterImpl.h"
 #include "BandwidthControlImpl.h"
 #include "BandwidthGroupImpl.h"
-#include "DHCPServerRunner.h"
+#include "NetworkServiceRunner.h"
 #include "DHCPServerImpl.h"
 #include "GuestOSTypeImpl.h"
 #include "HostImpl.h"
@@ -77,7 +77,6 @@
 #include "NATEngineImpl.h"
 #include "NetworkAdapterImpl.h"
 #include "ParallelPortImpl.h"
-#include "ProgressCombinedImpl.h"
 #include "ProgressProxyImpl.h"
 #include "SerialPortImpl.h"
 #include "SharedFolderImpl.h"
@@ -85,6 +84,7 @@
 #include "StorageControllerImpl.h"
 #include "SystemPropertiesImpl.h"
 #include "USBControllerImpl.h"
+#include "USBDeviceFiltersImpl.h"
 #include "VFSExplorerImpl.h"
 #include "VirtualBoxImpl.h"
 #include "VRDEServerImpl.h"
@@ -96,6 +96,8 @@
 #ifdef VBOX_WITH_EXTPACK
 # include "ExtPackManagerImpl.h"
 #endif
+# include "NATNetworkImpl.h"
+
 
 /* implement nsISupports parts of our objects with support for nsIClassInfo */
 
@@ -126,17 +128,11 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Snapshot, ISnapshot)
 NS_DECL_CLASSINFO(Medium)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Medium, IMedium)
 
-NS_DECL_CLASSINFO(MediumFormat)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(MediumFormat, IMediumFormat)
-
 NS_DECL_CLASSINFO(MediumAttachment)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(MediumAttachment, IMediumAttachment)
 
 NS_DECL_CLASSINFO(Progress)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Progress, IProgress)
-
-NS_DECL_CLASSINFO(CombinedProgress)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(CombinedProgress, IProgress)
 
 NS_DECL_CLASSINFO(ProgressProxy)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(ProgressProxy, IProgress)
@@ -156,6 +152,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostNetworkInterface, IHostNetworkInterface)
 NS_DECL_CLASSINFO(DHCPServer)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(DHCPServer, IDHCPServer)
 
+NS_DECL_CLASSINFO(NATNetwork)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(NATNetwork, INATNetwork)
+
 NS_DECL_CLASSINFO(GuestOSType)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(GuestOSType, IGuestOSType)
 
@@ -174,6 +173,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(ParallelPort, IParallelPort)
 
 NS_DECL_CLASSINFO(USBController)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(USBController, IUSBController)
+
+NS_DECL_CLASSINFO(USBDeviceFilters)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(USBDeviceFilters, IUSBDeviceFilters)
 
 NS_DECL_CLASSINFO(StorageController)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(StorageController, IStorageController)
@@ -881,23 +883,26 @@ int main(int argc, char **argv)
 
     nsresult rc;
 
+    /** @todo Merge this code with svcmain.cpp (use Logging.cpp?). */
+    char szLogFile[RTPATH_MAX];
     if (!pszLogFile)
     {
-        char szLogFile[RTPATH_MAX] = "";
         vrc = com::GetVBoxUserHomeDirectory(szLogFile, sizeof(szLogFile));
-        if (vrc == VERR_ACCESS_DENIED)
-            return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to open global settings directory '%s'", szLogFile);
         if (RT_SUCCESS(vrc))
             vrc = RTPathAppend(szLogFile, sizeof(szLogFile), "VBoxSVC.log");
-        if (RT_SUCCESS(vrc))
-            pszLogFile = RTStrDup(szLogFile);
-        if (RT_FAILURE(vrc))
-            return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to determine release log file (%Rrc)", vrc);
     }
+    else
+    {
+        if (!RTStrPrintf(szLogFile, sizeof(szLogFile), "%s", pszLogFile))
+            vrc = VERR_NO_MEMORY;
+    }
+    if (RT_FAILURE(vrc))
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "failed to create logging file name, rc=%Rrc", vrc);
+
     char szError[RTPATH_MAX + 128];
-    vrc = com::VBoxLogRelCreate("XPCOM Server", pszLogFile,
+    vrc = com::VBoxLogRelCreate("XPCOM Server", szLogFile,
                                 RTLOGFLAGS_PREFIX_THREAD | RTLOGFLAGS_PREFIX_TIME_PROG,
-                                "all", "VBOXSVC_RELEASE_LOG",
+                                VBOXSVC_LOG_DEFAULT, "VBOXSVC_RELEASE_LOG",
                                 RTLOGDEST_FILE, UINT32_MAX /* cMaxEntriesPerGroup */,
                                 cHistory, uHistoryFileTime, uHistoryFileSize,
                                 szError, sizeof(szError));

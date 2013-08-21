@@ -1,10 +1,10 @@
-/* $Revision: 41660 $ */
+/* $Revision: 86554 $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Linux.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1457,7 +1457,13 @@ DECLHIDDEN(int) rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ p
 
 #if   defined(VBOX_USE_INSERT_PAGE) && LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
                     rc = vm_insert_page(vma, ulAddrCur, pMemLnxToMap->apPages[iPage]);
-                    vma->vm_flags |= VM_RESERVED; /* This flag helps making 100% sure some bad stuff wont happen (swap, core, ++). */
+                    /* Thes flags help making 100% sure some bad stuff wont happen (swap, core, ++).
+                     * See remap_pfn_range() in mm/memory.c */
+#if    LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0)
+                    vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+#else
+                    vma->vm_flags |= VM_RESERVED;
+#endif
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
                     rc = remap_pfn_range(vma, ulAddrCur, page_to_pfn(pMemLnxToMap->apPages[iPage]), PAGE_SIZE, fPg);
 #elif defined(VBOX_USE_PAE_HACK)
@@ -1520,6 +1526,21 @@ DECLHIDDEN(int) rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ p
                     }
                 }
             }
+
+#ifdef CONFIG_NUMA_BALANCING
+            if (RT_SUCCESS(rc))
+            {
+                /** @todo Ugly hack! But right now we have no other means to disable
+                 *        automatic NUMA page balancing. */
+# ifdef RT_OS_X86
+                pTask->mm->numa_next_reset = jiffies + 0x7fffffffUL;
+                pTask->mm->numa_next_scan  = jiffies + 0x7fffffffUL;
+# else
+                pTask->mm->numa_next_reset = jiffies + 0x7fffffffffffffffUL;
+                pTask->mm->numa_next_scan  = jiffies + 0x7fffffffffffffffUL;
+# endif
+            }
+#endif
 
             up_write(&pTask->mm->mmap_sem);
 

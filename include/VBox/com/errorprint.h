@@ -1,11 +1,13 @@
 /** @file
- * MS COM / XPCOM Abstraction Layer:
+ * MS COM / XPCOM Abstraction Layer - Error Reporting.
+ *
  * Error printing macros using shared functions defined in shared glue code.
- * Use these CHECK_* macros for efficient error checking around calling COM methods.
+ * Use these CHECK_* macros for efficient error checking around calling COM
+ * methods.
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -259,3 +261,4 @@ void GlueHandleComErrorProgress(ComPtr<IProgress> progress,
     if (1) { ASSERT(expr); if (!(expr)) break; } else do {} while (0)
 
 } /* namespace com */
+

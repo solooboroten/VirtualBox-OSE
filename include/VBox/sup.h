@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -423,8 +423,8 @@ typedef SUPVMMR0REQHDR *PSUPVMMR0REQHDR;
  */
 /** @see VMMR0_DO_RAW_RUN. */
 #define SUP_VMMR0_DO_RAW_RUN    0
-/** @see VMMR0_DO_HWACC_RUN. */
-#define SUP_VMMR0_DO_HWACC_RUN  1
+/** @see VMMR0_DO_HM_RUN. */
+#define SUP_VMMR0_DO_HM_RUN  1
 /** @see VMMR0_DO_NOP */
 #define SUP_VMMR0_DO_NOP        2
 /** @} */
@@ -745,13 +745,27 @@ DECLHIDDEN(int) SUPR3HardenedMain(const char *pszProgName, uint32_t fFlags, int 
 
 /**
  * Initializes the support library.
- * Each successful call to SUPR3Init() must be countered by a
+ *
+ * Each successful call to SUPR3Init() or SUPR3InitEx must be countered by a
  * call to SUPR3Term(false).
  *
  * @returns VBox status code.
  * @param   ppSession       Where to store the session handle. Defaults to NULL.
  */
 SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession);
+
+
+/**
+ * Initializes the support library, extended version.
+ *
+ * Each successful call to SUPR3Init() or SUPR3InitEx must be countered by a
+ * call to SUPR3Term(false).
+ *
+ * @returns VBox status code.
+ * @param   fUnrestricted   The desired access.
+ * @param   ppSession       Where to store the session handle. Defaults to NULL.
+ */
+SUPR3DECL(int) SUPR3InitEx(bool fUnrestricted, PSUPDRVSESSION *ppSession);
 
 /**
  * Terminates the support library.
@@ -1362,6 +1376,8 @@ SUPR0DECL(int) SUPR0GipUnmap(PSUPDRVSESSION pSession);
 SUPR0DECL(int) SUPR0Printf(const char *pszFormat, ...);
 SUPR0DECL(SUPPAGINGMODE) SUPR0GetPagingMode(void);
 SUPR0DECL(int) SUPR0EnableVTx(bool fEnable);
+SUPR0DECL(bool) SUPR0SuspendVTxOnCpu(void);
+SUPR0DECL(void) SUPR0ResumeVTxOnCpu(bool fSuspended);
 
 /** @name Absolute symbols
  * Take the address of these, don't try call them.

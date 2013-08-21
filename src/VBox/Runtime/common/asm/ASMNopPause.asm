@@ -1,10 +1,10 @@
-; $Id: ASMNopPause.asm 33540 2010-10-28 09:27:05Z vboxsync $
+; $Id: ASMNopPause.asm $
 ;; @file
 ; IPRT - ASMNopPause().
 ;
 
 ;
-; Copyright (C) 2009 Oracle Corporation
+; Copyright (C) 2009-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;

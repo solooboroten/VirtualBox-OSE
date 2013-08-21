@@ -1,11 +1,11 @@
-/* $Id: VBoxMPMisc.h 42128 2012-07-12 16:31:42Z vboxsync $ */
+/* $Id: VBoxMPMisc.h $ */
 
 /** @file
  * VBox WDDM Miniport driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -71,9 +71,10 @@ PVOID vboxWddmHTableGet(PVBOXWDDM_HTABLE pTbl, VBOXWDDM_HANDLE hHandle);
 
 
 PVBOXWDDM_SWAPCHAIN vboxWddmSwapchainCreate();
-DECLINLINE(BOOLEAN) vboxWddmSwapchainRetain(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SWAPCHAIN pSwapchain);
-DECLINLINE(VOID) vboxWddmSwapchainRelease(PVBOXWDDM_SWAPCHAIN pSwapchain);
-PVBOXWDDM_SWAPCHAIN vboxWddmSwapchainRetainByAlloc(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_ALLOCATION pAlloc);
+BOOLEAN vboxWddmSwapchainRetain(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SWAPCHAIN pSwapchain);
+VOID vboxWddmSwapchainRelease(PVBOXWDDM_SWAPCHAIN pSwapchain);
+PVBOXWDDM_SWAPCHAIN vboxWddmSwapchainRetainByAlloc(PVBOXMP_DEVEXT pDevExt, const VBOXWDDM_ALLOCATION *pAlloc);
+PVBOXWDDM_SWAPCHAIN vboxWddmSwapchainRetainByAllocData(PVBOXMP_DEVEXT pDevExt, const struct VBOXWDDM_ALLOC_DATA *pAllocData);
 VOID vboxWddmSwapchainAllocRemove(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SWAPCHAIN pSwapchain, PVBOXWDDM_ALLOCATION pAlloc);
 BOOLEAN vboxWddmSwapchainAllocAdd(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SWAPCHAIN pSwapchain, PVBOXWDDM_ALLOCATION pAlloc);
 VOID vboxWddmSwapchainAllocRemoveAll(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SWAPCHAIN pSwapchain);
@@ -90,10 +91,11 @@ NTSTATUS vboxWddmRegOpenDisplaySettingsKey(IN PVBOXMP_DEVEXT pDeviceExtension, D
 NTSTATUS vboxWddmRegDisplaySettingsQueryRelX(HANDLE hKey, int * pResult);
 NTSTATUS vboxWddmRegDisplaySettingsQueryRelY(HANDLE hKey, int * pResult);
 NTSTATUS vboxWddmDisplaySettingsQueryPos(IN PVBOXMP_DEVEXT pDeviceExtension, D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId, POINT * pPos);
-NTSTATUS vboxWddmRegQueryVideoGuidString(ULONG cbBuf, PWCHAR pBuf, PULONG pcbResult);
+NTSTATUS vboxWddmRegQueryVideoGuidString(PVBOXMP_DEVEXT pDevExt, ULONG cbBuf, PWCHAR pBuf, PULONG pcbResult);
 
 NTSTATUS vboxWddmRegQueryDrvKeyName(PVBOXMP_DEVEXT pDevExt, ULONG cbBuf, PWCHAR pBuf, PULONG pcbResult);
 
+NTSTATUS vboxWddmRegOpenKeyEx(OUT PHANDLE phKey, IN HANDLE hRootKey, IN PWCHAR pName, IN ACCESS_MASK fAccess);
 NTSTATUS vboxWddmRegOpenKey(OUT PHANDLE phKey, IN PWCHAR pName, IN ACCESS_MASK fAccess);
 NTSTATUS vboxWddmRegQueryValueDword(IN HANDLE hKey, IN PWCHAR pName, OUT PDWORD pDword);
 NTSTATUS vboxWddmRegSetValueDword(IN HANDLE hKey, IN PWCHAR pName, OUT DWORD val);
@@ -162,40 +164,6 @@ BOOLEAN vboxShRcTreePut(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_ALLOCATION pAlloc);
 PVBOXWDDM_ALLOCATION vboxShRcTreeGet(PVBOXMP_DEVEXT pDevExt, HANDLE hSharedRc);
 BOOLEAN vboxShRcTreeRemove(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_ALLOCATION pAlloc);
 #endif
-
-/* visible rects */
-typedef struct VBOXWDDMVR_LIST
-{
-    LIST_ENTRY ListHead;
-    UINT cEntries;
-} VBOXWDDMVR_LIST, *PVBOXWDDMVR_LIST;
-
-DECLINLINE(UINT) VBoxWddmVrListRectsCount(PVBOXWDDMVR_LIST pList)
-{
-    return pList->cEntries;
-}
-
-DECLINLINE(BOOLEAN) VBoxWddmVrListIsEmpty(PVBOXWDDMVR_LIST pList)
-{
-    return !VBoxWddmVrListRectsCount(pList);
-}
-
-DECLINLINE(void) VBoxWddmVrListInit(PVBOXWDDMVR_LIST pList)
-{
-    InitializeListHead(&pList->ListHead);
-    pList->cEntries = 0;
-}
-
-void VBoxWddmVrListClear(PVBOXWDDMVR_LIST pList);
-
-void VBoxWddmVrListTranslate(PVBOXWDDMVR_LIST pList, LONG x, LONG y);
-
-NTSTATUS VBoxWddmVrListRectsAdd(PVBOXWDDMVR_LIST pList, UINT cRects, const PRECT aRects, BOOLEAN *pfChanged);
-NTSTATUS VBoxWddmVrListRectsSubst(PVBOXWDDMVR_LIST pList, UINT cRects, const PRECT aRects, BOOLEAN *pfChanged);
-NTSTATUS VBoxWddmVrListRectsGet(PVBOXWDDMVR_LIST pList, UINT cRects, PRECT aRects);
-
-NTSTATUS VBoxWddmVrInit();
-void VBoxWddmVrTerm();
 
 NTSTATUS vboxWddmDrvCfgInit(PUNICODE_STRING pRegStr);
 

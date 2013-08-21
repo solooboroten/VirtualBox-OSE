@@ -1,10 +1,10 @@
-/* $Id: VBoxMF.h 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: VBoxMF.h $ */
 /** @file
  * VBox Mouse filter header
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,10 +1,10 @@
-/* $Id: semmutex-r0drv-linux.c 39515 2011-12-02 13:41:07Z vboxsync $ */
+/* $Id: semmutex-r0drv-linux.c $ */
 /** @file
  * IPRT - Mutex Semaphores, Ring-0 Driver, Linux.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -1,4 +1,4 @@
-/* $Id: VBoxUsbMon.cpp 38616 2011-09-02 18:24:55Z vboxsync $ */
+/* $Id: VBoxUsbMon.cpp $ */
 /** @file
  * VBox USB Monitor
  */

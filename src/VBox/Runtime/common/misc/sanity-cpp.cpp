@@ -1,10 +1,10 @@
-/* $Id: sanity-cpp.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: sanity-cpp.cpp $ */
 /** @file
  * IPRT - Setup Sanity Checks, C++.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

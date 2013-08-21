@@ -1,10 +1,10 @@
-/* $Id: DrvRawImage.cpp 40282 2012-02-28 21:02:40Z vboxsync $ */
+/* $Id: DrvRawImage.cpp $ */
 /** @file
  * VBox storage devices: Raw image driver
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -234,8 +234,11 @@ static DECLCALLBACK(void) drvRawImageDestruct(PPDMDRVINS pDrvIns)
     LogFlow(("drvRawImageDestruct: '%s'\n", pThis->pszFilename));
     PDMDRV_CHECK_VERSIONS_RETURN_VOID(pDrvIns);
 
-    RTFileClose(pThis->hFile);
-    pThis->hFile = NIL_RTFILE;
+    if (pThis->hFile != NIL_RTFILE)
+    {
+        RTFileClose(pThis->hFile);
+        pThis->hFile = NIL_RTFILE;
+    }
 
     if (pThis->pszFilename)
     {

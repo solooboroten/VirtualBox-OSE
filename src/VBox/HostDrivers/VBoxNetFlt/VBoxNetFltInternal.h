@@ -1,10 +1,10 @@
-/* $Id: VBoxNetFltInternal.h 41548 2012-06-01 16:46:34Z vboxsync $ */
+/* $Id: VBoxNetFltInternal.h $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Internal Header.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -159,6 +159,8 @@ typedef struct VBOXNETFLTINS
              * @{ */
             /** Pointer to the device. */
             struct net_device * volatile pDev;
+            /** MTU of host's interface. */
+            uint32_t cbMtu;
             /** Whether we've successfully put the interface into to promiscuous mode.
              * This is for dealing with the ENETDOWN case. */
             bool volatile fPromiscuousSet;

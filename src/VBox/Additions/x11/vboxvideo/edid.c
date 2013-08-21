@@ -1,11 +1,11 @@
-/* $Id: edid.c 35776 2011-01-30 00:14:29Z vboxsync $ */
+/* $Id: edid.c $ */
 /** @file
  *
  * Linux Additions X11 graphics driver, EDID construction
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

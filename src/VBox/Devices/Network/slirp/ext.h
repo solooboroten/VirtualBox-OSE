@@ -1,10 +1,10 @@
-/** $Id: ext.h 39409 2011-11-24 15:28:32Z vboxsync $ */
+/** $Id: ext.h $ */
 /** @file
  * NAT - some externals helpers
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

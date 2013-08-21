@@ -1,10 +1,10 @@
-/* $Id: SUPR0IdcClientStubs.c 29285 2010-05-10 00:22:29Z vboxsync $ */
+/* $Id: SUPR0IdcClientStubs.c $ */
 /** @file
  * VirtualBox Support Driver - IDC Client Lib, Stubs for SUPR0 APIs.
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2008-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

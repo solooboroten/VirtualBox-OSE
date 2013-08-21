@@ -1,10 +1,10 @@
-/* $Id: GuestImpl.cpp 42919 2012-08-22 13:11:46Z vboxsync $ */
+/* $Id: GuestImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation: Guest
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,9 +29,12 @@
 #include "AutoCaller.h"
 #include "Logging.h"
 #include "Performance.h"
+#include "VBoxEvents.h"
 
 #include <VBox/VMMDev.h>
 #include <iprt/cpp/utils.h>
+#include <iprt/ctype.h>
+#include <iprt/stream.h>
 #include <iprt/timer.h>
 #include <VBox/vmm/pgm.h>
 #include <VBox/version.h>
@@ -77,31 +80,41 @@ HRESULT Guest::init(Console *aParent)
     autoInitSpan.setSucceeded();
 
     ULONG aMemoryBalloonSize;
-    HRESULT ret = mParent->machine()->COMGETTER(MemoryBalloonSize)(&aMemoryBalloonSize);
-    if (ret == S_OK)
+    HRESULT hr = mParent->machine()->COMGETTER(MemoryBalloonSize)(&aMemoryBalloonSize);
+    if (hr == S_OK) /** @todo r=andy SUCCEEDED? */
         mMemoryBalloonSize = aMemoryBalloonSize;
     else
-        mMemoryBalloonSize = 0;                     /* Default is no ballooning */
+        mMemoryBalloonSize = 0; /* Default is no ballooning */
 
     BOOL fPageFusionEnabled;
-    ret = mParent->machine()->COMGETTER(PageFusionEnabled)(&fPageFusionEnabled);
-    if (ret == S_OK)
+    hr = mParent->machine()->COMGETTER(PageFusionEnabled)(&fPageFusionEnabled);
+    if (hr == S_OK) /** @todo r=andy SUCCEEDED? */
         mfPageFusionEnabled = fPageFusionEnabled;
     else
-        mfPageFusionEnabled = false;                /* Default is no page fusion*/
+        mfPageFusionEnabled = false; /* Default is no page fusion*/
 
-    mStatUpdateInterval = 0;                    /* Default is not to report guest statistics at all */
+    mStatUpdateInterval = 0; /* Default is not to report guest statistics at all */
     mCollectVMMStats = false;
 
     /* Clear statistics. */
+    mNetStatRx = mNetStatTx = 0;
+    mNetStatLastTs = RTTimeNanoTS();
     for (unsigned i = 0 ; i < GUESTSTATTYPE_MAX; i++)
         mCurrentGuestStat[i] = 0;
-    mGuestValidStats = pm::GUESTSTATMASK_NONE;
+    mVmValidStats = pm::VMSTATMASK_NONE;
 
     mMagic = GUEST_MAGIC;
     int vrc = RTTimerLRCreate(&mStatTimer, 1000 /* ms */,
                               &Guest::staticUpdateStats, this);
-    AssertMsgRC(vrc, ("Failed to create guest statistics update timer(%Rra)\n", vrc));
+    AssertMsgRC(vrc, ("Failed to create guest statistics update timer (%Rrc)\n", vrc));
+
+#ifdef VBOX_WITH_GUEST_CONTROL
+    hr = unconst(mEventSource).createObject();
+    if (SUCCEEDED(hr))
+        hr = mEventSource->init(static_cast<IGuest*>(this));
+#else
+    hr = S_OK;
+#endif
 
     try
     {
@@ -112,10 +125,10 @@ HRESULT Guest::init(Console *aParent)
     }
     catch(std::bad_alloc &)
     {
-        return E_OUTOFMEMORY;
+        hr = E_OUTOFMEMORY;
     }
 
-    return S_OK;
+    return hr;
 }
 
 /**
@@ -162,13 +175,16 @@ void Guest::uninit()
     }
 #endif
 
+#ifdef VBOX_WITH_GUEST_CONTROL
+    unconst(mEventSource).setNull();
+#endif
     unconst(mParent) = NULL;
 
     LogFlowFuncLeave();
 }
 
 /* static */
-void Guest::staticUpdateStats(RTTIMERLR hTimerLR, void *pvUser, uint64_t iTick)
+DECLCALLBACK(void) Guest::staticUpdateStats(RTTIMERLR hTimerLR, void *pvUser, uint64_t iTick)
 {
     AssertReturnVoid(pvUser != NULL);
     Guest *guest = static_cast<Guest *>(pvUser);
@@ -179,84 +195,155 @@ void Guest::staticUpdateStats(RTTIMERLR hTimerLR, void *pvUser, uint64_t iTick)
     NOREF(hTimerLR);
 }
 
+/* static */
+int Guest::staticEnumStatsCallback(const char *pszName, STAMTYPE enmType, void *pvSample, STAMUNIT enmUnit,
+                                   STAMVISIBILITY enmVisiblity, const char *pszDesc, void *pvUser)
+{
+    AssertLogRelMsgReturn(enmType == STAMTYPE_COUNTER, ("Unexpected sample type %d ('%s')\n", enmType, pszName), VINF_SUCCESS);
+    AssertLogRelMsgReturn(enmUnit == STAMUNIT_BYTES, ("Unexpected sample unit %d ('%s')\n", enmUnit, pszName), VINF_SUCCESS);
+
+    /* Get the base name w/ slash. */
+    const char *pszLastSlash = strrchr(pszName, '/');
+    AssertLogRelMsgReturn(pszLastSlash, ("Unexpected sample '%s'\n", pszName), VINF_SUCCESS);
+
+    /* Receive or transmit? */
+    bool fRx;
+    if (!strcmp(pszLastSlash, "/BytesReceived"))
+        fRx = true;
+    else if (!strcmp(pszLastSlash, "/BytesTransmitted"))
+        fRx = false;
+    else
+        AssertLogRelMsgFailedReturn(("Unexpected sample '%s'\n", pszName), VINF_SUCCESS);
+
+#if 0 /* not used for anything, so don't bother parsing it. */
+    /* Find start of instance number. ASSUMES '/Public/Net/Name<Instance digits>/Bytes...' */
+    do
+        --pszLastSlash;
+    while (pszLastSlash > pszName && RT_C_IS_DIGIT(*pszLastSlash));
+    pszLastSlash++;
+
+    uint8_t uInstance;
+    int rc = RTStrToUInt8Ex(pszLastSlash, NULL, 10, &uInstance);
+    AssertLogRelMsgReturn(RT_SUCCESS(rc) && rc != VWRN_NUMBER_TOO_BIG && rc != VWRN_NEGATIVE_UNSIGNED,
+                          ("%Rrc '%s'\n", rc, pszName), VINF_SUCCESS)
+#endif
+
+    /* Add the bytes to our counters. */
+    PSTAMCOUNTER pCnt   = (PSTAMCOUNTER)pvSample;
+    Guest       *pGuest = (Guest *)pvUser;
+    uint64_t     cb     = pCnt->c;
+#if 0
+    LogFlowFunc(("%s i=%u d=%s %llu bytes\n", pszName, uInstance, fRx ? "RX" : "TX", cb));
+#else
+    LogFlowFunc(("%s d=%s %llu bytes\n", pszName, fRx ? "RX" : "TX", cb));
+#endif
+    if (fRx)
+        pGuest->mNetStatRx += cb;
+    else
+        pGuest->mNetStatTx += cb;
+
+    return VINF_SUCCESS;
+}
+
 void Guest::updateStats(uint64_t iTick)
 {
-    uint64_t uFreeTotal, uAllocTotal, uBalloonedTotal, uSharedTotal;
-    uint64_t uTotalMem, uPrivateMem, uSharedMem, uZeroMem;
+    uint64_t cbFreeTotal      = 0;
+    uint64_t cbAllocTotal     = 0;
+    uint64_t cbBalloonedTotal = 0;
+    uint64_t cbSharedTotal    = 0;
+    uint64_t cbSharedMem      = 0;
+    ULONG    uNetStatRx       = 0;
+    ULONG    uNetStatTx       = 0;
+    ULONG    aGuestStats[GUESTSTATTYPE_MAX];
+    RT_ZERO(aGuestStats);
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
-    ULONG aGuestStats[GUESTSTATTYPE_MAX];
-    RT_ZERO(aGuestStats);
-    ULONG validStats = mGuestValidStats;
+    ULONG validStats = mVmValidStats;
     /* Check if we have anything to report */
     if (validStats)
     {
-        mGuestValidStats = pm::GUESTSTATMASK_NONE;
+        mVmValidStats = pm::VMSTATMASK_NONE;
         memcpy(aGuestStats, mCurrentGuestStat, sizeof(aGuestStats));
     }
     alock.release();
+
     /*
      * Calling SessionMachine may take time as the object resides in VBoxSVC
      * process. This is why we took a snapshot of currently collected stats
      * and released the lock.
      */
-    uFreeTotal      = 0;
-    uAllocTotal     = 0;
-    uBalloonedTotal = 0;
-    uSharedTotal    = 0;
-    uTotalMem       = 0;
-    uPrivateMem     = 0;
-    uSharedMem      = 0;
-    uZeroMem        = 0;
-
-    Console::SafeVMPtr pVM(mParent);
-    if (pVM.isOk())
+    Console::SafeVMPtrQuiet ptrVM(mParent);
+    if (ptrVM.isOk())
     {
         int rc;
 
         /*
          * There is no point in collecting VM shared memory if other memory
-         * statistics are not available yet. Or is it?
+         * statistics are not available yet. Or is there?
          */
         if (validStats)
         {
             /* Query the missing per-VM memory statistics. */
-            rc = PGMR3QueryMemoryStats(pVM.raw(), &uTotalMem, &uPrivateMem, &uSharedMem, &uZeroMem);
+            uint64_t cbTotalMemIgn, cbPrivateMemIgn, cbZeroMemIgn;
+            rc = PGMR3QueryMemoryStats(ptrVM.rawUVM(), &cbTotalMemIgn, &cbPrivateMemIgn, &cbSharedMem, &cbZeroMemIgn);
             if (rc == VINF_SUCCESS)
-            {
-                validStats |= pm::GUESTSTATMASK_MEMSHARED;
-            }
+                validStats |= pm::VMSTATMASK_GUEST_MEMSHARED;
         }
 
         if (mCollectVMMStats)
         {
-            rc = PGMR3QueryGlobalMemoryStats(pVM.raw(), &uAllocTotal, &uFreeTotal, &uBalloonedTotal, &uSharedTotal);
+            rc = PGMR3QueryGlobalMemoryStats(ptrVM.rawUVM(), &cbAllocTotal, &cbFreeTotal, &cbBalloonedTotal, &cbSharedTotal);
             AssertRC(rc);
             if (rc == VINF_SUCCESS)
-            {
-                validStats |= pm::GUESTSTATMASK_ALLOCVMM|pm::GUESTSTATMASK_FREEVMM|
-                    pm::GUESTSTATMASK_BALOONVMM|pm::GUESTSTATMASK_SHAREDVMM;
-            }
+                validStats |= pm::VMSTATMASK_VMM_ALLOC  | pm::VMSTATMASK_VMM_FREE
+                           |  pm::VMSTATMASK_VMM_BALOON | pm::VMSTATMASK_VMM_SHARED;
         }
 
+        uint64_t uRxPrev = mNetStatRx;
+        uint64_t uTxPrev = mNetStatTx;
+        mNetStatRx = mNetStatTx = 0;
+        rc = STAMR3Enum(ptrVM.rawUVM(), "/Public/Net/*/Bytes*", staticEnumStatsCallback, this);
+        AssertRC(rc);
+
+        uint64_t uTsNow = RTTimeNanoTS();
+        uint64_t cNsPassed = uTsNow - mNetStatLastTs;
+        if (cNsPassed >= 1000)
+        {
+            mNetStatLastTs = uTsNow;
+
+            uNetStatRx = (ULONG)((mNetStatRx - uRxPrev) * 1000000 / (cNsPassed / 1000)); /* in bytes per second */
+            uNetStatTx = (ULONG)((mNetStatTx - uTxPrev) * 1000000 / (cNsPassed / 1000)); /* in bytes per second */
+            validStats |= pm::VMSTATMASK_NET_RX | pm::VMSTATMASK_NET_TX;
+            LogFlowThisFunc(("Net Rx=%llu Tx=%llu Ts=%llu Delta=%llu\n", mNetStatRx, mNetStatTx, uTsNow, cNsPassed));
+        }
+        else
+        {
+            /* Can happen on resume or if we're using a non-monotonic clock
+               source for the timer and the time is adjusted. */
+            mNetStatRx = uRxPrev;
+            mNetStatTx = uTxPrev;
+            LogThisFunc(("Net Ts=%llu cNsPassed=%llu - too small interval\n", uTsNow, cNsPassed));
+        }
     }
 
-    mParent->reportGuestStatistics(validStats,
-                                   aGuestStats[GUESTSTATTYPE_CPUUSER],
-                                   aGuestStats[GUESTSTATTYPE_CPUKERNEL],
-                                   aGuestStats[GUESTSTATTYPE_CPUIDLE],
-                                   /* Convert the units for RAM usage stats: page (4K) -> 1KB units */
-                                   mCurrentGuestStat[GUESTSTATTYPE_MEMTOTAL] * (_4K/_1K),
-                                   mCurrentGuestStat[GUESTSTATTYPE_MEMFREE] * (_4K/_1K),
-                                   mCurrentGuestStat[GUESTSTATTYPE_MEMBALLOON] * (_4K/_1K),
-                                   (ULONG)(uSharedMem / _1K), /* bytes -> KB */
-                                   mCurrentGuestStat[GUESTSTATTYPE_MEMCACHE] * (_4K/_1K),
-                                   mCurrentGuestStat[GUESTSTATTYPE_PAGETOTAL] * (_4K/_1K),
-                                   (ULONG)(uAllocTotal / _1K), /* bytes -> KB */
-                                   (ULONG)(uFreeTotal / _1K),
-                                   (ULONG)(uBalloonedTotal / _1K),
-                                   (ULONG)(uSharedTotal / _1K));
+    mParent->reportVmStatistics(validStats,
+                                aGuestStats[GUESTSTATTYPE_CPUUSER],
+                                aGuestStats[GUESTSTATTYPE_CPUKERNEL],
+                                aGuestStats[GUESTSTATTYPE_CPUIDLE],
+                                /* Convert the units for RAM usage stats: page (4K) -> 1KB units */
+                                mCurrentGuestStat[GUESTSTATTYPE_MEMTOTAL] * (_4K/_1K),
+                                mCurrentGuestStat[GUESTSTATTYPE_MEMFREE] * (_4K/_1K),
+                                mCurrentGuestStat[GUESTSTATTYPE_MEMBALLOON] * (_4K/_1K),
+                                (ULONG)(cbSharedMem / _1K), /* bytes -> KB */
+                                mCurrentGuestStat[GUESTSTATTYPE_MEMCACHE] * (_4K/_1K),
+                                mCurrentGuestStat[GUESTSTATTYPE_PAGETOTAL] * (_4K/_1K),
+                                (ULONG)(cbAllocTotal / _1K), /* bytes -> KB */
+                                (ULONG)(cbFreeTotal / _1K),
+                                (ULONG)(cbBalloonedTotal / _1K),
+                                (ULONG)(cbSharedTotal / _1K),
+                                uNetStatRx,
+                                uNetStatTx);
 }
 
 // IGuest properties
@@ -405,6 +492,26 @@ STDMETHODIMP Guest::COMGETTER(AdditionsRevision)(ULONG *a_puAdditionsRevision)
         }
     }
     return hrc;
+}
+
+STDMETHODIMP Guest::COMGETTER(EventSource)(IEventSource ** aEventSource)
+{
+#ifndef VBOX_WITH_GUEST_CONTROL
+    ReturnComNotImplemented();
+#else
+    LogFlowThisFuncEnter();
+
+    CheckComArgOutPointerValid(aEventSource);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    // no need to lock - lifetime constant
+    mEventSource.queryInterfaceTo(aEventSource);
+
+    LogFlowFuncLeaveRC(S_OK);
+    return S_OK;
+#endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
 STDMETHODIMP Guest::COMGETTER(Facilities)(ComSafeArrayOut(IAdditionsFacility *, aFacilities))
@@ -570,47 +677,35 @@ STDMETHODIMP Guest::InternalGetStatistics(ULONG *aCpuUser, ULONG *aCpuKernel, UL
     *aMemCache   = mCurrentGuestStat[GUESTSTATTYPE_MEMCACHE] * (_4K/_1K);     /* page (4K) -> 1KB units */
     *aPageTotal  = mCurrentGuestStat[GUESTSTATTYPE_PAGETOTAL] * (_4K/_1K);   /* page (4K) -> 1KB units */
 
+    /* Play safe or smth? */
+    *aMemAllocTotal   = 0;
+    *aMemFreeTotal    = 0;
+    *aMemBalloonTotal = 0;
+    *aMemSharedTotal  = 0;
+    *aMemShared       = 0;
+
     /* MUST release all locks before calling any PGM statistics queries,
      * as they are executed by EMT and that might deadlock us by VMM device
      * activity which waits for the Guest object lock. */
     alock.release();
-    Console::SafeVMPtr pVM (mParent);
-    if (pVM.isOk())
-    {
-        uint64_t uFreeTotal, uAllocTotal, uBalloonedTotal, uSharedTotal;
-        *aMemFreeTotal = 0;
-        int rc = PGMR3QueryGlobalMemoryStats(pVM.raw(), &uAllocTotal, &uFreeTotal, &uBalloonedTotal, &uSharedTotal);
-        AssertRC(rc);
-        if (rc == VINF_SUCCESS)
-        {
-            *aMemAllocTotal   = (ULONG)(uAllocTotal / _1K);  /* bytes -> KB */
-            *aMemFreeTotal    = (ULONG)(uFreeTotal / _1K);
-            *aMemBalloonTotal = (ULONG)(uBalloonedTotal / _1K);
-            *aMemSharedTotal  = (ULONG)(uSharedTotal / _1K);
-        }
-        else
-            return E_FAIL;
-
-        /* Query the missing per-VM memory statistics. */
-        *aMemShared  = 0;
-        uint64_t uTotalMem, uPrivateMem, uSharedMem, uZeroMem;
-        rc = PGMR3QueryMemoryStats(pVM.raw(), &uTotalMem, &uPrivateMem, &uSharedMem, &uZeroMem);
-        if (rc == VINF_SUCCESS)
-        {
-            *aMemShared = (ULONG)(uSharedMem / _1K);
-        }
-        else
-            return E_FAIL;
-    }
-    else
-    {
-        *aMemAllocTotal   = 0;
-        *aMemFreeTotal    = 0;
-        *aMemBalloonTotal = 0;
-        *aMemSharedTotal  = 0;
-        *aMemShared       = 0;
+    Console::SafeVMPtr ptrVM(mParent);
+    if (!ptrVM.isOk())
         return E_FAIL;
-    }
+
+    uint64_t cbFreeTotal, cbAllocTotal, cbBalloonedTotal, cbSharedTotal;
+    int rc = PGMR3QueryGlobalMemoryStats(ptrVM.rawUVM(), &cbAllocTotal, &cbFreeTotal, &cbBalloonedTotal, &cbSharedTotal);
+    AssertRCReturn(rc, E_FAIL);
+
+    *aMemAllocTotal   = (ULONG)(cbAllocTotal / _1K);  /* bytes -> KB */
+    *aMemFreeTotal    = (ULONG)(cbFreeTotal / _1K);
+    *aMemBalloonTotal = (ULONG)(cbBalloonedTotal / _1K);
+    *aMemSharedTotal  = (ULONG)(cbSharedTotal / _1K);
+
+    /* Query the missing per-VM memory statistics. */
+    uint64_t cbTotalMemIgn, cbPrivateMemIgn, cbSharedMem, cbZeroMemIgn;
+    rc = PGMR3QueryMemoryStats(ptrVM.rawUVM(), &cbTotalMemIgn, &cbPrivateMemIgn, &cbSharedMem, &cbZeroMemIgn);
+    AssertRCReturn(rc, E_FAIL);
+    *aMemShared = (ULONG)(cbSharedMem / _1K);
 
     return S_OK;
 }
@@ -619,15 +714,15 @@ HRESULT Guest::setStatistic(ULONG aCpuId, GUESTSTATTYPE enmType, ULONG aVal)
 {
     static ULONG indexToPerfMask[] =
     {
-        pm::GUESTSTATMASK_CPUUSER,
-        pm::GUESTSTATMASK_CPUKERNEL,
-        pm::GUESTSTATMASK_CPUIDLE,
-        pm::GUESTSTATMASK_MEMTOTAL,
-        pm::GUESTSTATMASK_MEMFREE,
-        pm::GUESTSTATMASK_MEMBALLOON,
-        pm::GUESTSTATMASK_MEMCACHE,
-        pm::GUESTSTATMASK_PAGETOTAL,
-        pm::GUESTSTATMASK_NONE
+        pm::VMSTATMASK_GUEST_CPUUSER,
+        pm::VMSTATMASK_GUEST_CPUKERNEL,
+        pm::VMSTATMASK_GUEST_CPUIDLE,
+        pm::VMSTATMASK_GUEST_MEMTOTAL,
+        pm::VMSTATMASK_GUEST_MEMFREE,
+        pm::VMSTATMASK_GUEST_MEMBALLOON,
+        pm::VMSTATMASK_GUEST_MEMCACHE,
+        pm::VMSTATMASK_GUEST_PAGETOTAL,
+        pm::VMSTATMASK_NONE
     };
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -638,7 +733,7 @@ HRESULT Guest::setStatistic(ULONG aCpuId, GUESTSTATTYPE enmType, ULONG aVal)
         return E_INVALIDARG;
 
     mCurrentGuestStat[enmType] = aVal;
-    mGuestValidStats |= indexToPerfMask[enmType];
+    mVmValidStats |= indexToPerfMask[enmType];
     return S_OK;
 }
 
@@ -1049,6 +1144,31 @@ void Guest::facilityUpdate(VBoxGuestFacilityType a_enmFacility, VBoxGuestFacilit
         if (SUCCEEDED(hrc))
             mData.mFacilityMap.insert(std::make_pair((AdditionsFacilityType_T)a_enmFacility, ptrFac));
     }
+}
+
+/**
+ * Issued by the guest when a guest user changed its state.
+ *
+ * @return  IPRT status code.
+ * @param   aUser               Guest user name.
+ * @param   aDomain             Domain of guest user account. Optional.
+ * @param   enmState            New state to indicate.
+ * @param   puDetails           Pointer to state details. Optional.
+ * @param   cbDetails           Size (in bytes) of state details. Pass 0 if not used.
+ */
+void Guest::onUserStateChange(Bstr aUser, Bstr aDomain, VBoxGuestUserState enmState,
+                              const uint8_t *puDetails, uint32_t cbDetails)
+{
+    LogFlowThisFunc(("\n"));
+
+    AutoCaller autoCaller(this);
+    AssertComRCReturnVoid(autoCaller.rc());
+
+    Bstr strDetails; /** @todo Implement state details here. */
+
+    fireGuestUserStateChangedEvent(mEventSource, aUser.raw(), aDomain.raw(),
+                                   (GuestUserState_T)enmState, strDetails.raw());
+    LogFlowFuncLeave();
 }
 
 /**

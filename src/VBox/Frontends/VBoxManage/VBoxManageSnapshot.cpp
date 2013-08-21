@@ -1,10 +1,10 @@
-/* $Id: VBoxManageSnapshot.cpp 39120 2011-10-26 13:08:13Z vboxsync $ */
+/* $Id: VBoxManageSnapshot.cpp $ */
 /** @file
  * VBoxManage - The 'snapshot' command.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -189,12 +189,17 @@ static RTEXITCODE handleSnapshotList(HandlerArg *pArgs, ComPtr<IMachine> &rptrMa
 
     /* See showVMInfo. */
     ComPtr<ISnapshot> ptrSnapshot;
-    CHECK_ERROR2_RET(rptrMachine, FindSnapshot(Bstr().raw(), ptrSnapshot.asOutParam()), RTEXITCODE_FAILURE);
+    HRESULT hrc = rptrMachine->FindSnapshot(Bstr().raw(), ptrSnapshot.asOutParam());
+    if (FAILED(hrc))
+    {
+        RTPrintf("This machine does not have any snapshots\n");
+        return RTEXITCODE_FAILURE;
+    }
     if (ptrSnapshot)
     {
         ComPtr<ISnapshot> ptrCurrentSnapshot;
         CHECK_ERROR2_RET(rptrMachine,COMGETTER(CurrentSnapshot)(ptrCurrentSnapshot.asOutParam()), RTEXITCODE_FAILURE);
-        HRESULT hrc = showSnapshots(ptrSnapshot, ptrCurrentSnapshot, enmDetails);
+        hrc = showSnapshots(ptrSnapshot, ptrCurrentSnapshot, enmDetails);
         if (FAILED(hrc))
             return RTEXITCODE_FAILURE;
     }
@@ -301,13 +306,14 @@ int handleSnapshot(HandlerArg *a)
 
             /* parse the optional arguments */
             Bstr desc;
-            bool fPause = false;
+            bool fPause = true; /* default is NO live snapshot */
             static const RTGETOPTDEF s_aTakeOptions[] =
             {
                 { "--description", 'd', RTGETOPT_REQ_STRING },
                 { "-description",  'd', RTGETOPT_REQ_STRING },
                 { "-desc",         'd', RTGETOPT_REQ_STRING },
-                { "--pause",       'p', RTGETOPT_REQ_NOTHING }
+                { "--pause",       'p', RTGETOPT_REQ_NOTHING },
+                { "--live",        'l', RTGETOPT_REQ_NOTHING }
             };
             RTGETOPTSTATE GetOptState;
             RTGetOptInit(&GetOptState, a->argc, a->argv, s_aTakeOptions, RT_ELEMENTS(s_aTakeOptions),
@@ -321,6 +327,10 @@ int handleSnapshot(HandlerArg *a)
                 {
                     case 'p':
                         fPause = true;
+                        break;
+
+                    case 'l':
+                        fPause = false;
                         break;
 
                     case 'd':

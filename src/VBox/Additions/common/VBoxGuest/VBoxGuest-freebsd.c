@@ -1,10 +1,10 @@
-/* $Id: VBoxGuest-freebsd.c 38322 2011-08-05 10:15:15Z vboxsync $ */
+/* $Id: VBoxGuest-freebsd.c $ */
 /** @file
  * VirtualBox Guest Additions Driver for FreeBSD.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

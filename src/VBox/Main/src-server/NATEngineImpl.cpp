@@ -1,10 +1,10 @@
-/* $Id: NATEngineImpl.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
+/* $Id: NATEngineImpl.cpp $ */
 /** @file
  * Implementation of INATEngine in VBoxSVC.
  */
 
 /*
- * Copyright (C) 2010-2012 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,6 +26,7 @@
 
 #include <VBox/err.h>
 #include <VBox/settings.h>
+#include <VBox/com/array.h>
 
 
 // constructor / destructor
@@ -338,6 +339,7 @@ NATEngine::RemoveRedirect(IN_BSTR aName)
     mNATRules.erase(it);
     mParent->setModified(Machine::IsModified_NetworkAdapters);
     m_fModified = true;
+    mData.commit();
     alock.release();
     mParent->onNATRedirectRuleChange(ulSlot, TRUE, aName, proto, Bstr(strHostIP).raw(), u16HostPort, Bstr(strGuestIP).raw(), u16GuestPort);
     return S_OK;

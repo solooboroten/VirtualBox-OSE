@@ -1,4 +1,4 @@
-/* $Id: VBoxCredProvPoller.cpp 40435 2012-03-12 18:01:39Z vboxsync $ */
+/* $Id: VBoxCredProvPoller.cpp $ */
 /** @file
  * VBoxCredPoller - Thread for querying / retrieving user credentials.
  */

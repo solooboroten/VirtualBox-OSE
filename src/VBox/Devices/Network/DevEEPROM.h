@@ -1,10 +1,10 @@
-/* $Id: DevEEPROM.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: DevEEPROM.h $ */
 /** @file
  * DevEEPROM - Microware-compatible 64x16-bit 93C46 EEPROM Emulation, Header.
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,7 +29,8 @@
  *          device supports GC execution. This is why it is a
  *          plain-old-data structure.
  */
-struct EEPROM93C46 {
+struct EEPROM93C46
+{
     /** General definitions */
     enum {
         /** Size of EEPROM in words */

@@ -1,10 +1,10 @@
-/* $Id: dvmmbr.cpp 42387 2012-07-25 11:55:30Z vboxsync $ */
+/* $Id: dvmmbr.cpp $ */
 /** @file
  * IPRT Disk Volume Management API (DVM) - MBR format backend.
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

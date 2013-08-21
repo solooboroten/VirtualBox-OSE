@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010-2012 Oracle Corporation
+ * Copyright (C) 2010-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -23,7 +23,7 @@
 #include "UIMachineWindow.h"
 
 /* Forward declarations: */
-class VBoxMiniToolBar;
+class UIRuntimeMiniToolBar;
 
 /* Fullscreen machine-window implementation: */
 class UIMachineWindowFullscreen : public UIMachineWindow
@@ -40,8 +40,8 @@ private slots:
     /* Session event-handlers: */
     void sltMachineStateChanged();
 
-    /* Places window on screen: */
-    void sltPlaceOnScreen();
+    /* Show in necessary mode: */
+    void sltShowInNecessaryMode() { showInNecessaryMode(); }
 
     /* Popup main-menu: */
     void sltPopupMainMenu();
@@ -59,6 +59,7 @@ private:
     void cleanupMenu();
 
     /* Show stuff: */
+    void placeOnScreen();
     void showInNecessaryMode();
 
     /* Update stuff: */
@@ -66,7 +67,7 @@ private:
 
     /* Widgets: */
     QMenu *m_pMainMenu;
-    VBoxMiniToolBar *m_pMiniToolBar;
+    UIRuntimeMiniToolBar *m_pMiniToolBar;
 
     /* Factory support: */
     friend class UIMachineWindow;

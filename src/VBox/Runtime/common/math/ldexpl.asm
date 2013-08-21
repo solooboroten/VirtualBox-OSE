@@ -1,10 +1,10 @@
-; $Id: ldexpl.asm 28800 2010-04-27 08:22:32Z vboxsync $
+; $Id: ldexpl.asm $
 ;; @file
 ; IPRT - No-CRT ldexpl - AMD64 & X86.
 ;
 
 ;
-; Copyright (C) 2006-2007 Oracle Corporation
+; Copyright (C) 2006-2010 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -31,7 +31,7 @@ BEGINCODE
 ;;
 ; Computes lrd * 2^exp
 ; @returns st(0)
-; @param    lrd     [rbp + xS*2]
+; @param    lrd     [rbp + xCB*2]
 ; @param    exp     [ebp + 14h]  GCC:edi  MSC:ecx
 BEGINPROC RT_NOCRT(ldexpl)
     push    xBP
@@ -43,9 +43,9 @@ BEGINPROC RT_NOCRT(ldexpl)
     mov     [rsp], edi
     fild    dword [rsp]
 %else
-    fild    dword [ebp + xS*2 + RTLRD_CB]
+    fild    dword [ebp + xCB*2 + RTLRD_CB]
 %endif
-    fld     tword [xBP + xS*2]
+    fld     tword [xBP + xCB*2]
     fscale
     fstp    st1
 

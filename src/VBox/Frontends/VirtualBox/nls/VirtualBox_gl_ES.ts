@@ -3039,7 +3039,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>UIHotKeyEditor</name>
+    <name>UIHostComboEditor</name>
     <message>
         <source>Left </source>
         <translation>Esquerda </translation>
@@ -10480,7 +10480,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxMiniToolBar</name>
+    <name>UIMiniToolBar</name>
     <message>
         <source>Always show the toolbar</source>
         <translation>Mostrar sempre a barra de ferramentas</translation>

@@ -1,11 +1,11 @@
-/* $Id: SnapshotImpl.cpp 42889 2012-08-20 17:44:10Z vboxsync $ */
+/* $Id: SnapshotImpl.cpp $ */
 /** @file
  *
  * COM class implementation for Snapshot and SnapshotMachine in VBoxSVC.
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,6 +29,7 @@
 // to remove them and put that code in shared code in MachineImplcpp
 #include "SharedFolderImpl.h"
 #include "USBControllerImpl.h"
+#include "USBDeviceFiltersImpl.h"
 #include "VirtualBoxImpl.h"
 
 #include "AutoCaller.h"
@@ -40,6 +41,7 @@
 #include <VBox/err.h>
 
 #include <VBox/settings.h>
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -113,7 +115,7 @@ HRESULT Snapshot::init(VirtualBox *aVirtualBox,
 {
     LogFlowThisFunc(("uuid=%s aParent->uuid=%s\n", aId.toString().c_str(), (aParent) ? aParent->m->uuid.toString().c_str() : ""));
 
-    ComAssertRet(!aId.isEmpty() && !aName.isEmpty() && aMachine, E_INVALIDARG);
+    ComAssertRet(!aId.isZero() && aId.isValid() && !aName.isEmpty() && aMachine, E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan(this);
@@ -327,7 +329,8 @@ STDMETHODIMP Snapshot::COMSETTER(Name)(IN_BSTR aName)
     // prohibit setting a UUID only as the machine name, or else it can
     // never be found by findMachine()
     Guid test(aName);
-    if (test.isNotEmpty())
+
+    if (!test.isZero() && test.isValid())
         return setError(E_INVALIDARG,  tr("A machine cannot have a UUID as its name"));
 
     AutoCaller autoCaller(this);
@@ -490,6 +493,31 @@ const ComObjPtr<Snapshot> Snapshot::getFirstChild() const
 const Utf8Str& Snapshot::getStateFilePath() const
 {
     return m->pMachine->mSSData->strStateFilePath;
+}
+
+/**
+ * Returns the depth in the snapshot tree for this snapshot.
+ *
+ * @note takes the snapshot tree lock
+ */
+
+uint32_t Snapshot::getDepth()
+{
+    AutoCaller autoCaller(this);
+    AssertComRC(autoCaller.rc());
+
+    // snapshots tree is protected by machine lock
+    AutoReadLock alock(m->pMachine COMMA_LOCKVAL_SRC_POS);
+
+    uint32_t cDepth = 0;
+    ComObjPtr<Snapshot> pSnap(this);
+    while (!pSnap.isNull())
+    {
+        pSnap = pSnap->m->pParent;
+        cDepth++;
+    }
+
+    return cDepth;
 }
 
 /**
@@ -788,11 +816,19 @@ HRESULT Snapshot::saveSnapshotImpl(settings::Snapshot &data, bool aAttrsOnly)
              it != m->llChildren.end();
              ++it)
         {
-            settings::Snapshot snap;
-            rc = (*it)->saveSnapshotImpl(snap, aAttrsOnly);
-            if (FAILED(rc)) return rc;
+           // Use the heap to reduce the stack footprint. Each recursion needs
+           // over 1K, and there can be VMs with deeply nested snapshots. The
+           // stack can be quite small, especially with XPCOM.
 
-            data.llChildSnapshots.push_back(snap);
+            settings::Snapshot *snap = new settings::Snapshot();
+            rc = (*it)->saveSnapshotImpl(*snap, aAttrsOnly);
+            if (FAILED(rc))
+            {
+                delete snap;
+                return rc;
+            }
+            data.llChildSnapshots.push_back(*snap);
+            delete snap;
         }
     }
 
@@ -954,7 +990,8 @@ HRESULT SnapshotMachine::init(SessionMachine *aSessionMachine,
     LogFlowThisFuncEnter();
     LogFlowThisFunc(("mName={%s}\n", aSessionMachine->mUserData->s.strName.c_str()));
 
-    AssertReturn(aSessionMachine && !Guid(aSnapshotId).isEmpty(), E_INVALIDARG);
+    Guid l_guid(aSnapshotId);
+    AssertReturn(aSessionMachine && (!l_guid.isZero() && l_guid.isValid()), E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan(this);
@@ -1040,8 +1077,22 @@ HRESULT SnapshotMachine::init(SessionMachine *aSessionMachine,
     unconst(mAudioAdapter).createObject();
     mAudioAdapter->initCopy(this, pMachine->mAudioAdapter);
 
-    unconst(mUSBController).createObject();
-    mUSBController->initCopy(this, pMachine->mUSBController);
+    /* create copies of all USB controllers (mUSBControllerData
+     * after attaching a copy contains just references to original objects) */
+    mUSBControllers.allocate();
+    for (USBControllerList::const_iterator
+         it = aSessionMachine->mUSBControllers->begin();
+         it != aSessionMachine->mUSBControllers->end();
+         ++it)
+    {
+        ComObjPtr<USBController> ctrl;
+        ctrl.createObject();
+        ctrl->initCopy(this, *it);
+        mUSBControllers->push_back(ctrl);
+    }
+
+    unconst(mUSBDeviceFilters).createObject();
+    mUSBDeviceFilters->initCopy(this, pMachine->mUSBDeviceFilters);
 
     mNetworkAdapters.resize(pMachine->mNetworkAdapters.size());
     for (ULONG slot = 0; slot < mNetworkAdapters.size(); slot++)
@@ -1095,7 +1146,8 @@ HRESULT SnapshotMachine::initFromSettings(Machine *aMachine,
     LogFlowThisFuncEnter();
     LogFlowThisFunc(("mName={%s}\n", aMachine->mUserData->s.strName.c_str()));
 
-    AssertReturn(aMachine && !Guid(aSnapshotId).isEmpty(), E_INVALIDARG);
+    Guid l_guid(aSnapshotId);
+    AssertReturn(aMachine && (!l_guid.isZero() && l_guid.isValid()), E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan(this);
@@ -1122,6 +1174,7 @@ HRESULT SnapshotMachine::initFromSettings(Machine *aMachine,
     mHWData.allocate();
     mMediaData.allocate();
     mStorageControllers.allocate();
+    mUSBControllers.allocate();
 
     /* SSData is always unique for SnapshotMachine */
     mSSData.allocate();
@@ -1138,8 +1191,8 @@ HRESULT SnapshotMachine::initFromSettings(Machine *aMachine,
     unconst(mAudioAdapter).createObject();
     mAudioAdapter->init(this);
 
-    unconst(mUSBController).createObject();
-    mUSBController->init(this);
+    unconst(mUSBDeviceFilters).createObject();
+    mUSBDeviceFilters->init(this);
 
     mNetworkAdapters.resize(Global::getMaxNetworkAdapters(mHWData->mChipsetType));
     for (ULONG slot = 0; slot < mNetworkAdapters.size(); slot++)
@@ -1416,6 +1469,14 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot(IConsole *aInitiator,
     AssertReturn(mConsoleTaskData.mLastState == MachineState_Null, E_FAIL);
     AssertReturn(mConsoleTaskData.mSnapshot.isNull(), E_FAIL);
 
+    if (   mData->mCurrentSnapshot
+        && mData->mCurrentSnapshot->getDepth() >= SETTINGS_SNAPSHOT_DEPTH_MAX)
+    {
+        return setError(VBOX_E_INVALID_OBJECT_STATE,
+                        tr("Cannot take another snapshot for machine '%s', because it exceeds the maximum snapshot depth limit. Please delete some earlier snapshot which you no longer need"),
+                        mUserData->s.strName.c_str());
+    }
+
     if (    !fTakingSnapshotOnline
          && mData->mMachineState != MachineState_Saved
        )
@@ -1435,8 +1496,16 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot(IConsole *aInitiator,
     Utf8Str strStateFilePath;
     /* stateFilePath is null when the machine is not online nor saved */
     if (fTakingSnapshotOnline)
-        // creating a new online snapshot: then we need a fresh saved state file
-        composeSavedStateFilename(strStateFilePath);
+    {
+        Bstr value;
+        HRESULT rc = GetExtraData(Bstr("VBoxInternal2/ForceTakeSnapshotWithoutState").raw(),
+                                  value.asOutParam());
+        if (FAILED(rc) || value != "1")
+        {
+            // creating a new online snapshot: we need a fresh saved state file
+            composeSavedStateFilename(strStateFilePath);
+        }
+    }
     else if (mData->mMachineState == MachineState_Saved)
         // taking an online snapshot from machine in "saved" state: then use existing state file
         strStateFilePath = mSSData->strStateFilePath;
@@ -1499,9 +1568,9 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot(IConsole *aInitiator,
         if (FAILED(rc))
             throw rc;
 
-        // if we got this far without an error, then save the media registries
-        // that got modified for the diff images
-        mParent->saveModifiedRegistries();
+        // MUST NOT save the settings or the media registry here, because
+        // this causes trouble with rolling back settings if the user cancels
+        // taking the snapshot after the diff images have been created.
     }
     catch (HRESULT hrc)
     {
@@ -1608,11 +1677,14 @@ STDMETHODIMP SessionMachine::EndTakingSnapshot(BOOL aSuccess)
         /* inform callbacks */
         mParent->onSnapshotTaken(mData->mUuid,
                                  mConsoleTaskData.mSnapshot->getId());
+        machineLock.release();
     }
     else
     {
         /* delete all differencing hard disks created (this will also attach
          * their parents back by rolling back mMediaData) */
+        machineLock.release();
+
         rollbackMedia();
 
         mData->mFirstSnapshot = pOldFirstSnap;      // might have been changed above
@@ -1624,15 +1696,19 @@ STDMETHODIMP SessionMachine::EndTakingSnapshot(BOOL aSuccess)
             // snapshot means that a new saved state file was created, which we must
             // clean up now
             RTFileDelete(mConsoleTaskData.mSnapshot->getStateFilePath().c_str());
+            machineLock.acquire();
+
 
         mConsoleTaskData.mSnapshot->uninit();
+        machineLock.release();
+
     }
 
     /* clear out the snapshot data */
     mConsoleTaskData.mLastState = MachineState_Null;
     mConsoleTaskData.mSnapshot.setNull();
 
-    machineLock.release();
+    /* machineLock has been released already */
 
     mParent->saveModifiedRegistries();
 
@@ -2053,7 +2129,9 @@ STDMETHODIMP SessionMachine::DeleteSnapshot(IConsole *aInitiator,
 
     Guid startId(aStartId);
     Guid endId(aEndId);
-    AssertReturn(aInitiator && !startId.isEmpty() && !endId.isEmpty(), E_INVALIDARG);
+
+    AssertReturn(aInitiator && !startId.isZero() && !endId.isZero() && startId.isValid() && endId.isValid(), E_INVALIDARG);
+
     AssertReturn(aMachineState && aProgress, E_POINTER);
 
     /** @todo implement the "and all children" and "range" variants */
@@ -2086,7 +2164,7 @@ STDMETHODIMP SessionMachine::DeleteSnapshot(IConsole *aInitiator,
     size_t childrenCount = pSnapshot->getChildrenCount();
     if (childrenCount > 1)
         return setError(VBOX_E_INVALID_OBJECT_STATE,
-                        tr("Snapshot '%s' of the machine '%s' cannot be deleted. because it has %d child snapshots, which is more than the one snapshot allowed for deletion"),
+                        tr("Snapshot '%s' of the machine '%s' cannot be deleted, because it has %d child snapshots, which is more than the one snapshot allowed for deletion"),
                         pSnapshot->getName().c_str(),
                         mUserData->s.strName.c_str(),
                         childrenCount);
@@ -2433,7 +2511,6 @@ void SessionMachine::deleteSnapshotHandler(DeleteSnapshotTask &aTask)
                 // then do a backward merge, i.e. merge its only child onto the
                 // base disk. Here we need then to update the attachment that
                 // refers to the child and have it point to the parent instead
-                Assert(pHD->getParent().isNull());
                 Assert(pHD->getChildren().size() == 1);
 
                 ComObjPtr<Medium> pReplaceHD = pHD->getChildren().front();
@@ -2454,7 +2531,7 @@ void SessionMachine::deleteSnapshotHandler(DeleteSnapshotTask &aTask)
             if (pSnapshotId)
                 replaceSnapshotId = *pSnapshotId;
 
-            if (!replaceMachineId.isEmpty())
+            if (replaceMachineId.isValid() && !replaceMachineId.isZero())
             {
                 // Adjust the backreferences, otherwise merging will assert.
                 // Note that the medium attachment object stays associated
@@ -2481,6 +2558,112 @@ void SessionMachine::deleteSnapshotHandler(DeleteSnapshotTask &aTask)
                                                    childrenToReparent,
                                                    fNeedsOnlineMerge,
                                                    pMediumLockList));
+        }
+
+        {
+            /*check available place on the storage*/
+            RTFOFF pcbTotal = 0;
+            RTFOFF pcbFree = 0;
+            uint32_t pcbBlock = 0;
+            uint32_t pcbSector = 0;
+            std::multimap<uint32_t,uint64_t> neededStorageFreeSpace;
+            std::map<uint32_t,const char*> serialMapToStoragePath;
+
+            MediumDeleteRecList::const_iterator it_md = toDelete.begin();
+
+            while (it_md != toDelete.end())
+            {
+                uint64_t diskSize = 0;
+                uint32_t pu32Serial = 0;
+                ComObjPtr<Medium> pSource_local = it_md->mpSource;
+                ComObjPtr<Medium> pTarget_local = it_md->mpTarget;
+                ComPtr<IMediumFormat> pTargetFormat;
+
+                {
+                    if (   pSource_local.isNull()
+                        || pSource_local == pTarget_local)
+                    {
+                        ++it_md;
+                        continue;
+                    }
+                }
+
+                rc = pTarget_local->COMGETTER(MediumFormat)(pTargetFormat.asOutParam());
+                if (FAILED(rc))
+                    throw rc;
+
+                if(pTarget_local->isMediumFormatFile())
+                {
+                    int vrc = RTFsQuerySerial(pTarget_local->getLocationFull().c_str(), &pu32Serial);
+                    if (RT_FAILURE(vrc))
+                    {
+                        rc = setError(E_FAIL,
+                                      tr(" Unable to merge storage '%s'. Can't get storage UID "),
+                                      pTarget_local->getLocationFull().c_str());
+                        throw rc;
+                    }
+
+                    pSource_local->COMGETTER(Size)((LONG64*)&diskSize);
+
+                    /* store needed free space in multimap */
+                    neededStorageFreeSpace.insert(std::make_pair(pu32Serial,diskSize));
+                    /* linking storage UID with snapshot path, it is a helper container (just for easy finding needed path) */
+                    serialMapToStoragePath.insert(std::make_pair(pu32Serial,pTarget_local->getLocationFull().c_str()));
+                }
+
+                ++it_md;
+            }
+
+            while (!neededStorageFreeSpace.empty())
+            {
+                std::pair<std::multimap<uint32_t,uint64_t>::iterator,std::multimap<uint32_t,uint64_t>::iterator> ret;
+                uint64_t commonSourceStoragesSize = 0;
+
+                /* find all records in multimap with identical storage UID*/
+                ret = neededStorageFreeSpace.equal_range(neededStorageFreeSpace.begin()->first);
+                std::multimap<uint32_t,uint64_t>::const_iterator it_ns = ret.first;
+
+                for (; it_ns != ret.second ; ++it_ns)
+                {
+                    commonSourceStoragesSize += it_ns->second;
+                }
+
+                /* find appropriate path by storage UID*/
+                std::map<uint32_t,const char*>::const_iterator it_sm = serialMapToStoragePath.find(ret.first->first);
+                /* get info about a storage */
+                if (it_sm == serialMapToStoragePath.end())
+                {
+                    LogFlowThisFunc((" Path to the storage wasn't found...\n "));
+
+                    rc = setError(E_INVALIDARG,
+                                      tr(" Unable to merge storage '%s'. Path to the storage wasn't found. "),
+                                      it_sm->second);
+                    throw rc;
+                }
+
+                int vrc = RTFsQuerySizes(it_sm->second, &pcbTotal, &pcbFree,&pcbBlock, &pcbSector);
+                if (RT_FAILURE(vrc))
+                {
+                    rc = setError(E_FAIL,
+                                      tr(" Unable to merge storage '%s'. Can't get the storage size. "),
+                                      it_sm->second);
+                    throw rc;
+                }
+
+                if (commonSourceStoragesSize > (uint64_t)pcbFree)
+                {
+                    LogFlowThisFunc((" Not enough free space to merge...\n "));
+
+                    rc = setError(E_OUTOFMEMORY,
+                                      tr(" Unable to merge storage '%s' - not enough free storage space. "),
+                                      it_sm->second);
+                    throw rc;
+                }
+
+                neededStorageFreeSpace.erase(ret.first, ret.second);
+            }
+
+            serialMapToStoragePath.clear();
         }
 
         // we can release the locks now since the machine state is MachineState_DeletingSnapshot
@@ -2708,7 +2891,9 @@ void SessionMachine::deleteSnapshotHandler(DeleteSnapshotTask &aTask)
             mParent->markRegistryModified(getId());
         }
     }
-    catch (HRESULT aRC) { rc = aRC; }
+    catch (HRESULT aRC) {
+        rc = aRC;
+    }
 
     if (FAILED(rc))
     {
@@ -2871,9 +3056,30 @@ HRESULT SessionMachine::prepareDeleteSnapshotMedium(const ComObjPtr<Medium> &aHD
     }
     else
     {
-        /* forward merge */
-        aSource = aHD;
-        aTarget = pChild;
+        /* Determine best merge direction. */
+        bool fMergeForward = true;
+
+        childLock.release();
+        alock.release();
+        HRESULT rc = aHD->queryPreferredMergeDirection(pChild, fMergeForward);
+        alock.acquire();
+        childLock.acquire();
+
+        if (FAILED(rc) && rc != E_FAIL)
+            return rc;
+
+        if (fMergeForward)
+        {
+            aSource = aHD;
+            aTarget = pChild;
+            LogFlowFunc(("Forward merging selected\n"));
+        }
+        else
+        {
+            aSource = pChild;
+            aTarget = aHD;
+            LogFlowFunc(("Backward merging selected\n"));
+        }
     }
 
     HRESULT rc;
@@ -3128,7 +3334,7 @@ void SessionMachine::cancelDeleteSnapshotMedium(const ComObjPtr<Medium> &aHD,
         }
     }
 
-    if (!aMachineId.isEmpty())
+    if (aMachineId.isValid() && !aMachineId.isZero())
     {
         // reattach the source media to the snapshot
         HRESULT rc = aSource->addBackReference(aMachineId, aSnapshotId);

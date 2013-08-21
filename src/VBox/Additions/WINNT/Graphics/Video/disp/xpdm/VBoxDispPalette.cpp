@@ -1,4 +1,4 @@
-/* $Id: VBoxDispPalette.cpp 36867 2011-04-28 07:27:03Z vboxsync $ */
+/* $Id: VBoxDispPalette.cpp $ */
 
 /** @file
  * VBox XPDM Display driver, palette related functions

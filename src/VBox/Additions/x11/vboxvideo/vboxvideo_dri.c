@@ -1,10 +1,10 @@
-/** @file $Id: vboxvideo_dri.c 43108 2012-08-30 14:23:41Z vboxsync $
+/** @file $Id: vboxvideo_dri.c $
  *
  * VirtualBox X11 Additions graphics driver, DRI support
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -250,7 +250,7 @@ Bool VBOXDRIScreenInit(ScrnInfoPtr pScrn, ScreenPtr pScreen, VBOXPtr pVBox)
         pDRIInfo->busIdString = alloc(64);
         sprintf(pDRIInfo->busIdString, "PCI:%d:%d:%d",
             ((pciConfigPtr)pVBox->pciInfo->thisCard)->busnum,
-	        ((pciConfigPtr)pVBox->pciInfo->thisCard)->devnum,
+            ((pciConfigPtr)pVBox->pciInfo->thisCard)->devnum,
             ((pciConfigPtr)pVBox->pciInfo->thisCard)->funcnum);
 #endif
         pDRIInfo->ddxDriverMajorVersion = VBOX_VIDEO_MAJOR;

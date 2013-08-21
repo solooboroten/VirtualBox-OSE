@@ -1,10 +1,10 @@
-/* $Id: PGMMap.cpp 41965 2012-06-29 02:52:49Z vboxsync $ */
+/* $Id: PGMMap.cpp $ */
 /** @file
  * PGM - Page Manager, Guest Context Mappings.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -36,10 +36,15 @@
 /*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
+#ifndef PGM_WITHOUT_MAPPINGS
 static void pgmR3MapClearPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iOldPDE);
 static void pgmR3MapSetPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE);
 static int  pgmR3MapIntermediateCheckOne(PVM pVM, uintptr_t uAddress, unsigned cPages, PX86PT pPTDefault, PX86PTPAE pPTPaeDefault);
 static void pgmR3MapIntermediateDoOne(PVM pVM, uintptr_t uAddress, RTHCPHYS HCPhys, unsigned cPages, PX86PT pPTDefault, PX86PTPAE pPTPaeDefault);
+#else
+# define pgmR3MapClearPDEs(pVM, pMap, iNewPDE) do { } while (0)
+# define pgmR3MapSetPDEs(pVM, pMap, iNewPDE)   do { } while (0)
+#endif
 
 
 /**
@@ -209,6 +214,7 @@ VMMR3DECL(int) PGMR3MapPT(PVM pVM, RTGCPTR GCPtr, uint32_t cb, uint32_t fFlags, 
     return VINF_SUCCESS;
 }
 
+#ifdef VBOX_WITH_UNUSED_CODE
 
 /**
  * Removes a page table based mapping.
@@ -279,6 +285,8 @@ VMMR3DECL(int)  PGMR3UnmapPT(PVM pVM, RTGCPTR GCPtr)
     AssertMsgFailed(("No mapping for %#x found!\n", GCPtr));
     return VERR_INVALID_PARAMETER;
 }
+
+#endif /* unused */
 
 
 /**
@@ -483,8 +491,10 @@ VMMR3DECL(int) PGMR3FinalizeMappings(PVM pVM)
 VMMR3DECL(int) PGMR3MappingsSize(PVM pVM, uint32_t *pcb)
 {
     RTGCPTR cb = 0;
+#ifndef PGM_WITHOUT_MAPPINGS
     for (PPGMMAPPING pCur = pVM->pgm.s.pMappingsR3; pCur; pCur = pCur->pNextR3)
         cb += pCur->cb;
+#endif
 
     *pcb = cb;
     AssertReturn(*pcb == cb, VERR_NUMBER_TOO_BIG);
@@ -503,34 +513,34 @@ VMMR3DECL(int) PGMR3MappingsSize(PVM pVM, uint32_t *pcb)
  */
 VMMR3DECL(int) PGMR3MappingsFix(PVM pVM, RTGCPTR GCPtrBase, uint32_t cb)
 {
-    Log(("PGMR3MappingsFix: GCPtrBase=%RGv cb=%#x (fMappingsFixed=%RTbool fMappingsDisabled=%RTbool)\n",
-         GCPtrBase, cb, pVM->pgm.s.fMappingsFixed, pVM->pgm.s.fMappingsDisabled));
+    Log(("PGMR3MappingsFix: GCPtrBase=%RGv cb=%#x (fMappingsFixed=%RTbool MappingEnabled=%RTbool)\n",
+         GCPtrBase, cb, pVM->pgm.s.fMappingsFixed, pgmMapAreMappingsEnabled(pVM)));
 
-    /*
-     * Ignore the additions mapping fix call if disabled.
-     */
-    if (!pgmMapAreMappingsEnabled(pVM))
+#ifndef PGM_WITHOUT_MAPPINGS
+    if (pgmMapAreMappingsEnabled(pVM))
     {
-        Assert(HWACCMIsEnabled(pVM));
-        return VINF_SUCCESS;
+        /*
+         * Only applies to VCPU 0 as we don't support SMP guests with raw mode.
+         */
+        Assert(pVM->cCpus == 1);
+        PVMCPU pVCpu = &pVM->aCpus[0];
+
+        /*
+         * Before we do anything we'll do a forced PD sync to try make sure any
+         * pending relocations because of these mappings have been resolved.
+         */
+        PGMSyncCR3(pVCpu, CPUMGetGuestCR0(pVCpu), CPUMGetGuestCR3(pVCpu), CPUMGetGuestCR4(pVCpu), true);
+
+        return pgmR3MappingsFixInternal(pVM, GCPtrBase, cb);
     }
+#endif /* !PGM_WITHOUT_MAPPINGS */
 
-    /*
-     * Only applies to VCPU 0 as we don't support SMP guests with raw mode.
-     */
-    Assert(pVM->cCpus == 1);
-    PVMCPU pVCpu = &pVM->aCpus[0];
-
-    /*
-     * Before we do anything we'll do a forced PD sync to try make sure any
-     * pending relocations because of these mappings have been resolved.
-     */
-    PGMSyncCR3(pVCpu, CPUMGetGuestCR0(pVCpu), CPUMGetGuestCR3(pVCpu), CPUMGetGuestCR4(pVCpu), true);
-
-    return pgmR3MappingsFixInternal(pVM, GCPtrBase, cb);
+    Assert(HMIsEnabled(pVM));
+    return VINF_SUCCESS;
 }
 
 
+#ifndef PGM_WITHOUT_MAPPINGS
 /**
  * Internal worker for PGMR3MappingsFix and pgmR3Load.
  *
@@ -670,46 +680,7 @@ int pgmR3MappingsFixInternal(PVM pVM, RTGCPTR GCPtrBase, uint32_t cb)
     }
     return VINF_SUCCESS;
 }
-
-
-/**
- * Interface for disabling the guest mappings when switching to HWACCM mode
- * during VM creation and VM reset.
- *
- * (This doesn't touch the intermediate table!)
- *
- * @returns VBox status code.
- * @param   pVM         Pointer to the VM.
- */
-VMMR3DECL(int) PGMR3MappingsDisable(PVM pVM)
-{
-    AssertReturn(!pVM->pgm.s.fMappingsFixed,            VERR_PGM_MAPPINGS_FIXED);
-    AssertReturn(!pVM->pgm.s.fMappingsFixedRestored,    VERR_PGM_MAPPINGS_FIXED);
-    if (pVM->pgm.s.fMappingsDisabled)
-        return VINF_SUCCESS;
-
-    /*
-     * Deactivate (only applies to Virtual CPU #0).
-     */
-    if (pVM->aCpus[0].pgm.s.pShwPageCR3R3)
-    {
-        pgmLock(pVM);                           /* to avoid assertions */
-        int rc = pgmMapDeactivateCR3(pVM, pVM->aCpus[0].pgm.s.pShwPageCR3R3);
-        pgmUnlock(pVM);
-        AssertRCReturn(rc, rc);
-    }
-
-    /*
-     * Mark the mappings as disabled and trigger a CR3 re-sync.
-     */
-    pVM->pgm.s.fMappingsDisabled = true;
-    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
-    {
-        pVM->aCpus[idCpu].pgm.s.fSyncFlags &= ~PGM_SYNC_MONITOR_CR3;
-        VMCPU_FF_SET(&pVM->aCpus[idCpu], VMCPU_FF_PGM_SYNC_CR3);
-    }
-    return VINF_SUCCESS;
-}
+#endif /*!PGM_WITHOUT_MAPPINGS*/
 
 
 /**
@@ -724,7 +695,7 @@ VMMR3DECL(int) PGMR3MappingsDisable(PVM pVM)
  */
 VMMR3DECL(int) PGMR3MappingsUnfix(PVM pVM)
 {
-    Log(("PGMR3MappingsUnfix: fMappingsFixed=%RTbool fMappingsDisabled=%RTbool\n", pVM->pgm.s.fMappingsFixed, pVM->pgm.s.fMappingsDisabled));
+    Log(("PGMR3MappingsUnfix: fMappingsFixed=%RTbool MappingsEnabled=%RTbool\n", pVM->pgm.s.fMappingsFixed, pgmMapAreMappingsEnabled(pVM)));
     if (   pgmMapAreMappingsEnabled(pVM)
         && (    pVM->pgm.s.fMappingsFixed
             ||  pVM->pgm.s.fMappingsFixedRestored)
@@ -757,6 +728,7 @@ VMMR3DECL(bool) PGMR3MappingsNeedReFixing(PVM pVM)
     return pVM->pgm.s.fMappingsFixedRestored;
 }
 
+#ifndef PGM_WITHOUT_MAPPINGS
 
 /**
  * Map pages into the intermediate context (switcher code).
@@ -1041,6 +1013,7 @@ static void pgmR3MapSetPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE)
         /* Default mapping page directory flags are read/write and supervisor; individual page attributes determine the final flags */
         Pde.u = PGM_PDFLAGS_MAPPING | X86_PDE_P | X86_PDE_A | X86_PDE_RW | X86_PDE_US | (uint32_t)pMap->aPTs[i].HCPhysPT;
         pPGM->pInterPD->a[iNewPDE]        = Pde;
+
         /*
          * PAE.
          */
@@ -1344,6 +1317,7 @@ int pgmR3SyncPTResolveConflictPAE(PVM pVM, PPGMMAPPING pMapping, RTGCPTR GCPtrOl
     return VERR_PGM_NO_HYPERVISOR_ADDRESS;
 }
 
+#endif /* !PGM_WITHOUT_MAPPINGS */
 
 /**
  * Read memory from the guest mappings.
@@ -1441,7 +1415,7 @@ VMMR3DECL(int) PGMR3MapRead(PVM pVM, void *pvDst, RTGCPTR GCPtrSrc, size_t cb)
 DECLCALLBACK(void) pgmR3MapInfo(PVM pVM, PCDBGFINFOHLP pHlp, const char *pszArgs)
 {
     NOREF(pszArgs);
-    if (pVM->pgm.s.fMappingsDisabled)
+    if (!pgmMapAreMappingsEnabled(pVM))
         pHlp->pfnPrintf(pHlp, "\nThe mappings are DISABLED.\n");
     else if (pVM->pgm.s.fMappingsFixed)
         pHlp->pfnPrintf(pHlp, "\nThe mappings are FIXED: %RGv-%RGv\n",

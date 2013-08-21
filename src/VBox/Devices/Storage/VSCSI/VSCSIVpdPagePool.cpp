@@ -1,4 +1,4 @@
-/* $Id: VSCSIVpdPagePool.cpp 38680 2011-09-08 07:52:08Z vboxsync $ */
+/* $Id: VSCSIVpdPagePool.cpp $ */
 /** @file
  * Virtual SCSI driver: VPD page pool
  */

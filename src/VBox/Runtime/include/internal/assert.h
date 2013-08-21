@@ -1,10 +1,10 @@
-/* $Id: assert.h 36555 2011-04-05 12:34:09Z vboxsync $ */
+/* $Id: assert.h $ */
 /** @file
  * IPRT - Internal RTAssert header
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

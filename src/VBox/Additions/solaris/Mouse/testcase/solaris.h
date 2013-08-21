@@ -1,4 +1,4 @@
-/* $Id: solaris.h 41852 2012-06-20 15:59:57Z vboxsync $ */
+/* $Id: solaris.h $ */
 /** @file
  * VBoxGuest - Guest Additions Driver for Solaris - testcase stubs.
  */

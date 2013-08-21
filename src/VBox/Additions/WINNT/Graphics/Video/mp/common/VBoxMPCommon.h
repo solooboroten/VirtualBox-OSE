@@ -1,10 +1,10 @@
-/* $Id: VBoxMPCommon.h 42217 2012-07-18 20:41:29Z vboxsync $ */
+/* $Id: VBoxMPCommon.h $ */
 /** @file
  * VBox Miniport common functions used by XPDM/WDDM drivers
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -32,9 +32,9 @@ bool VBoxMPCmnSyncToVideoIRQ(PVBOXMP_COMMON pCommon, PFNVIDEOIRQSYNC pfnSync, vo
 #define VBOXMP_MAX_VIDEO_MODES 128
 void VBoxMPCmnInitCustomVideoModes(PVBOXMP_DEVEXT pExt);
 VIDEO_MODE_INFORMATION* VBoxMPCmnGetCustomVideoModeInfo(ULONG ulIndex);
-VIDEO_MODE_INFORMATION* VBoxMPCmnGetVideoModeInfo(ULONG ulIndex);
 
 #ifdef VBOX_XPDM_MINIPORT
+VIDEO_MODE_INFORMATION* VBoxMPCmnGetVideoModeInfo(ULONG ulIndex);
 VIDEO_MODE_INFORMATION* VBoxMPXpdmCurrentVideoMode(PVBOXMP_DEVEXT pExt);
 ULONG VBoxMPXpdmGetVideoModesCount();
 void VBoxMPXpdmBuildVideoModesTable(PVBOXMP_DEVEXT pExt);

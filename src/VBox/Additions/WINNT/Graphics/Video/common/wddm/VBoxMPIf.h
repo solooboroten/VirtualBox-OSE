@@ -1,4 +1,4 @@
-/* $Id: VBoxMPIf.h 43236 2012-09-07 09:32:42Z vboxsync $ */
+/* $Id: VBoxMPIf.h $ */
 
 /** @file
  * VBox WDDM Miniport driver
@@ -13,7 +13,7 @@
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -34,7 +34,7 @@
 #include <VBox/VBoxGuest2.h>
 
 /* One would increase this whenever definitions in this file are changed */
-#define VBOXVIDEOIF_VERSION 13
+#define VBOXVIDEOIF_VERSION 19
 
 #define VBOXWDDM_NODE_ID_SYSTEM           0
 #define VBOXWDDM_NODE_ID_3D               (VBOXWDDM_NODE_ID_SYSTEM)
@@ -91,6 +91,7 @@ typedef struct VBOXWDDM_SURFACE_DESC
     UINT pitch;
     UINT depth;
     UINT slicePitch;
+    UINT d3dWidth;
     UINT cbSize;
     D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId;
     D3DDDI_RATIONAL RefreshRate;
@@ -104,6 +105,8 @@ typedef struct VBOXWDDM_ALLOCINFO
         struct
         {
             D3DDDI_RESOURCEFLAGS fFlags;
+            /* id used to identify the allocation on the host */
+            uint32_t hostID;
             uint64_t hSharedHandle;
             VBOXWDDM_SURFACE_DESC SurfDesc;
         };
@@ -420,6 +423,7 @@ typedef struct VBOXSWAPCHAININFO
 {
     VBOXDISP_KMHANDLE hSwapchainKm; /* in, NULL if new is being created */
     VBOXDISP_UMHANDLE hSwapchainUm; /* in, UMD private data */
+    int32_t winHostID;
     RECT Rect;
     UINT u32Reserved;
     UINT cAllocs;
@@ -480,6 +484,7 @@ typedef struct VBOXDISPIFESCAPE_CRHGSMICTLCON_CALL
 typedef struct VBOXWDDM_QI
 {
     uint32_t u32Version;
+    uint32_t u32VBox3DCaps;
     uint32_t cInfos;
     VBOXVHWA_INFO aInfos[VBOX_VIDEO_MAX_SCREENS];
 } VBOXWDDM_QI;
@@ -530,12 +535,14 @@ DECLINLINE(UINT) vboxWddmCalcBitsPerPixel(D3DDDIFORMAT enmFormat)
         case D3DDDIFMT_A2R10G10B10:
             return 32;
         case D3DDDIFMT_A16B16G16R16:
+        case D3DDDIFMT_A16B16G16R16F:
             return 64;
         case D3DDDIFMT_A8P8:
             return 16;
         case D3DDDIFMT_P8:
         case D3DDDIFMT_L8:
             return 8;
+        case D3DDDIFMT_L16:
         case D3DDDIFMT_A8L8:
             return 16;
         case D3DDDIFMT_A4L4:
@@ -574,6 +581,10 @@ DECLINLINE(UINT) vboxWddmCalcBitsPerPixel(D3DDDIFORMAT enmFormat)
             return 8;
         case D3DDDIFMT_INDEX32:
             return 8;
+        case D3DDDIFMT_R32F:
+            return 32;
+        case D3DDDIFMT_R16F:
+            return 16;
         default:
             AssertBreakpoint();
             return 0;

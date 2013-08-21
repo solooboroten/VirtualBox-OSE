@@ -1,11 +1,11 @@
-/* $Id: VBoxDispDriver.cpp 42233 2012-07-19 16:25:49Z vboxsync $ */
+/* $Id: VBoxDispDriver.cpp $ */
 
 /** @file
  * VBox XPDM Display driver interface functions
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -517,6 +517,14 @@ VBoxDispDrvEnablePDEV(DEVMODEW *pdm, LPWSTR pwszLogAddress, ULONG cPat, HSURF *p
         return NULL;
     }
     pDev->hDriver = hDriver;
+
+    ULONG ulRegistryFlags = 0;
+    rc = VBoxDispMPQueryRegistryFlags(hDriver, &ulRegistryFlags);
+    if (RT_SUCCESS(rc))
+    {
+        pDev->bBitmapCacheDisabled = (ulRegistryFlags & VBOXVIDEO_REGISTRY_FLAGS_DISABLE_BITMAP_CACHE) != 0;
+        LOG(("Bitmap cache %s", pDev->bBitmapCacheDisabled? "disabled": "enabled"));
+    }
 
     /* Initialize device structure and query miniport to fill device and gdi infos */
     rc = VBoxDispInitDevice(pDev, pdm, &gdiInfo, &devInfo);

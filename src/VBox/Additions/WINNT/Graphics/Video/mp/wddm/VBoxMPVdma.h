@@ -1,10 +1,10 @@
-/* $Id: VBoxMPVdma.h 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: VBoxMPVdma.h $ */
 /** @file
  * VBox WDDM Miniport driver
  */
 
 /*
- * Copyright (C) 2011 Oracle Corporation
+ * Copyright (C) 2011-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -211,19 +211,6 @@ typedef struct VBOXVDMAPIPE_CMD_CANCEL
     PKEVENT pEvent;
 } VBOXVDMAPIPE_CMD_CANCEL, *PVBOXVDMAPIPE_CMD_CANCEL;
 
-typedef struct VBOXVDMAPIPE_FLAGS_DMACMD
-{
-    union
-    {
-        struct
-        {
-            UINT fRealOp             : 1;
-            UINT fVisibleRegions     : 1;
-            UINT Reserve             : 30;
-        };
-        UINT Value;
-    };
-} VBOXVDMAPIPE_FLAGS_DMACMD, *PVBOXVDMAPIPE_FLAGS_DMACMD;
 typedef struct VBOXVDMAPIPE_CMD_DMACMD
 {
     VBOXVDMAPIPE_CMD_DR Hdr;
@@ -232,7 +219,7 @@ typedef struct VBOXVDMAPIPE_CMD_DMACMD
 #endif
     PVBOXWDDM_CONTEXT pContext;
     VBOXVDMACMD_TYPE enmCmd;
-    VBOXVDMAPIPE_FLAGS_DMACMD fFlags;
+//    VBOXVDMAPIPE_FLAGS_DMACMD fFlags;
 } VBOXVDMAPIPE_CMD_DMACMD, *PVBOXVDMAPIPE_CMD_DMACMD;
 
 typedef struct VBOXVDMA_CLRFILL
@@ -294,8 +281,6 @@ typedef struct VBOXVDMAINFO
 #endif
     UINT      uLastCompletedPagingBufferCmdFenceId;
     BOOL      fEnabled;
-    /* dma-related commands list processed on the guest w/o host part involvement (guest-guest commands) */
-    VBOXVDMAGG DmaGg;
 } VBOXVDMAINFO, *PVBOXVDMAINFO;
 
 int vboxVdmaCreate (PVBOXMP_DEVEXT pDevExt, VBOXVDMAINFO *pInfo
@@ -312,6 +297,10 @@ int vboxVdmaDestroy(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo);
 
 #ifdef VBOX_WITH_VDMA
 int vboxVdmaFlush(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo);
+DECLINLINE(HGSMIOFFSET) vboxVdmaCBufDrPtrOffset(const PVBOXVDMAINFO pInfo, const void* pvPtr)
+{
+    return VBoxSHGSMICommandPtrOffset(&pInfo->CmdHeap, pvPtr);
+}
 int vboxVdmaCBufDrSubmit(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo, PVBOXVDMACBUF_DR pDr);
 int vboxVdmaCBufDrSubmitSynch(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAINFO pInfo, PVBOXVDMACBUF_DR pDr);
 struct VBOXVDMACBUF_DR* vboxVdmaCBufDrCreate(PVBOXVDMAINFO pInfo, uint32_t cbTrailingData);
@@ -326,22 +315,6 @@ AssertCompile(sizeof (VBOXVDMADDI_CMD) <= RT_SIZEOFMEMB(VBOXVDMACBUF_DR, aGuestD
 #define VBOXVDMACBUF_DR_FROM_DDI_CMD(_pCmd) ((PVBOXVDMACBUF_DR)(((uint8_t*)(_pCmd)) - RT_OFFSETOF(VBOXVDMACBUF_DR, aGuestData)))
 
 #endif
-NTSTATUS vboxVdmaGgCmdSubmit(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAPIPE_CMD_DR pCmd);
-PVBOXVDMAPIPE_CMD_DR vboxVdmaGgCmdCreate(PVBOXMP_DEVEXT pDevExt, VBOXVDMAPIPE_CMD_TYPE enmType, uint32_t cbCmd);
-DECLINLINE(void) vboxVdmaGgCmdAddRef(PVBOXVDMAPIPE_CMD_DR pDr)
-{
-    ASMAtomicIncU32(&pDr->cRefs);
-}
-void vboxVdmaGgCmdDestroy(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAPIPE_CMD_DR pDr);
-DECLINLINE(void) vboxVdmaGgCmdRelease(PVBOXMP_DEVEXT pDevExt, PVBOXVDMAPIPE_CMD_DR pDr)
-{
-    uint32_t cRefs = ASMAtomicDecU32(&pDr->cRefs);
-    Assert(cRefs < UINT32_MAX/2);
-    if (!cRefs)
-        vboxVdmaGgCmdDestroy(pDevExt, pDr);
-}
-NTSTATUS vboxVdmaGgCmdFinish(PVBOXMP_DEVEXT pDevExt, struct VBOXWDDM_CONTEXT *pContext, PKEVENT pEvent);
-NTSTATUS vboxVdmaGgCmdCancel(PVBOXMP_DEVEXT pDevExt, VBOXWDDM_CONTEXT *pContext, PVBOXWDDM_SWAPCHAIN pSwapchain);
 
 NTSTATUS vboxVdmaPostHideSwapchain(PVBOXWDDM_SWAPCHAIN pSwapchain);
 
@@ -355,5 +328,11 @@ NTSTATUS vboxVdmaGgDmaBltPerform(PVBOXMP_DEVEXT pDevExt, struct VBOXWDDM_ALLOC_D
         struct VBOXWDDM_ALLOC_DATA *pDstAlloc, RECT* pDstRect);
 
 #define VBOXVDMAPIPE_CMD_DR_FROM_DDI_CMD(_pCmd) ((PVBOXVDMAPIPE_CMD_DR)(((uint8_t*)(_pCmd)) - RT_OFFSETOF(VBOXVDMAPIPE_CMD_DR, DdiCmd)))
-DECLCALLBACK(VOID) vboxVdmaGgDdiCmdRelease(PVBOXMP_DEVEXT pDevExt, PVBOXVDMADDI_CMD pCmd, PVOID pvContext);
+
+NTSTATUS vboxVdmaProcessBltCmd(PVBOXMP_DEVEXT pDevExt, struct VBOXWDDM_CONTEXT *pContext, struct VBOXWDDM_DMA_PRIVATEDATA_BLT *pBlt);
+NTSTATUS vboxVdmaProcessFlipCmd(PVBOXMP_DEVEXT pDevExt, struct VBOXWDDM_CONTEXT *pContext, struct VBOXWDDM_DMA_PRIVATEDATA_FLIP *pFlip);
+NTSTATUS vboxVdmaProcessClrFillCmd(PVBOXMP_DEVEXT pDevExt, struct VBOXWDDM_CONTEXT *pContext, struct VBOXWDDM_DMA_PRIVATEDATA_CLRFILL *pCF);
+
+NTSTATUS vboxVdmaTexPresentSetAlloc(PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_ALLOCATION pRealFbAlloc);
+
 #endif /* #ifndef ___VBoxMPVdma_h___ */
