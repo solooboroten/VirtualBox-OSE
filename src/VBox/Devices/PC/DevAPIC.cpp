@@ -59,11 +59,9 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
-#define MSR_IA32_APICBASE               0x1b
-#define MSR_IA32_APICBASE_BSP           (1<<8)
 #define MSR_IA32_APICBASE_ENABLE        (1<<11)
 #define MSR_IA32_APICBASE_X2ENABLE      (1<<10)
-#define MSR_IA32_APICBASE_BASE          (0xfffff<<12)
+#define MSR_IA32_APICBASE_BASE          (0xfffff<<12) /** @todo r=bird: This is not correct according to current specs! */
 
 #ifdef _MSC_VER
 # pragma warning(disable:4244)
@@ -1055,7 +1053,7 @@ PDMBOTHCBDECL(int) apicWriteMSR(PPDMDEVINS pDevIns, VMCPUID idCpu, uint32_t u32R
         return VERR_EM_INTERPRETER; /** @todo tell the caller to raise hell (\#GP(0)).  */
 
     APICState      *pApic = getLapicById(pDev, idCpu);
-    uint32_t        iReg = (u32Reg - MSR_IA32_APIC_START) & 0xff;
+    uint32_t        iReg = (u32Reg - MSR_IA32_X2APIC_START) & 0xff;
     return apicWriteRegister(pDev, pApic, iReg, u64Value, VINF_SUCCESS /*rcBusy*/, true /*fMsr*/);
 }
 
@@ -1071,7 +1069,7 @@ PDMBOTHCBDECL(int) apicReadMSR(PPDMDEVINS pDevIns, VMCPUID idCpu, uint32_t u32Re
         return VERR_EM_INTERPRETER;
 
     APICState      *pApic = getLapicById(pDev, idCpu);
-    uint32_t        iReg = (u32Reg - MSR_IA32_APIC_START) & 0xff;
+    uint32_t        iReg = (u32Reg - MSR_IA32_X2APIC_START) & 0xff;
     return apicReadRegister(pDev, pApic, iReg, pu64Value, VINF_SUCCESS /*rcBusy*/, true /*fMsr*/);
 }
 

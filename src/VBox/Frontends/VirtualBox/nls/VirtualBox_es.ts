@@ -8903,7 +8903,7 @@ este paso y luego conectar los Discos Duros desde el diálogo de Configuración 
     <name>UIUpdateStepVirtualBox</name>
     <message>
         <source>Checking for a new VirtualBox version...</source>
-        <translation>Comrobando si hay una nueva versión de VirtualBox...</translation>
+        <translation>Comprobando si hay una nueva versión de VirtualBox...</translation>
     </message>
 </context>
 <context>

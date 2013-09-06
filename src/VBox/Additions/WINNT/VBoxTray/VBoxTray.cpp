@@ -44,17 +44,6 @@
 /* Default desktop state tracking */
 #include <Wtsapi32.h>
 
-#ifdef DEBUG_misha
-#define WARN(_m) do { \
-            Assert(0); \
-            Log(_m); \
-        } while (0)
-#else
-#define WARN(_m) do { \
-            Log(_m); \
-        } while (0)
-#endif
-
 /*
  * St (session [state] tracking) functionality API
  *
@@ -134,6 +123,7 @@ static int VBoxAcquireGuestCaps(uint32_t fOr, uint32_t fNot, bool fCfg);
 HANDLE                ghVBoxDriver;
 HANDLE                ghStopSem;
 HANDLE                ghSeamlessWtNotifyEvent = 0;
+HANDLE                ghSeamlessKmNotifyEvent = 0;
 SERVICE_STATUS        gVBoxServiceStatus;
 SERVICE_STATUS_HANDLE gVBoxServiceStatusHandle;
 HINSTANCE             ghInstance;
@@ -587,6 +577,13 @@ static int vboxTraySetupSeamless(void)
                 dwErr = GetLastError();
                 Log(("VBoxTray: CreateEvent for Seamless failed, last error = %08X\n", dwErr));
             }
+
+            ghSeamlessKmNotifyEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+            if (ghSeamlessKmNotifyEvent == NULL)
+            {
+                dwErr = GetLastError();
+                Log(("VBoxTray: CreateEvent for Seamless failed, last error = %08X\n", dwErr));
+            }
         }
     }
     return RTErrConvertFromWin32(dwErr);
@@ -598,6 +595,12 @@ static void vboxTrayShutdownSeamless(void)
     {
         CloseHandle(ghSeamlessWtNotifyEvent);
         ghSeamlessWtNotifyEvent = NULL;
+    }
+
+    if (ghSeamlessKmNotifyEvent)
+    {
+        CloseHandle(ghSeamlessKmNotifyEvent);
+        ghSeamlessKmNotifyEvent = NULL;
     }
 }
 
@@ -683,7 +686,7 @@ static int vboxTrayServiceMain(void)
                  * Wait for the stop semaphore to be posted or a window event to arrive
                  */
 
-                HANDLE hWaitEvent[3] = {0};
+                HANDLE hWaitEvent[4] = {0};
                 DWORD dwEventCount = 0;
 
                 hWaitEvent[dwEventCount++] = ghStopSem;
@@ -692,6 +695,11 @@ static int vboxTrayServiceMain(void)
                 if (0 != ghSeamlessWtNotifyEvent)
                 {
                     hWaitEvent[dwEventCount++] = ghSeamlessWtNotifyEvent;
+                }
+
+                if (0 != ghSeamlessKmNotifyEvent)
+                {
+                    hWaitEvent[dwEventCount++] = ghSeamlessKmNotifyEvent;
                 }
 
                 if (0 != vboxDtGetNotifyEvent())
@@ -726,7 +734,15 @@ static int vboxTrayServiceMain(void)
                                     Log(("VBoxTray: Event 'Seamless' triggered\n"));
 
                                     /* seamless window notification */
-                                    VBoxSeamlessCheckWindows();
+                                    VBoxSeamlessCheckWindows(false);
+                                    fHandled = TRUE;
+                                }
+                                else if (hWaitEvent[waitResult] == ghSeamlessKmNotifyEvent)
+                                {
+                                    Log(("VBoxTray: Event 'Km Seamless' triggered\n"));
+
+                                    /* seamless window notification */
+                                    VBoxSeamlessCheckWindows(true);
                                     fHandled = TRUE;
                                 }
                                 else if (hWaitEvent[waitResult] == vboxDtGetNotifyEvent())
@@ -943,9 +959,10 @@ static LRESULT CALLBACK vboxToolWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             VBoxCapsEntryFuncStateSet(VBOXCAPS_ENTRY_IDX_SEAMLESS, VBOXCAPS_ENTRY_FUNCSTATE_SUPPORTED);
             return 0;
 
+        case WM_DISPLAYCHANGE:
         case WM_VBOX_SEAMLESS_UPDATE:
             if (VBoxCapsEntryIsEnabled(VBOXCAPS_ENTRY_IDX_SEAMLESS))
-                VBoxSeamlessCheckWindows();
+                VBoxSeamlessCheckWindows(true);
             return 0;
 
         case WM_VBOX_GRAPHICS_SUPPORTED:
@@ -1254,7 +1271,7 @@ static int vboxDtInit()
     info.dwOSVersionInfoSize = sizeof(info);
     if (GetVersionEx(&info))
     {
-        WARN(("VBoxTray: Windows version %ld.%ld\n", info.dwMajorVersion, info.dwMinorVersion));
+        LogRel(("VBoxTray: Windows version %ld.%ld\n", info.dwMajorVersion, info.dwMinorVersion));
         gMajorVersion = info.dwMajorVersion;
     }
 
@@ -1464,13 +1481,13 @@ static DECLCALLBACK(void) vboxCapsOnEnableSeamles(struct VBOXCAPS *pConsole, str
         Log(("VBoxTray: vboxCapsOnEnableSeamles: ENABLED\n"));
         Assert(pCap->enmAcState == VBOXCAPS_ENTRY_ACSTATE_ACQUIRED);
         Assert(pCap->enmFuncState == VBOXCAPS_ENTRY_FUNCSTATE_STARTED);
-        VBoxSeamlessInstallHook();
+        VBoxSeamlessEnable();
     }
     else
     {
         Log(("VBoxTray: vboxCapsOnEnableSeamles: DISABLED\n"));
         Assert(pCap->enmAcState != VBOXCAPS_ENTRY_ACSTATE_ACQUIRED || pCap->enmFuncState != VBOXCAPS_ENTRY_FUNCSTATE_STARTED);
-        VBoxSeamlessRemoveHook();
+        VBoxSeamlessDisable();
     }
 }
 

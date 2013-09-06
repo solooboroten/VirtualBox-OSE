@@ -31,6 +31,7 @@
 #include "UIActionPoolRuntime.h"
 #include "UIMachineLogicFullscreen.h"
 #include "UIMachineWindowFullscreen.h"
+#include "UIMachineDefs.h"
 #include "VBoxMiniToolBar.h"
 
 /* COM includes: */

@@ -656,9 +656,9 @@ static int VBoxServiceControlThreadProcLoop(PVBOXSERVICECTRLTHREAD pThread,
             continue;
         }
 
-#if 0
-        VBoxServiceVerbose(4, "[PID %u]: Polling done, pollRC=%Rrc, pollCnt=%u, rc=%Rrc, fShutdown=%RTbool\n",
-                           pThread->uPID, rc2, RTPollSetGetCount(hPollSet), rc, pThread->fShutdown);
+#ifdef DEBUG
+        VBoxServiceVerbose(4, "[PID %u]: Polling done, pollRC=%Rrc, pollCnt=%u, rc=%Rrc, fShutdown=%RTbool, fProcessAlive=%RTbool\n",
+                           pThread->uPID, rc2, RTPollSetGetCount(hPollSet), rc, pThread->fShutdown, fProcessAlive);
 #endif
         /*
          * Check for process death.
@@ -669,29 +669,39 @@ static int VBoxServiceControlThreadProcLoop(PVBOXSERVICECTRLTHREAD pThread,
             if (RT_SUCCESS_NP(rc2))
             {
                 fProcessAlive = false;
-                continue;
-            }
-            if (RT_UNLIKELY(rc2 == VERR_INTERRUPTED))
-                continue;
-            if (RT_UNLIKELY(rc2 == VERR_PROCESS_NOT_FOUND))
-            {
-                fProcessAlive = false;
-                ProcessStatus.enmReason = RTPROCEXITREASON_ABEND;
-                ProcessStatus.iStatus   = 255;
-                AssertFailed();
+                /* Note: Don't bail out here yet. First check in the next block below
+                 *       if all needed pipe outputs have been consumed. */
             }
             else
-                AssertMsg(rc2 == VERR_PROCESS_RUNNING, ("%Rrc\n", rc2));
+            {
+                if (RT_UNLIKELY(rc2 == VERR_INTERRUPTED))
+                    continue;
+                if (RT_UNLIKELY(rc2 == VERR_PROCESS_NOT_FOUND))
+                {
+                    fProcessAlive = false;
+                    ProcessStatus.enmReason = RTPROCEXITREASON_ABEND;
+                    ProcessStatus.iStatus   = 255;
+                    AssertFailed();
+                }
+                else
+                    AssertMsg(rc2 == VERR_PROCESS_RUNNING, ("%Rrc\n", rc2));
+            }
         }
 
         /*
          * If the process has terminated and all output has been consumed,
          * we should be heading out.
          */
-        if (   !fProcessAlive
-            && *phStdOutR == NIL_RTPIPE
-            && *phStdErrR == NIL_RTPIPE)
-            break;
+        if (!fProcessAlive)
+        {
+            if (   fProcessTimedOut
+                || (   *phStdOutR == NIL_RTPIPE
+                    && *phStdErrR == NIL_RTPIPE)
+               )
+            {
+                break;
+            }
+        }
 
         /*
          * Check for timed out, killing the process.
@@ -703,8 +713,8 @@ static int VBoxServiceControlThreadProcLoop(PVBOXSERVICECTRLTHREAD pThread,
             uint64_t cMsElapsed = u64Now - MsStart;
             if (cMsElapsed >= cMsTimeout)
             {
-                VBoxServiceVerbose(3, "[PID %u]: Timed out (%ums elapsed > %ums timeout), killing ...",
-                                   pThread->uPID, cMsElapsed, cMsTimeout);
+                VBoxServiceVerbose(3, "[PID %u]: Timed out (%RU64ms elapsed > %RU32ms timeout, fProcessAlive=%RTbool), killing ...\n",
+                                   pThread->uPID, cMsElapsed, cMsTimeout, fProcessAlive);
 
                 fProcessTimedOut = true;
                 if (    MsProcessKilled == UINT64_MAX
@@ -712,11 +722,13 @@ static int VBoxServiceControlThreadProcLoop(PVBOXSERVICECTRLTHREAD pThread,
                 {
                     if (u64Now - MsProcessKilled > 20*60*1000)
                         break; /* Give up after 20 mins. */
-                    RTProcTerminate(hProcess);
+                    rc2 = RTProcTerminate(hProcess);
+                    VBoxServiceVerbose(3, "[PID %u]: Killing process resulted in rc=%Rrc\n",
+                                       pThread->uPID, rc2);
                     MsProcessKilled = u64Now;
                     continue;
                 }
-                cMilliesLeft = 10000;
+                cMilliesLeft = 10 * 1000;
             }
             else
                 cMilliesLeft = cMsTimeout - (uint32_t)cMsElapsed;
@@ -740,6 +752,11 @@ static int VBoxServiceControlThreadProcLoop(PVBOXSERVICECTRLTHREAD pThread,
     if (RT_SUCCESS(rc2))
     {
         ASMAtomicXchgBool(&pThread->fShutdown, true);
+
+        VBoxServiceVerbose(3, "[PID %u]: Loop ended: fShutdown=%RTbool, fProcessAlive=%RTbool, fProcessTimedOut=%RTbool, MsProcessKilled=%RU32\n",
+                           pThread->uPID, pThread->fShutdown, fProcessAlive, fProcessTimedOut, MsProcessKilled, MsProcessKilled);
+        VBoxServiceVerbose(3, "[PID %u]: *phStdOutR=%s, *phStdErrR=%s\n",
+                           pThread->uPID, *phStdOutR == NIL_RTPIPE ? "closed" : "open", *phStdErrR == NIL_RTPIPE ? "closed" : "open");
 
         rc2 = RTCritSectLeave(&pThread->CritSect);
         AssertRC(rc2);

@@ -2125,7 +2125,7 @@ static DECLCALLBACK(int) pdmR3DevHlp_CallR0(PPDMDEVINS pDevIns, uint32_t uOperat
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
     PVM pVM = pDevIns->Internal.s.pVMR3;
-    VM_ASSERT_EMT(pDevIns->Internal.s.pVMR3);
+    VM_ASSERT_EMT(pVM);
     LogFlow(("pdmR3DevHlp_CallR0: caller='%s'/%d: uOperation=%#x u64Arg=%#RX64\n",
              pDevIns->pReg->szName, pDevIns->iInstance, uOperation, u64Arg));
 
@@ -2166,6 +2166,32 @@ static DECLCALLBACK(int) pdmR3DevHlp_CallR0(PPDMDEVINS pDevIns, uint32_t uOperat
     LogFlow(("pdmR3DevHlp_CallR0: caller='%s'/%d: returns %Rrc\n", pDevIns->pReg->szName,
              pDevIns->iInstance, rc));
     return rc;
+}
+
+
+/** @interface_method_impl{PDMDEVHLP,pfnVMGetSuspendReason} */
+static DECLCALLBACK(VMSUSPENDREASON) pdmR3DevHlp_VMGetSuspendReason(PPDMDEVINS pDevIns)
+{
+    PDMDEV_ASSERT_DEVINS(pDevIns);
+    PVM pVM = pDevIns->Internal.s.pVMR3;
+    VM_ASSERT_EMT(pVM);
+    VMSUSPENDREASON enmReason = VMR3GetSuspendReason(pVM);
+    LogFlow(("pdmR3DevHlp_VMGetSuspendReason: caller='%s'/%d: returns %d\n",
+             pDevIns->pReg->szName, pDevIns->iInstance, enmReason));
+    return enmReason;
+}
+
+
+/** @interface_method_impl{PDMDEVHLP,pfnVMGetResumeReason} */
+static DECLCALLBACK(VMRESUMEREASON) pdmR3DevHlp_VMGetResumeReason(PPDMDEVINS pDevIns)
+{
+    PDMDEV_ASSERT_DEVINS(pDevIns);
+    PVM pVM = pDevIns->Internal.s.pVMR3;
+    VM_ASSERT_EMT(pVM);
+    VMRESUMEREASON enmReason = VMR3GetResumeReason(pVM);
+    LogFlow(("pdmR3DevHlp_VMGetResumeReason: caller='%s'/%d: returns %d\n",
+             pDevIns->pReg->szName, pDevIns->iInstance, enmReason));
+    return enmReason;
 }
 
 
@@ -3163,12 +3189,12 @@ static DECLCALLBACK(int) pdmR3DevHlp_VMSuspend(PPDMDEVINS pDevIns)
     if (pVM->cCpus > 1)
     {
         /* We own the IOM lock here and could cause a deadlock by waiting for a VCPU that is blocking on the IOM lock. */
-        rc = VMR3ReqCallNoWait(pVM, VMCPUID_ANY_QUEUE, (PFNRT)VMR3Suspend, 1, pVM);
+        rc = VMR3ReqCallNoWait(pVM, VMCPUID_ANY_QUEUE, (PFNRT)VMR3Suspend, 2, pVM, VMSUSPENDREASON_VM);
         AssertRC(rc);
         rc = VINF_EM_SUSPEND;
     }
     else
-        rc = VMR3Suspend(pVM);
+        rc = VMR3Suspend(pVM, VMSUSPENDREASON_VM);
 
     LogFlow(("pdmR3DevHlp_VMSuspend: caller='%s'/%d: returns %Rrc\n", pDevIns->pReg->szName, pDevIns->iInstance, rc));
     return rc;
@@ -3188,7 +3214,7 @@ static DECLCALLBACK(int) pdmR3DevHlp_VMSuspendSaveAndPowerOffWorker(PVM pVM, PPD
     /*
      * Suspend the VM first then do the saving.
      */
-    int rc = VMR3Suspend(pVM);
+    int rc = VMR3Suspend(pVM, VMSUSPENDREASON_VM);
     if (RT_SUCCESS(rc))
     {
         PUVM pUVM = pVM->pUVM;
@@ -3400,8 +3426,8 @@ const PDMDEVHLPR3 g_pdmR3DevHlpTrusted =
     pdmR3DevHlp_LdrGetRCInterfaceSymbols,
     pdmR3DevHlp_LdrGetR0InterfaceSymbols,
     pdmR3DevHlp_CallR0,
-    0,
-    0,
+    pdmR3DevHlp_VMGetSuspendReason,
+    pdmR3DevHlp_VMGetResumeReason,
     0,
     0,
     0,
@@ -3621,8 +3647,8 @@ const PDMDEVHLPR3 g_pdmR3DevHlpUnTrusted =
     pdmR3DevHlp_LdrGetRCInterfaceSymbols,
     pdmR3DevHlp_LdrGetR0InterfaceSymbols,
     pdmR3DevHlp_CallR0,
-    0,
-    0,
+    pdmR3DevHlp_VMGetSuspendReason,
+    pdmR3DevHlp_VMGetResumeReason,
     0,
     0,
     0,

@@ -810,7 +810,11 @@ Console::teleporterSrcThreadWrapper(RTTHREAD hThread, void *pvUser)
         ptrVM.release();
 
         pState->mptrConsole->mVMIsAlreadyPoweringOff = true; /* (Make sure we stick in the TeleportingPausedVM state.) */
+        autoLock.release();
+
         hrc = pState->mptrConsole->powerDown();
+
+        autoLock.acquire();
         pState->mptrConsole->mVMIsAlreadyPoweringOff = false;
 
         pState->mptrProgress->notifyComplete(hrc);
@@ -886,7 +890,7 @@ Console::teleporterSrcThreadWrapper(RTTHREAD hThread, void *pvUser)
                         if (pState->mfSuspendedByUs)
                         {
                             autoLock.release();
-                            int rc = VMR3Resume(VMR3GetVM(pState->mpUVM));
+                            int rc = VMR3Resume(VMR3GetVM(pState->mpUVM), VMRESUMEREASON_TELEPORT_FAILED);
                             AssertLogRelMsgRC(rc, ("VMR3Resume -> %Rrc\n", rc));
                             autoLock.acquire();
                         }
@@ -932,7 +936,7 @@ Console::Teleport(IN_BSTR aHostname, ULONG aPort, IN_BSTR aPassword, ULONG aMaxD
      */
     CheckComArgOutPointerValid(aProgress);
     CheckComArgStrNotEmptyOrNull(aHostname);
-    CheckComArgStrNotEmptyOrNull(aPassword);
+    CheckComArgNotNull(aPassword);
     CheckComArgExprMsg(aPort, aPort > 0 && aPort <= 65535, ("is %u", aPort));
     CheckComArgExprMsg(aMaxDowntime, aMaxDowntime > 0, ("is %u", aMaxDowntime));
 
@@ -1411,7 +1415,7 @@ Console::teleporterTrgServeConnection(RTSOCKET Sock, void *pvUser)
                 if (RT_SUCCESS(vrc))
                 {
                     if (!strcmp(szCmd, "hand-over-resume"))
-                        vrc = VMR3Resume(VMR3GetVM(pState->mpUVM));
+                        vrc = VMR3Resume(VMR3GetVM(pState->mpUVM), VMRESUMEREASON_TELEPORTED);
                     else
                         pState->mptrConsole->setMachineState(MachineState_Paused);
                     fDone = true;

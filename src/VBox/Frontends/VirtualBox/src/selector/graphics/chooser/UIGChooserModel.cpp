@@ -1479,10 +1479,16 @@ void UIGChooserModel::unregisterMachines(const QStringList &ids)
             }
             else
             {
-                /* Just unregister machine: */
-                machine.Unregister(KCleanupMode_DetachAllReturnNone);
+                /* Unregister machine first: */
+                CMediumVector mediums = machine.Unregister(KCleanupMode_DetachAllReturnHardDisksOnly);
                 if (!machine.isOk())
                     msgCenter().cannotDeleteMachine(machine);
+                /* Finally close all media, deliberately ignoring errors: */
+                foreach (CMedium medium, mediums)
+                {
+                    if (!medium.isNull())
+                        medium.Close();
+                }
             }
         }
     }

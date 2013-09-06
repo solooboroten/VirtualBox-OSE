@@ -2753,8 +2753,8 @@ static DECLCALLBACK(int) vmmdevRequestDisplayChange(PPDMIVMMDEVPORT pInterface, 
 
     if (!fSameResolution)
     {
-        LogRel(("VMMDev::SetVideoModeHint: got a video mode hint (%dx%dx%d) at %d\n",
-                xres, yres, bpp, display));
+        LogRel(("VMMDev::SetVideoModeHint: got a video mode hint (%dx%dx%d)@(%dx%d),(%d;%d) at %d\n",
+                xres, yres, bpp, u32OriginX, u32OriginY, fEnabled, fChangeOrigin, display));
 
         /* we could validate the information here but hey, the guest can do that as well! */
         pRequest->displayChangeRequest.xres          = xres;

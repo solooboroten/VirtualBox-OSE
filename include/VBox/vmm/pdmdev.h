@@ -3372,6 +3372,25 @@ typedef struct PDMDEVHLPR3
      */
     DECLR3CALLBACKMEMBER(int, pfnCallR0,(PPDMDEVINS pDevIns, uint32_t uOperation, uint64_t u64Arg));
 
+    /**
+     * Gets the reason for the most recent VM suspend.
+     *
+     * @returns The suspend reason. VMSUSPENDREASON_INVALID is returned if no
+     *          suspend has been made or if the pDevIns is invalid.
+     * @param   pDevIns             The device instance.
+     */
+    DECLR3CALLBACKMEMBER(VMSUSPENDREASON, pfnVMGetSuspendReason,(PPDMDEVINS pDevIns));
+
+    /**
+     * Gets the reason for the most recent VM resume.
+     *
+     * @returns The resume reason. VMRESUMEREASON_INVALID is returned if no
+     *          resume has been made or if the pDevIns is invalid.
+     * @param   pDevIns             The device instance.
+     */
+    DECLR3CALLBACKMEMBER(VMRESUMEREASON, pfnVMGetResumeReason,(PPDMDEVINS pDevIns));
+
+
     /** Space reserved for future members.
      * @{ */
     DECLR3CALLBACKMEMBER(void, pfnReserved1,(void));
@@ -3381,8 +3400,8 @@ typedef struct PDMDEVHLPR3
     DECLR3CALLBACKMEMBER(void, pfnReserved5,(void));
     DECLR3CALLBACKMEMBER(void, pfnReserved6,(void));
     DECLR3CALLBACKMEMBER(void, pfnReserved7,(void));
-    DECLR3CALLBACKMEMBER(void, pfnReserved8,(void));
-    DECLR3CALLBACKMEMBER(void, pfnReserved9,(void));
+    /*DECLR3CALLBACKMEMBER(void, pfnReserved8,(void));
+    DECLR3CALLBACKMEMBER(void, pfnReserved9,(void));*/
     DECLR3CALLBACKMEMBER(void, pfnReserved10,(void));
     /** @} */
 
@@ -3539,7 +3558,7 @@ typedef R3PTRTYPE(struct PDMDEVHLPR3 *) PPDMDEVHLPR3;
 typedef R3PTRTYPE(const struct PDMDEVHLPR3 *) PCPDMDEVHLPR3;
 
 /** Current PDMDEVHLPR3 version number. */
-#define PDM_DEVHLPR3_VERSION                    PDM_VERSION_MAKE(0xffe7, 9, 0)
+#define PDM_DEVHLPR3_VERSION                    PDM_VERSION_MAKE(0xffe7, 9, 1)
 
 
 /**
@@ -5090,6 +5109,23 @@ DECLINLINE(int) PDMDevHlpVMPowerOff(PPDMDEVINS pDevIns)
 {
     return pDevIns->pHlpR3->pfnVMPowerOff(pDevIns);
 }
+
+/*
+ * @copydoc PDMDEVHLP::pfnVMGetSuspendReason
+ */
+DECLINLINE(VMSUSPENDREASON) PDMDevHlpVMGetSuspendReason(PPDMDEVINS pDevIns)
+{
+    return pDevIns->pHlpR3->pfnVMGetSuspendReason(pDevIns);
+}
+
+/**
+ * @copydoc PDMDEVHLP::pfnVMGetResumeReason
+ */
+DECLINLINE(VMRESUMEREASON) PDMDevHlpVMGetResumeReason(PPDMDEVINS pDevIns)
+{
+    return pDevIns->pHlpR3->pfnVMGetResumeReason(pDevIns);
+}
+
 
 #endif /* IN_RING3 */
 

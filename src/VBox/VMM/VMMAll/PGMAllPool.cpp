@@ -52,7 +52,7 @@ static void pgmPoolMonitorModifiedRemove(PPGMPOOL pPool, PPGMPOOLPAGE pPage);
 #ifndef IN_RING3
 DECLEXPORT(int) pgmPoolAccessHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
 #endif
-#ifdef LOG_ENABLED
+#ifdef RT_STRICT
 static const char *pgmPoolPoolKindToStr(uint8_t enmKind);
 #endif
 #if 0 /*defined(VBOX_STRICT) && defined(PGMPOOL_WITH_OPTIMIZED_DIRTY_PT)*/
@@ -5457,7 +5457,7 @@ void pgmR3PoolReset(PVM pVM)
 
 #endif /* IN_RING3 */
 
-#ifdef LOG_ENABLED
+#ifdef RT_STRICT
 /**
  * Stringifies a PGMPOOLKIND value.
  */

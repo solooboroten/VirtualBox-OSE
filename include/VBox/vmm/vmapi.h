@@ -316,13 +316,66 @@ typedef enum VMINITCOMPLETED
 } VMINITCOMPLETED;
 
 
+/** Reason for VM resume. */
+typedef enum VMRESUMEREASON
+{
+    VMRESUMEREASON_INVALID = 0,
+    /** User decided to do so. */
+    VMRESUMEREASON_USER,
+    /** VM reconfiguration (like changing DVD). */
+    VMRESUMEREASON_RECONFIG,
+    /** The host resumed. */
+    VMRESUMEREASON_HOST_RESUME,
+    /** Restored state. */
+    VMRESUMEREASON_STATE_RESTORED,
+    /** Snapshot / saved state. */
+    VMRESUMEREASON_STATE_SAVED,
+    /** Teleported to a new box / instance. */
+    VMRESUMEREASON_TELEPORTED,
+    /** Teleportation failed. */
+    VMRESUMEREASON_TELEPORT_FAILED,
+    /** FTM temporarily suspended the VM. */
+    VMRESUMEREASON_FTM_SYNC,
+    /** End of valid reasons. */
+    VMRESUMEREASON_END,
+    /** Blow the type up to 32-bits. */
+    VMRESUMEREASON_32BIT_HACK = 0x7fffffff
+} VMRESUMEREASON;
+
+/** Reason for VM suspend. */
+typedef enum VMSUSPENDREASON
+{
+    VMSUSPENDREASON_INVALID = 0,
+    /** User decided to do so. */
+    VMSUSPENDREASON_USER,
+    /** VM reconfiguration (like changing DVD). */
+    VMSUSPENDREASON_RECONFIG,
+    /** The VM is suspending itself. */
+    VMSUSPENDREASON_VM,
+    /** The Vm is suspending because of a runtime error. */
+    VMSUSPENDREASON_RUNTIME_ERROR,
+    /** The host was suspended. */
+    VMSUSPENDREASON_HOST_SUSPEND,
+    /** The host is running low on battery power. */
+    VMSUSPENDREASON_HOST_BATTERY_LOW,
+    /** FTM is temporarily suspending the VM. */
+    VMSUSPENDREASON_FTM_SYNC,
+    /** End of valid reasons. */
+    VMSUSPENDREASON_END,
+    /** Blow the type up to 32-bits. */
+    VMSUSPENDREASON_32BIT_HACK = 0x7fffffff
+} VMSUSPENDREASON;
+
+
 VMMR3DECL(int)  VMR3Create(uint32_t cCpus, PCVMM2USERMETHODS pVm2UserCbs,
                            PFNVMATERROR pfnVMAtError, void *pvUserVM,
                            PFNCFGMCONSTRUCTOR pfnCFGMConstructor, void *pvUserCFGM,
                            PVM *ppVM);
 VMMR3DECL(int)  VMR3PowerOn(PVM pVM);
-VMMR3DECL(int)  VMR3Suspend(PVM pVM);
-VMMR3DECL(int)  VMR3Resume(PVM pVM);
+VMMR3DECL(int)  VMR3Suspend(PVM pVM, VMSUSPENDREASON enmReason);
+VMMR3DECL(VMSUSPENDREASON) VMR3GetSuspendReason(PVM);
+VMMR3DECL(int)  VMR3Resume(PVM pVM, VMRESUMEREASON enmReason);
+VMMR3DECL(VMRESUMEREASON) VMR3GetResumeReason(PVM);
 VMMR3DECL(int)  VMR3Reset(PVM pVM);
 
 /**

@@ -33,6 +33,7 @@
 #include "UIMachineWindowSeamless.h"
 #include "UIMachineViewSeamless.h"
 #ifndef Q_WS_MAC
+# include "UIMachineDefs.h"
 # include "VBoxMiniToolBar.h"
 #endif /* !Q_WS_MAC */
 #ifdef Q_WS_MAC
@@ -340,9 +341,11 @@ void UIMachineWindowSeamless::setMask(const QRegion &constRegion)
     {
         /* If we are using the Quartz2D backend we have to trigger a repaint only.
          * All the magic clipping stuff is done in the paint engine. */
-        ::darwinWindowInvalidateShape(m_pMachineView->viewport());
+        if (!m_prevRegion.isEmpty())
+            m_pMachineView->viewport()->update(m_prevRegion - constRegion);
     }
 # endif /* VBOX_GUI_USE_QUARTZ2D */
+    m_prevRegion = constRegion;
 # if 0 /* This code is disabled for a long time already, need analisys... */
     /* This is necessary to avoid the flicker by an mask update.
      * See http://lists.apple.com/archives/Carbon-development/2001/Apr/msg01651.html for the hint.

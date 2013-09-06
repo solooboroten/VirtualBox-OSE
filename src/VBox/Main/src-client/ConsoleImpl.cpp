@@ -262,16 +262,20 @@ struct VMSaveTask : public VMTask
     VMSaveTask(Console *aConsole,
                const ComPtr<IProgress> &aServerProgress,
                const Utf8Str &aSavedStateFile,
-               MachineState_T aMachineStateBefore)
+               MachineState_T aMachineStateBefore,
+               Reason_T aReason)
         : VMTask(aConsole, NULL /* aProgress */, aServerProgress,
                  true /* aUsesVMPtr */),
           mSavedStateFile(aSavedStateFile),
-          mMachineStateBefore(aMachineStateBefore)
+          mMachineStateBefore(aMachineStateBefore),
+          mReason(aReason)
     {}
 
     Utf8Str mSavedStateFile;
     /* The local machine state we had before. Required if something fails */
     MachineState_T mMachineStateBefore;
+    /* The reason for saving state */
+    Reason_T mReason;
 };
 
 // Handler for global events
@@ -988,6 +992,17 @@ void Console::guestPropertiesVRDPUpdateDisconnect(uint32_t u32ClientId)
 }
 
 #endif /* VBOX_WITH_GUEST_PROPS */
+
+bool Console::isResetTurnedIntoPowerOff(void)
+{
+    Bstr value;
+    HRESULT hrc = mMachine->GetExtraData(Bstr("VBoxInternal2/TurnResetIntoPowerOff").raw(),
+                                         value.asOutParam());
+    if (   hrc   == S_OK
+        && value == "1")
+        return true;
+    return false;
+}
 
 #ifdef VBOX_WITH_EXTPACK
 /**
@@ -2074,7 +2089,6 @@ STDMETHODIMP Console::PowerUpPaused(IProgress **aProgress)
 STDMETHODIMP Console::PowerDown(IProgress **aProgress)
 {
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
 
     CheckComArgOutPointerValid(aProgress);
 
@@ -2083,6 +2097,7 @@ STDMETHODIMP Console::PowerDown(IProgress **aProgress)
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
+    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
     switch (mMachineState)
     {
         case MachineState_Running:
@@ -2143,6 +2158,20 @@ STDMETHODIMP Console::PowerDown(IProgress **aProgress)
     do
     {
         ComPtr<IProgress> pProgress;
+
+        alock.release();
+
+#ifdef VBOX_WITH_GUEST_PROPS
+    if (isResetTurnedIntoPowerOff())
+    {
+        mMachine->DeleteGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw());
+        mMachine->SetGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw(),
+                                   Bstr("PowerOff").raw(), Bstr("RDONLYGUEST").raw());
+        mMachine->SaveSettings();
+    }
+#endif
+
+        alock.acquire();
 
         /*
          * request a progress object from the server
@@ -2206,13 +2235,13 @@ STDMETHODIMP Console::PowerDown(IProgress **aProgress)
 STDMETHODIMP Console::Reset()
 {
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
+    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
     if (   mMachineState != MachineState_Running
         && mMachineState != MachineState_Teleporting
         && mMachineState != MachineState_LiveSnapshotting
@@ -2257,13 +2286,13 @@ HRESULT Console::doCPURemove(ULONG aCpu, PVM pVM)
     HRESULT rc = S_OK;
 
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
+    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
     AssertReturn(m_pVMMDev, E_FAIL);
     PPDMIVMMDEVPORT pVmmDevPort = m_pVMMDev->getVMMDevPort();
     AssertReturn(pVmmDevPort, E_FAIL);
@@ -2401,13 +2430,13 @@ HRESULT Console::doCPUAdd(ULONG aCpu, PVM pVM)
     HRESULT rc = S_OK;
 
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
+    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
     if (   mMachineState != MachineState_Running
         && mMachineState != MachineState_Teleporting
         && mMachineState != MachineState_LiveSnapshotting
@@ -2474,89 +2503,18 @@ STDMETHODIMP Console::Pause()
 {
     LogFlowThisFuncEnter();
 
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+    HRESULT rc = pause(Reason_Unspecified);
 
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    switch (mMachineState)
-    {
-        case MachineState_Running:
-        case MachineState_Teleporting:
-        case MachineState_LiveSnapshotting:
-            break;
-
-        case MachineState_Paused:
-        case MachineState_TeleportingPausedVM:
-        case MachineState_Saving:
-            return setError(VBOX_E_INVALID_VM_STATE, tr("Already paused"));
-
-        default:
-            return setInvalidMachineStateError();
-    }
-
-    /* get the VM handle. */
-    SafeVMPtr ptrVM(this);
-    if (!ptrVM.isOk())
-        return ptrVM.rc();
-
-    LogFlowThisFunc(("Sending PAUSE request...\n"));
-
-    /* release the lock before a VMR3* call (EMT will call us back)! */
-    alock.release();
-
-    int vrc = VMR3Suspend(ptrVM);
-
-    HRESULT hrc = S_OK;
-    if (RT_FAILURE(vrc))
-        hrc = setError(VBOX_E_VM_ERROR, tr("Could not suspend the machine execution (%Rrc)"), vrc);
-
-    LogFlowThisFunc(("hrc=%Rhrc\n", hrc));
+    LogFlowThisFunc(("hrc=%Rhrc\n", rc));
     LogFlowThisFuncLeave();
-    return hrc;
+    return rc;
 }
 
 STDMETHODIMP Console::Resume()
 {
     LogFlowThisFuncEnter();
 
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    if (mMachineState != MachineState_Paused)
-        return setError(VBOX_E_INVALID_VM_STATE,
-                        tr("Cannot resume the machine as it is not paused (machine state: %s)"),
-                        Global::stringifyMachineState(mMachineState));
-
-    /* get the VM handle. */
-    SafeVMPtr ptrVM(this);
-    if (!ptrVM.isOk())
-        return ptrVM.rc();
-
-    LogFlowThisFunc(("Sending RESUME request...\n"));
-
-    /* release the lock before a VMR3* call (EMT will call us back)! */
-    alock.release();
-
-#ifdef VBOX_WITH_EXTPACK
-    int vrc = mptrExtPackManager->callAllVmPowerOnHooks(this, ptrVM); /** @todo called a few times too many... */
-#else
-    int vrc = VINF_SUCCESS;
-#endif
-    if (RT_SUCCESS(vrc))
-    {
-        if (VMR3GetState(ptrVM) == VMSTATE_CREATED)
-            vrc = VMR3PowerOn(ptrVM); /* (PowerUpPaused) */
-        else
-            vrc = VMR3Resume(ptrVM);
-    }
-
-    HRESULT rc = RT_SUCCESS(vrc) ? S_OK :
-        setError(VBOX_E_VM_ERROR,
-                 tr("Could not resume the machine execution (%Rrc)"),
-                 vrc);
+    HRESULT rc = resume(Reason_Unspecified);
 
     LogFlowThisFunc(("rc=%Rhrc\n", rc));
     LogFlowThisFuncLeave();
@@ -2759,148 +2717,7 @@ STDMETHODIMP Console::SaveState(IProgress **aProgress)
     LogFlowThisFuncEnter();
     LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
 
-    CheckComArgOutPointerValid(aProgress);
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    if (   mMachineState != MachineState_Running
-        && mMachineState != MachineState_Paused)
-    {
-        return setError(VBOX_E_INVALID_VM_STATE,
-            tr("Cannot save the execution state as the machine is not running or paused (machine state: %s)"),
-            Global::stringifyMachineState(mMachineState));
-    }
-
-    /* memorize the current machine state */
-    MachineState_T lastMachineState = mMachineState;
-
-    if (mMachineState == MachineState_Running)
-    {
-        /* get the VM handle. */
-        SafeVMPtr ptrVM(this);
-        if (!ptrVM.isOk())
-            return ptrVM.rc();
-
-        /* release the lock before a VMR3* call (EMT will call us back)! */
-        alock.release();
-        int vrc = VMR3Suspend(ptrVM);
-        alock.acquire();
-
-        HRESULT hrc = S_OK;
-        if (RT_FAILURE(vrc))
-            hrc = setError(VBOX_E_VM_ERROR, tr("Could not suspend the machine execution (%Rrc)"), vrc);
-        if (FAILED(hrc))
-            return hrc;
-    }
-
-    HRESULT rc = S_OK;
-    bool fBeganSavingState = false;
-    bool fTaskCreationFailed = false;
-
-    do
-    {
-        ComPtr<IProgress> pProgress;
-        Bstr stateFilePath;
-
-        /*
-         * request a saved state file path from the server
-         * (this will set the machine state to Saving on the server to block
-         * others from accessing this machine)
-         */
-        rc = mControl->BeginSavingState(pProgress.asOutParam(),
-                                        stateFilePath.asOutParam());
-        if (FAILED(rc))
-            break;
-
-        fBeganSavingState = true;
-
-        /* sync the state with the server */
-        setMachineStateLocally(MachineState_Saving);
-
-        /* ensure the directory for the saved state file exists */
-        {
-            Utf8Str dir = stateFilePath;
-            dir.stripFilename();
-            if (!RTDirExists(dir.c_str()))
-            {
-                int vrc = RTDirCreateFullPath(dir.c_str(), 0700);
-                if (RT_FAILURE(vrc))
-                {
-                    rc = setError(VBOX_E_FILE_ERROR,
-                        tr("Could not create a directory '%s' to save the state to (%Rrc)"),
-                        dir.c_str(), vrc);
-                    break;
-                }
-            }
-        }
-
-        /* create a task object early to ensure mpVM protection is successful */
-        std::auto_ptr<VMSaveTask> task(new VMSaveTask(this, pProgress,
-                                                      stateFilePath,
-                                                      lastMachineState));
-        rc = task->rc();
-        /*
-         * If we fail here it means a PowerDown() call happened on another
-         * thread while we were doing Pause() (which releases the Console lock).
-         * We assign PowerDown() a higher precedence than SaveState(),
-         * therefore just return the error to the caller.
-         */
-        if (FAILED(rc))
-        {
-            fTaskCreationFailed = true;
-            break;
-        }
-
-        /* create a thread to wait until the VM state is saved */
-        int vrc = RTThreadCreate(NULL, Console::saveStateThread, (void *)task.get(),
-                                 0, RTTHREADTYPE_MAIN_WORKER, 0, "VMSave");
-        if (RT_FAILURE(vrc))
-        {
-            rc = setError(E_FAIL, "Could not create VMSave thread (%Rrc)", vrc);
-            break;
-        }
-
-        /* task is now owned by saveStateThread(), so release it */
-        task.release();
-
-        /* return the progress to the caller */
-        pProgress.queryInterfaceTo(aProgress);
-    } while (0);
-
-    if (FAILED(rc) && !fTaskCreationFailed)
-    {
-        /* preserve existing error info */
-        ErrorInfoKeeper eik;
-
-        if (fBeganSavingState)
-        {
-            /*
-             * cancel the requested save state procedure.
-             * This will reset the machine state to the state it had right
-             * before calling mControl->BeginSavingState().
-             */
-            mControl->EndSavingState(eik.getResultCode(), eik.getText().raw());
-        }
-
-        if (lastMachineState == MachineState_Running)
-        {
-            /* restore the paused state if appropriate */
-            setMachineStateLocally(MachineState_Paused);
-            /* restore the running state if appropriate */
-            SafeVMPtr ptrVM(this);
-            if (ptrVM.isOk())
-            {
-                alock.release();
-                VMR3Resume(ptrVM);
-                alock.acquire();
-            }
-        }
-        else
-            setMachineStateLocally(lastMachineState);
-    }
+    HRESULT rc = saveState(Reason_Unspecified, aProgress);
 
     LogFlowThisFunc(("rc=%Rhrc\n", rc));
     LogFlowThisFuncLeave();
@@ -3361,7 +3178,6 @@ STDMETHODIMP Console::TakeSnapshot(IN_BSTR aName,
                                    IProgress **aProgress)
 {
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("aName='%ls' mMachineState=%d\n", aName, mMachineState));
 
     CheckComArgStrNotEmptyOrNull(aName);
     CheckComArgOutPointerValid(aProgress);
@@ -3370,6 +3186,7 @@ STDMETHODIMP Console::TakeSnapshot(IN_BSTR aName,
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    LogFlowThisFunc(("aName='%ls' mMachineState=%d\n", aName, mMachineState));
 
     if (Global::IsTransient(mMachineState))
         return setError(VBOX_E_INVALID_VM_STATE,
@@ -3826,7 +3643,7 @@ DECLCALLBACK(int) Console::changeRemovableMedium(Console *pConsole,
             LogFlowFunc(("Suspending the VM...\n"));
             /* disable the callback to prevent Console-level state change */
             pConsole->mVMStateChangeCallbackDisabled = true;
-            int rc = VMR3Suspend(pVM);
+            int rc = VMR3Suspend(pVM, VMSUSPENDREASON_RECONFIG);
             pConsole->mVMStateChangeCallbackDisabled = false;
             AssertRCReturn(rc, rc);
             fResume = true;
@@ -3889,7 +3706,7 @@ DECLCALLBACK(int) Console::changeRemovableMedium(Console *pConsole,
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         pConsole->mVMStateChangeCallbackDisabled = true;
-        rc = VMR3Resume(pVM);
+        rc = VMR3Resume(pVM, VMRESUMEREASON_RECONFIG);
         pConsole->mVMStateChangeCallbackDisabled = false;
         AssertRC(rc);
         if (RT_FAILURE(rc))
@@ -4075,7 +3892,7 @@ DECLCALLBACK(int) Console::attachStorageDevice(Console *pConsole,
             LogFlowFunc(("Suspending the VM...\n"));
             /* disable the callback to prevent Console-level state change */
             pConsole->mVMStateChangeCallbackDisabled = true;
-            int rc = VMR3Suspend(pVM);
+            int rc = VMR3Suspend(pVM, VMSUSPENDREASON_RECONFIG);
             pConsole->mVMStateChangeCallbackDisabled = false;
             AssertRCReturn(rc, rc);
             fResume = true;
@@ -4138,7 +3955,7 @@ DECLCALLBACK(int) Console::attachStorageDevice(Console *pConsole,
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         pConsole->mVMStateChangeCallbackDisabled = true;
-        rc = VMR3Resume(pVM);
+        rc = VMR3Resume(pVM, VMRESUMEREASON_RECONFIG);
         pConsole->mVMStateChangeCallbackDisabled = false;
         AssertRC(rc);
         if (RT_FAILURE(rc))
@@ -4318,7 +4135,7 @@ DECLCALLBACK(int) Console::detachStorageDevice(Console *pConsole,
             LogFlowFunc(("Suspending the VM...\n"));
             /* disable the callback to prevent Console-level state change */
             pConsole->mVMStateChangeCallbackDisabled = true;
-            int rc = VMR3Suspend(pVM);
+            int rc = VMR3Suspend(pVM, VMSUSPENDREASON_RECONFIG);
             pConsole->mVMStateChangeCallbackDisabled = false;
             AssertRCReturn(rc, rc);
             fResume = true;
@@ -4400,7 +4217,7 @@ DECLCALLBACK(int) Console::detachStorageDevice(Console *pConsole,
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         pConsole->mVMStateChangeCallbackDisabled = true;
-        rc = VMR3Resume(pVM);
+        rc = VMR3Resume(pVM, VMRESUMEREASON_RECONFIG);
         pConsole->mVMStateChangeCallbackDisabled = false;
         AssertRC(rc);
         if (RT_FAILURE(rc))
@@ -4747,7 +4564,7 @@ DECLCALLBACK(int) Console::changeNetworkAttachment(Console *pThis,
             LogFlowFunc(("Suspending the VM...\n"));
             /* disable the callback to prevent Console-level state change */
             pThis->mVMStateChangeCallbackDisabled = true;
-            int rc = VMR3Suspend(pVM);
+            int rc = VMR3Suspend(pVM, VMSUSPENDREASON_RECONFIG);
             pThis->mVMStateChangeCallbackDisabled = false;
             AssertRCReturn(rc, rc);
             fResume = true;
@@ -4783,7 +4600,7 @@ DECLCALLBACK(int) Console::changeNetworkAttachment(Console *pThis,
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         pThis->mVMStateChangeCallbackDisabled = true;
-        rc = VMR3Resume(pVM);
+        rc = VMR3Resume(pVM, VMRESUMEREASON_RECONFIG);
         pThis->mVMStateChangeCallbackDisabled = false;
         AssertRC(rc);
         if (RT_FAILURE(rc))
@@ -5740,7 +5557,7 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
         LogFlowFunc(("Suspending the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         mVMStateChangeCallbackDisabled = true;
-        int vrc2 = VMR3Suspend(ptrVM);
+        int vrc2 = VMR3Suspend(ptrVM, VMSUSPENDREASON_RECONFIG);
         mVMStateChangeCallbackDisabled = false;
         AssertRCReturn(vrc2, E_FAIL);
     }
@@ -5769,7 +5586,7 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         mVMStateChangeCallbackDisabled = true;
-        int vrc2 = VMR3Resume(ptrVM);
+        int vrc2 = VMR3Resume(ptrVM, VMRESUMEREASON_RECONFIG);
         mVMStateChangeCallbackDisabled = false;
         if (RT_FAILURE(vrc2))
         {
@@ -5811,7 +5628,7 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
         LogFlowFunc(("Suspending the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         mVMStateChangeCallbackDisabled = true;
-        int vrc2 = VMR3Suspend(ptrVM);
+        int vrc2 = VMR3Suspend(ptrVM, VMSUSPENDREASON_RECONFIG);
         mVMStateChangeCallbackDisabled = false;
         AssertRCReturn(vrc2, E_FAIL);
     }
@@ -5845,7 +5662,7 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
         mVMStateChangeCallbackDisabled = true;
-        int vrc2 = VMR3Resume(ptrVM);
+        int vrc2 = VMR3Resume(ptrVM, VMRESUMEREASON_RECONFIG);
         mVMStateChangeCallbackDisabled = false;
         AssertRC(vrc2);
         if (RT_FAILURE(vrc2))
@@ -5871,6 +5688,288 @@ void Console::enableVMMStatistics(BOOL aEnable)
 {
     if (mGuest)
         mGuest->enableVMMStatistics(aEnable);
+}
+
+/**
+ * Worker for Console::Pause and internal entry point for pausing a VM for
+ * a specific reason.
+ */
+HRESULT Console::pause(Reason_T aReason)
+{
+    LogFlowThisFuncEnter();
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    switch (mMachineState)
+    {
+        case MachineState_Running:
+        case MachineState_Teleporting:
+        case MachineState_LiveSnapshotting:
+            break;
+
+        case MachineState_Paused:
+        case MachineState_TeleportingPausedVM:
+        case MachineState_Saving:
+            return setError(VBOX_E_INVALID_VM_STATE, tr("Already paused"));
+
+        default:
+            return setInvalidMachineStateError();
+    }
+
+    /* get the VM handle. */
+    SafeVMPtr ptrVM(this);
+    if (!ptrVM.isOk())
+        return ptrVM.rc();
+
+    /* release the lock before a VMR3* call (EMT will call us back)! */
+    alock.release();
+
+    LogFlowThisFunc(("Sending PAUSE request...\n"));
+    if (aReason != Reason_Unspecified)
+        LogRel(("Pausing VM execution, reason \"%s\"\n", Global::stringifyReason(aReason)));
+
+    VMSUSPENDREASON enmReason = VMSUSPENDREASON_USER;
+    if (aReason == Reason_HostSuspend)
+        enmReason = VMSUSPENDREASON_HOST_SUSPEND;
+    else if (aReason == Reason_HostBatteryLow)
+        enmReason = VMSUSPENDREASON_HOST_BATTERY_LOW;
+    int vrc = VMR3Suspend(ptrVM, enmReason);
+
+    HRESULT hrc = S_OK;
+    if (RT_FAILURE(vrc))
+        hrc = setError(VBOX_E_VM_ERROR, tr("Could not suspend the machine execution (%Rrc)"), vrc);
+
+    LogFlowThisFunc(("hrc=%Rhrc\n", hrc));
+    LogFlowThisFuncLeave();
+    return hrc;
+}
+
+/**
+ * Worker for Console::Resume and internal entry point for resuming a VM for
+ * a specific reason.
+ */
+HRESULT Console::resume(Reason_T aReason)
+{
+    LogFlowThisFuncEnter();
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    if (mMachineState != MachineState_Paused)
+        return setError(VBOX_E_INVALID_VM_STATE,
+                        tr("Cannot resume the machine as it is not paused (machine state: %s)"),
+                        Global::stringifyMachineState(mMachineState));
+
+    /* get the VM handle. */
+    SafeVMPtr ptrVM(this);
+    if (!ptrVM.isOk())
+        return ptrVM.rc();
+
+    /* release the lock before a VMR3* call (EMT will call us back)! */
+    alock.release();
+
+    LogFlowThisFunc(("Sending RESUME request...\n"));
+    if (aReason != Reason_Unspecified)
+        LogRel(("Resuming VM execution, reason \"%s\"\n", Global::stringifyReason(aReason)));
+
+    int vrc;
+    if (VMR3GetStateU(ptrVM.rawUVM()) == VMSTATE_CREATED)
+    {
+#ifdef VBOX_WITH_EXTPACK
+        vrc = mptrExtPackManager->callAllVmPowerOnHooks(this, VMR3GetVM(ptrVM.rawUVM()));
+#else
+        vrc = VINF_SUCCESS;
+#endif
+        if (RT_SUCCESS(vrc))
+            vrc = VMR3PowerOn(ptrVM); /* (PowerUpPaused) */
+    }
+    else
+    {
+        VMRESUMEREASON enmReason = VMRESUMEREASON_USER;
+        if (aReason == Reason_HostResume)
+            enmReason = VMRESUMEREASON_HOST_RESUME;
+        vrc = VMR3Resume(ptrVM, enmReason);
+    }
+
+    HRESULT rc = RT_SUCCESS(vrc) ? S_OK :
+        setError(VBOX_E_VM_ERROR,
+                 tr("Could not resume the machine execution (%Rrc)"),
+                 vrc);
+
+    LogFlowThisFunc(("rc=%Rhrc\n", rc));
+    LogFlowThisFuncLeave();
+    return rc;
+}
+
+/**
+ * Worker for Console::SaveState and internal entry point for saving state of
+ * a VM for a specific reason.
+ */
+HRESULT Console::saveState(Reason_T aReason, IProgress **aProgress)
+{
+    LogFlowThisFuncEnter();
+
+    CheckComArgOutPointerValid(aProgress);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
+    if (   mMachineState != MachineState_Running
+        && mMachineState != MachineState_Paused)
+    {
+        return setError(VBOX_E_INVALID_VM_STATE,
+            tr("Cannot save the execution state as the machine is not running or paused (machine state: %s)"),
+            Global::stringifyMachineState(mMachineState));
+    }
+
+    if (aReason != Reason_Unspecified)
+        LogRel(("Saving state of VM, reason \"%s\"\n", Global::stringifyReason(aReason)));
+
+    /* memorize the current machine state */
+    MachineState_T lastMachineState = mMachineState;
+
+    if (mMachineState == MachineState_Running)
+    {
+        /* get the VM handle. */
+        SafeVMPtr ptrVM(this);
+        if (!ptrVM.isOk())
+            return ptrVM.rc();
+
+        /* release the lock before a VMR3* call (EMT will call us back)! */
+        alock.release();
+        VMSUSPENDREASON enmReason = VMSUSPENDREASON_USER;
+        if (aReason == Reason_HostSuspend)
+            enmReason = VMSUSPENDREASON_HOST_SUSPEND;
+        else if (aReason == Reason_HostBatteryLow)
+            enmReason = VMSUSPENDREASON_HOST_BATTERY_LOW;
+        int vrc = VMR3Suspend(ptrVM, enmReason);
+        alock.acquire();
+
+        HRESULT hrc = S_OK;
+        if (RT_FAILURE(vrc))
+            hrc = setError(VBOX_E_VM_ERROR, tr("Could not suspend the machine execution (%Rrc)"), vrc);
+        if (FAILED(hrc))
+            return hrc;
+    }
+
+    HRESULT rc = S_OK;
+    bool fBeganSavingState = false;
+    bool fTaskCreationFailed = false;
+
+    do
+    {
+        ComPtr<IProgress> pProgress;
+        Bstr stateFilePath;
+
+        /*
+         * request a saved state file path from the server
+         * (this will set the machine state to Saving on the server to block
+         * others from accessing this machine)
+         */
+        rc = mControl->BeginSavingState(pProgress.asOutParam(),
+                                        stateFilePath.asOutParam());
+        if (FAILED(rc))
+            break;
+
+        fBeganSavingState = true;
+
+        /* sync the state with the server */
+        setMachineStateLocally(MachineState_Saving);
+
+        /* ensure the directory for the saved state file exists */
+        {
+            Utf8Str dir = stateFilePath;
+            dir.stripFilename();
+            if (!RTDirExists(dir.c_str()))
+            {
+                int vrc = RTDirCreateFullPath(dir.c_str(), 0700);
+                if (RT_FAILURE(vrc))
+                {
+                    rc = setError(VBOX_E_FILE_ERROR,
+                        tr("Could not create a directory '%s' to save the state to (%Rrc)"),
+                        dir.c_str(), vrc);
+                    break;
+                }
+            }
+        }
+
+        /* Create a task object early to ensure mpUVM protection is successful. */
+        std::auto_ptr<VMSaveTask> task(new VMSaveTask(this, pProgress,
+                                                      stateFilePath,
+                                                      lastMachineState,
+                                                      aReason));
+        rc = task->rc();
+        /*
+         * If we fail here it means a PowerDown() call happened on another
+         * thread while we were doing Pause() (which releases the Console lock).
+         * We assign PowerDown() a higher precedence than SaveState(),
+         * therefore just return the error to the caller.
+         */
+        if (FAILED(rc))
+        {
+            fTaskCreationFailed = true;
+            break;
+        }
+
+        /* create a thread to wait until the VM state is saved */
+        int vrc = RTThreadCreate(NULL, Console::saveStateThread, (void *)task.get(),
+                                 0, RTTHREADTYPE_MAIN_WORKER, 0, "VMSave");
+        if (RT_FAILURE(vrc))
+        {
+            rc = setError(E_FAIL, "Could not create VMSave thread (%Rrc)", vrc);
+            break;
+        }
+
+        /* task is now owned by saveStateThread(), so release it */
+        task.release();
+
+        /* return the progress to the caller */
+        pProgress.queryInterfaceTo(aProgress);
+    } while (0);
+
+    if (FAILED(rc) && !fTaskCreationFailed)
+    {
+        /* preserve existing error info */
+        ErrorInfoKeeper eik;
+
+        if (fBeganSavingState)
+        {
+            /*
+             * cancel the requested save state procedure.
+             * This will reset the machine state to the state it had right
+             * before calling mControl->BeginSavingState().
+             */
+            mControl->EndSavingState(eik.getResultCode(), eik.getText().raw());
+        }
+
+        if (lastMachineState == MachineState_Running)
+        {
+            /* restore the paused state if appropriate */
+            setMachineStateLocally(MachineState_Paused);
+            /* restore the running state if appropriate */
+            SafeVMPtr ptrVM(this);
+            if (ptrVM.isOk())
+            {
+                alock.release();
+                VMR3Resume(ptrVM, VMRESUMEREASON_STATE_RESTORED);
+                alock.acquire();
+            }
+        }
+        else
+            setMachineStateLocally(lastMachineState);
+    }
+
+    LogFlowThisFunc(("rc=%Rhrc\n", rc));
+    LogFlowThisFuncLeave();
+    return rc;
 }
 
 /**
@@ -6352,7 +6451,6 @@ HRESULT Console::consoleInitReleaseLog(const ComPtr<IMachine> aMachine)
 HRESULT Console::powerUp(IProgress **aProgress, bool aPaused)
 {
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
 
     CheckComArgOutPointerValid(aProgress);
 
@@ -6361,6 +6459,7 @@ HRESULT Console::powerUp(IProgress **aProgress, bool aPaused)
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
+    LogFlowThisFunc(("mMachineState=%d\n", mMachineState));
     HRESULT rc = S_OK;
     ComObjPtr<Progress> pPowerupProgress;
     bool fBeganPoweringUp = false;
@@ -7509,6 +7608,101 @@ HRESULT Console::removeSharedFolder(const Utf8Str &strName)
 }
 
 /**
+ * Internal VM power off worker.
+ *
+ * @return nothing.
+ * @param  that   Console object.
+ * @param  fCalledFromReset Flag whether the worker was called from the reset state change.
+ */
+void Console::vmstateChangePowerOff(bool fCalledFromReset = false)
+{
+#ifdef VBOX_WITH_GUEST_PROPS
+    if (isResetTurnedIntoPowerOff())
+    {
+        Bstr strPowerOffReason;
+
+        if (fCalledFromReset)
+            strPowerOffReason = Bstr("Reset");
+        else
+            strPowerOffReason = Bstr("PowerOff");
+
+        mMachine->DeleteGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw());
+        mMachine->SetGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw(),
+                                   strPowerOffReason.raw(), Bstr("RDONLYGUEST").raw());
+        mMachine->SaveSettings();
+    }
+#endif
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    if (mVMStateChangeCallbackDisabled)
+        return;
+
+    /* Do we still think that it is running? It may happen if this is a
+     * VM-(guest-)initiated shutdown/poweroff.
+     */
+    if (   mMachineState != MachineState_Stopping
+        && mMachineState != MachineState_Saving
+        && mMachineState != MachineState_Restoring
+        && mMachineState != MachineState_TeleportingIn
+        && mMachineState != MachineState_FaultTolerantSyncing
+        && mMachineState != MachineState_TeleportingPausedVM
+        && !mVMIsAlreadyPoweringOff
+       )
+    {
+        LogFlowFunc(("VM has powered itself off but Console still thinks it is running. Notifying.\n"));
+
+        /*
+         * Prevent powerDown() from calling VMR3PowerOff() again if this was called from
+         * the power off state change.
+         * When called from the Reset state make sure to call VMR3PowerOff() first.
+         */
+        Assert(mVMPoweredOff == false);
+        mVMPoweredOff = !fCalledFromReset;
+
+        /*
+         * request a progress object from the server
+         * (this will set the machine state to Stopping on the server
+         * to block others from accessing this machine)
+         */
+        ComPtr<IProgress> pProgress;
+        HRESULT rc = mControl->BeginPoweringDown(pProgress.asOutParam());
+        AssertComRC(rc);
+
+        /* sync the state with the server */
+        setMachineStateLocally(MachineState_Stopping);
+
+        /* Setup task object and thread to carry out the operation
+         * asynchronously (if we call powerDown() right here but there
+         * is one or more mpUVM callers (added with addVMCaller()) we'll
+         * deadlock).
+         */
+        std::auto_ptr<VMPowerDownTask> task(new VMPowerDownTask(this, pProgress));
+
+         /* If creating a task failed, this can currently mean one of
+          * two: either Console::uninit() has been called just a ms
+          * before (so a powerDown() call is already on the way), or
+          * powerDown() itself is being already executed. Just do
+          * nothing.
+          */
+        if (!task->isOk())
+        {
+            LogFlowFunc(("Console is already being uninitialized.\n"));
+            return;
+        }
+
+        int vrc = RTThreadCreate(NULL, Console::powerDownThread,
+                                 (void *)task.get(), 0,
+                                 RTTHREADTYPE_MAIN_WORKER, 0,
+                                 "VMPwrDwn");
+        AssertMsgRCReturnVoid(vrc, ("Could not create VMPowerDown thread (%Rrc)\n", vrc));
+
+        /* task is now owned by powerDownThread(), so release it */
+        task.release();
+    }
+}
+
+/**
  * VM state callback function. Called by the VMM
  * using its state machine states.
  *
@@ -7551,70 +7745,7 @@ DECLCALLBACK(void) Console::vmstateChangeCallback(PVM aVM,
          */
         case VMSTATE_OFF:
         {
-            AutoWriteLock alock(that COMMA_LOCKVAL_SRC_POS);
-
-            if (that->mVMStateChangeCallbackDisabled)
-                break;
-
-            /* Do we still think that it is running? It may happen if this is a
-             * VM-(guest-)initiated shutdown/poweroff.
-             */
-            if (   that->mMachineState != MachineState_Stopping
-                && that->mMachineState != MachineState_Saving
-                && that->mMachineState != MachineState_Restoring
-                && that->mMachineState != MachineState_TeleportingIn
-                && that->mMachineState != MachineState_FaultTolerantSyncing
-                && that->mMachineState != MachineState_TeleportingPausedVM
-                && !that->mVMIsAlreadyPoweringOff
-               )
-            {
-                LogFlowFunc(("VM has powered itself off but Console still thinks it is running. Notifying.\n"));
-
-                /* prevent powerDown() from calling VMR3PowerOff() again */
-                Assert(that->mVMPoweredOff == false);
-                that->mVMPoweredOff = true;
-
-                /*
-                 * request a progress object from the server
-                 * (this will set the machine state to Stopping on the server
-                 * to block others from accessing this machine)
-                 */
-                ComPtr<IProgress> pProgress;
-                HRESULT rc = that->mControl->BeginPoweringDown(pProgress.asOutParam());
-                AssertComRC(rc);
-
-                /* sync the state with the server */
-                that->setMachineStateLocally(MachineState_Stopping);
-
-                /* Setup task object and thread to carry out the operation
-                 * asynchronously (if we call powerDown() right here but there
-                 * is one or more mpVM callers (added with addVMCaller()) we'll
-                 * deadlock).
-                 */
-                std::auto_ptr<VMPowerDownTask> task(new VMPowerDownTask(that,
-                                                                        pProgress));
-
-                 /* If creating a task failed, this can currently mean one of
-                  * two: either Console::uninit() has been called just a ms
-                  * before (so a powerDown() call is already on the way), or
-                  * powerDown() itself is being already executed. Just do
-                  * nothing.
-                  */
-                if (!task->isOk())
-                {
-                    LogFlowFunc(("Console is already being uninitialized.\n"));
-                    break;
-                }
-
-                int vrc = RTThreadCreate(NULL, Console::powerDownThread,
-                                         (void *) task.get(), 0,
-                                         RTTHREADTYPE_MAIN_WORKER, 0,
-                                         "VMPwrDwn");
-                AssertMsgRCBreak(vrc, ("Could not create VMPowerDown thread (%Rrc)\n", vrc));
-
-                /* task is now owned by powerDownThread(), so release it */
-                task.release();
-            }
+            that->vmstateChangePowerOff();
             break;
         }
 
@@ -7684,10 +7815,15 @@ DECLCALLBACK(void) Console::vmstateChangeCallback(PVM aVM,
 
         case VMSTATE_RESETTING:
         {
+            if (!that->isResetTurnedIntoPowerOff())
+            {
 #ifdef VBOX_WITH_GUEST_PROPS
-            /* Do not take any read/write locks here! */
-            that->guestPropertiesHandleVMReset();
+                /* Do not take any read/write locks here! */
+                that->guestPropertiesHandleVMReset();
 #endif
+            }
+            else
+                that->vmstateChangePowerOff(true /* fCalledFromReset*/);
             break;
         }
 
@@ -8988,7 +9124,7 @@ DECLCALLBACK(int) Console::powerUpThread(RTTHREAD Thread, void *pvUser)
                             vrc = pConsole->mptrExtPackManager->callAllVmPowerOnHooks(pConsole, pVM);
 #endif
                             if (RT_SUCCESS(vrc))
-                                vrc = VMR3Resume(pVM);
+                                vrc = VMR3Resume(pVM, VMRESUMEREASON_STATE_RESTORED);
                             AssertLogRelRC(vrc);
                         }
                     }
@@ -9529,7 +9665,7 @@ DECLCALLBACK(int) Console::fntTakeSnapshotWorker(RTTHREAD Thread, void *pvUser)
                 LogFlowFunc(("VMR3Resume...\n"));
                 SafeVMPtr ptrVM(that);
                 alock.release();
-                int vrc = VMR3Resume(ptrVM);
+                int vrc = VMR3Resume(ptrVM, VMRESUMEREASON_STATE_SAVED);
                 alock.acquire();
                 if (RT_FAILURE(vrc))
                 {
@@ -9587,7 +9723,7 @@ DECLCALLBACK(int) Console::fntTakeSnapshotWorker(RTTHREAD Thread, void *pvUser)
                         LogFlowFunc(("VMR3Resume (on failure)...\n"));
                         SafeVMPtr ptrVM(that);
                         alock.release();
-                        int vrc = VMR3Resume(ptrVM); AssertLogRelRC(vrc);
+                        int vrc = VMR3Resume(ptrVM, VMRESUMEREASON_STATE_SAVED); AssertLogRelRC(vrc);
                         alock.acquire();
                         if (RT_FAILURE(vrc))
                             that->setMachineState(MachineState_Paused);

@@ -1304,8 +1304,8 @@ static void vmR3SuspendDoWork(PVM pVM)
  */
 static DECLCALLBACK(VBOXSTRICTRC) vmR3Suspend(PVM pVM, PVMCPU pVCpu, void *pvUser)
 {
-    LogFlow(("vmR3Suspend: pVM=%p pVCpu=%p/#%u\n", pVM, pVCpu, pVCpu->idCpu));
-    Assert(!pvUser); NOREF(pvUser);
+    VMSUSPENDREASON enmReason = (VMSUSPENDREASON)(uintptr_t)pvUser;
+    LogFlow(("vmR3Suspend: pVM=%p pVCpu=%p/#%u enmReason=%d\n", pVM, pVCpu, pVCpu->idCpu, enmReason));
 
     /*
      * The first EMT switches the state to suspending.  If this fails because
@@ -1319,6 +1319,7 @@ static DECLCALLBACK(VBOXSTRICTRC) vmR3Suspend(PVM pVM, PVMCPU pVCpu, void *pvUse
                                  VMSTATE_SUSPENDING_EXT_LS, VMSTATE_RUNNING_LS);
         if (RT_FAILURE(rc))
             return rc;
+        pVM->pUVM->vm.s.enmSuspendReason = enmReason;
     }
 
     VMSTATE enmVMState = VMR3GetState(pVM);
@@ -1352,25 +1353,41 @@ static DECLCALLBACK(VBOXSTRICTRC) vmR3Suspend(PVM pVM, PVMCPU pVCpu, void *pvUse
  * @returns VBox status code. When called on EMT, this will be a strict status
  *          code that has to be propagated up the call stack.
  *
- * @param   pVM     The VM to suspend.
+ * @param   pVM         The VM to suspend.
+ * @param   enmReason   The reason for suspending.
  *
  * @thread      Any thread.
  * @vmstate     Running or RunningLS
  * @vmstateto   Suspending + Suspended or SuspendingExtLS + SuspendedExtLS
  */
-VMMR3DECL(int) VMR3Suspend(PVM pVM)
+VMMR3DECL(int) VMR3Suspend(PVM pVM, VMSUSPENDREASON enmReason)
 {
     LogFlow(("VMR3Suspend: pVM=%p\n", pVM));
     VM_ASSERT_VALID_EXT_RETURN(pVM, VERR_INVALID_VM_HANDLE);
+    AssertReturn(enmReason > VMSUSPENDREASON_INVALID && enmReason < VMSUSPENDREASON_END, VERR_INVALID_PARAMETER);
 
     /*
      * Gather all the EMTs to make sure there are no races before
      * changing the VM state.
      */
     int rc = VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_DESCENDING | VMMEMTRENDEZVOUS_FLAGS_STOP_ON_ERROR,
-                                vmR3Suspend, NULL);
+                                vmR3Suspend, (void *)(uintptr_t)enmReason);
     LogFlow(("VMR3Suspend: returns %Rrc\n", rc));
     return rc;
+}
+
+
+/**
+ * Retrieves the reason for the most recent suspend.
+ *
+ * @returns Suspend reason. VMSUSPENDREASON_INVALID if no suspend has been done
+ *          or the handle is invalid.
+ * @param   pUVM        The user mode VM handle.
+ */
+VMMR3DECL(VMSUSPENDREASON) VMR3GetSuspendReason(PVM pVM)
+{
+    VM_ASSERT_VALID_EXT_RETURN(pVM, VMSUSPENDREASON_INVALID);
+    return pVM->pUVM->vm.s.enmSuspendReason;
 }
 
 
@@ -1386,8 +1403,8 @@ VMMR3DECL(int) VMR3Suspend(PVM pVM)
  */
 static DECLCALLBACK(VBOXSTRICTRC) vmR3Resume(PVM pVM, PVMCPU pVCpu, void *pvUser)
 {
-    LogFlow(("vmR3Resume: pVM=%p pVCpu=%p/#%u\n", pVM, pVCpu, pVCpu->idCpu));
-    Assert(!pvUser); NOREF(pvUser);
+    VMRESUMEREASON enmReason = (VMRESUMEREASON)(uintptr_t)pvUser;
+    LogFlow(("vmR3Resume: pVM=%p pVCpu=%p/#%u enmReason=%d\n", pVM, pVCpu, pVCpu->idCpu, enmReason));
 
     /*
      * The first thread thru here tries to change the state.  We shouldn't be
@@ -1398,6 +1415,7 @@ static DECLCALLBACK(VBOXSTRICTRC) vmR3Resume(PVM pVM, PVMCPU pVCpu, void *pvUser
         int rc = vmR3TrySetState(pVM, "VMR3Resume", 1, VMSTATE_RESUMING, VMSTATE_SUSPENDED);
         if (RT_FAILURE(rc))
             return rc;
+        pVM->pUVM->vm.s.enmResumeReason = enmReason;
     }
 
     VMSTATE enmVMState = VMR3GetState(pVM);
@@ -1434,24 +1452,40 @@ static DECLCALLBACK(VBOXSTRICTRC) vmR3Resume(PVM pVM, PVMCPU pVCpu, void *pvUser
  *          code that has to be propagated up the call stack.
  *
  * @param   pVM         The VM to resume.
+ * @param   enmReason   The reason we're resuming.
  *
  * @thread      Any thread.
  * @vmstate     Suspended
  * @vmstateto   Running
  */
-VMMR3DECL(int) VMR3Resume(PVM pVM)
+VMMR3DECL(int) VMR3Resume(PVM pVM, VMRESUMEREASON enmReason)
 {
     LogFlow(("VMR3Resume: pVM=%p\n", pVM));
     VM_ASSERT_VALID_EXT_RETURN(pVM, VERR_INVALID_VM_HANDLE);
+    AssertReturn(enmReason > VMRESUMEREASON_INVALID && enmReason < VMRESUMEREASON_END, VERR_INVALID_PARAMETER);
 
     /*
      * Gather all the EMTs to make sure there are no races before
      * changing the VM state.
      */
     int rc = VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_DESCENDING | VMMEMTRENDEZVOUS_FLAGS_STOP_ON_ERROR,
-                                vmR3Resume, NULL);
+                                vmR3Resume, (void *)(uintptr_t)enmReason);
     LogFlow(("VMR3Resume: returns %Rrc\n", rc));
     return rc;
+}
+
+
+/**
+ * Retrieves the reason for the most recent resume.
+ *
+ * @returns Resume reason. VMRESUMEREASON_INVALID if no suspend has been
+ *          done or the handle is invalid.
+ * @param   pVM             Pointer to the VM.
+ */
+VMMR3DECL(VMRESUMEREASON) VMR3GetResumeReason(PVM pVM)
+{
+    VM_ASSERT_VALID_EXT_RETURN(pVM, VMRESUMEREASON_INVALID);
+    return pVM->pUVM->vm.s.enmResumeReason;
 }
 
 
@@ -4142,7 +4176,7 @@ static int vmR3SetRuntimeErrorCommon(PVM pVM, uint32_t fFlags, const char *pszEr
         rc = VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_DESCENDING | VMMEMTRENDEZVOUS_FLAGS_STOP_ON_ERROR,
                                 vmR3SetRuntimeErrorChangeState, NULL);
     else if (fFlags & VMSETRTERR_FLAGS_SUSPEND)
-        rc = VMR3Suspend(pVM);
+        rc = VMR3Suspend(pVM, VMSUSPENDREASON_RUNTIME_ERROR);
     else
         rc = VINF_SUCCESS;
 

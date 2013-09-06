@@ -257,6 +257,10 @@ public:
     }
     void enableVMMStatistics(BOOL aEnable);
 
+    HRESULT pause(Reason_T aReason);
+    HRESULT resume(Reason_T aReason);
+    HRESULT saveState(Reason_T aReason, IProgress **aProgress);
+
     // callback callers (partly; for some events console callbacks are notified
     // directly from IInternalSessionControl event handlers declared above)
     void onMousePointerShapeChange(bool fVisible, bool fAlpha,
@@ -593,6 +597,7 @@ private:
 
     static DECLCALLBACK(int) configGuestProperties(void *pvConsole, PVM pVM);
     static DECLCALLBACK(int) configGuestControl(void *pvConsole);
+    void vmstateChangePowerOff(bool fCalledFromReset /* = false */);
     static DECLCALLBACK(void) vmstateChangeCallback(PVM aVM, VMSTATE aState,
                                                     VMSTATE aOldState, void *aUser);
     static DECLCALLBACK(int) unplugCpu(Console *pThis, PVM pVM, unsigned uCpu);
@@ -701,6 +706,8 @@ private:
     void guestPropertiesVRDPUpdateOtherInfoChange(uint32_t u32ClientId, const char *pszOtherInfo);
     void guestPropertiesVRDPUpdateDisconnect(uint32_t u32ClientId);
 #endif
+
+    bool isResetTurnedIntoPowerOff(void);
 
     /** @name Teleporter support
      * @{ */

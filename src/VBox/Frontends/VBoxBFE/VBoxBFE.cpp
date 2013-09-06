@@ -1161,7 +1161,7 @@ DECLCALLBACK(int) VMPowerUpThread(RTTHREAD Thread, void *pvUser)
             endProgressInfo();
             if (RT_SUCCESS(rc))
             {
-                rc = VMR3Resume(gpVM);
+                rc = VMR3Resume(gpVM, VMRESUMEREASON_STATE_RESTORED);
                 AssertRC(rc);
                 gDisplay->setRunning();
             }

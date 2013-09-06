@@ -635,7 +635,7 @@ static int ftmR3PerformFullSync(PVM pVM)
 {
     bool fSuspended = false;
 
-    int rc = VMR3Suspend(pVM);
+    int rc = VMR3Suspend(pVM, VMSUSPENDREASON_FTM_SYNC);
     AssertRCReturn(rc, rc);
 
     STAM_REL_COUNTER_INC(&pVM->ftm.s.StatFullSync);
@@ -665,7 +665,7 @@ static int ftmR3PerformFullSync(PVM pVM)
     rc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)ftmR3WriteProtectMemory, 1, pVM);
     AssertRCReturn(rc, rc);
 
-    rc = VMR3Resume(pVM);
+    rc = VMR3Resume(pVM, VMRESUMEREASON_FTM_SYNC);
     AssertRC(rc);
 
     return rc;

@@ -245,7 +245,7 @@
     </message>
     <message>
         <source>Send the ACPI Power Button press event to the virtual machine</source>
-        <translation>Sendet das ACPI-Ereignis &lt;i&gt;Ausschaltknopf gedrückt&lt;/i&gt; an die virtuelle Maschine</translation>
+        <translation>Sendet das ACPI-Ereignis &quot;Ausschaltknopf gedrückt&quot; an die virtuelle Maschine</translation>
     </message>
     <message>
         <source>&amp;Close...</source>
@@ -655,7 +655,7 @@
     </message>
     <message>
         <source>Send the ACPI Power Button press event to the selected virtual machines</source>
-        <translation>Sendet das ACPI-Ereignis &lt;i&gt;Ausschaltknopf gedrückt&lt;/i&gt; an die virtuelle Maschinen</translation>
+        <translation>Sendet das ACPI-Ereignis &quot;Ausschaltknopf gedrückt&quot; an die virtuelle Maschinen</translation>
     </message>
     <message>
         <source>Po&amp;wer Off</source>

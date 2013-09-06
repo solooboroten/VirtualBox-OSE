@@ -6372,11 +6372,12 @@ static DECLCALLBACK(int) e1kSetLinkState(PPDMINETWORKCONFIG pInterface, PDMNETWO
 {
     E1KSTATE *pState = RT_FROM_MEMBER(pInterface, E1KSTATE, INetworkConfig);
     bool fOldUp = !!(STATUS & STATUS_LU);
-    bool fNewUp = enmState == PDMNETWORKLINKSTATE_UP;
+    bool fNewUp = enmState == PDMNETWORKLINKSTATE_UP || enmState == PDMNETWORKLINKSTATE_DOWN_RESUME;
 
+    /* old state was connected but STATUS not yet written by guest */
     if (   fNewUp != fOldUp
-        || (!fNewUp && pState->fCableConnected)) /* old state was connected but STATUS not
-                                                  * yet written by guest */
+        || (!fNewUp && pState->fCableConnected)
+        || (pState->fCableConnected && enmState == PDMNETWORKLINKSTATE_DOWN_RESUME))
     {
         if (fNewUp)
         {
@@ -6398,7 +6399,16 @@ static DECLCALLBACK(int) e1kSetLinkState(PPDMINETWORKCONFIG pInterface, PDMNETWO
             e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
         }
         if (pState->pDrvR3)
-            pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, enmState);
+        {
+            /*
+             * Send a UP link state to the driver below if the network adapter is only
+             * temproarily disconnected due to resume event.
+             */
+            if (enmState == PDMNETWORKLINKSTATE_DOWN_RESUME)
+                pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, PDMNETWORKLINKSTATE_UP);
+            else
+                pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, enmState);
+        }
     }
     return VINF_SUCCESS;
 }
