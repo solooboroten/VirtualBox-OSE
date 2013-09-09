@@ -1,4 +1,4 @@
-/* $Id: VBoxIPC.cpp $ */
+/* $Id: VBoxIPC.cpp 47977 2013-08-21 16:37:27Z vboxsync $ */
 /** @file
  * VBoxIPC - IPC thread, acts as a (purely) local IPC server.
  *           Multiple sessions are supported, whereas every session
@@ -26,6 +26,7 @@
 #include <iprt/assert.h>
 #include <iprt/critsect.h>
 #include <iprt/err.h>
+#include <iprt/ldr.h>
 #include <iprt/list.h>
 #include <iprt/localipc.h>
 #include <iprt/mem.h>
@@ -51,6 +52,9 @@ typedef struct VBOXIPCCONTEXT
 } VBOXIPCCONTEXT, *PVBOXIPCCONTEXT;
 static VBOXIPCCONTEXT gCtx = {0};
 
+/** Function pointer for GetLastInputInfo(). */
+typedef BOOL (WINAPI *PFNGETLASTINPUTINFO)(PLASTINPUTINFO);
+
 /**
  * IPC per-session thread data.
  */
@@ -70,23 +74,28 @@ typedef struct VBOXIPCSESSION
 
 } VBOXIPCSESSION, *PVBOXIPCSESSION;
 
+/** Static pointer to GetLastInputInfo() function. */
+static PFNGETLASTINPUTINFO s_pfnGetLastInputInfo = NULL;
+
 int vboxIPCSessionDestroyLocked(PVBOXIPCSESSION pSession);
 
-static int vboxIPCHandleVBoxTrayRestart(RTLOCALIPCSESSION hSession, PVBOXTRAYIPCHEADER pHdr)
+static int vboxIPCHandleVBoxTrayRestart(PVBOXIPCSESSION pSession, PVBOXTRAYIPCHEADER pHdr)
 {
+    AssertPtrReturn(pSession, VERR_INVALID_POINTER);
     AssertPtrReturn(pHdr, VERR_INVALID_POINTER);
 
     /** @todo Not implemented yet; don't return an error here. */
     return VINF_SUCCESS;
 }
 
-static int vboxIPCHandleShowBalloonMsg(RTLOCALIPCSESSION hSession, PVBOXTRAYIPCHEADER pHdr)
+static int vboxIPCHandleShowBalloonMsg(PVBOXIPCSESSION pSession, PVBOXTRAYIPCHEADER pHdr)
 {
+    AssertPtrReturn(pSession, VERR_INVALID_POINTER);
     AssertPtrReturn(pHdr, VERR_INVALID_POINTER);
     AssertReturn(pHdr->uMsgLen > 0, VERR_INVALID_PARAMETER);
 
     VBOXTRAYIPCMSG_SHOWBALLOONMSG ipcMsg;
-    int rc = RTLocalIpcSessionRead(hSession, &ipcMsg, pHdr->uMsgLen,
+    int rc = RTLocalIpcSessionRead(pSession->hSession, &ipcMsg, pHdr->uMsgLen,
                                    NULL /* Exact read, blocking */);
     if (RT_SUCCESS(rc))
     {
@@ -102,26 +111,41 @@ static int vboxIPCHandleShowBalloonMsg(RTLOCALIPCSESSION hSession, PVBOXTRAYIPCH
     return rc;
 }
 
-static int vboxIPCHandleUserLastInput(RTLOCALIPCSESSION hSession, PVBOXTRAYIPCHEADER pHdr)
+static int vboxIPCHandleUserLastInput(PVBOXIPCSESSION pSession, PVBOXTRAYIPCHEADER pHdr)
 {
+    AssertPtrReturn(pSession, VERR_INVALID_POINTER);
     AssertPtrReturn(pHdr, VERR_INVALID_POINTER);
     /* No actual message from client. */
 
     int rc = VINF_SUCCESS;
 
-    /* Note: This only works up to 49.7 days (= 2^32, 32-bit counter)
-       since Windows was started. */
-    LASTINPUTINFO lastInput;
-    lastInput.cbSize = sizeof(LASTINPUTINFO);
-    BOOL fRc = GetLastInputInfo(&lastInput);
-    if (fRc)
+    bool fLastInputAvailable = false;
+    VBOXTRAYIPCRES_USERLASTINPUT ipcRes;
+    if (s_pfnGetLastInputInfo)
     {
-        VBOXTRAYIPCRES_USERLASTINPUT ipcRes;
-        ipcRes.uLastInputMs = GetTickCount() - lastInput.dwTime;
-        rc = RTLocalIpcSessionWrite(hSession, &ipcRes, sizeof(ipcRes));
+        /* Note: This only works up to 49.7 days (= 2^32, 32-bit counter)
+           since Windows was started. */
+        LASTINPUTINFO lastInput;
+        lastInput.cbSize = sizeof(LASTINPUTINFO);
+        BOOL fRc = s_pfnGetLastInputInfo(&lastInput);
+        if (fRc)
+        {
+            ipcRes.uLastInput = (GetTickCount() - lastInput.dwTime) / 1000;
+            fLastInputAvailable = true;
+        }
+        else
+            rc = RTErrConvertFromWin32(GetLastError());
     }
-    else
-        rc = RTErrConvertFromWin32(GetLastError());
+
+    if (!fLastInputAvailable)
+    {
+        /* No last input available. */
+        ipcRes.uLastInput = UINT32_MAX;
+    }
+
+    int rc2 = RTLocalIpcSessionWrite(pSession->hSession, &ipcRes, sizeof(ipcRes));
+    if (RT_SUCCESS(rc))
+        rc = rc2;
 
     return rc;
 }
@@ -174,6 +198,10 @@ int VBoxIPCInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStartThre
 
                         *ppInstance = &gCtx;
                         *pfStartThread = true;
+
+                        /* GetLastInputInfo only is available starting at Windows 2000. */
+                        s_pfnGetLastInputInfo = (PFNGETLASTINPUTINFO)
+                            RTLdrGetSystemSymbol("User32.dll", "GetLastInputInfo");
 
                         LogRelFunc(("Local IPC server now running at \"%s\"\n",
                                     szPipeName));
@@ -305,15 +333,15 @@ static DECLCALLBACK(int) vboxIPCSessionThread(RTTHREAD hThread, void *pvSession)
                 switch (ipcHdr.uMsgType)
                 {
                     case VBOXTRAYIPCMSGTYPE_RESTART:
-                        rc = vboxIPCHandleVBoxTrayRestart(hSession, &ipcHdr);
+                        rc = vboxIPCHandleVBoxTrayRestart(pThis, &ipcHdr);
                         break;
 
                     case VBOXTRAYIPCMSGTYPE_SHOWBALLOONMSG:
-                        rc = vboxIPCHandleShowBalloonMsg(hSession, &ipcHdr);
+                        rc = vboxIPCHandleShowBalloonMsg(pThis, &ipcHdr);
                         break;
 
                     case VBOXTRAYIPCMSGTYPE_USERLASTINPUT:
-                        rc = vboxIPCHandleUserLastInput(hSession, &ipcHdr);
+                        rc = vboxIPCHandleUserLastInput(pThis, &ipcHdr);
                         break;
 
                     default:
@@ -426,6 +454,7 @@ static int vboxIPCSessionCreate(PVBOXIPCCONTEXT pCtx, RTLOCALIPCSESSION hSession
 static int vboxIPCSessionDestroyLocked(PVBOXIPCSESSION pSession)
 {
     AssertPtrReturn(pSession, VERR_INVALID_POINTER);
+
     pSession->hThread = NIL_RTTHREAD;
 
     RTLOCALIPCSESSION hSession;

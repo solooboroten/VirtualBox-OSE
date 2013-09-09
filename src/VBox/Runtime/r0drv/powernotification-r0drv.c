@@ -1,4 +1,4 @@
-/* $Id: powernotification-r0drv.c $ */
+/* $Id: powernotification-r0drv.c 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT - Power Management, Ring-0 Driver, Event Notifications.
  */

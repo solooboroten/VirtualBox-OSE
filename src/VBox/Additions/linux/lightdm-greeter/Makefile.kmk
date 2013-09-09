@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 45511 2013-04-12 09:55:52Z vboxsync $
 ## @file
 # Makefile for VBox LightDM greeter for providing automated logons.
 #

@@ -1,5 +1,5 @@
 @echo off
-rem $Id: load.cmd $
+rem $Id: load.cmd 43137 2012-08-31 12:25:53Z vboxsync $
 rem rem @file
 rem Windows NT batch script for launching load.sh
 rem

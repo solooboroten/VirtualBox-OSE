@@ -64,6 +64,7 @@
 #define VMX_RESTORE_HOST_SEL_TR               RT_BIT(4)
 #define VMX_RESTORE_HOST_GDTR                 RT_BIT(5)
 #define VMX_RESTORE_HOST_IDTR                 RT_BIT(6)
+#define VMX_RESTORE_HOST_REQUIRED             RT_BIT(7)
 /** @} */
 
 /**
@@ -93,7 +94,30 @@ AssertCompileMemberOffset(VMXRESTOREHOST, HostIdtr.uAddr, 32);
 AssertCompileMemberOffset(VMXRESTOREHOST, uHostFSBase,    40);
 AssertCompileSize(VMXRESTOREHOST, 56);
 
+/** @name VMX HM-error codes for VERR_HM_UNSUPPORTED_CPU_FEATURE_COMBO.
+ *  UFC = Unsupported Feature Combination.
+ * @{
+ */
+/** Unsupported pin-based VM-execution controls combo. */
+#define VMX_UFC_CTRL_PIN_EXEC                                   0
+/** Unsupported processor-based VM-execution controls combo. */
+#define VMX_UFC_CTRL_PROC_EXEC                                  1
+/** Unsupported pin-based VM-execution controls combo. */
+#define VMX_UFC_CTRL_PROC_MOV_DRX_EXIT                          2
+/** Unsupported VM-entry controls combo. */
+#define VMX_UFC_CTRL_ENTRY                                      3
+/** Unsupported VM-exit controls combo. */
+#define VMX_UFC_CTRL_EXIT                                       4
+/** MSR storage capacity of the VMCS autoload/store area is not sufficient
+ *  for storing host MSRs. */
+#define VMX_UFC_INSUFFICIENT_HOST_MSR_STORAGE                   5
+/** MSR storage capacity of the VMCS autoload/store area is not sufficient
+ *  for storing guest MSRs. */
+#define VMX_UFC_INSUFFICIENT_GUEST_MSR_STORAGE                  6
+/** @} */
+
 /** @name VMX HM-error codes for VERR_VMX_INVALID_GUEST_STATE.
+ *  IGS = Invalid Guest State.
  * @{
  */
 /** An error occurred while checking invalid-guest-state. */
@@ -806,18 +830,16 @@ typedef enum
 #pragma pack(1)
 typedef struct
 {
-    uint32_t    u32IndexMSR;
+    uint32_t    u32Msr;
     uint32_t    u32Reserved;
     uint64_t    u64Value;
-} VMXMSR;
+} VMXAUTOMSR;
 #pragma pack()
 /** Pointer to an MSR load/store element. */
-typedef VMXMSR *PVMXMSR;
+typedef VMXAUTOMSR *PVMXAUTOMSR;
 /** Pointer to a const MSR load/store element. */
-typedef const VMXMSR *PCVMXMSR;
-
+typedef const VMXAUTOMSR *PCVMXAUTOMSR;
 /** @} */
-
 
 /** @name VMX-capability qword
  * @{
@@ -836,6 +858,31 @@ typedef union
     uint64_t            u;
 } VMX_CAPABILITY;
 #pragma pack()
+/** @} */
+
+/** @name VMX MSRs.
+ *  @{
+ */
+typedef struct VMXMSRS
+{
+    uint64_t                u64FeatureCtrl;
+    uint64_t                u64BasicInfo;
+    VMX_CAPABILITY          VmxPinCtls;
+    VMX_CAPABILITY          VmxProcCtls;
+    VMX_CAPABILITY          VmxProcCtls2;
+    VMX_CAPABILITY          VmxExit;
+    VMX_CAPABILITY          VmxEntry;
+    uint64_t                u64Misc;
+    uint64_t                u64Cr0Fixed0;
+    uint64_t                u64Cr0Fixed1;
+    uint64_t                u64Cr4Fixed0;
+    uint64_t                u64Cr4Fixed1;
+    uint64_t                u64VmcsEnum;
+    uint64_t                u64Vmfunc;
+    uint64_t                u64EptVpidCaps;
+} VMXMSRS;
+/** Pointer to a VMXMSRS struct. */
+typedef VMXMSRS *PVMXMSRS;
 /** @} */
 
 /** @name VMX EFLAGS reserved bits.
@@ -1875,6 +1922,7 @@ vmxon_good:
 the_end:
         add     esp, 8
     }
+    return rc;
 # endif
 }
 #endif

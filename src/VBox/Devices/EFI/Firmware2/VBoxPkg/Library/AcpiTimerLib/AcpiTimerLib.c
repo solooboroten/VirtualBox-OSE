@@ -1,4 +1,4 @@
-/* $Id: AcpiTimerLib.c $ */
+/* $Id: AcpiTimerLib.c 42400 2012-07-26 03:49:09Z vboxsync $ */
 /** @file
  * AcpiTimerLib.c
  */

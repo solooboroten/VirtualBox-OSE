@@ -1,4 +1,4 @@
-/* $Id: tstUserInfo.cpp $ */
+/* $Id: tstUserInfo.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * Test case for correct user environment.
  */

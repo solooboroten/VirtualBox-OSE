@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-win.cpp $ */
+/* $Id: VBoxGuest-win.cpp 46876 2013-07-01 10:09:35Z vboxsync $ */
 /** @file
  * VBoxGuest - Windows specifics.
  */

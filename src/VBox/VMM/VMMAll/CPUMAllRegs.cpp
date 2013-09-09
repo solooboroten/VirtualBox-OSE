@@ -1,4 +1,4 @@
-/* $Id: CPUMAllRegs.cpp $ */
+/* $Id: CPUMAllRegs.cpp 48368 2013-09-06 17:28:13Z vboxsync $ */
 /** @file
  * CPUM - CPU Monitor(/Manager) - Getters and Setters.
  */
@@ -674,7 +674,7 @@ VMMDECL(int) CPUMSetGuestCR0(PVMCPU pVCpu, uint64_t cr0)
                 AssertMsg((HyperCR0 & X86_CR0_EM) == (pVCpu->cpum.s.Guest.cr0 & X86_CR0_EM), ("%#x\n", HyperCR0));
                 HyperCR0 &= ~X86_CR0_EM;
                 HyperCR0 |= cr0 & X86_CR0_EM;
-                Log(("CPUM New HyperCR0=%#x\n", HyperCR0));
+                Log(("CPUM: New HyperCR0=%#x\n", HyperCR0));
                 ASMSetCR0(HyperCR0);
             }
 # ifdef VBOX_STRICT
@@ -698,7 +698,7 @@ VMMDECL(int) CPUMSetGuestCR0(PVMCPU pVCpu, uint64_t cr0)
                       ("%#x %#x\n", HyperCR0, pVCpu->cpum.s.Guest.cr0));
             HyperCR0 &= ~(X86_CR0_TS | X86_CR0_EM | X86_CR0_MP);
             HyperCR0 |= cr0 & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP);
-            Log(("CPUM New HyperCR0=%#x\n", HyperCR0));
+            Log(("CPUM: New HyperCR0=%#x\n", HyperCR0));
             ASMSetCR0(HyperCR0);
         }
     }
@@ -871,22 +871,15 @@ VMMDECL(void) CPUMSetGuestEFER(PVMCPU pVCpu, uint64_t val)
 
 
 /**
- * Query an MSR.
+ * Worker for CPUMQueryGuestMsr().
  *
- * The caller is responsible for checking privilege if the call is the result
- * of a RDMSR instruction. We'll do the rest.
- *
- * @retval  VINF_SUCCESS on success.
- * @retval  VERR_CPUM_RAISE_GP_0 on failure (invalid MSR), the caller is
- *          expected to take the appropriate actions. @a *puValue is set to 0.
- * @param   pVCpu               Pointer to the VMCPU.
- * @param   idMsr               The MSR.
- * @param   puValue             Where to return the value.
- *
- * @remarks This will always return the right values, even when we're in the
- *          recompiler.
+ * @retval  VINF_SUCCESS
+ * @retval  VERR_CPUM_RAISE_GP_0
+ * @param   pVCpu               The cross context CPU structure.
+ * @param   idMsr               The MSR to read.
+ * @param   puValue             Where to store the return value.
  */
-VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
+static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
 {
     /*
      * If we don't indicate MSR support in the CPUID feature bits, indicate
@@ -956,6 +949,24 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
                      | (fSystemManagementRangeRegisters ? RT_BIT_64(11) : 0);
             break;
         }
+
+        case IA32_MTRR_PHYSBASE0: case IA32_MTRR_PHYSMASK0:
+        case IA32_MTRR_PHYSBASE1: case IA32_MTRR_PHYSMASK1:
+        case IA32_MTRR_PHYSBASE2: case IA32_MTRR_PHYSMASK2:
+        case IA32_MTRR_PHYSBASE3: case IA32_MTRR_PHYSMASK3:
+        case IA32_MTRR_PHYSBASE4: case IA32_MTRR_PHYSMASK4:
+        case IA32_MTRR_PHYSBASE5: case IA32_MTRR_PHYSMASK5:
+        case IA32_MTRR_PHYSBASE6: case IA32_MTRR_PHYSMASK6:
+        case IA32_MTRR_PHYSBASE7: case IA32_MTRR_PHYSMASK7:
+            /** @todo implement variable MTRRs. */
+            *puValue = 0;
+            break;
+#if 0 /** @todo newer CPUs have more, figure since when and do selective GP(). */
+        case IA32_MTRR_PHYSBASE8: case IA32_MTRR_PHYSMASK8:
+        case IA32_MTRR_PHYSBASE9: case IA32_MTRR_PHYSMASK9:
+            *puValue = 0;
+            break;
+#endif
 
         case MSR_IA32_MTRR_DEF_TYPE:
             *puValue = pVCpu->cpum.s.GuestMsrs.msr.MtrrDefType;
@@ -1076,6 +1087,11 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
 #endif
             break;
 
+        /** @todo virtualize DEBUGCTL and relatives */
+        case MSR_IA32_DEBUGCTL:
+            *puValue = 0;
+            break;
+
 #if 0 /*def IN_RING0 */
         case MSR_IA32_PLATFORM_ID:
         case MSR_IA32_BIOS_SIGN_ID:
@@ -1090,35 +1106,93 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
             }
             /* no break */
 #endif
+        /*
+         * The BIOS_SIGN_ID MSR and MSR_IA32_MCP_CAP et al exist on AMD64 as
+         * well, at least bulldozer have them.  Windows 7 is querying them.
+         * XP has been observed querying MSR_IA32_MC0_CTL.
+         */
+        case MSR_IA32_BIOS_SIGN_ID:         /* fam/mod >= 6_01 */
+        case MSR_IA32_MCG_CAP:              /* fam/mod >= 6_01 */
+        case MSR_IA32_MCG_STATUS:           /* indicated as not present in CAP */
+        /*case MSR_IA32_MCG_CTRL:       - indicated as not present in CAP */
+        case MSR_IA32_MC0_CTL:
+        case MSR_IA32_MC0_STATUS:
+            *puValue = 0;
+            break;
+
 
         /*
          * Intel specifics MSRs:
          */
+        case MSR_P5_MC_ADDR:
+        case MSR_P5_MC_TYPE:
+        case MSR_P4_LASTBRANCH_TOS: /** @todo Are these branch regs still here on more recent CPUs? The documentation doesn't mention them for several archs. */
+        case MSR_P4_LASTBRANCH_0:
+        case MSR_P4_LASTBRANCH_1:
+        case MSR_P4_LASTBRANCH_2:
+        case MSR_P4_LASTBRANCH_3:
+        case MSR_IA32_PERFEVTSEL0:          /* NetWare 6.5 wants the these four. (Bet on AMD as well.) */
+        case MSR_IA32_PERFEVTSEL1:
+        case MSR_IA32_PMC0:
+        case MSR_IA32_PMC1:
         case MSR_IA32_PLATFORM_ID:          /* fam/mod >= 6_01 */
-        case MSR_IA32_BIOS_SIGN_ID:         /* fam/mod >= 6_01 */
+        case MSR_IA32_MPERF:                /* intel_pstate depends on this but does a validation test */
+        case MSR_IA32_APERF:                /* intel_pstate depends on this but does a validation test */
         /*case MSR_IA32_BIOS_UPDT_TRIG: - write-only? */
-        case MSR_IA32_MCP_CAP:              /* fam/mod >= 6_01 */
-        /*case MSR_IA32_MCP_STATUS:     - indicated as not present in CAP */
-        /*case MSR_IA32_MCP_CTRL:       - indicated as not present in CAP */
-        case MSR_IA32_MC0_CTL:
-        case MSR_IA32_MC0_STATUS:
+        case MSR_RAPL_POWER_UNIT:
+        case MSR_BBL_CR_CTL3:               /* ca. core arch? */
+        case MSR_PKG_CST_CONFIG_CONTROL:   /* Nahalem, Sandy Bridge */
             *puValue = 0;
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_INTEL)
             {
-                Log(("MSR %#x is Intel, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
+                Log(("CPUM: MSR %#x is Intel, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
                 rc = VERR_CPUM_RAISE_GP_0;
+                break;
+            }
+
+            /* Provide more plausive values for some of them. */
+            switch (idMsr)
+            {
+                case MSR_RAPL_POWER_UNIT:
+                    *puValue = RT_MAKE_U32_FROM_U8(3 /* power units (1/8 W)*/,
+                                                   16 /* 15.3 micro-Joules */,
+                                                   10 /* 976 microseconds increments */,
+                                                   0);
+                    break;
+                case MSR_BBL_CR_CTL3:
+                    *puValue = RT_MAKE_U32_FROM_U8(1, /* bit 0  - L2 Hardware Enabled. (RO) */
+                                                   1, /* bit 8  - L2 Enabled (R/W). */
+                                                   0, /* bit 23 - L2 Not Present (RO). */
+                                                   0);
+                    break;
+                case MSR_PKG_CST_CONFIG_CONTROL:
+                    *puValue = pVCpu->cpum.s.GuestMsrs.msr.PkgCStateCfgCtrl;
+                    break;
             }
             break;
+
+#if 0 /* Only on pentium CPUs! */
+        /* Event counters, not supported. */
+        case MSR_IA32_CESR:
+        case MSR_IA32_CTR0:
+        case MSR_IA32_CTR1:
+            *puValue = 0;
+            break;
+#endif
 
 
         /*
          * AMD specific MSRs:
          */
-        case MSR_K8_SYSCFG: /** @todo can be written, but we ignore that for now. */
+        case MSR_K8_SYSCFG:
+        case MSR_K8_INT_PENDING:
+        case MSR_K8_NB_CFG:             /* (All known values are 0 on reset.) */
+        case MSR_K8_HWCR:               /* Very interesting bits here. :) */
+        case MSR_K8_VM_CR:              /* Windows 8 */
             *puValue = 0;
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_AMD)
             {
-                Log(("MSR %#x is AMD, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
+                Log(("CPUM: MSR %#x is AMD, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
                 return VERR_CPUM_RAISE_GP_0;
             }
             /* ignored */
@@ -1153,6 +1227,30 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
 
 
 /**
+ * Query an MSR.
+ *
+ * The caller is responsible for checking privilege if the call is the result
+ * of a RDMSR instruction. We'll do the rest.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_CPUM_RAISE_GP_0 on failure (invalid MSR), the caller is
+ *          expected to take the appropriate actions. @a *puValue is set to 0.
+ * @param   pVCpu               Pointer to the VMCPU.
+ * @param   idMsr               The MSR.
+ * @param   puValue             Where to return the value.
+ *
+ * @remarks This will always return the right values, even when we're in the
+ *          recompiler.
+ */
+VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
+{
+    int rc = cpumQueryGuestMsrInt(pVCpu, idMsr, puValue);
+    LogFlow(("CPUMQueryGuestMsr: %#x -> %llx rc=%d\n", idMsr, *puValue, rc));
+    return rc;
+}
+
+
+/**
  * Sets the MSR.
  *
  * The caller is responsible for checking privilege if the call is the result
@@ -1172,6 +1270,8 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
  */
 VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
 {
+    LogFlow(("CPUSetGuestMsr: %#x <- %#llx\n", idMsr, uValue));
+
     /*
      * If we don't indicate MSR support in the CPUID feature bits, indicate
      * that a #GP(0) should be raised.
@@ -1223,11 +1323,27 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
                     &&  (uValue & 0xff) != 5
                     &&  (uValue & 0xff) != 6) )
             {
-                Log(("MSR_IA32_MTRR_DEF_TYPE: #GP(0) - writing reserved value (%#llx)\n", uValue));
+                Log(("CPUM: MSR_IA32_MTRR_DEF_TYPE: #GP(0) - writing reserved value (%#llx)\n", uValue));
                 return VERR_CPUM_RAISE_GP_0;
             }
             pVCpu->cpum.s.GuestMsrs.msr.MtrrDefType = uValue;
             break;
+
+        case IA32_MTRR_PHYSBASE0: case IA32_MTRR_PHYSMASK0:
+        case IA32_MTRR_PHYSBASE1: case IA32_MTRR_PHYSMASK1:
+        case IA32_MTRR_PHYSBASE2: case IA32_MTRR_PHYSMASK2:
+        case IA32_MTRR_PHYSBASE3: case IA32_MTRR_PHYSMASK3:
+        case IA32_MTRR_PHYSBASE4: case IA32_MTRR_PHYSMASK4:
+        case IA32_MTRR_PHYSBASE5: case IA32_MTRR_PHYSMASK5:
+        case IA32_MTRR_PHYSBASE6: case IA32_MTRR_PHYSMASK6:
+        case IA32_MTRR_PHYSBASE7: case IA32_MTRR_PHYSMASK7:
+            /** @todo implement variable MTRRs. */
+            break;
+#if 0 /** @todo newer CPUs have more, figure since when and do selective GP(). */
+        case IA32_MTRR_PHYSBASE8: case IA32_MTRR_PHYSMASK8:
+        case IA32_MTRR_PHYSBASE9: case IA32_MTRR_PHYSMASK9:
+            break;
+#endif
 
         case IA32_MTRR_FIX64K_00000:
             pVCpu->cpum.s.GuestMsrs.msr.MtrrFix64K_00000 = uValue;
@@ -1290,7 +1406,7 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
             if (    (uOldEFER & MSR_K6_EFER_LME) != (uValue & fMask & MSR_K6_EFER_LME)
                 &&  (pVCpu->cpum.s.Guest.cr0 & X86_CR0_PG))
             {
-                Log(("Illegal MSR_K6_EFER_LME change: paging is enabled!!\n"));
+                Log(("CPUM: Illegal MSR_K6_EFER_LME change: paging is enabled!!\n"));
                 return VERR_CPUM_RAISE_GP_0;
             }
 
@@ -1347,6 +1463,10 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
             pVCpu->cpum.s.GuestMsrs.msr.TscAux  = uValue;
             break;
 
+        case MSR_IA32_DEBUGCTL:
+            /** @todo virtualize DEBUGCTL and relatives */
+            break;
+
 
         /*
          * Intel specifics MSRs:
@@ -1355,14 +1475,37 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
         case MSR_IA32_BIOS_SIGN_ID:         /* fam/mod >= 6_01 */
         case MSR_IA32_BIOS_UPDT_TRIG:       /* fam/mod >= 6_01 */
         /*case MSR_IA32_MCP_CAP:     - read-only */
-        /*case MSR_IA32_MCP_STATUS:  - read-only */
-        /*case MSR_IA32_MCP_CTRL:    - indicated as not present in CAP */
+        /*case MSR_IA32_MCG_STATUS:  - read-only */
+        /*case MSR_IA32_MCG_CTRL:    - indicated as not present in CAP */
         /*case MSR_IA32_MC0_CTL:     - read-only? */
         /*case MSR_IA32_MC0_STATUS:  - read-only? */
+        case MSR_PKG_CST_CONFIG_CONTROL:
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_INTEL)
             {
-                Log(("MSR %#x is Intel, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
+                Log(("CPUM: MSR %#x is Intel, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
                 return VERR_CPUM_RAISE_GP_0;
+            }
+
+            switch (idMsr)
+            {
+                case MSR_PKG_CST_CONFIG_CONTROL:
+                {
+                    if (pVCpu->cpum.s.GuestMsrs.msr.PkgCStateCfgCtrl & RT_BIT_64(15))
+                    {
+                        Log(("MSR_PKG_CST_CONFIG_CONTROL: Write protected -> #GP\n"));
+                        return VERR_CPUM_RAISE_GP_0;
+                    }
+                    static uint64_t s_fMask = UINT64_C(0x01f08407); /** @todo Only Nehalem has 24; Only Sandy has 27 and 28. */
+                    static uint64_t s_fGpInvalid = UINT64_C(0xffffffff00ff0000); /** @todo figure out exactly what's off limits. */
+                    if ((uValue & s_fGpInvalid) || (uValue & 7) >= 5)
+                    {
+                        Log(("MSR_PKG_CST_CONFIG_CONTROL: Invalid value %#llx -> #GP\n", uValue));
+                        return VERR_CPUM_RAISE_GP_0;
+                    }
+                    pVCpu->cpum.s.GuestMsrs.msr.PkgCStateCfgCtrl = uValue & s_fMask;
+                    break;
+                }
+
             }
             /* ignored */
             break;
@@ -1370,10 +1513,12 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
         /*
          * AMD specific MSRs:
          */
-        case MSR_K8_SYSCFG: /** @todo can be written, but we ignore that for now. */
+        case MSR_K8_SYSCFG:      /** @todo can be written, but we ignore that for now. */
+        case MSR_K8_INT_PENDING: /** @todo can be written, but we ignore that for now. */
+        case MSR_K8_NB_CFG:      /** @todo can be written; the apicid swapping might be used and would need saving, but probably unnecessary. */
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_AMD)
             {
-                Log(("MSR %#x is AMD, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
+                Log(("CPUM: MSR %#x is AMD, the virtual CPU isn't an Intel one -> #GP\n", idMsr));
                 return VERR_CPUM_RAISE_GP_0;
             }
             /* ignored */
@@ -1824,7 +1969,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
                 &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_APIC;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled APIC\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled APIC\n"));
             break;
 
        /*
@@ -1833,7 +1978,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         case CPUMCPUIDFEATURE_X2APIC:
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].ecx |= X86_CPUID_FEATURE_ECX_X2APIC;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled x2APIC\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled x2APIC\n"));
             break;
 
         /*
@@ -1850,7 +1995,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
 
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx |= X86_CPUID_FEATURE_EDX_SEP;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled sysenter/exit\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled sysenter/exit\n"));
             break;
         }
 
@@ -1872,13 +2017,13 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
                     ||  !(ASMCpuId_EDX(1) & X86_CPUID_EXT_FEATURE_EDX_SYSCALL))
 #endif
                 {
-                    LogRel(("WARNING: Can't turn on SYSCALL/SYSRET when the host doesn't support it!!\n"));
+                    LogRel(("CPUM: WARNING! Can't turn on SYSCALL/SYSRET when the host doesn't support it!\n"));
                     return;
                 }
             }
             /* Valid for both Intel and AMD CPUs, although only in 64 bits mode for Intel. */
             pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_EXT_FEATURE_EDX_SYSCALL;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled syscall/ret\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled syscall/ret\n"));
             break;
         }
 
@@ -1890,7 +2035,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         {
             if (!(ASMCpuId_EDX(1) & X86_CPUID_FEATURE_EDX_PAE))
             {
-                LogRel(("WARNING: Can't turn on PAE when the host doesn't support it!!\n"));
+                LogRel(("CPUM: WARNING! Can't turn on PAE when the host doesn't support it!\n"));
                 return;
             }
 
@@ -1899,7 +2044,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
                 &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_PAE;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled PAE\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled PAE\n"));
             break;
         }
 
@@ -1912,13 +2057,13 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
                 ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_EXT_FEATURE_EDX_LONG_MODE))
             {
-                LogRel(("WARNING: Can't turn on LONG MODE when the host doesn't support it!!\n"));
+                LogRel(("CPUM: WARNING! Can't turn on LONG MODE when the host doesn't support it!\n"));
                 return;
             }
 
             /* Valid for both Intel and AMD. */
             pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_EXT_FEATURE_EDX_LONG_MODE;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled LONG MODE\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled LONG MODE\n"));
             break;
         }
 
@@ -1931,13 +2076,13 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
                 ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_EXT_FEATURE_EDX_NX))
             {
-                LogRel(("WARNING: Can't turn on NX/XD when the host doesn't support it!!\n"));
+                LogRel(("CPUM: WARNING! Can't turn on NX/XD when the host doesn't support it!\n"));
                 return;
             }
 
             /* Valid for both Intel and AMD. */
             pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_EXT_FEATURE_EDX_NX;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled NX\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled NX\n"));
             break;
         }
 
@@ -1950,13 +2095,13 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
                 ||  !(ASMCpuId_ECX(0x80000001) & X86_CPUID_EXT_FEATURE_ECX_LAHF_SAHF))
             {
-                LogRel(("WARNING: Can't turn on LAHF/SAHF when the host doesn't support it!!\n"));
+                LogRel(("CPUM: WARNING! Can't turn on LAHF/SAHF when the host doesn't support it!\n"));
                 return;
             }
 
             /* Valid for both Intel and AMD. */
             pVM->cpum.s.aGuestCpuIdExt[1].ecx |= X86_CPUID_EXT_FEATURE_ECX_LAHF_SAHF;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled LAHF/SAHF\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled LAHF/SAHF\n"));
             break;
         }
 
@@ -1967,7 +2112,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
                 &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_PAT;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled PAT\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled PAT\n"));
             break;
         }
 
@@ -1982,13 +2127,13 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
                 ||  pVM->cpum.s.u8PortableCpuIdLevel > 0)
             {
                 if (!pVM->cpum.s.u8PortableCpuIdLevel)
-                    LogRel(("WARNING: Can't turn on RDTSCP when the host doesn't support it!!\n"));
+                    LogRel(("CPUM: WARNING! Can't turn on RDTSCP when the host doesn't support it!\n"));
                 return;
             }
 
             /* Valid for both Intel and AMD. */
             pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_EXT_FEATURE_EDX_RDTSCP;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled RDTSCP.\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled RDTSCP.\n"));
             break;
         }
 
@@ -1998,7 +2143,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         case CPUMCPUIDFEATURE_HVP:
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].ecx |= X86_CPUID_FEATURE_ECX_HVP;
-            LogRel(("CPUMSetGuestCpuIdFeature: Enabled Hypervisor Present bit\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled Hypervisor Present bit\n"));
             break;
 
         default:
@@ -2084,7 +2229,7 @@ VMMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
                 &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_AMD_FEATURE_EDX_APIC;
-            Log(("CPUMClearGuestCpuIdFeature: Disabled APIC\n"));
+            Log(("CPUM: ClearGuestCpuIdFeature: Disabled APIC\n"));
             break;
 
         /*
@@ -2093,7 +2238,7 @@ VMMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         case CPUMCPUIDFEATURE_X2APIC:
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].ecx &= ~X86_CPUID_FEATURE_ECX_X2APIC;
-            Log(("CPUMClearGuestCpuIdFeature: Disabled x2APIC\n"));
+            Log(("CPUM: ClearGuestCpuIdFeature: Disabled x2APIC\n"));
             break;
 
         case CPUMCPUIDFEATURE_PAE:
@@ -2103,7 +2248,7 @@ VMMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
                 &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_AMD_FEATURE_EDX_PAE;
-            Log(("CPUMClearGuestCpuIdFeature: Disabled PAE!\n"));
+            Log(("CPUM: ClearGuestCpuIdFeature: Disabled PAE!\n"));
             break;
         }
 
@@ -2114,7 +2259,7 @@ VMMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
                 &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_AMD_FEATURE_EDX_PAT;
-            Log(("CPUMClearGuestCpuIdFeature: Disabled PAT!\n"));
+            Log(("CPUM: ClearGuestCpuIdFeature: Disabled PAT!\n"));
             break;
         }
 
@@ -2136,7 +2281,7 @@ VMMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         {
             if (pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_EXT_FEATURE_EDX_RDTSCP;
-            Log(("CPUMClearGuestCpuIdFeature: Disabled RDTSCP!\n"));
+            Log(("CPUM: ClearGuestCpuIdFeature: Disabled RDTSCP!\n"));
             break;
         }
 

@@ -1,4 +1,4 @@
-/* $Id: tstRTCritSect.cpp $ */
+/* $Id: tstRTCritSect.cpp 36492 2011-04-01 12:53:59Z vboxsync $ */
 /** @file
  * IPRT Testcase - Critical Sections.
  */

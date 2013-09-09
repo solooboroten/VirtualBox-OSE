@@ -1,4 +1,4 @@
-/* $Id: UsbWebcamInterface.h $ */
+/* $Id: UsbWebcamInterface.h 44758 2013-02-20 11:45:18Z vboxsync $ */
 /** @file
  * VirtualBox PDM Driver for Emulated USB Webcam
  */

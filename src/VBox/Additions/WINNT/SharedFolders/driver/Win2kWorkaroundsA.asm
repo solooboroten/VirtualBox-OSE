@@ -1,4 +1,4 @@
-; $Id: Win2kWorkaroundsA.asm $
+; $Id: Win2kWorkaroundsA.asm 42302 2012-07-22 01:26:51Z vboxsync $
 ;; @file
 ; VirtualBox Windows Guest Shared Folders - Windows 2000 Hacks, Assembly Parts.
 ;

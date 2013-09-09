@@ -1,4 +1,4 @@
-/* $Id: RTThreadPreemptIsPending-r0drv-generic.cpp $ */
+/* $Id: RTThreadPreemptIsPending-r0drv-generic.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT - RTThreadPreemptIsPending, Generic ring-0 driver implementation.
  */

@@ -1,4 +1,4 @@
-/* $Id: pipe.h $ */
+/* $Id: pipe.h 44487 2013-01-31 12:37:42Z vboxsync $ */
 /** @file
  * IPRT - Internal RTPipe header.
  */

@@ -274,6 +274,9 @@ void SERVER_DISPATCH_APIENTRY crServerDispatchChromiumParameteriCR(GLenum target
     case GL_HOST_WND_CREATED_HIDDEN_CR:
         cr_server.bWindowsInitiallyHidden = value ? 1 : 0;
         break;
+    case GL_HH_SET_DEFAULT_SHARED_CTX:
+        crWarning("Recieved GL_HH_SET_DEFAULT_SHARED_CTX from guest, ignoring");
+        break;
     default:
         /* Pass the parameter info to the head SPU */
         cr_server.head_spu->dispatch_table.ChromiumParameteriCR( target, value );
@@ -669,7 +672,7 @@ PCR_BLITTER crServerVBoxBlitterGet()
         CRASSERT(cr_server.MainContextInfo.SpuContext);
         Ctx.Base.id = cr_server.MainContextInfo.SpuContext;
         Ctx.Base.visualBits = cr_server.MainContextInfo.CreateInfo.visualBits;
-        rc = CrBltInit(&cr_server.Blitter, &Ctx, true, true, &cr_server.head_spu->dispatch_table);
+        rc = CrBltInit(&cr_server.Blitter, &Ctx, true, true, NULL, &cr_server.head_spu->dispatch_table);
         if (RT_SUCCESS(rc))
         {
             CRASSERT(CrBltIsInitialized(&cr_server.Blitter));
@@ -1445,7 +1448,7 @@ int crServerDumpCheckInit()
     crServerVBoxBlitterWinInit(&BltWin, pBlitterMural);
     crServerVBoxBlitterCtxInit(&BltCtx, &cr_server.MainContextInfo);
 
-    rc = CrBltInit(&cr_server.RecorderBlitter, &BltCtx, true, true, &cr_server.TmpCtxDispatch);
+    rc = CrBltInit(&cr_server.RecorderBlitter, &BltCtx, true, true, NULL, &cr_server.TmpCtxDispatch);
     if (!RT_SUCCESS(rc))
     {
         crWarning("CrBltInit failed rc %d", rc);

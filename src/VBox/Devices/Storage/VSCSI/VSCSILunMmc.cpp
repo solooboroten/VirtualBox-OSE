@@ -1,4 +1,4 @@
-/* $Id: VSCSILunMmc.cpp $ */
+/* $Id: VSCSILunMmc.cpp 46597 2013-06-17 15:43:04Z vboxsync $ */
 /** @file
  * Virtual SCSI driver: MMC LUN implementation (CD/DVD-ROM)
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxDDUDeps.cpp $ */
+/* $Id: VBoxDDUDeps.cpp 47716 2013-08-14 05:33:22Z vboxsync $ */
 /** @file
  * VBoxDDU - For dragging in library objects.
  */

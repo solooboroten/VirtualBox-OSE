@@ -1,4 +1,4 @@
-/* $Id: KeyboardImpl.cpp $ */
+/* $Id: KeyboardImpl.cpp 45030 2013-03-13 20:58:12Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */

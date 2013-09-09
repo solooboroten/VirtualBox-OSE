@@ -1,4 +1,4 @@
-/* $Id: VBoxManageStorageController.cpp $ */
+/* $Id: VBoxManageStorageController.cpp 44132 2012-12-14 10:43:16Z vboxsync $ */
 /** @file
  * VBoxManage - The storage controller related commands.
  */

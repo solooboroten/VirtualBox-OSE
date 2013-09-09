@@ -1,4 +1,4 @@
-/* $Id: UIWarningPane.cpp $ */
+/* $Id: UIWarningPane.cpp 47951 2013-08-21 08:38:18Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -21,6 +21,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QEvent>
+#include <QTimer>
 
 /* GUI includes: */
 #include "UIWarningPane.h"
@@ -33,6 +34,8 @@ UIWarningPane::UIWarningPane(QWidget *pParent)
     : QWidget(pParent)
     , m_pIconLayout(0)
     , m_pTextLabel(0)
+    , m_pHoverTimer(0)
+    , m_iHoveredIconLabelPosition(-1)
 {
     /* Prepare: */
     prepare();
@@ -78,6 +81,13 @@ void UIWarningPane::registerValidator(UIPageValidator *pValidator)
     m_hovered << false;
 }
 
+void UIWarningPane::sltHandleHoverTimer()
+{
+    /* Notify listeners about hovering: */
+    if (m_iHoveredIconLabelPosition >= 0 && m_iHoveredIconLabelPosition < m_validators.size())
+        emit sigHoverEnter(m_validators[m_iHoveredIconLabelPosition]);
+}
+
 void UIWarningPane::prepare()
 {
     /* Prepare content: */
@@ -91,6 +101,7 @@ void UIWarningPane::prepareContent()
     {
         /* Configure layout: */
         pMainLayout->setContentsMargins(0, 0, 0, 0);
+        pMainLayout->setSpacing(10);
         /* Add left stretch: */
         pMainLayout->addStretch();
         /* Create text-label: */
@@ -104,8 +115,17 @@ void UIWarningPane::prepareContent()
         {
             /* Configure layout: */
             m_pIconLayout->setContentsMargins(0, 0, 0, 0);
+            m_pIconLayout->setSpacing(6);
             /* Add into main-layout: */
             pMainLayout->addLayout(m_pIconLayout);
+        }
+        /* Create hover-timer: */
+        m_pHoverTimer = new QTimer(this);
+        {
+            /* Configure timer: */
+            m_pHoverTimer->setInterval(200);
+            m_pHoverTimer->setSingleShot(true);
+            connect(m_pHoverTimer, SIGNAL(timeout()), this, SLOT(sltHandleHoverTimer()));
         }
         /* Add right stretch: */
         pMainLayout->addStretch();
@@ -131,7 +151,8 @@ bool UIWarningPane::eventFilter(QObject *pWatched, QEvent *pEvent)
                     if (!m_hovered[iIconLabelPosition])
                     {
                         m_hovered[iIconLabelPosition] = true;
-                        emit sigHoverEnter(m_validators[iIconLabelPosition]);
+                        m_iHoveredIconLabelPosition = iIconLabelPosition;
+                        m_pHoverTimer->start();
                     }
                 }
             }
@@ -151,7 +172,13 @@ bool UIWarningPane::eventFilter(QObject *pWatched, QEvent *pEvent)
                     if (m_hovered[iIconLabelPosition])
                     {
                         m_hovered[iIconLabelPosition] = false;
-                        emit sigHoverLeave(m_validators[iIconLabelPosition]);
+                        if (m_pHoverTimer->isActive())
+                        {
+                            m_pHoverTimer->stop();
+                            m_iHoveredIconLabelPosition = -1;
+                        }
+                        else
+                            emit sigHoverLeave(m_validators[iIconLabelPosition]);
                     }
                 }
             }

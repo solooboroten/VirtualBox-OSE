@@ -1,4 +1,4 @@
-/* $Id: VDI.cpp $ */
+/* $Id: VDI.cpp 46613 2013-06-18 10:27:13Z vboxsync $ */
 /** @file
  * Virtual Disk Image (VDI), Core Code.
  */

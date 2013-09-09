@@ -1,4 +1,4 @@
-/* $Id: tstRTAssertCompile.cpp $ */
+/* $Id: tstRTAssertCompile.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT Testcase - AssertCompile* - A Compile Time Testcase.
  */

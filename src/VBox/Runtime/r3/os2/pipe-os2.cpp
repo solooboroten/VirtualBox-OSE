@@ -1,4 +1,4 @@
-/* $Id: pipe-os2.cpp $ */
+/* $Id: pipe-os2.cpp 44487 2013-01-31 12:37:42Z vboxsync $ */
 /** @file
  * IPRT - Anonymous Pipes, OS/2 Implementation.
  */

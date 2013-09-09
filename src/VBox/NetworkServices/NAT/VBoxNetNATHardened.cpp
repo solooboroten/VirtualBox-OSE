@@ -1,4 +1,4 @@
-/* $Id: VBoxNetNATHardened.cpp $ */
+/* $Id: VBoxNetNATHardened.cpp 47881 2013-08-20 09:50:55Z vboxsync $ */
 /** @file
  * VBoxNetNAT - Hardened main().
  */

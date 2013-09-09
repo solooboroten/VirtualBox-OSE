@@ -1,4 +1,4 @@
-; $Id: LegacyandAMD64.mac $
+; $Id: LegacyandAMD64.mac 48249 2013-09-03 14:16:05Z vboxsync $
 ;; @file
 ; VMM - World Switchers, 32-bit to AMD64 intermediate context.
 ;
@@ -29,6 +29,52 @@
 %define HM64ON32OP_HMRCSaveGuestFPU64   3
 %define HM64ON32OP_HMRCSaveGuestDebug64 4
 %define HM64ON32OP_HMRCTestSwitcher64   5
+
+;;
+; This macro is used for storing a debug code in a CMOS location.
+;
+; If we tripple fault or something, the debug code can be retrieved and we
+; might have a clue as to where the problem occurred.  The code is currently
+; using CMOS register 3 in the 2nd bank as this _seems_ to be unused on my
+; Extreme4 X79 asrock mainboard.
+;
+; @param %1     The debug code (byte)
+; @note Trashes AL.
+;
+%macro DEBUG_CMOS_TRASH_AL 1
+%ifdef VBOX_WITH_64ON32_CMOS_DEBUG
+    mov     al, 3
+    out     72h, al
+    mov     al, %1
+    out     73h, al
+    in      al, 73h
+%endif
+%endmacro
+
+;;
+; Version of DEBUG_CMOS_TRASH_AL that saves AL on the stack and therefore
+; doesn't trash any registers.
+;
+%macro DEBUG_CMOS_STACK64 1
+%ifdef VBOX_WITH_64ON32_CMOS_DEBUG
+    push    rax
+    DEBUG_CMOS_TRASH_AL %1
+    pop     rax
+%endif
+%endmacro
+
+;;
+; Version of DEBUG_CMOS_TRASH_AL that saves AL on the stack and therefore
+; doesn't trash any registers.
+;
+%macro DEBUG_CMOS_STACK32 1
+%ifdef VBOX_WITH_64ON32_CMOS_DEBUG
+    push    eax
+    DEBUG_CMOS_TRASH_AL %1
+    pop     eax
+%endif
+%endmacro
+
 
 ;; Stubs for making OS/2 compile (though, not work).
 %ifdef RT_OS_OS2 ;; @todo fix OMF support in yasm and kick nasm out completely.
@@ -112,6 +158,7 @@ BEGINPROC vmmR0ToRawMode
     ; turn off interrupts
     pushf
     cli
+    ;DEBUG_CMOS_STACK32 10h
 
     ;
     ; Call worker.
@@ -150,6 +197,7 @@ gth_notherm:
     jmp     gth_apic_done
 
 gth_x2apic:
+    ;DEBUG_CMOS_STACK32 7ch
     push    eax                         ; save eax
     push    ebx                         ; save it for fApicDisVectors
     push    edx                         ; save edx just in case.
@@ -190,6 +238,7 @@ gth_apic_done:
 %endif
 
     ; restore original flags
+    ;DEBUG_CMOS_STACK32 7eh
     popf
     pop     ebp
 
@@ -202,6 +251,7 @@ gth_apic_done:
     STAM_PROFILE_ADV_STOP edx
 %endif
 
+    ;DEBUG_CMOS_STACK32 7fh
     ret
 
 ENDPROC vmmR0ToRawMode
@@ -378,8 +428,9 @@ htg_apic_done:
     ;Skip cr2; assume host os don't stuff things in cr2. (safe)
     mov     eax, cr3
     mov     [edx + CPUMCPU.Host.cr3], eax
-    mov     eax, cr4
-    mov     [edx + CPUMCPU.Host.cr4], eax
+    mov     esi, cr4                      ; esi = cr4, we'll modify it further down.
+    mov     [edx + CPUMCPU.Host.cr4], esi
+
     DEBUG32_S_CHAR('c')
     DEBUG32_S_CHAR(';')
 
@@ -398,6 +449,7 @@ htg_apic_done:
 %endif
 
     ; Load new gdt so we can do a far jump after going into 64 bits mode
+    ;DEBUG_CMOS_STACK32 16h
     lgdt    [edx + CPUMCPU.Hyper.gdtr]
 
     DEBUG32_S_CHAR('g')
@@ -407,12 +459,23 @@ htg_apic_done:
 %endif
 
     ;;
+    ;; Clean up CR4.  X86_CR4_PGE, X86_CR4_PCE, X86_CR4_PCIDE (not really
+    ;; relevant for 32-bit, but whatever) and X86_CR4_VMXE must be cleared.
+    ;;
+    and     esi, X86_CR4_VME | X86_CR4_PVI | X86_CR4_TSD | X86_CR4_DE | X86_CR4_PSE | X86_CR4_PAE \
+               | X86_CR4_MCE | X86_CR4_OSFSXR | X86_CR4_OSXMMEEXCPT | X86_CR4_SMXE | X86_CR4_OSXSAVE
+    mov     cr4, esi
+
+    ;;
     ;; Load Intermediate memory context.
     ;;
     FIXUP SWITCHER_FIX_INTER_CR3_HC, 1
     mov     eax, 0ffffffffh
     mov     cr3, eax
     DEBUG32_CHAR('?')
+%ifdef VBOX_WITH_64ON32_CMOS_DEBUG
+    DEBUG_CMOS_TRASH_AL 17h
+%endif
 
     ;;
     ;; Jump to identity mapped location
@@ -425,12 +488,14 @@ htg_apic_done:
 ALIGNCODE(16)
 GLOBALNAME IDEnterTarget
     DEBUG32_CHAR('1')
+    DEBUG_CMOS_TRASH_AL 19h
 
     ; 1. Disable paging.
     mov     ebx, cr0
     and     ebx, ~X86_CR0_PG
     mov     cr0, ebx
     DEBUG32_CHAR('2')
+    DEBUG_CMOS_TRASH_AL 1ah
 
 %ifdef VBOX_WITH_CRASHDUMP_MAGIC
     mov     eax, cr2
@@ -441,12 +506,14 @@ GLOBALNAME IDEnterTarget
     mov     ecx, cr4
     or      ecx, X86_CR4_PAE
     mov     cr4, ecx
+    DEBUG_CMOS_TRASH_AL 1bh
 
     ; 3. Load long mode intermediate CR3.
     FIXUP FIX_INTER_AMD64_CR3, 1
     mov     ecx, 0ffffffffh
     mov     cr3, ecx
     DEBUG32_CHAR('3')
+    DEBUG_CMOS_TRASH_AL 1ch
 
 %ifdef VBOX_WITH_CRASHDUMP_MAGIC
     mov     eax, cr2
@@ -463,6 +530,7 @@ GLOBALNAME IDEnterTarget
     wrmsr
     mov     edx, esi
     DEBUG32_CHAR('4')
+    DEBUG_CMOS_TRASH_AL 1dh
 
 %ifdef VBOX_WITH_CRASHDUMP_MAGIC
     mov     eax, cr2
@@ -486,6 +554,7 @@ BITS 64
 ALIGNCODE(16)
 NAME(IDEnter64Mode):
     DEBUG64_CHAR('6')
+    DEBUG_CMOS_TRASH_AL 1eh
     jmp     [NAME(pICEnterTarget) wrt rip]
 
 ; 64-bit jump target
@@ -508,6 +577,7 @@ db 'Switch_marker'
     ;
 ALIGNCODE(16)
 GLOBALNAME ICEnterTarget
+    ;DEBUG_CMOS_TRASH_AL 1fh
     ; Load CPUM pointer into rdx
     mov     rdx, [NAME(pCpumIC) wrt rip]
     CPUMCPU_FROM_CPUM_WITH_OFFSET edx, ebp
@@ -536,6 +606,10 @@ GLOBALNAME ICEnterTarget
     mov dword [rdx + CPUMCPU.Guest.dr + 4*8], 6
 %endif
 
+%ifdef VBOX_WITH_64ON32_IDT
+    ; Set up emergency trap handlers.
+    lidt    [rdx + CPUMCPU.Hyper.idtr]
+%endif
 
     ; load the hypervisor function address
     mov     r9, [rdx + CPUMCPU.Hyper.eip]
@@ -711,6 +785,7 @@ ENDPROC vmmR0ToRawModeAsm
 BEGINPROC VMXRCStartVM64
     push    rbp
     mov     rbp, rsp
+    DEBUG_CMOS_STACK64 20h
 
     ; Make sure VT-x instructions are allowed.
     mov     rax, cr4
@@ -811,11 +886,29 @@ ALIGN(16)
     mov     eax, VMX_VMCS_HOST_FIELD_SS
     vmwrite rax, rdx
 
-    sub     rsp, 8*2
-    sgdt    [rsp]
+%if 0 ; Another experiment regarding tripple faults... Seems not to be necessary.
+    sub     rsp, 16
+    str     [rsp]
+    movsx   rdx, word [rsp]
+    mov     eax, VMX_VMCS_HOST_FIELD_TR
+    vmwrite rax, rdx
+    add     rsp, 16
+%endif
+
+    sub     rsp, 16
+    sgdt    [rsp + 6]                   ; (The 64-bit base should be aligned, not the word.)
     mov     eax, VMX_VMCS_HOST_GDTR_BASE
-    vmwrite rax, [rsp+2]
-    add     rsp, 8*2
+    vmwrite rax, [rsp + 6 + 2]
+    add     rsp, 16
+
+%ifdef VBOX_WITH_64ON32_IDT
+    sub     rsp, 16
+    sidt    [rsp + 6]
+    mov     eax, VMX_VMCS_HOST_IDTR_BASE
+    vmwrite rax, [rsp + 6 + 2] ; [rsi + CPUMCPU.Hyper.idtr + 2] - why doesn't this work?
+    add     rsp, 16
+    ;call NAME(vmm64On32PrintIdtr)
+%endif
 
 %ifdef VBOX_WITH_CRASHDUMP_MAGIC
     mov     qword [rbx + VMCSCACHE.uPos], 4
@@ -891,6 +984,12 @@ ALIGN(16)
 
 ALIGNCODE(16)
 .vmlaunch64_done:
+%if 0 ;fixme later - def VBOX_WITH_64ON32_IDT
+    push    rdx
+    mov     rdx, [rsp + 8]         ; pCtx
+    lidt    [rdx + CPUMCPU.Hyper.idtr]
+    pop     rdx
+%endif
     jc      near .vmstart64_invalid_vmcs_ptr
     jz      near .vmstart64_start_failed
 
@@ -1058,6 +1157,7 @@ BEGINPROC SVMRCVMRun64
     push    rbp
     mov     rbp, rsp
     pushf
+    DEBUG_CMOS_STACK64 30h
 
     ; Manual save and restore:
     ;  - General purpose registers except RIP, RSP, RAX
@@ -1149,6 +1249,7 @@ ENDPROC SVMRCVMRun64
 ; * @param   pCtx       Guest context [rsi]
 ; */
 BEGINPROC HMRCSaveGuestFPU64
+    DEBUG_CMOS_STACK64 40h
     mov     rax, cr0
     mov     rcx, rax                    ; save old CR0
     and     rax, ~(X86_CR0_TS | X86_CR0_EM)
@@ -1169,6 +1270,7 @@ ENDPROC HMRCSaveGuestFPU64
 ; * @param   pCtx       Guest context [rsi]
 ; */
 BEGINPROC HMRCSaveGuestDebug64
+    DEBUG_CMOS_STACK64 41h
     mov rax, dr0
     mov qword [rsi + CPUMCTX.dr + 0*8], rax
     mov rax, dr1
@@ -1195,10 +1297,327 @@ ENDPROC HMRCSaveGuestDebug64
 ; * @param   pCtx       Guest context [rsi]
 ; */
 BEGINPROC HMRCTestSwitcher64
+    DEBUG_CMOS_STACK64 42h
     mov eax, [rsp+8]
     ret
 ENDPROC HMRCTestSwitcher64
 
+
+%ifdef VBOX_WITH_64ON32_IDT
+;
+; Trap handling.
+;
+
+;; Here follows an array of trap handler entry points, 8 byte in size.
+BEGINPROC vmm64On32TrapHandlers
+%macro vmm64On32TrapEntry 1
+GLOBALNAME vmm64On32Trap %+ i
+    db 06ah, i                          ; push imm8 - note that this is a signextended value.
+    jmp   NAME(%1)
+    ALIGNCODE(8)
+%assign i i+1
+%endmacro
+%assign i 0                                 ; start counter.
+    vmm64On32TrapEntry vmm64On32Trap        ; 0
+    vmm64On32TrapEntry vmm64On32Trap        ; 1
+    vmm64On32TrapEntry vmm64On32Trap        ; 2
+    vmm64On32TrapEntry vmm64On32Trap        ; 3
+    vmm64On32TrapEntry vmm64On32Trap        ; 4
+    vmm64On32TrapEntry vmm64On32Trap        ; 5
+    vmm64On32TrapEntry vmm64On32Trap        ; 6
+    vmm64On32TrapEntry vmm64On32Trap        ; 7
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; 8
+    vmm64On32TrapEntry vmm64On32Trap        ; 9
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; a
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; b
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; c
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; d
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; e
+    vmm64On32TrapEntry vmm64On32Trap        ; f  (reserved)
+    vmm64On32TrapEntry vmm64On32Trap        ; 10
+    vmm64On32TrapEntry vmm64On32TrapErrCode ; 11
+    vmm64On32TrapEntry vmm64On32Trap        ; 12
+    vmm64On32TrapEntry vmm64On32Trap        ; 13
+%rep (0x100 - 0x14)
+    vmm64On32TrapEntry vmm64On32Trap
+%endrep
+ENDPROC vmm64On32TrapHandlers
+
+;; Fake an error code and jump to the real thing.
+BEGINPROC vmm64On32Trap
+    push    qword [rsp]
+    jmp     NAME(vmm64On32TrapErrCode)
+ENDPROC vmm64On32Trap
+
+
+;;
+; Trap frame:
+;   [rbp + 38h] = ss
+;   [rbp + 30h] = rsp
+;   [rbp + 28h] = eflags
+;   [rbp + 20h] = cs
+;   [rbp + 18h] = rip
+;   [rbp + 10h] = error code (or trap number)
+;   [rbp + 08h] = trap number
+;   [rbp + 00h] = rbp
+;   [rbp - 08h] = rax
+;   [rbp - 10h] = rbx
+;   [rbp - 18h] = ds
+;
+BEGINPROC vmm64On32TrapErrCode
+    push    rbp
+    mov     rbp, rsp
+    push    rax
+    push    rbx
+    mov     ax, ds
+    push    rax
+    sub     rsp, 20h
+
+    mov     ax, cs
+    mov     ds, ax
+
+%if 1
+    COM64_S_NEWLINE
+    COM64_S_CHAR '!'
+    COM64_S_CHAR 't'
+    COM64_S_CHAR 'r'
+    COM64_S_CHAR 'a'
+    COM64_S_CHAR 'p'
+    movzx   eax, byte [rbp + 08h]
+    COM64_S_DWORD_REG eax
+    COM64_S_CHAR '!'
+%endif
+
+%if 0 ;; @todo Figure the offset of the CPUMCPU relative to CPUM
+    sidt    [rsp]
+    movsx   eax, word [rsp]
+    shr     eax, 12                     ; div by  16 * 256 (0x1000).
+%else
+    ; hardcoded VCPU(0) for now...
+    mov     rbx, [NAME(pCpumIC) wrt rip]
+    mov     eax, [rbx + CPUM.offCPUMCPU0]
+%endif
+    push    rax                         ; Save the offset for rbp later.
+
+    add     rbx, rax                    ; rbx = CPUMCPU
+
+    ;
+    ; Deal with recursive traps due to vmxoff (lazy bird).
+    ;
+    lea     rax, [.vmxoff_trap_location wrt rip]
+    cmp     rax, [rbp + 18h]
+    je      .not_vmx_root
+
+    ;
+    ; Save the context.
+    ;
+    mov     rax, [rbp - 8]
+    mov     [rbx + CPUMCPU.Hyper.eax], rax
+    mov     [rbx + CPUMCPU.Hyper.ecx], rcx
+    mov     [rbx + CPUMCPU.Hyper.edx], rdx
+    mov     rax, [rbp - 10h]
+    mov     [rbx + CPUMCPU.Hyper.ebx], rax
+    mov     rax, [rbp]
+    mov     [rbx + CPUMCPU.Hyper.ebp], rax
+    mov     rax, [rbp + 30h]
+    mov     [rbx + CPUMCPU.Hyper.esp], rax
+    mov     [rbx + CPUMCPU.Hyper.edi], rdi
+    mov     [rbx + CPUMCPU.Hyper.esi], rsi
+    mov     [rbx + CPUMCPU.Hyper.r8], r8
+    mov     [rbx + CPUMCPU.Hyper.r9], r9
+    mov     [rbx + CPUMCPU.Hyper.r10], r10
+    mov     [rbx + CPUMCPU.Hyper.r11], r11
+    mov     [rbx + CPUMCPU.Hyper.r12], r12
+    mov     [rbx + CPUMCPU.Hyper.r13], r13
+    mov     [rbx + CPUMCPU.Hyper.r14], r14
+    mov     [rbx + CPUMCPU.Hyper.r15], r15
+
+    mov     rax, [rbp + 18h]
+    mov     [rbx + CPUMCPU.Hyper.eip], rax
+    movzx   ax, [rbp + 20h]
+    mov     [rbx + CPUMCPU.Hyper.cs.Sel], ax
+    mov     ax, [rbp + 38h]
+    mov     [rbx + CPUMCPU.Hyper.ss.Sel], ax
+    mov     ax, [rbp - 18h]
+    mov     [rbx + CPUMCPU.Hyper.ds.Sel], ax
+
+    mov     rax, [rbp + 28h]
+    mov     [rbx + CPUMCPU.Hyper.eflags], rax
+
+    mov     rax, cr2
+    mov     [rbx + CPUMCPU.Hyper.cr2], rax
+
+    mov     rax, [rbp + 10h]
+    mov     [rbx + CPUMCPU.Hyper.r14], rax ; r14 = error code
+    movzx   eax, byte [rbp + 08h]
+    mov     [rbx + CPUMCPU.Hyper.r15], rax ; r15 = trap number
+
+    ;
+    ; Finally, leave VMX root operation before trying to return to the host.
+    ;
+    mov     rax, cr4
+    test    rax, X86_CR4_VMXE
+    jz      .not_vmx_root
+.vmxoff_trap_location:
+    vmxoff
+.not_vmx_root:
+
+    ;
+    ; Go back to the host.
+    ;
+    pop     rbp
+    mov     dword [rbx + CPUMCPU.u32RetCode], VERR_TRPM_DONT_PANIC
+    jmp     NAME(vmmRCToHostAsm)
+ENDPROC vmm64On32TrapErrCode
+
+;; We allocate the IDT here to avoid having to allocate memory separately somewhere.
+ALIGNCODE(16)
+GLOBALNAME vmm64On32Idt
+%assign i 0
+%rep 256
+    dq NAME(vmm64On32Trap %+ i) - NAME(Start) ; Relative trap handler offsets.
+    dq 0
+%assign i (i + 1)
+%endrep
+
+
+ %if 0
+;; For debugging purposes.
+BEGINPROC vmm64On32PrintIdtr
+    push    rax
+    push    rsi                         ; paranoia
+    push    rdi                         ; ditto
+    sub rsp, 16
+
+    COM64_S_CHAR ';'
+    COM64_S_CHAR 'i'
+    COM64_S_CHAR 'd'
+    COM64_S_CHAR 't'
+    COM64_S_CHAR 'r'
+    COM64_S_CHAR '='
+    sidt [rsp + 6]
+    mov eax, [rsp + 8 + 4]
+    COM64_S_DWORD_REG eax
+    mov eax, [rsp + 8]
+    COM64_S_DWORD_REG eax
+    COM64_S_CHAR ':'
+    movzx eax, word [rsp + 6]
+    COM64_S_DWORD_REG eax
+    COM64_S_CHAR '!'
+
+    add rsp, 16
+    pop     rdi
+    pop     rsi
+    pop     rax
+    ret
+ENDPROC   vmm64On32PrintIdtr
+ %endif
+
+ %if 1
+;; For debugging purposes.
+BEGINPROC vmm64On32DumpCmos
+    push    rax
+    push    rdx
+    push    rcx
+    push    rsi                         ; paranoia
+    push    rdi                         ; ditto
+    sub rsp, 16
+
+%if 0
+    mov     al, 3
+    out     72h, al
+    mov     al, 68h
+    out     73h, al
+%endif
+
+    COM64_S_NEWLINE
+    COM64_S_CHAR 'c'
+    COM64_S_CHAR 'm'
+    COM64_S_CHAR 'o'
+    COM64_S_CHAR 's'
+    COM64_S_CHAR '0'
+    COM64_S_CHAR ':'
+
+    xor     ecx, ecx
+.loop1:
+    mov     al, cl
+    out     70h, al
+    in      al, 71h
+    COM64_S_BYTE_REG eax
+    COM64_S_CHAR ' '
+    inc     ecx
+    cmp     ecx, 128
+    jb      .loop1
+
+    COM64_S_NEWLINE
+    COM64_S_CHAR 'c'
+    COM64_S_CHAR 'm'
+    COM64_S_CHAR 'o'
+    COM64_S_CHAR 's'
+    COM64_S_CHAR '1'
+    COM64_S_CHAR ':'
+    xor     ecx, ecx
+.loop2:
+    mov     al, cl
+    out     72h, al
+    in      al, 73h
+    COM64_S_BYTE_REG eax
+    COM64_S_CHAR ' '
+    inc     ecx
+    cmp     ecx, 128
+    jb      .loop2
+
+%if 0
+    COM64_S_NEWLINE
+    COM64_S_CHAR 'c'
+    COM64_S_CHAR 'm'
+    COM64_S_CHAR 'o'
+    COM64_S_CHAR 's'
+    COM64_S_CHAR '2'
+    COM64_S_CHAR ':'
+    xor     ecx, ecx
+.loop3:
+    mov     al, cl
+    out     74h, al
+    in      al, 75h
+    COM64_S_BYTE_REG eax
+    COM64_S_CHAR ' '
+    inc     ecx
+    cmp     ecx, 128
+    jb      .loop3
+
+    COM64_S_NEWLINE
+    COM64_S_CHAR 'c'
+    COM64_S_CHAR 'm'
+    COM64_S_CHAR 'o'
+    COM64_S_CHAR 's'
+    COM64_S_CHAR '3'
+    COM64_S_CHAR ':'
+    xor     ecx, ecx
+.loop4:
+    mov     al, cl
+    out     72h, al
+    in      al, 73h
+    COM64_S_BYTE_REG eax
+    COM64_S_CHAR ' '
+    inc     ecx
+    cmp     ecx, 128
+    jb      .loop4
+
+    COM64_S_NEWLINE
+%endif
+
+    add rsp, 16
+    pop     rdi
+    pop     rsi
+    pop     rcx
+    pop     rdx
+    pop     rax
+    ret
+ENDPROC   vmm64On32DumpCmos
+ %endif
+
+%endif ; VBOX_WITH_64ON32_IDT
 
 
 
@@ -1260,8 +1679,8 @@ ENDPROC vmmRCToHost
 ; when the we have saved the guest state already or we haven't
 ; been messing with the guest at all.
 ;
-; @param    eax     Return code.
-; @uses     eax, edx, ecx (or it may use them in the future)
+; @param    rbp     The virtual cpu number.
+; @param
 ;
 BITS 64
 ALIGNCODE(16)
@@ -1329,38 +1748,46 @@ just_a_jump:
     jmp near NAME(ICExitTarget)
 
     ;;
-    ;; When we arrive at this label we're at the
-    ;; intermediate mapping of the switching code.
+    ;; When we arrive at this label we're at the host mapping of the
+    ;; switcher code, but with intermediate page tables.
     ;;
 BITS 32
 ALIGNCODE(16)
 GLOBALNAME ICExitTarget
-    DEBUG32_CHAR('8')
+    DEBUG32_CHAR('9')
+    ;DEBUG_CMOS_TRASH_AL 70h
 
     ; load the hypervisor data selector into ds & es
     FIXUP FIX_HYPER_DS, 1
     mov     eax, 0ffffh
     mov     ds, eax
     mov     es, eax
+    DEBUG32_CHAR('a')
 
     FIXUP FIX_GC_CPUM_OFF, 1, 0
     mov     edx, 0ffffffffh
     CPUMCPU_FROM_CPUM_WITH_OFFSET edx, ebp
+
+    DEBUG32_CHAR('b')
     mov     esi, [edx + CPUMCPU.Host.cr3]
     mov     cr3, esi
+    DEBUG32_CHAR('c')
 
     ;; now we're in host memory context, let's restore regs
     FIXUP FIX_HC_CPUM_OFF, 1, 0
     mov     edx, 0ffffffffh
     CPUMCPU_FROM_CPUM_WITH_OFFSET edx, ebp
+    DEBUG32_CHAR('e')
 
     ; restore the host EFER
     mov     ebx, edx
     mov     ecx, MSR_K6_EFER
     mov     eax, [ebx + CPUMCPU.Host.efer]
     mov     edx, [ebx + CPUMCPU.Host.efer + 4]
+    DEBUG32_CHAR('f')
     wrmsr
     mov     edx, ebx
+    DEBUG32_CHAR('g')
 
     ; activate host gdt and idt
     lgdt    [edx + CPUMCPU.Host.gdtr]
@@ -1407,6 +1834,7 @@ GLOBALNAME ICExitTarget
     mov     ebp, [edx + CPUMCPU.Host.ebp]
 
     ; store the return code in eax
+    DEBUG_CMOS_TRASH_AL 79h
     mov     eax, [edx + CPUMCPU.u32RetCode]
     retf
 ENDPROC vmmRCToHostAsm
@@ -1454,7 +1882,11 @@ GLOBALNAME Def
         at VMMSWITCHERDEF.cbIDCode0,                    dd NAME(ICEnterTarget)              - NAME(IDEnterTarget)
         at VMMSWITCHERDEF.offIDCode1,                   dd NAME(IDExitTarget)               - NAME(Start)
         at VMMSWITCHERDEF.cbIDCode1,                    dd NAME(ICExitTarget)               - NAME(Start)
+%ifdef VBOX_WITH_64ON32_IDT ; Hack! Use offGCCode to find the IDT.
+        at VMMSWITCHERDEF.offGCCode,                    dd NAME(vmm64On32Idt)               - NAME(Start)
+%else
         at VMMSWITCHERDEF.offGCCode,                    dd 0
+%endif
         at VMMSWITCHERDEF.cbGCCode,                     dd 0
 
     iend

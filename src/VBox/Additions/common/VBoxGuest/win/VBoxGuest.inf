@@ -1,4 +1,4 @@
-; $Id: VBoxGuest.inf $
+; $Id: VBoxGuest.inf 44978 2013-03-11 11:38:28Z vboxsync $
 ;; @file
 ; INF file for installing the VirtualBox Windows guest driver.
 ;

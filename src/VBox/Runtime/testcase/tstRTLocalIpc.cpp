@@ -1,4 +1,4 @@
-/* $Id: tstRTLocalIpc.cpp $ */
+/* $Id: tstRTLocalIpc.cpp 47185 2013-07-16 12:37:23Z vboxsync $ */
 /** @file
  * IPRT Testcase - RTLocalIpc.
  */

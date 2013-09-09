@@ -1,4 +1,4 @@
-/* $Id: SUPDrvInternal.h $ */
+/* $Id: SUPDrvInternal.h 47537 2013-08-05 10:00:02Z vboxsync $ */
 /** @file
  * VirtualBox Support Driver - Internal header.
  */

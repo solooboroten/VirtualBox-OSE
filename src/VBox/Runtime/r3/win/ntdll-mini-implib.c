@@ -1,4 +1,4 @@
-/* $Id: ntdll-mini-implib.c $ */
+/* $Id: ntdll-mini-implib.c 47535 2013-08-05 01:54:25Z vboxsync $ */
 /** @file
  * IPRT - Minimal NTDLL import library defintion file.
  */

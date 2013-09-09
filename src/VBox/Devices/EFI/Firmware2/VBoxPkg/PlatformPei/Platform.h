@@ -1,4 +1,4 @@
-/* $Id: Platform.h $ */
+/* $Id: Platform.h 42405 2012-07-26 07:04:37Z vboxsync $ */
 /** @file
  * Platform.h
  */

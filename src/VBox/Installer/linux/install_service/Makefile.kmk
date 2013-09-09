@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 44092 2012-12-11 14:43:49Z vboxsync $
 ## @file
 # Sub-Makefile for the Linux installer init file generator.
 #

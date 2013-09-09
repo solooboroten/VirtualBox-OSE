@@ -1,5 +1,5 @@
 
-/* $Id: GuestFileImpl.h $ */
+/* $Id: GuestFileImpl.h 47858 2013-08-19 20:48:58Z vboxsync $ */
 /** @file
  * VirtualBox Main - Guest file handling.
  */

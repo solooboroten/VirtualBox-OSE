@@ -1,4 +1,4 @@
-/* $Id: UIWizardNewVMPageBasic3.cpp $ */
+/* $Id: UIWizardNewVMPageBasic3.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -32,6 +32,7 @@
 #include "QIToolButton.h"
 #include "UIWizardNewVD.h"
 #include "QIRichTextLabel.h"
+#include "UIMedium.h"
 
 UIWizardNewVMPage3::UIWizardNewVMPage3()
 {
@@ -102,7 +103,7 @@ void UIWizardNewVMPage3::ensureNewVirtualDiskDeleted()
         return;
 
     /* Remember virtual-disk attributes: */
-    QString strId = m_virtualDisk.GetId();
+    QString strMediumID = m_virtualDisk.GetId();
     QString strLocation = m_virtualDisk.GetLocation();
     /* Prepare delete storage progress: */
     CProgress progress = m_virtualDisk.DeleteStorage();
@@ -116,8 +117,8 @@ void UIWizardNewVMPage3::ensureNewVirtualDiskDeleted()
     else
         msgCenter().cannotDeleteHardDiskStorage(m_virtualDisk, strLocation, thisImp());
 
-    /* Remove virtual-disk from GUI anyway: */
-    vboxGlobal().removeMedium(UIMediumType_HardDisk, strId);
+    /* Inform VBoxGlobal about it: */
+    vboxGlobal().deleteMedium(strMediumID);
 
     /* Detach virtual-disk anyway: */
     m_virtualDisk.detach();
@@ -235,7 +236,7 @@ bool UIWizardNewVMPageBasic3::isComplete() const
     /* Make sure 'virtualDisk' field feats the rules: */
     return m_pDiskSkip->isChecked() ||
            !m_pDiskPresent->isChecked() ||
-           !vboxGlobal().findMedium(m_pDiskSelector->id()).isNull();
+           !vboxGlobal().medium(m_pDiskSelector->id()).isNull();
 }
 
 bool UIWizardNewVMPageBasic3::validatePage()

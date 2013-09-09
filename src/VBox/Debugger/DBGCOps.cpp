@@ -1,4 +1,4 @@
-/* $Id: DBGCOps.cpp $ */
+/* $Id: DBGCOps.cpp 46156 2013-05-18 01:35:16Z vboxsync $ */
 /** @file
  * DBGC - Debugger Console, Operators.
  */

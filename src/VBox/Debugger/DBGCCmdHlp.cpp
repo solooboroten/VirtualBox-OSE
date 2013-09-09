@@ -1,4 +1,4 @@
-/* $Id: DBGCCmdHlp.cpp $ */
+/* $Id: DBGCCmdHlp.cpp 47564 2013-08-06 17:16:43Z vboxsync $ */
 /** @file
  * DBGC - Debugger Console, Command Helpers.
  */

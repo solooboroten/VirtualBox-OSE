@@ -1,4 +1,4 @@
-/* $Id: NATNetworkServiceRunner.cpp $ */
+/* $Id: NATNetworkServiceRunner.cpp 47894 2013-08-20 11:37:09Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for VBox NAT Network service
  */

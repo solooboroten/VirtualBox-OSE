@@ -1,4 +1,4 @@
-# $Id: VBoxHfs.inf $
+# $Id: VBoxHfs.inf 44529 2013-02-04 15:54:15Z vboxsync $
 ## @file
 # VBoxHfs - VBox HFS FS driver.
 #

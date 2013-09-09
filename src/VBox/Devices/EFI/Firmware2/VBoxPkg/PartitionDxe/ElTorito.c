@@ -1,4 +1,4 @@
-/* $Id: ElTorito.c $ */
+/* $Id: ElTorito.c 42653 2012-08-07 10:32:00Z vboxsync $ */
 /** @file
  * ElTorito.c
  */

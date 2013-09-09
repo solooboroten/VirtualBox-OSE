@@ -1,4 +1,4 @@
-/* $Id: NATEngineImpl.cpp $ */
+/* $Id: NATEngineImpl.cpp 46820 2013-06-27 07:58:37Z vboxsync $ */
 /** @file
  * Implementation of INATEngine in VBoxSVC.
  */

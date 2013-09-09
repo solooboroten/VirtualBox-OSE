@@ -1,4 +1,4 @@
-/* $Id: memuserkernel-r0drv-os2.cpp $ */
+/* $Id: memuserkernel-r0drv-os2.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT - User & Kernel Memory, Ring-0 Driver, OS/2.
  */

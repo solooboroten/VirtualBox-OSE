@@ -1,4 +1,4 @@
-/* $Id: UIHostComboEditor.cpp $ */
+/* $Id: UIHostComboEditor.cpp 45889 2013-05-03 09:40:11Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

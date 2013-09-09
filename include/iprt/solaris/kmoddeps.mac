@@ -1,4 +1,4 @@
-; $Id: kmoddeps.mac $
+; $Id: kmoddeps.mac 43124 2012-08-30 19:13:57Z vboxsync $
 ;; @file
 ; Assembly macros for generating Solaris kernel module dependencies
 ;

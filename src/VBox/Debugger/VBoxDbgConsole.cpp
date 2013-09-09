@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgConsole.cpp $ */
+/* $Id: VBoxDbgConsole.cpp 46727 2013-06-21 16:00:51Z vboxsync $ */
 /** @file
  * VBox Debugger GUI - Console.
  */

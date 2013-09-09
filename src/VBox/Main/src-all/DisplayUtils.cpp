@@ -1,4 +1,4 @@
-/* $Id: DisplayUtils.cpp $ */
+/* $Id: DisplayUtils.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * Implementation of IDisplay helpers.
  */

@@ -1,4 +1,4 @@
-/* $Id: semrw-lockless-generic.cpp $ */
+/* $Id: semrw-lockless-generic.cpp 45309 2013-04-03 14:40:35Z vboxsync $ */
 /** @file
  * IPRT - Read-Write Semaphore, Generic, lockless variant.
  */

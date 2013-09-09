@@ -18,6 +18,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+/*
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
+
 #ifndef __WINE_WINE_PORT_H
 #define __WINE_WINE_PORT_H
 
@@ -236,7 +245,7 @@ static inline float __port_nan(void)
 int fstatvfs( int fd, struct statvfs *buf );
 #endif
 
-#ifndef HAVE_GETOPT_LONG
+#ifndef HAVE_GETOPT_LONG_ONLY
 extern char *optarg;
 extern int optind;
 extern int opterr;
@@ -259,7 +268,7 @@ extern int getopt_long (int ___argc, char *const *___argv,
 extern int getopt_long_only (int ___argc, char *const *___argv,
                              const char *__shortopts,
                              const struct option *__longopts, int *__longind);
-#endif  /* HAVE_GETOPT_LONG */
+#endif  /* HAVE_GETOPT_LONG_ONLY */
 
 #ifndef HAVE_FFS
 int ffs( int x );

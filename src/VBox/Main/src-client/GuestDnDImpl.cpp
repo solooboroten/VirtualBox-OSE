@@ -1,4 +1,4 @@
-/* $Id: GuestDnDImpl.cpp $ */
+/* $Id: GuestDnDImpl.cpp 45367 2013-04-05 13:02:06Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Guest Drag and Drop parts
  */

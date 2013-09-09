@@ -1,4 +1,4 @@
-; $Id: VBoxGuestAdditionsLog.nsh $
+; $Id: VBoxGuestAdditionsLog.nsh 44484 2013-01-31 11:36:25Z vboxsync $
 ;; @file
 ; VBoxGuestAdditionLog.nsh - Logging functions.
 ;

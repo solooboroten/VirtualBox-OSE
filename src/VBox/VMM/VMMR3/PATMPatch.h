@@ -1,4 +1,4 @@
-/* $Id: PATMPatch.h $ */
+/* $Id: PATMPatch.h 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * PATMPatch - Internal header file.
  */

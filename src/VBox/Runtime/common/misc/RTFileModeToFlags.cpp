@@ -1,4 +1,4 @@
-/* $Id: RTFileModeToFlags.cpp $ */
+/* $Id: RTFileModeToFlags.cpp 47783 2013-08-16 08:37:29Z vboxsync $ */
 /** @file
  * IPRT - RTFileModeToFlags.
  */

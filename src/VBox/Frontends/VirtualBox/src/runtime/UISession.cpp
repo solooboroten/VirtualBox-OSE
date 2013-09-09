@@ -1,4 +1,4 @@
-/* $Id: UISession.cpp $ */
+/* $Id: UISession.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -26,6 +26,7 @@
 #include "VBoxGlobal.h"
 #include "UISession.h"
 #include "UIMachine.h"
+#include "UIMedium.h"
 #include "UIActionPoolRuntime.h"
 #include "UIMachineLogic.h"
 #include "UIMachineView.h"
@@ -69,6 +70,7 @@
 #include "CUSBController.h"
 #include "CUSBDeviceFilters.h"
 #include "CSnapshot.h"
+#include "CMedium.h"
 
 UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     : QObject(pMachine)
@@ -580,23 +582,24 @@ void UISession::sltInstallGuestAdditionsFrom(const QString &strSource)
 
         if (!strCntName.isNull())
         {
-            /* Create a new UIMedium: */
-            UIMedium vboxMedium(image, UIMediumType_DVD, KMediumState_Created);
-            /* Register it in GUI internal list: */
-            vboxGlobal().addMedium(vboxMedium);
+            /* Create new UIMedium: */
+            UIMedium medium(image, UIMediumType_DVD, KMediumState_Created);
+
+            /* Inform VBoxGlobal about it: */
+            vboxGlobal().createMedium(medium);
 
             /* Mount medium to the predefined port/device: */
-            machine.MountMedium(strCntName, iCntPort, iCntDevice, vboxMedium.medium(), false /* force */);
+            machine.MountMedium(strCntName, iCntPort, iCntDevice, medium.medium(), false /* force */);
             if (!machine.isOk())
             {
                 /* Ask for force mounting: */
-                if (msgCenter().cannotRemountMedium(machine, vboxMedium, true /* mount? */,
+                if (msgCenter().cannotRemountMedium(machine, medium, true /* mount? */,
                                                     true /* retry? */, mainMachineWindow()))
                 {
                     /* Force mount medium to the predefined port/device: */
-                    machine.MountMedium(strCntName, iCntPort, iCntDevice, vboxMedium.medium(), true /* force */);
+                    machine.MountMedium(strCntName, iCntPort, iCntDevice, medium.medium(), true /* force */);
                     if (!machine.isOk())
-                        msgCenter().cannotRemountMedium(machine, vboxMedium, true /* mount? */,
+                        msgCenter().cannotRemountMedium(machine, medium, true /* mount? */,
                                                         false /* retry? */, mainMachineWindow());
                 }
             }
@@ -1357,6 +1360,7 @@ bool UISession::preparePowerUp()
     foreach (const CHostNetworkInterface &iface, vboxGlobal().host().GetNetworkInterfaces())
     {
         availableInterfaceNames << iface.GetName();
+        availableInterfaceNames << iface.GetShortName();
     }
 
     ulong cCount = vboxGlobal().virtualBox().GetSystemProperties().GetMaxNetworkAdapters(machine.GetChipsetType());

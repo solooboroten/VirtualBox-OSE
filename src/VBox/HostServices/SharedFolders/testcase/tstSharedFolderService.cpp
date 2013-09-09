@@ -1,4 +1,4 @@
-/* $Id: tstSharedFolderService.cpp $ */
+/* $Id: tstSharedFolderService.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * Testcase for the shared folder service vbsf API.
  *

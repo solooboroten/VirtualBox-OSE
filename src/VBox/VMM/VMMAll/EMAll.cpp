@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp $ */
+/* $Id: EMAll.cpp 48370 2013-09-06 18:28:00Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -218,25 +218,42 @@ VMM_INT_DECL(int) EMMonitorWaitPerform(PVMCPU pVCpu, uint64_t rax, uint64_t rcx)
 
 
 /**
- * Determine if we should continue after encountering a hlt or mwait
- * instruction.
+ * Determine if we should continue after encountering a mwait instruction.
  *
  * Clears MWAIT flags if returning @c true.
  *
- * @returns boolean
+ * @returns true if we should continue, false if we should halt.
  * @param   pVCpu           Pointer to the VMCPU.
  * @param   pCtx            Current CPU context.
  */
-VMM_INT_DECL(bool) EMShouldContinueAfterHalt(PVMCPU pVCpu, PCPUMCTX pCtx)
+VMM_INT_DECL(bool) EMMonitorWaitShouldContinue(PVMCPU pVCpu, PCPUMCTX pCtx)
 {
     if (   pCtx->eflags.Bits.u1IF
         || (   (pVCpu->em.s.MWait.fWait & (EMMWAIT_FLAG_ACTIVE | EMMWAIT_FLAG_BREAKIRQIF0))
             ==                            (EMMWAIT_FLAG_ACTIVE | EMMWAIT_FLAG_BREAKIRQIF0)) )
     {
-        pVCpu->em.s.MWait.fWait &= ~(EMMWAIT_FLAG_ACTIVE | EMMWAIT_FLAG_BREAKIRQIF0);
-        return !!VMCPU_FF_IS_PENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC));
+        if (VMCPU_FF_IS_PENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC)))
+        {
+            pVCpu->em.s.MWait.fWait &= ~(EMMWAIT_FLAG_ACTIVE | EMMWAIT_FLAG_BREAKIRQIF0);
+            return true;
+        }
     }
 
+    return false;
+}
+
+
+/**
+ * Determine if we should continue after encountering a hlt instruction.
+ *
+ * @returns true if we should continue, false if we should halt.
+ * @param   pVCpu           Pointer to the VMCPU.
+ * @param   pCtx            Current CPU context.
+ */
+VMM_INT_DECL(bool) EMShouldContinueAfterHalt(PVMCPU pVCpu, PCPUMCTX pCtx)
+{
+    if (pCtx->eflags.Bits.u1IF)
+        return !!VMCPU_FF_IS_PENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC));
     return false;
 }
 
@@ -1657,9 +1674,9 @@ static const char *emMSRtoString(uint32_t uMsr)
         case MSR_IA32_TSC:                  return "MSR_IA32_TSC";
         case MSR_IA32_MISC_ENABLE:          return "MSR_IA32_MISC_ENABLE";
         case MSR_IA32_MTRR_CAP:             return "MSR_IA32_MTRR_CAP";
-        case MSR_IA32_MCP_CAP:              return "Unsupported MSR_IA32_MCP_CAP";
-        case MSR_IA32_MCP_STATUS:           return "Unsupported MSR_IA32_MCP_STATUS";
-        case MSR_IA32_MCP_CTRL:             return "Unsupported MSR_IA32_MCP_CTRL";
+        case MSR_IA32_MCG_CAP:              return "Unsupported MSR_IA32_MCG_CAP";
+        case MSR_IA32_MCG_STATUS:           return "Unsupported MSR_IA32_MCG_STATUS";
+        case MSR_IA32_MCG_CTRL:             return "Unsupported MSR_IA32_MCG_CTRL";
         case MSR_IA32_MTRR_DEF_TYPE:        return "MSR_IA32_MTRR_DEF_TYPE";
         case MSR_K7_EVNTSEL0:               return "Unsupported MSR_K7_EVNTSEL0";
         case MSR_K7_EVNTSEL1:               return "Unsupported MSR_K7_EVNTSEL1";
@@ -3079,7 +3096,6 @@ static int emInterpretCmpXchg(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDis, PCPUMCTX
  */
 static int emInterpretCmpXchg8b(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDis, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize)
 {
-    Assert(pDis->uCpuMode != DISCPUMODE_64BIT);    /** @todo check */
     DISQPVPARAMVAL param1;
     NOREF(pvFault);
 

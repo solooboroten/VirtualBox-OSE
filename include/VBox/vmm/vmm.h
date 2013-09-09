@@ -123,11 +123,12 @@ typedef enum VMMCALLRING3
 /**
  * VMMRZCallRing3 notification callback.
  *
+ * @returns VBox status code.
  * @param   pVCpu           Pointer to the VMCPU.
  * @param   enmOperation    The operation causing the ring-3 jump.
  * @param   pvUser          The user argument.
  */
-typedef DECLCALLBACK(void) FNVMMR0CALLRING3NOTIFICATION(PVMCPU pVCpu, VMMCALLRING3 enmOperation, void *pvUser);
+typedef DECLCALLBACK(int) FNVMMR0CALLRING3NOTIFICATION(PVMCPU pVCpu, VMMCALLRING3 enmOperation, void *pvUser);
 /** Pointer to a FNRTMPNOTIFICATION(). */
 typedef FNVMMR0CALLRING3NOTIFICATION *PFNVMMR0CALLRING3NOTIFICATION;
 
@@ -497,6 +498,7 @@ VMMR0DECL(void)      VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOp
 VMMR0DECL(int)       VMMR0EntryEx(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg, PSUPDRVSESSION);
 VMMR0DECL(int)       VMMR0TermVM(PVM pVM, PGVM pGVM);
 VMMR0_INT_DECL(bool) VMMR0IsLongJumpArmed(PVMCPU pVCpu);
+VMMR0_INT_DECL(bool) VMMR0IsInRing3LongJump(PVMCPU pVCpu);
 VMMR0DECL(int)       VMMR0ThreadCtxHooksCreate(PVMCPU pVCpu);
 VMMR0DECL(void)      VMMR0ThreadCtxHooksRelease(PVMCPU pVCpu);
 VMMR0DECL(bool)      VMMR0ThreadCtxHooksAreCreated(PVMCPU pVCpu);
@@ -505,13 +507,13 @@ VMMR0DECL(int)       VMMR0ThreadCtxHooksDeregister(PVMCPU pVCpu);
 VMMR0DECL(bool)      VMMR0ThreadCtxHooksAreRegistered(PVMCPU pVCpu);
 
 # ifdef LOG_ENABLED
-VMMR0DECL(void)     VMMR0LogFlushDisable(PVMCPU pVCpu);
-VMMR0DECL(void)     VMMR0LogFlushEnable(PVMCPU pVCpu);
-VMMR0DECL(bool)     VMMR0IsLogFlushDisabled(PVMCPU pVCpu);
+VMMR0DECL(void)      VMMR0LogFlushDisable(PVMCPU pVCpu);
+VMMR0DECL(void)      VMMR0LogFlushEnable(PVMCPU pVCpu);
+VMMR0DECL(bool)      VMMR0IsLogFlushDisabled(PVMCPU pVCpu);
 # else
-#  define           VMMR0LogFlushDisable(pVCpu)     do { } while(0)
-#  define           VMMR0LogFlushEnable(pVCpu)      do { } while(0)
-#  define           VMMR0IsLogFlushDisabled(pVCpu)  (true)
+#  define            VMMR0LogFlushDisable(pVCpu)     do { } while(0)
+#  define            VMMR0LogFlushEnable(pVCpu)      do { } while(0)
+#  define            VMMR0IsLogFlushDisabled(pVCpu)  (true)
 # endif /* LOG_ENABLED */
 #endif /* IN_RING0 */
 
@@ -541,6 +543,7 @@ VMMRZDECL(void)     VMMRZCallRing3Enable(PVMCPU pVCpu);
 VMMRZDECL(bool)     VMMRZCallRing3IsEnabled(PVMCPU pVCpu);
 VMMRZDECL(int)      VMMRZCallRing3SetNotification(PVMCPU pVCpu, R0PTRTYPE(PFNVMMR0CALLRING3NOTIFICATION) pfnCallback, RTR0PTR pvUser);
 VMMRZDECL(void)     VMMRZCallRing3RemoveNotification(PVMCPU pVCpu);
+VMMRZDECL(bool)     VMMRZCallRing3IsNotificationSet(PVMCPU pVCpu);
 /** @} */
 #endif
 

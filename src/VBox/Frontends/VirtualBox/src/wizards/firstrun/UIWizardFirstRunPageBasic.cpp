@@ -1,4 +1,4 @@
-/* $Id: UIWizardFirstRunPageBasic.cpp $ */
+/* $Id: UIWizardFirstRunPageBasic.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -30,6 +30,7 @@
 #include "VBoxMediaComboBox.h"
 #include "QIToolButton.h"
 #include "QIRichTextLabel.h"
+#include "UIMedium.h"
 
 UIWizardFirstRunPage::UIWizardFirstRunPage(bool fBootHardDiskWasSet)
     : m_fBootHardDiskWasSet(fBootHardDiskWasSet)
@@ -132,7 +133,7 @@ void UIWizardFirstRunPageBasic::initializePage()
 bool UIWizardFirstRunPageBasic::isComplete() const
 {
     /* Make sure valid medium chosen: */
-    return !vboxGlobal().findMedium(id()).isNull();
+    return !vboxGlobal().medium(id()).isNull();
 }
 
 bool UIWizardFirstRunPageBasic::validatePage()

@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: postinstall.sh $
+# $Id: postinstall.sh 47318 2013-07-22 16:41:22Z vboxsync $
 ## @file
 # VirtualBox postinstall script for Solaris Guest Additions.
 #

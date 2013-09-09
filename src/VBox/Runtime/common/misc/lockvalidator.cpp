@@ -1,4 +1,4 @@
-/* $Id: lockvalidator.cpp $ */
+/* $Id: lockvalidator.cpp 45110 2013-03-20 18:17:29Z vboxsync $ */
 /** @file
  * IPRT - Lock Validator.
  */

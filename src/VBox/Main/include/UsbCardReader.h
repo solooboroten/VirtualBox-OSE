@@ -1,4 +1,4 @@
-/* $Id: UsbCardReader.h $ */
+/* $Id: UsbCardReader.h 41363 2012-05-21 12:26:40Z vboxsync $ */
 
 /** @file
  * VirtualBox Driver interface to the virtual Usb Card Reader.

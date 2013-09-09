@@ -1,4 +1,4 @@
-/* $Id: time-r0drv-solaris.c $ */
+/* $Id: time-r0drv-solaris.c 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * IPRT - Time, Ring-0 Driver, Solaris.
  */

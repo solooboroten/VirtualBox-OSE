@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 45772 2013-04-26 11:58:45Z vboxsync $
 ## @file
 # Top-level makefile for the external libraries.
 #

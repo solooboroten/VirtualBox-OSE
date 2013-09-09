@@ -1,4 +1,4 @@
-/* $Id: internal-r3-nt.h $ */
+/* $Id: internal-r3-nt.h 47535 2013-08-05 01:54:25Z vboxsync $ */
 /** @file
  * IPRT - Internal Header for the Native NT code.
  */

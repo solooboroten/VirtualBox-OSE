@@ -23,6 +23,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+/*
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
+
 #ifndef __WINE_WINED3D_H
 #define __WINE_WINED3D_H
 
@@ -2362,7 +2371,7 @@ HRESULT __cdecl wined3d_surface_releasedc(struct wined3d_surface *surface, HDC d
 HRESULT __cdecl wined3d_surface_restore(struct wined3d_surface *surface);
 HRESULT __cdecl wined3d_surface_set_color_key(struct wined3d_surface *surface,
         DWORD flags, const struct wined3d_color_key *color_key);
-HRESULT __cdecl wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem);
+HRESULT __cdecl wined3d_surface_set_mem(struct wined3d_surface *surface, void *mem, UINT pitch);
 HRESULT __cdecl wined3d_surface_set_overlay_position(struct wined3d_surface *surface, LONG x, LONG y);
 void __cdecl wined3d_surface_set_palette(struct wined3d_surface *surface, struct wined3d_palette *palette);
 DWORD __cdecl wined3d_surface_set_priority(struct wined3d_surface *surface, DWORD new_priority);

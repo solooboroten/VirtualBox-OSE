@@ -1,4 +1,4 @@
-/* $Id: tstRTCType.cpp $ */
+/* $Id: tstRTCType.cpp 39327 2011-11-16 10:52:07Z vboxsync $ */
 /** @file
  * IPRT Testcase - ctype.h.
  */

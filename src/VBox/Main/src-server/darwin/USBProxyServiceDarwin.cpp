@@ -1,4 +1,4 @@
-/* $Id: USBProxyServiceDarwin.cpp $ */
+/* $Id: USBProxyServiceDarwin.cpp 41528 2012-05-31 16:48:33Z vboxsync $ */
 /** @file
  * VirtualBox USB Proxy Service (in VBoxSVC), Darwin Specialization.
  */

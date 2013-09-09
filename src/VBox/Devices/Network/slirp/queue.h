@@ -1,4 +1,4 @@
-/* $Id: queue.h $ */
+/* $Id: queue.h 45261 2013-03-31 02:03:24Z vboxsync $ */
 /** @file
  * NAT - Queue handling.
  */

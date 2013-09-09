@@ -1,4 +1,4 @@
-/* $Id: RTMpGetDescription-generic.cpp $ */
+/* $Id: RTMpGetDescription-generic.cpp 46633 2013-06-18 16:59:34Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpGetDescription.
  */

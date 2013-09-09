@@ -1,4 +1,4 @@
-# $Id: SUPR0-def-lx.sed $
+# $Id: SUPR0-def-lx.sed 40802 2012-04-06 16:59:59Z vboxsync $
 ## @file
 # IPRT - SED script for generating SUPR0.def - OS/2 LX.
 #

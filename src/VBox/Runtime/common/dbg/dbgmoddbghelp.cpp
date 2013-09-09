@@ -1,4 +1,4 @@
-/* $Id: dbgmoddbghelp.cpp $ */
+/* $Id: dbgmoddbghelp.cpp 46266 2013-05-25 19:51:19Z vboxsync $ */
 /** @file
  * IPRT - Debug Info Reader Using DbgHelp.dll if Present.
  */

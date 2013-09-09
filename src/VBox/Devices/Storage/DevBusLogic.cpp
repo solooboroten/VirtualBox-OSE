@@ -1,4 +1,4 @@
-/* $Id: DevBusLogic.cpp $ */
+/* $Id: DevBusLogic.cpp 48192 2013-08-30 13:48:57Z vboxsync $ */
 /** @file
  * VBox storage devices - BusLogic SCSI host adapter BT-958.
  *
@@ -51,10 +51,10 @@
 #define BUSLOGIC_MAX_SCATTER_GATHER_LIST_SIZE 128
 
 /** Size of the command buffer. */
-#define BUSLOGIC_COMMAND_SIZE_MAX 5
+#define BUSLOGIC_COMMAND_SIZE_MAX   53
 
 /** Size of the reply buffer. */
-#define BUSLOGIC_REPLY_SIZE_MAX 64
+#define BUSLOGIC_REPLY_SIZE_MAX     64
 
 /** Custom fixed I/O ports for BIOS controller access.
  * Note that these should not be in the ISA range (below 400h) to avoid
@@ -64,12 +64,17 @@
 #define BUSLOGIC_BIOS_IO_PORT   0x430
 
 /** State saved version. */
-#define BUSLOGIC_SAVED_STATE_MINOR_VERSION 3
+#define BUSLOGIC_SAVED_STATE_MINOR_VERSION 4
 
 /** Saved state version before the suspend on error feature was implemented. */
 #define BUSLOGIC_SAVED_STATE_MINOR_PRE_ERROR_HANDLING 1
 /** Saved state version before 24-bit mailbox support was implemented. */
 #define BUSLOGIC_SAVED_STATE_MINOR_PRE_24BIT_MBOX     2
+/** Saved state version before command buffer size was raised. */
+#define BUSLOGIC_SAVED_STATE_MINOR_PRE_CMDBUF_RESIZE  3
+
+/** Command buffer size in old saved states. */
+#define BUSLOGIC_COMMAND_SIZE_OLD 5
 
 /** The duration of software-initiated reset (in nano seconds).
  *  Not documented, set to 50 ms. */
@@ -1179,19 +1184,24 @@ static void buslogicR3SendIncomingMailbox(PBUSLOGIC pBusLogic, PBUSLOGICTASKSTAT
 
     int rc = PDMCritSectEnter(&pBusLogic->CritSectIntr, VINF_SUCCESS);
     AssertRC(rc);
-    RTGCPHYS GCPhysAddrCCB = pTaskState->MailboxGuest.u32PhysAddrCCB;
+
     RTGCPHYS GCPhysAddrMailboxIncoming = pBusLogic->GCPhysAddrMailboxIncomingBase
                                        + (   pBusLogic->uMailboxIncomingPositionCurrent
                                           * (pTaskState->fIs24Bit ? sizeof(Mailbox24) : sizeof(Mailbox32)) );
-    LogFlowFunc(("Completing CCB %RGp hstat=%u, dstat=%u, outgoing mailbox at %RGp\n", GCPhysAddrCCB, 
-                 uHostAdapterStatus, uDeviceStatus, GCPhysAddrMailboxIncoming));
 
-    /* Update CCB. */
-    pTaskState->CommandControlBlockGuest.c.uHostAdapterStatus = uHostAdapterStatus;
-    pTaskState->CommandControlBlockGuest.c.uDeviceStatus      = uDeviceStatus;
-    /* Rewrite CCB up to the CDB; perhaps more than necessary. */
-    PDMDevHlpPCIPhysWrite(pBusLogic->CTX_SUFF(pDevIns), GCPhysAddrCCB,
-                          &pTaskState->CommandControlBlockGuest, RT_OFFSETOF(CCBC, abCDB));
+    if (uMailboxCompletionCode != BUSLOGIC_MAILBOX_INCOMING_COMPLETION_ABORTED_NOT_FOUND)
+    {
+        RTGCPHYS GCPhysAddrCCB = pTaskState->MailboxGuest.u32PhysAddrCCB;
+        LogFlowFunc(("Completing CCB %RGp hstat=%u, dstat=%u, outgoing mailbox at %RGp\n", GCPhysAddrCCB, 
+                     uHostAdapterStatus, uDeviceStatus, GCPhysAddrMailboxIncoming));
+
+        /* Update CCB. */
+        pTaskState->CommandControlBlockGuest.c.uHostAdapterStatus = uHostAdapterStatus;
+        pTaskState->CommandControlBlockGuest.c.uDeviceStatus      = uDeviceStatus;
+        /* Rewrite CCB up to the CDB; perhaps more than necessary. */
+        PDMDevHlpPCIPhysWrite(pBusLogic->CTX_SUFF(pDevIns), GCPhysAddrCCB,
+                              &pTaskState->CommandControlBlockGuest, RT_OFFSETOF(CCBC, abCDB));
+    }
 
 # ifdef RT_STRICT
     uint8_t     uCode;
@@ -1760,6 +1770,33 @@ static int buslogicProcessCommand(PBUSLOGIC pBusLogic)
             pBusLogic->cbReplyParametersLeft = 0;
             break;
 
+        case BUSLOGICCOMMAND_EXECUTE_SCSI_COMMAND:
+            /* The parameter list length is at least 12 bytes; the 12th byte determines
+             * the number of additional CDB bytes that will follow.
+             */
+            if (pBusLogic->iParameter == 12)
+            {
+                /* First pass - set the number of following CDB bytes. */
+                pBusLogic->cbCommandParametersLeft = pBusLogic->aCommandBuffer[11];
+                Log(("Execute SCSI cmd: %u more bytes follow\n", pBusLogic->cbCommandParametersLeft));
+            }
+            else
+            {
+                PESCMD      pCmd;
+
+                /* Second pass - process received data. */
+                Log(("Execute SCSI cmd: received %u bytes\n", pBusLogic->aCommandBuffer[0]));
+
+                pCmd = (PESCMD)pBusLogic->aCommandBuffer;
+                Log(("Addr %08X, cbData %08X, cbCDB=%u\n", pCmd->u32PhysAddrData, pCmd->cbData, pCmd->cbCDB));
+            }
+            // This is currently a dummy - just fails every command.
+            pBusLogic->cbReplyParametersLeft = 4;
+            pBusLogic->aReplyBuffer[0] = pBusLogic->aReplyBuffer[1] = 0;
+            pBusLogic->aReplyBuffer[2] = 0x11;      /* HBA status (timeout). */
+            pBusLogic->aReplyBuffer[3] = 0;         /* Device status. */
+            break;
+
         case BUSLOGICCOMMAND_INQUIRE_HOST_ADAPTER_MODEL_NUMBER:
         {
             /* The reply length is set by the guest and is found in the first byte of the command buffer. */
@@ -2269,6 +2306,10 @@ static int buslogicRegisterWrite(PBUSLOGIC pBusLogic, unsigned iRegister, uint8_
                     case BUSLOGICCOMMAND_SET_ADAPTER_OPTIONS:
                         /* There must be at least one byte following this command. */
                         pBusLogic->cbCommandParametersLeft = 1;
+                        break;
+                    case BUSLOGICCOMMAND_EXECUTE_SCSI_COMMAND:
+                        /* 12 bytes + variable-length CDB. */
+                        pBusLogic->cbCommandParametersLeft = 12;
                         break;
                     case BUSLOGICCOMMAND_EXT_BIOS_INFO:
                     case BUSLOGICCOMMAND_UNLOCK_MAILBOX:
@@ -2925,6 +2966,30 @@ static int buslogicR3DeviceSCSIRequestSetup(PBUSLOGIC pBusLogic, PBUSLOGICTASKST
     return rc;
 }
 
+static int buslogicR3DeviceSCSIRequestAbort(PBUSLOGIC pBusLogic, PBUSLOGICTASKSTATE pTaskState)
+{
+    int             rc = VINF_SUCCESS;
+    uint8_t         uTargetIdCCB;
+    PBUSLOGICDEVICE pTargetDevice;
+    RTGCPHYS        GCPhysAddrCCB = (RTGCPHYS)pTaskState->MailboxGuest.u32PhysAddrCCB;
+
+    PDMDevHlpPhysRead(pBusLogic->CTX_SUFF(pDevIns), GCPhysAddrCCB,
+                      &pTaskState->CommandControlBlockGuest, sizeof(CCB32));
+
+    uTargetIdCCB = pTaskState->fIs24Bit ? pTaskState->CommandControlBlockGuest.o.uTargetId : pTaskState->CommandControlBlockGuest.n.uTargetId;
+    pTargetDevice = &pBusLogic->aDeviceStates[uTargetIdCCB];
+    pTaskState->CTX_SUFF(pTargetDevice) = pTargetDevice;
+
+    buslogicR3SendIncomingMailbox(pBusLogic, pTaskState,
+                                  BUSLOGIC_MAILBOX_INCOMING_ADAPTER_STATUS_ABORT_QUEUE_GENERATED,
+                                  BUSLOGIC_MAILBOX_INCOMING_DEVICE_STATUS_OPERATION_GOOD,
+                                  BUSLOGIC_MAILBOX_INCOMING_COMPLETION_ABORTED_NOT_FOUND);
+
+    RTMemCacheFree(pBusLogic->hTaskCache, pTaskState);
+
+    return rc;
+}
+
 /**
  * Read a mailbox from guest memory. Convert 24-bit mailboxes to
  * 32-bit format. 
@@ -3022,7 +3087,8 @@ static int buslogicR3ProcessMailboxNext(PBUSLOGIC pBusLogic)
         rc = buslogicR3DeviceSCSIRequestSetup(pBusLogic, pTaskState);
     else if (pTaskState->MailboxGuest.u.out.uActionCode == BUSLOGIC_MAILBOX_OUTGOING_ACTION_ABORT_COMMAND)
     {
-        AssertMsgFailed(("Not implemented yet\n"));
+        LogFlow(("Aborting mailbox\n"));
+        rc = buslogicR3DeviceSCSIRequestAbort(pBusLogic, pTaskState);
     }
     else
         AssertMsgFailed(("Invalid outgoing mailbox action code %u\n", pTaskState->MailboxGuest.u.out.uActionCode));
@@ -3246,7 +3312,10 @@ static DECLCALLBACK(int) buslogicR3LoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM,
     SSMR3GetU8    (pSSM, (uint8_t *)&pBusLogic->regGeometry);
     SSMR3GetMem   (pSSM, &pBusLogic->LocalRam, sizeof(pBusLogic->LocalRam));
     SSMR3GetU8    (pSSM, &pBusLogic->uOperationCode);
-    SSMR3GetMem   (pSSM, &pBusLogic->aCommandBuffer, sizeof(pBusLogic->aCommandBuffer));
+    if (uVersion > BUSLOGIC_SAVED_STATE_MINOR_PRE_CMDBUF_RESIZE)
+        SSMR3GetMem   (pSSM, &pBusLogic->aCommandBuffer, sizeof(pBusLogic->aCommandBuffer));
+    else
+        SSMR3GetMem   (pSSM, &pBusLogic->aCommandBuffer, BUSLOGIC_COMMAND_SIZE_OLD);
     SSMR3GetU8    (pSSM, &pBusLogic->iParameter);
     SSMR3GetU8    (pSSM, &pBusLogic->cbCommandParametersLeft);
     SSMR3GetBool  (pSSM, &pBusLogic->fUseLocalRam);

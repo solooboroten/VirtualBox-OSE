@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp $ */
+/* $Id: VBoxGlobal.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  * VBox Qt GUI - VBoxGlobal class implementation.
  */
@@ -69,6 +69,8 @@
 #include "UIMachine.h"
 #include "UISession.h"
 #include "UIConverter.h"
+#include "UIMediumEnumerator.h"
+#include "UIMedium.h"
 
 #ifdef Q_WS_X11
 # include "UIHostComboEditor.h"
@@ -161,33 +163,6 @@ typedef long Q_LONG;                /* word up to 64 bit signed */
 typedef unsigned long Q_ULONG;      /* word up to 64 bit unsigned */
 #endif
 
-// VBoxMediaEnumEvent
-/////////////////////////////////////////////////////////////////////////////
-
-class VBoxMediaEnumEvent : public QEvent
-{
-public:
-
-    /** Constructs a regular enum event */
-    VBoxMediaEnumEvent (const UIMedium &aMedium,
-                        const VBoxMediaList::iterator &aIterator)
-        : QEvent ((QEvent::Type) MediaEnumEventType)
-        , mMedium (aMedium), mIterator (aIterator), mLast (false)
-        {}
-    /** Constructs the last enum event */
-    VBoxMediaEnumEvent (const VBoxMediaList::iterator &aIterator)
-        : QEvent ((QEvent::Type) MediaEnumEventType)
-        , mIterator (aIterator), mLast (true)
-        {}
-
-    /** Last enumerated medium (not valid when #last is true) */
-    const UIMedium mMedium;
-    /* Iterator which points to the corresponding item in the GUI thread: */
-    const VBoxMediaList::iterator mIterator;
-    /** Whether this is the last event for the given enumeration or not */
-    const bool mLast;
-};
-
 // VBoxGlobal
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -265,7 +240,7 @@ VBoxGlobal::VBoxGlobal()
     : mValid (false)
     , mSelectorWnd (NULL)
     , m_pVirtualMachine(0)
-    , mMediaEnumThread (NULL)
+    , m_pMediumEnumerator(0)
     , mIsKWinManaged (false)
 #if defined(DEBUG_bird)
     , mAgressiveCaching(false)
@@ -956,37 +931,28 @@ bool VBoxGlobal::toLPTPortNumbers (const QString &aName, ulong &aIRQ,
     return false;
 }
 
-/**
- * Searches for the given hard disk in the list of known media descriptors and
- * calls UIMedium::details() on the found descriptor.
- *
- * If the requested hard disk is not found (for example, it's a new hard disk
- * for a new VM created outside our UI), then media enumeration is requested and
- * the search is repeated. We assume that the second attempt always succeeds and
- * assert otherwise.
- *
- * @note Technically, the second attempt may fail if, for example, the new hard
- *       passed to this method disk gets removed before #startEnumeratingMedia()
- *       succeeds. This (unexpected object uninitialization) is a generic
- *       problem though and needs to be addressed using exceptions (see also the
- *       @todo in UIMedium::details()).
- */
-QString VBoxGlobal::details (const CMedium &aMedium, bool aPredictDiff, bool fUseHtml /* = true */)
+QString VBoxGlobal::details(const CMedium &cmedium, bool fPredictDiff, bool fUseHtml /*= true*/)
 {
-    CMedium cmedium (aMedium);
-    UIMedium medium;
-
-    if (!findMedium (cmedium, medium))
+    /* Search for corresponding UI medium: */
+    const QString strMediumID = cmedium.isNull() ? UIMedium::nullID() : cmedium.GetId();
+    UIMedium uimedium = medium(strMediumID);
+    if (!cmedium.isNull() && uimedium.isNull())
     {
-        /* Medium may be new and not already in the media list, request refresh */
-        startEnumeratingMedia(true /*fReallyNecessary*/);
-        if (!findMedium (cmedium, medium))
-            /* Medium might be deleted already, return null string */
+        /* UI medium may be new and not among our mediums, request enumeration: */
+        startMediumEnumeration();
+
+        /* Search for corresponding UI medium again: */
+        uimedium = medium(strMediumID);
+        if (uimedium.isNull())
+        {
+            /* Medium might be deleted already, return null string: */
             return QString();
+        }
     }
 
-    return fUseHtml ? medium.detailsHTML (true /* aNoDiffs */, aPredictDiff) :
-                      medium.details(true /* aNoDiffs */, aPredictDiff);
+    /* Return UI medium details: */
+    return fUseHtml ? uimedium.detailsHTML(true /* aNoDiffs */, fPredictDiff) :
+                      uimedium.details(true /* aNoDiffs */, fPredictDiff);
 }
 
 /**
@@ -1659,208 +1625,6 @@ CSession VBoxGlobal::openSession(const QString &strId, KLockType lockType /* = K
     return session;
 }
 
-/**
- * Appends the NULL medium to the media list.
- * For using with VBoxGlobal::startEnumeratingMedia() only.
- */
-static void addNullMediumToList (VBoxMediaList &aList, VBoxMediaList::iterator aWhere)
-{
-    UIMedium medium;
-    aList.insert (aWhere, medium);
-}
-
-/**
- * Appends the given list of mediums to the media list.
- * For using with VBoxGlobal::startEnumeratingMedia() only.
- */
-static void addMediumsToList (const CMediumVector &aVector,
-                              VBoxMediaList &aList,
-                              VBoxMediaList::iterator aWhere,
-                              UIMediumType aType,
-                              UIMedium *aParent = 0)
-{
-    VBoxMediaList::iterator first = aWhere;
-
-    for (CMediumVector::ConstIterator it = aVector.begin(); it != aVector.end(); ++ it)
-    {
-        CMedium cmedium (*it);
-        UIMedium medium (cmedium, aType, aParent);
-
-        /* Search for a proper alphabetic position */
-        VBoxMediaList::iterator jt = first;
-        for (; jt != aWhere; ++ jt)
-            if ((*jt).name().localeAwareCompare (medium.name()) > 0)
-                break;
-
-        aList.insert (jt, medium);
-
-        /* Adjust the first item if inserted before it */
-        if (jt == first)
-            -- first;
-    }
-}
-
-/**
- * Appends the given list of hard disks and all their children to the media list.
- * For using with VBoxGlobal::startEnumeratingMedia() only.
- */
-static void addHardDisksToList (const CMediumVector &aVector,
-                                VBoxMediaList &aList,
-                                VBoxMediaList::iterator aWhere,
-                                UIMedium *aParent = 0)
-{
-    VBoxMediaList::iterator first = aWhere;
-
-    /* First pass: Add siblings sorted */
-    for (CMediumVector::ConstIterator it = aVector.begin(); it != aVector.end(); ++ it)
-    {
-        CMedium cmedium (*it);
-        UIMedium medium (cmedium, UIMediumType_HardDisk, aParent);
-
-        /* Search for a proper alphabetic position */
-        VBoxMediaList::iterator jt = first;
-        for (; jt != aWhere; ++ jt)
-            if ((*jt).name().localeAwareCompare (medium.name()) > 0)
-                break;
-
-        aList.insert (jt, medium);
-
-        /* Adjust the first item if inserted before it */
-        if (jt == first)
-            -- first;
-    }
-
-    /* Second pass: Add children */
-    for (VBoxMediaList::iterator it = first; it != aWhere;)
-    {
-        CMediumVector children = (*it).medium().GetChildren();
-        UIMedium *parent = &(*it);
-
-        ++ it; /* go to the next sibling before inserting children */
-        addHardDisksToList (children, aList, it, parent);
-    }
-}
-
-/**
- * Starts a thread that asynchronously enumerates all currently registered
- * media.
- *
- * Before the enumeration is started, the current media list (a list returned by
- * #currentMediaList()) is populated with all registered media and the
- * #mediumEnumStarted() signal is emitted. The enumeration thread then walks this
- * list, checks for media accessibility and emits #mediumEnumerated() signals of
- * each checked medium. When all media are checked, the enumeration thread is
- * stopped and the #mediumEnumFinished() signal is emitted.
- *
- * If the enumeration is already in progress, no new thread is started.
- *
- * The media list returned by #currentMediaList() is always sorted
- * alphabetically by the location attribute and comes in the following order:
- * <ol>
- *  <li>All hard disks. If a hard disk has children, these children
- *      (alphabetically sorted) immediately follow their parent and therefore
- *      appear before its next sibling hard disk.</li>
- *  <li>All CD/DVD images.</li>
- *  <li>All Floppy images.</li>
- * </ol>
- *
- * Note that #mediumEnumerated() signals are emitted in the same order as
- * described above.
- *
- * @param   fReallyNecessary    Whether the caller actually needs the media info
- *                              now, or is just trying to be nice and start the
- *                              IPC storm... er... caching process early.
- *
- * @sa #currentMediaList()
- * @sa #isMediaEnumerationStarted()
- */
-void VBoxGlobal::startEnumeratingMedia(bool fReallyNecessary)
-{
-    AssertReturnVoid (mValid);
-
-    /* check if already started but not yet finished */
-    if (mMediaEnumThread != NULL)
-        return;
-
-    /* Ignore the request during VBoxGlobal cleanup: */
-    if (m_sfCleanupInProgress)
-        return;
-
-    /* If asked to restore snapshot, don't do this till *after* we're done
-     * restoring or the code with have a heart attack. */
-    if (shouldRestoreCurrentSnapshot())
-        return;
-
-    /* Developer doesn't want any unnecessary media caching! */
-    if (!fReallyNecessary && !agressiveCaching())
-        return;
-
-    /* composes a list of all currently known media & their children */
-    mMediaList.clear();
-    addNullMediumToList (mMediaList, mMediaList.end());
-    addHardDisksToList (mVBox.GetHardDisks(), mMediaList, mMediaList.end());
-    addMediumsToList (mHost.GetDVDDrives(), mMediaList, mMediaList.end(), UIMediumType_DVD);
-    addMediumsToList (mVBox.GetDVDImages(), mMediaList, mMediaList.end(), UIMediumType_DVD);
-    addMediumsToList (mHost.GetFloppyDrives(), mMediaList, mMediaList.end(), UIMediumType_Floppy);
-    addMediumsToList (mVBox.GetFloppyImages(), mMediaList, mMediaList.end(), UIMediumType_Floppy);
-
-    /* enumeration thread class */
-    class MediaEnumThread : public QThread
-    {
-    public:
-
-        MediaEnumThread (VBoxMediaList &aList)
-            : mVector (aList.size())
-            , mSavedIt (aList.begin())
-        {
-            int i = 0;
-            for (VBoxMediaList::const_iterator it = aList.begin();
-                 it != aList.end(); ++ it)
-                mVector [i ++] = *it;
-        }
-
-        virtual void run()
-        {
-            LogFlow (("MediaEnumThread started.\n"));
-            COMBase::InitializeCOM(false);
-
-            CVirtualBox mVBox = vboxGlobal().virtualBox();
-            QObject *self = &vboxGlobal();
-
-            /* Enumerate the list */
-            for (int i = 0; i < mVector.size() && !m_sfCleanupInProgress; ++ i)
-            {
-                mVector [i].blockAndQueryState();
-                QApplication::
-                    postEvent (self,
-                               new VBoxMediaEnumEvent (mVector [i], mSavedIt));
-                ++mSavedIt;
-            }
-
-            /* Post the end-of-enumeration event */
-            if (!m_sfCleanupInProgress)
-                QApplication::postEvent (self, new VBoxMediaEnumEvent (mSavedIt));
-
-            COMBase::CleanupCOM();
-            LogFlow (("MediaEnumThread finished.\n"));
-        }
-
-    private:
-
-        QVector <UIMedium> mVector;
-        VBoxMediaList::iterator mSavedIt;
-    };
-
-    mMediaEnumThread = new MediaEnumThread (mMediaList);
-    AssertReturnVoid (mMediaEnumThread);
-
-    /* emit mediumEnumStarted() after we set mMediaEnumThread to != NULL
-     * to cause isMediaEnumerationStarted() to return TRUE from slots */
-    emit mediumEnumStarted();
-
-    mMediaEnumThread->start();
-}
-
 void VBoxGlobal::reloadProxySettings()
 {
     UIProxyManager proxyManager(settings().proxySettings());
@@ -1893,171 +1657,22 @@ void VBoxGlobal::reloadProxySettings()
     }
 }
 
-/**
- * Adds a new medium to the current media list and emits the #mediumAdded()
- * signal.
- *
- * @sa #currentMediaList()
- */
-void VBoxGlobal::addMedium (const UIMedium &aMedium)
+void VBoxGlobal::createMedium(const UIMedium &medium)
 {
-    /* Note that we maintain the same order here as #startEnumeratingMedia() */
-
-    VBoxMediaList::iterator it = mMediaList.begin();
-
-    if (aMedium.type() == UIMediumType_HardDisk)
-    {
-        VBoxMediaList::iterator itParent = mMediaList.end();
-
-        for (; it != mMediaList.end(); ++ it)
-        {
-            /* skip null medium that come first */
-            if ((*it).isNull()) continue;
-
-            if ((*it).type() != UIMediumType_HardDisk)
-                break;
-
-            if (aMedium.parent() != NULL && itParent == mMediaList.end())
-            {
-                if (&*it == aMedium.parent())
-                    itParent = it;
-            }
-            else
-            {
-                /* break if met a parent's sibling (will insert before it) */
-                if (aMedium.parent() != NULL &&
-                    (*it).parent() == (*itParent).parent())
-                    break;
-
-                /* compare to aMedium's siblings */
-                if ((*it).parent() == aMedium.parent() &&
-                    (*it).name().localeAwareCompare (aMedium.name()) > 0)
-                    break;
-            }
-        }
-
-        AssertReturnVoid (aMedium.parent() == NULL || itParent != mMediaList.end());
-    }
-    else
-    {
-        for (; it != mMediaList.end(); ++ it)
-        {
-            /* skip null medium that come first */
-            if ((*it).isNull()) continue;
-
-            /* skip HardDisks that come first */
-            if ((*it).type() == UIMediumType_HardDisk)
-                continue;
-
-            /* skip DVD when inserting Floppy */
-            if (aMedium.type() == UIMediumType_Floppy &&
-                (*it).type() == UIMediumType_DVD)
-                continue;
-
-            if ((*it).name().localeAwareCompare (aMedium.name()) > 0 ||
-                (aMedium.type() == UIMediumType_DVD &&
-                 (*it).type() == UIMediumType_Floppy))
-                break;
-        }
-    }
-
-    it = mMediaList.insert (it, aMedium);
-
-    emit mediumAdded (*it);
+    /* Create medium in medium-enumerator: */
+    m_pMediumEnumerator->createMedium(medium);
 }
 
-/**
- * Updates the medium in the current media list and emits the #mediumUpdated()
- * signal.
- *
- * @sa #currentMediaList()
- */
-void VBoxGlobal::updateMedium (const UIMedium &aMedium)
+void VBoxGlobal::updateMedium(const UIMedium &medium)
 {
-    VBoxMediaList::Iterator it;
-    for (it = mMediaList.begin(); it != mMediaList.end(); ++ it)
-        if ((*it).id() == aMedium.id())
-            break;
-
-    AssertReturnVoid (it != mMediaList.end());
-
-    if (&*it != &aMedium)
-        *it = aMedium;
-
-    emit mediumUpdated (*it);
+    /* Update medium of medium-enumerator: */
+    m_pMediumEnumerator->updateMedium(medium);
 }
 
-/**
- * Removes the medium from the current media list and emits the #mediumRemoved()
- * signal.
- *
- * @sa #currentMediaList()
- */
-void VBoxGlobal::removeMedium (UIMediumType aType, const QString &aId)
+void VBoxGlobal::deleteMedium(const QString &strMediumID)
 {
-    VBoxMediaList::Iterator it;
-    for (it = mMediaList.begin(); it != mMediaList.end(); ++ it)
-        if ((*it).id() == aId)
-            break;
-
-    AssertReturnVoid (it != mMediaList.end());
-
-#if DEBUG
-    /* sanity: must be no children */
-    {
-        VBoxMediaList::Iterator jt = it;
-        ++ jt;
-        AssertReturnVoid (jt == mMediaList.end() || (*jt).parent() != &*it);
-    }
-#endif
-
-    UIMedium *pParent = (*it).parent();
-
-    /* remove the medium from the list to keep it in sync with the server "for
-     * free" when the medium is deleted from one of our UIs */
-    mMediaList.erase (it);
-
-    emit mediumRemoved (aType, aId);
-
-    /* also emit the parent update signal because some attributes like
-     * isReadOnly() may have been changed after child removal */
-    if (pParent != NULL)
-    {
-        pParent->refresh();
-        emit mediumUpdated (*pParent);
-    }
-}
-
-/**
- *  Searches for a VBoxMedum object representing the given COM medium object.
- *
- *  @return true if found and false otherwise.
- */
-bool VBoxGlobal::findMedium (const CMedium &aObj, UIMedium &aMedium) const
-{
-    for (VBoxMediaList::ConstIterator it = mMediaList.begin(); it != mMediaList.end(); ++ it)
-    {
-        if (((*it).medium().isNull() && aObj.isNull()) ||
-            (!(*it).medium().isNull() && !aObj.isNull() && (*it).medium().GetId() == aObj.GetId()))
-        {
-            aMedium = (*it);
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- *  Searches for a VBoxMedum object with the given medium id attribute.
- *
- *  @return VBoxMedum if found which is invalid otherwise.
- */
-UIMedium VBoxGlobal::findMedium (const QString &aMediumId) const
-{
-    for (VBoxMediaList::ConstIterator it = mMediaList.begin(); it != mMediaList.end(); ++ it)
-        if ((*it).id() == aMediumId)
-            return *it;
-    return UIMedium();
+    /* Delete medium from medium-enumerator: */
+    m_pMediumEnumerator->deleteMedium(strMediumID);
 }
 
 /* Open some external medium using file open dialog
@@ -2171,28 +1786,72 @@ QString VBoxGlobal::openMedium(UIMediumType mediumType, QString strMediumLocatio
     vbox.SetExtraData(strRecentListKey, recentMediumList.join(";"));
 
     /* Open corresponding medium: */
-    CMedium comMedium = vbox.OpenMedium(strMediumLocation, mediumTypeToGlobal(mediumType), KAccessMode_ReadWrite, false);
+    CMedium cmedium = vbox.OpenMedium(strMediumLocation, mediumTypeToGlobal(mediumType), KAccessMode_ReadWrite, false);
 
     if (vbox.isOk())
     {
         /* Prepare vbox medium wrapper: */
-        UIMedium vboxMedium;
+        UIMedium uimedium = medium(cmedium.GetId());
 
         /* First of all we should test if that medium already opened: */
-        if (!vboxGlobal().findMedium(comMedium, vboxMedium))
+        if (uimedium.isNull())
         {
             /* And create new otherwise: */
-            vboxMedium = UIMedium(CMedium(comMedium), mediumType, KMediumState_Created);
-            vboxGlobal().addMedium(vboxMedium);
+            uimedium = UIMedium(cmedium, mediumType, KMediumState_Created);
+            vboxGlobal().createMedium(uimedium);
         }
 
-        /* Return vboxMedium id: */
-        return vboxMedium.id();
+        /* Return uimedium id: */
+        return uimedium.id();
     }
     else
         msgCenter().cannotOpenMedium(vbox, mediumType, strMediumLocation, pParent);
 
     return QString();
+}
+
+void VBoxGlobal::startMediumEnumeration(bool fForceStart /*= true*/)
+{
+    /* Make sure VBoxGlobal is already valid: */
+    AssertReturnVoid(mValid);
+
+    /* Make sure enumeration is not already started: */
+    if (isMediumEnumerationInProgress())
+        return;
+
+    /* Ignore the request during VBoxGlobal cleanup: */
+    if (m_sfCleanupInProgress)
+        return;
+
+    /* If asked to restore snapshot, don't do this till *after* we're done
+     * restoring or the code with have a heart attack. */
+    if (shouldRestoreCurrentSnapshot())
+        return;
+
+    /* Developer doesn't want any unnecessary media caching! */
+    if (!fForceStart && !agressiveCaching())
+        return;
+
+    /* Redirect request to medium-enumerator: */
+    m_pMediumEnumerator->enumerateMediums();
+}
+
+bool VBoxGlobal::isMediumEnumerationInProgress() const
+{
+    /* Redirect request to medium-enumerator: */
+    return m_pMediumEnumerator->isMediumEnumerationInProgress();
+}
+
+UIMedium VBoxGlobal::medium(const QString &strMediumID) const
+{
+    /* Redirect call to medium-enumerator: */
+    return m_pMediumEnumerator->medium(strMediumID);
+}
+
+QList<QString> VBoxGlobal::mediumIDs() const
+{
+    /* Redirect call to medium-enumerator: */
+    return m_pMediumEnumerator->mediumIDs();
 }
 
 /**
@@ -2271,10 +1930,9 @@ void VBoxGlobal::retranslateUi()
     mErrorIcon = UIIconPool::defaultIcon(UIIconPool::MessageBoxCriticalIcon).pixmap (16, 16);
     Assert (!mErrorIcon.isNull());
 
-    /* refresh media properties since they contain some translations too  */
-    for (VBoxMediaList::iterator it = mMediaList.begin();
-         it != mMediaList.end(); ++ it)
-        it->refresh();
+    /* Re-enumerate uimedium since they contain some translations too: */
+    if (mValid)
+        startMediumEnumeration();
 
 #ifdef Q_WS_X11
     /* As X11 do not have functionality for providing human readable key names,
@@ -4077,42 +3735,6 @@ void VBoxGlobal::sltProcessGlobalSettingChange()
 // Protected members
 ////////////////////////////////////////////////////////////////////////////////
 
-bool VBoxGlobal::event (QEvent *e)
-{
-    switch (e->type())
-    {
-        case MediaEnumEventType:
-        {
-            VBoxMediaEnumEvent *ev = (VBoxMediaEnumEvent*) e;
-
-            if (!ev->mLast)
-            {
-                if (ev->mMedium.state() == KMediumState_Inaccessible &&
-                    !ev->mMedium.result().isOk())
-                    msgCenter().cannotGetMediaAccessibility (ev->mMedium);
-                Assert (ev->mIterator != mMediaList.end());
-                *(ev->mIterator) = ev->mMedium;
-                emit mediumEnumerated (*ev->mIterator);
-            }
-            else
-            {
-                /* the thread has posted the last message, wait for termination */
-                mMediaEnumThread->wait();
-                delete mMediaEnumThread;
-                mMediaEnumThread = 0;
-                emit mediumEnumFinished (mMediaList);
-            }
-
-            return true;
-        }
-
-        default:
-            break;
-    }
-
-    return QObject::event (e);
-}
-
 bool VBoxGlobal::eventFilter (QObject *aObject, QEvent *aEvent)
 {
     if (aEvent->type() == QEvent::LanguageChange &&
@@ -4586,6 +4208,31 @@ void VBoxGlobal::prepare()
         }
     }
 
+    /* After initializing *vmUuid* we already know if that is VM process or not: */
+    if (!isVMConsoleProcess())
+    {
+        /* We should create separate logging file for VM selector: */
+        char szLogFile[RTPATH_MAX];
+        const char *pszLogFile = NULL;
+        com::GetVBoxUserHomeDirectory(szLogFile, sizeof(szLogFile));
+        RTPathAppend(szLogFile, sizeof(szLogFile), "selectorwindow.log");
+        pszLogFile = szLogFile;
+        /* Create release logger, to file: */
+        char szError[RTPATH_MAX + 128];
+        com::VBoxLogRelCreate("GUI VM Selector Window",
+                              pszLogFile,
+                              RTLOGFLAGS_PREFIX_TIME_PROG,
+                              "all",
+                              "VBOX_GUI_SELECTORWINDOW_RELEASE_LOG",
+                              RTLOGDEST_FILE,
+                              UINT32_MAX,
+                              1,
+                              60 * 60,
+                              _1M,
+                              szError,
+                              sizeof(szError));
+    }
+
     if (mSettingsPwSet)
         mVBox.SetSettingsSecret(mSettingsPw);
 
@@ -4626,7 +4273,24 @@ void VBoxGlobal::prepare()
      * There could be no used mediums at all,
      * but this method should be run anyway just to enumerate null UIMedium object,
      * used by some VBox smart widgets, like VBoxMediaComboBox: */
-    vboxGlobal().startEnumeratingMedia(false /*fReallyNecessary*/);
+    m_pMediumEnumerator = new UIMediumEnumerator;
+    {
+        /* Prepare medium-enumerator: */
+        connect(m_pMediumEnumerator, SIGNAL(sigMediumCreated(const QString&)),
+                this, SIGNAL(sigMediumCreated(const QString&)));
+        connect(m_pMediumEnumerator, SIGNAL(sigMediumUpdated(const QString&)),
+                this, SIGNAL(sigMediumUpdated(const QString&)));
+        connect(m_pMediumEnumerator, SIGNAL(sigMediumDeleted(const QString&)),
+                this, SIGNAL(sigMediumDeleted(const QString&)));
+        connect(m_pMediumEnumerator, SIGNAL(sigMediumEnumerationStarted()),
+                this, SIGNAL(sigMediumEnumerationStarted()));
+        connect(m_pMediumEnumerator, SIGNAL(sigMediumEnumerated(const QString&)),
+                this, SIGNAL(sigMediumEnumerated(const QString&)));
+        connect(m_pMediumEnumerator, SIGNAL(sigMediumEnumerationFinished()),
+                this, SIGNAL(sigMediumEnumerationFinished()));
+    }
+    if (agressiveCaching())
+        startMediumEnumeration();
 
     /* Prepare global settings change handler: */
     connect(&settings(), SIGNAL(propertyChanged(const char*, const char*)),
@@ -4681,13 +4345,9 @@ void VBoxGlobal::cleanup()
     /* Destroy our event handlers */
     UIExtraDataEventHandler::destroy();
 
-    /* Cleanup medium enumeration thread: */
-    if (mMediaEnumThread)
-    {
-        mMediaEnumThread->wait();
-        delete mMediaEnumThread;
-        mMediaEnumThread = 0;
-    }
+    /* Cleanup medium-enumerator: */
+    delete m_pMediumEnumerator;
+    m_pMediumEnumerator = 0;
 
     if (mSelectorWnd)
         delete mSelectorWnd;
@@ -4703,13 +4363,11 @@ void VBoxGlobal::cleanup()
     mFamilyIDs.clear();
     mTypes.clear();
 
-    /* media list contains a lot of CUUnknown, release them */
-    mMediaList.clear();
     /* the last steps to ensure we don't use COM any more */
     mHost.detach();
     mVBox.detach();
 
-    /* There may be VBoxMediaEnumEvent instances still in the message
+    /* There may be UIMedium(s)EnumeratedEvent instances still in the message
      * queue which reference COM objects. Remove them to release those objects
      * before uninitializing the COM subsystem. */
     QApplication::removePostedEvents (this);
@@ -5018,3 +4676,4 @@ bool VBoxGlobal::launchMachine(CMachine &machine, bool fHeadless /* = false */)
     /* True finally: */
     return true;
 }
+

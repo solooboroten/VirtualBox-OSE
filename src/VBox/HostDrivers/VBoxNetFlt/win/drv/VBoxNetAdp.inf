@@ -1,4 +1,4 @@
-; $Id: VBoxNetAdp.inf $
+; $Id: VBoxNetAdp.inf 36184 2011-03-07 10:57:04Z vboxsync $
 ; @file
 ; VBoxNetAdp.inf - VirtualBox Host-Only Driver inf file
 ;

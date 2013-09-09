@@ -1,4 +1,4 @@
-/* $Id: IEMAllCImpl.cpp.h $ */
+/* $Id: IEMAllCImpl.cpp.h 48126 2013-08-28 14:38:06Z vboxsync $ */
 /** @file
  * IEM - Instruction Implementation in C/C++ (code include).
  */
@@ -4667,6 +4667,11 @@ IEM_CIMPL_DEF_0(iemCImpl_rdmsr)
     int rc = CPUMQueryGuestMsr(IEMCPU_TO_VMCPU(pIemCpu), pCtx->ecx, &uValue.u);
     if (rc != VINF_SUCCESS)
     {
+#ifdef IN_RING3
+        static uint32_t s_cTimes = 0;
+        if (s_cTimes++ < 10)
+            LogRel(("IEM: rdmsr(%#x) -> GP(0)\n", pCtx->ecx));
+#endif
         Log(("IEM: rdmsr(%#x) -> GP(0)\n", pCtx->ecx));
         AssertMsgReturn(rc == VERR_CPUM_RAISE_GP_0, ("%Rrc\n", rc), VERR_IPE_UNEXPECTED_STATUS);
         return iemRaiseGeneralProtectionFault0(pIemCpu);
@@ -4715,6 +4720,11 @@ IEM_CIMPL_DEF_0(iemCImpl_wrmsr)
     }
     if (rc != VINF_SUCCESS)
     {
+#ifdef IN_RING3
+        static uint32_t s_cTimes = 0;
+        if (s_cTimes++ < 10)
+            LogRel(("IEM: wrmsr(%#x,%#x`%08x) -> GP(0)\n", pCtx->ecx, uValue.s.Hi, uValue.s.Lo));
+#endif
         Log(("IEM: wrmsr(%#x,%#x`%08x) -> GP(0)\n", pCtx->ecx, uValue.s.Hi, uValue.s.Lo));
         AssertMsgReturn(rc == VERR_CPUM_RAISE_GP_0, ("%Rrc\n", rc), VERR_IPE_UNEXPECTED_STATUS);
         return iemRaiseGeneralProtectionFault0(pIemCpu);

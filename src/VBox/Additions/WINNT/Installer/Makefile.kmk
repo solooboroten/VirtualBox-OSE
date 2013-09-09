@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 44864 2013-02-28 12:18:42Z vboxsync $
 ## @file
 # Sub-Makefile for the Windows Guest Additions Installer.
 #

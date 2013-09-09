@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceAutoMount.cpp $ */
+/* $Id: VBoxServiceAutoMount.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * VBoxService - Auto-mounting for Shared Folders.
  */

@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl2.cpp $ */
+/* $Id: ConsoleImpl2.cpp 48303 2013-09-05 12:26:22Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation - VM Configuration Bits.
  *
@@ -987,7 +987,7 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
 
         /* HWVirtEx exclusive mode */
         BOOL fHMExclusive = true;
-        hrc = pMachine->GetHWVirtExProperty(HWVirtExPropertyType_Exclusive, &fHMExclusive); H();
+        hrc = systemProperties->COMGETTER(ExclusiveHwVirt)(&fHMExclusive);                  H();
         InsertConfigInteger(pHM, "Exclusive", fHMExclusive);
 
         /* Nested paging (VT-x/AMD-V) */
@@ -2938,7 +2938,7 @@ int Console::configCfgmOverlay(PCFGMNODE pRoot, IVirtualBox *pVirtualBox, IMachi
                 hrc = pMachine->GetExtraData(Bstr(strKey).raw(),
                                              bstrExtraDataValue.asOutParam());
             if (FAILED(hrc))
-                LogRel(("Warning: Cannot get extra data key %s, rc = %Rrc\n", strKey.c_str(), hrc));
+                LogRel(("Warning: Cannot get extra data key %s, rc = %Rhrc\n", strKey.c_str(), hrc));
 
             /*
              * The key will be in the format "Node1/Node2/Value" or simply "Value".
@@ -3553,24 +3553,17 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst,
             }
         }
 
-        if (   pMedium
-            && (   lType == DeviceType_DVD
-                || lType == DeviceType_Floppy))
+        if (pMedium)
         {
-            /*
-             * Informative logging.
-             */
-            ComPtr<IMediumFormat> pMediumFormat;
-            hrc = pMedium->COMGETTER(MediumFormat)(pMediumFormat.asOutParam());             H();
-            ULONG uCaps = 0;
-            com::SafeArray <MediumFormatCapabilities_T> mediumFormatCap;
-            hrc = pMediumFormat->COMGETTER(Capabilities)(ComSafeArrayAsOutParam(mediumFormatCap));     H();
-
-            for (ULONG j = 0; j < mediumFormatCap.size(); j++)
-                uCaps |= mediumFormatCap[j];
-
-            if (uCaps & MediumFormatCapabilities_File)
+            BOOL fHostDrive;
+            hrc = pMedium->COMGETTER(HostDrive)(&fHostDrive);                               H();
+            if (  (   lType == DeviceType_DVD
+                   || lType == DeviceType_Floppy)
+                && !fHostDrive)
             {
+                /*
+                 * Informative logging.
+                 */
                 Bstr strFile;
                 hrc = pMedium->COMGETTER(Location)(strFile.asOutParam());                   H();
                 Utf8Str utfFile = Utf8Str(strFile);
@@ -5104,7 +5097,7 @@ int configSetGlobalPropertyFlags(VMMDev * const pVMMDev,
                                                       ComSafeArrayAsOutParam(valuesOut),
                                                       ComSafeArrayAsOutParam(timestampsOut),
                                                       ComSafeArrayAsOutParam(flagsOut));
-        AssertMsgReturn(SUCCEEDED(hrc), ("hrc=%Rrc\n", hrc), VERR_GENERAL_FAILURE);
+        AssertMsgReturn(SUCCEEDED(hrc), ("hrc=%Rhrc\n", hrc), VERR_GENERAL_FAILURE);
         size_t cProps = namesOut.size();
         size_t cAlloc = cProps + 1;
         if (   valuesOut.size() != cProps

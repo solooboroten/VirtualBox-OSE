@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibHostChannel.cpp $ */
+/* $Id: VBoxGuestR3LibHostChannel.cpp 43462 2012-09-28 10:46:41Z vboxsync $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Host Channel.
  */

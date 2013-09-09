@@ -1,4 +1,4 @@
-/* $Id: VUSBUrb.cpp $ */
+/* $Id: VUSBUrb.cpp 47504 2013-08-01 09:37:39Z vboxsync $ */
 /** @file
  * Virtual USB - URBs.
  */

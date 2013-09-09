@@ -1,4 +1,4 @@
-/* $Id: VBoxMMR.rc $ */
+/* $Id: VBoxMMR.rc 44864 2013-02-28 12:18:42Z vboxsync $ */
 /** @file
  * VBoxMMR - Resource file containing version info.
  */

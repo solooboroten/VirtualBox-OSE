@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogic.cpp $ */
+/* $Id: UIMachineLogic.cpp 48386 2013-09-09 11:14:21Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -53,6 +53,7 @@
 #include "UIVMLogViewer.h"
 #include "UIConverter.h"
 #include "UIModalWindowManager.h"
+#include "UIMedium.h"
 #ifdef Q_WS_MAC
 # include "DockIconPreview.h"
 # include "UIExtraDataEventHandler.h"
@@ -474,6 +475,13 @@ void UIMachineLogic::sltMouseCapabilityChanged()
         pAction->setChecked(false);
 }
 
+void UIMachineLogic::sltKeyboardLedsChanged()
+{
+    /* Here we have to update host LED lock states using values provided by UISession:
+     * [bool] uisession() -> isNumLock(), isCapsLock(), isScrollLock() can be used for that. */
+    LogRelFlow(("UIMachineLogic::sltKeyboardLedsChanged: Updating host LED lock states (NOT IMPLEMENTED).\n"));
+}
+
 void UIMachineLogic::sltUSBDeviceStateChange(const CUSBDevice &device, bool fIsAttached, const CVirtualBoxErrorInfo &error)
 {
     /* Check if USB device have anything to tell us: */
@@ -669,6 +677,9 @@ void UIMachineLogic::prepareSessionConnections()
 
     /* Mouse capability state-change updater: */
     connect(uisession(), SIGNAL(sigMouseCapabilityChange()), this, SLOT(sltMouseCapabilityChanged()));
+
+    /* Keyboard LEDs state-change updater: */
+    connect(uisession(), SIGNAL(sigKeyboardLedsChange()), this, SLOT(sltKeyboardLedsChanged()));
 
     /* USB devices state-change updater: */
     connect(uisession(), SIGNAL(sigUSBDeviceStateChange(const CUSBDevice &, bool, const CVirtualBoxErrorInfo &)),
@@ -1598,7 +1609,7 @@ void UIMachineLogic::sltMountStorageMedium()
 
     bool fMount = !newId.isEmpty();
 
-    UIMedium vmedium = vboxGlobal().findMedium(newId);
+    UIMedium vmedium = vboxGlobal().medium(newId);
     CMedium medium = vmedium.medium();              // @todo r=dj can this be cached somewhere?
 
     /* Remount medium to the predefined port/device: */
@@ -1609,7 +1620,7 @@ void UIMachineLogic::sltMountStorageMedium()
     else
     {
         /* Ask for force remounting: */
-        if (msgCenter().cannotRemountMedium(machine, vboxGlobal().findMedium(fMount ? newId : currentId),
+        if (msgCenter().cannotRemountMedium(machine, vboxGlobal().medium(fMount ? newId : currentId),
                                             fMount, true /* retry? */, activeMachineWindow()))
         {
             /* Force remount medium to the predefined port/device: */
@@ -1617,7 +1628,7 @@ void UIMachineLogic::sltMountStorageMedium()
             if (machine.isOk())
                 fWasMounted = true;
             else
-                msgCenter().cannotRemountMedium(machine, vboxGlobal().findMedium(fMount ? newId : currentId),
+                msgCenter().cannotRemountMedium(machine, vboxGlobal().medium(fMount ? newId : currentId),
                                                 fMount, false /* retry? */, activeMachineWindow());
         }
     }
@@ -1657,7 +1668,7 @@ void UIMachineLogic::sltMountRecentStorageMedium()
         bool fMount = strNewId != strCurrentId;
 
         /* Prepare target medium: */
-        const UIMedium &vboxMedium = fMount ? vboxGlobal().findMedium(strNewId) : UIMedium();
+        const UIMedium &vboxMedium = fMount ? vboxGlobal().medium(strNewId) : UIMedium();
         const CMedium &comMedium = fMount ? vboxMedium.medium() : CMedium();
 
         /* 'Mounted' flag: */
@@ -1670,7 +1681,7 @@ void UIMachineLogic::sltMountRecentStorageMedium()
         else
         {
             /* Ask for force remounting: */
-            if (msgCenter().cannotRemountMedium(machine, vboxGlobal().findMedium(fMount ? strNewId : strCurrentId),
+            if (msgCenter().cannotRemountMedium(machine, vboxGlobal().medium(fMount ? strNewId : strCurrentId),
                                                 fMount, true /* retry? */, activeMachineWindow()))
             {
                 /* Force remount medium to the predefined port/device: */
@@ -1678,7 +1689,7 @@ void UIMachineLogic::sltMountRecentStorageMedium()
                 if (machine.isOk())
                     fWasMounted = true;
                 else
-                    msgCenter().cannotRemountMedium(machine, vboxGlobal().findMedium(fMount ? strNewId : strCurrentId),
+                    msgCenter().cannotRemountMedium(machine, vboxGlobal().medium(fMount ? strNewId : strCurrentId),
                                                     fMount, false /* retry? */, activeMachineWindow());
             }
         }

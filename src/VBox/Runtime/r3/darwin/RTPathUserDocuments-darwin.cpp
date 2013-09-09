@@ -1,4 +1,4 @@
-/* $Id: RTPathUserDocuments-darwin.cpp $ */
+/* $Id: RTPathUserDocuments-darwin.cpp 45243 2013-03-28 21:22:12Z vboxsync $ */
 /** @file
  * IPRT - RTPathUserDocuments, darwin ring-3.
  */

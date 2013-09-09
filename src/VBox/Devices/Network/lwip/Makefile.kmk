@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk$
 ## @file
 # Adds sources list and defines required to LWIP 1.2.0 compilation
 #

@@ -1,4 +1,4 @@
-/* $Id: assert-r0drv-haiku.c $ */
+/* $Id: assert-r0drv-haiku.c 43403 2012-09-22 11:48:24Z vboxsync $ */
 /** @file
  * IPRT - Assertion Workers, Ring-0 Drivers, Haiku.
  */

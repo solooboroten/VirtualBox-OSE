@@ -1,4 +1,4 @@
-/* $Id: UIWizard.cpp $ */
+/* $Id: UIWizard.cpp 45060 2013-03-18 13:31:20Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

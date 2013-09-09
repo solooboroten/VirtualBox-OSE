@@ -1,4 +1,4 @@
-/* $Id: UIProgressDialog.cpp $ */
+/* $Id: UIProgressDialog.cpp 47614 2013-08-08 12:42:26Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

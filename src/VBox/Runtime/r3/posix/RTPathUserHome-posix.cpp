@@ -1,4 +1,4 @@
-/* $Id: RTPathUserHome-posix.cpp $ */
+/* $Id: RTPathUserHome-posix.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * IPRT - Path Manipulation, POSIX.
  */

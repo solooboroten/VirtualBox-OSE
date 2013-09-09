@@ -1,4 +1,4 @@
-/* $Id: mp-solaris.cpp $ */
+/* $Id: mp-solaris.cpp 47969 2013-08-21 13:35:18Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Solaris.
  */
@@ -125,7 +125,7 @@ static DECLCALLBACK(int) rtMpSolarisOnce(void *pvUser)
  * @param   idCpu           The CPU ID.
  * @param   pszStatName     The cpu_info stat name.
  */
-static uint64_t rtMpSolarisGetFrequency(RTCPUID idCpu, char *pszStatName)
+static uint64_t rtMpSolarisGetFrequency(RTCPUID idCpu, const char *pszStatName)
 {
     uint64_t u64 = 0;
     int rc = RTOnce(&g_MpSolarisOnce, rtMpSolarisOnce, NULL);
@@ -140,7 +140,8 @@ static uint64_t rtMpSolarisGetFrequency(RTCPUID idCpu, char *pszStatName)
             {
                 if (kstat_read(g_pKsCtl, g_papCpuInfo[idCpu], 0) != -1)
                 {
-                    kstat_named_t *pStat = (kstat_named_t *)kstat_data_lookup(g_papCpuInfo[idCpu], pszStatName);
+                    /* Solaris really need to fix their APIs. Explicitly cast for now. */
+                    kstat_named_t *pStat = (kstat_named_t *)kstat_data_lookup(g_papCpuInfo[idCpu], (char*)pszStatName);
                     if (pStat)
                     {
                         Assert(pStat->data_type == KSTAT_DATA_UINT64 || pStat->data_type == KSTAT_DATA_LONG);

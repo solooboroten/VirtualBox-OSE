@@ -1,4 +1,4 @@
-/* $Id: server_presenter.cpp $ */
+/* $Id: server_presenter.cpp 47628 2013-08-09 09:08:20Z vboxsync $ */
 
 /** @file
  * Presenter API

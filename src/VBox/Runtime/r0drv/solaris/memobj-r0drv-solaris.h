@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv-solaris.h $ */
+/* $Id: memobj-r0drv-solaris.h 41701 2012-06-14 10:13:16Z vboxsync $ */
 /** @file
  * IPRT - Ring-0 Memory Objects - Segment driver, Solaris.
  */

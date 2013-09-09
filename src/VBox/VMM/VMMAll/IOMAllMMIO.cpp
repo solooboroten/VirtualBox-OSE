@@ -1,4 +1,4 @@
-/* $Id: IOMAllMMIO.cpp $ */
+/* $Id: IOMAllMMIO.cpp 48018 2013-08-23 09:48:25Z vboxsync $ */
 /** @file
  * IOM - Input / Output Monitor - Any Context, MMIO & String I/O.
  */
@@ -1478,10 +1478,10 @@ static int iomInterpretXCHG(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, RTGCP
                 AssertMsg(fRc, ("Failed to store register value!\n")); NOREF(fRc);
             }
             else
-                AssertMsg(rc == VINF_IOM_R3_MMIO_READ_WRITE || rc == VINF_IOM_R3_MMIO_WRITE || rc == VINF_PATM_HC_MMIO_PATCH_WRITE, ("rc=%Rrc\n", rc));
+                AssertMsg(rc == VINF_IOM_R3_MMIO_READ_WRITE || rc == VINF_IOM_R3_MMIO_WRITE || rc == VINF_PATM_HC_MMIO_PATCH_WRITE || rc == VINF_EM_RAW_EMULATE_IO_BLOCK, ("rc=%Rrc\n", rc));
         }
         else
-            AssertMsg(rc == VINF_IOM_R3_MMIO_READ_WRITE || rc == VINF_IOM_R3_MMIO_READ || rc == VINF_PATM_HC_MMIO_PATCH_READ, ("rc=%Rrc\n", rc));
+            AssertMsg(rc == VINF_IOM_R3_MMIO_READ_WRITE || rc == VINF_IOM_R3_MMIO_READ || rc == VINF_PATM_HC_MMIO_PATCH_READ || rc == VINF_EM_RAW_EMULATE_IO_BLOCK, ("rc=%Rrc\n", rc));
     }
     else
     {
@@ -1791,7 +1791,7 @@ DECLCALLBACK(int) IOMR3MMIOHandler(PVM pVM, RTGCPHYS GCPhysFault, void *pvPhys, 
     PIOMMMIORANGE pRange = (PIOMMMIORANGE)pvUser;
     STAM_COUNTER_INC(&pVM->iom.s.StatR3MMIOHandler);
 
-    AssertMsg(cbBuf == 1 || cbBuf == 2 || cbBuf == 4 || cbBuf == 8, ("%zu\n", cbBuf));
+    AssertMsg(cbBuf >= 1 && cbBuf <= 16, ("%zu\n", cbBuf));
     AssertPtr(pRange);
     NOREF(pvPhys);
 

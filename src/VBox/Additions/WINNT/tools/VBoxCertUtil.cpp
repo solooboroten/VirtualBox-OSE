@@ -1,4 +1,4 @@
-/* $Id: VBoxCertUtil.cpp $ */
+/* $Id: VBoxCertUtil.cpp 42991 2012-08-27 07:41:56Z vboxsync $ */
 /** @file
  * VBoxCertUtil - VBox Certificate Utility - Windows Only.
  */

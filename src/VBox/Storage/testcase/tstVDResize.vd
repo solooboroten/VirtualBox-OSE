@@ -1,4 +1,4 @@
-/* $Id: tstVDResize.vd $ */
+/* $Id: tstVDResize.vd 44943 2013-03-06 23:07:00Z vboxsync $ */
 /**
  * Storage: Resize testing for VDI.
  */

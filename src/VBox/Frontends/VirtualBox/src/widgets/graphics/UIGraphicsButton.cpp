@@ -1,4 +1,4 @@
-/* $Id: UIGraphicsButton.cpp $ */
+/* $Id: UIGraphicsButton.cpp 43910 2012-11-19 10:04:39Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

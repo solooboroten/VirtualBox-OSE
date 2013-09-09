@@ -1,4 +1,4 @@
-/* $Id: SELMRC.cpp $ */
+/* $Id: SELMRC.cpp 45485 2013-04-11 14:46:04Z vboxsync $ */
 /** @file
  * SELM - The Selector Manager, Guest Context.
  */

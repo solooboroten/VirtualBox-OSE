@@ -1,4 +1,4 @@
-/* $Id: pdmcardreaderinfs.h $ */
+/* $Id: pdmcardreaderinfs.h 45033 2013-03-13 23:45:23Z vboxsync $ */
 /** @file
  * cardreaderinfs - interface between Usb Card Reader device and its driver.
  */

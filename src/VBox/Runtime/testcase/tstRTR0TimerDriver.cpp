@@ -1,4 +1,4 @@
-/* $Id: tstRTR0TimerDriver.cpp $ */
+/* $Id: tstRTR0TimerDriver.cpp 48165 2013-08-29 17:16:42Z vboxsync $ */
 /** @file
  * IPRT R0 Testcase - Timers, driver program.
  */
@@ -60,14 +60,12 @@ int main(int argc, char **argv)
     /*
      * Standard timers.
      */
-#  ifndef RT_OS_SOLARIS // one-shot timers currently not supported on Solaris
     RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_BASIC,       "Basic one shot");
-#  endif
     RTR3TestR0SimpleTest(TSTRTR0TIMER_PERIODIC_BASIC,       "Basic periodic");
     if (RTTestErrorCount(g_hTest) == 0)
     {
 #  if 1
-#   ifndef RT_OS_SOLARIS // one-shot timers currently not supported on Solaris
+#   ifndef RT_OS_SOLARIS        /* Solaris cannot call back into cyclic subsystem from a cyclic callback. */
         RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_RESTART, "Restart one shot from callback");
         RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_DESTROY, "Destroy one shot from callback");
 #   endif
@@ -75,9 +73,7 @@ int main(int argc, char **argv)
         for (uint32_t i = 0; i <= 7; i++)
             RTR3TestR0SimpleTestWithArg(TSTRTR0TIMER_PERIODIC_CHANGE_INTERVAL, i, "Change interval from callback, variation %u", i);
 #  endif
-#   ifndef RT_OS_SOLARIS // one-shot timers currently not supported on Solaris
         RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_SPECIFIC, "One shot cpu specific");
-#   endif
         RTR3TestR0SimpleTest(TSTRTR0TIMER_PERIODIC_SPECIFIC, "Periodic cpu specific");
         RTR3TestR0SimpleTest(TSTRTR0TIMER_PERIODIC_OMNI, "Periodic omni timer");
     }
@@ -87,14 +83,12 @@ int main(int argc, char **argv)
     /*
      * High resolution timers.
      */
-#  ifndef RT_OS_SOLARIS // one-shot timers currently not supported on Solaris
     RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_BASIC_HIRES, "Basic hires one shot");
-#  endif
     RTR3TestR0SimpleTest(TSTRTR0TIMER_PERIODIC_BASIC_HIRES, "Basic hires periodic");
     if (RTTestErrorCount(g_hTest) == 0)
     {
 #  if 1
-#   ifndef RT_OS_SOLARIS // one-shot timers currently not supported on Solaris
+#   ifndef RT_OS_SOLARIS        /* Solaris cannot call back into cyclic subsystem from a cyclic callback. */
         RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_RESTART_HIRES, "Restart hires one shot from callback");
         RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_DESTROY_HIRES, "Destroy hires one shot from callback");
 #   endif
@@ -102,9 +96,7 @@ int main(int argc, char **argv)
         for (uint32_t i = 0; i <= 7; i++)
             RTR3TestR0SimpleTestWithArg(TSTRTR0TIMER_PERIODIC_CHANGE_INTERVAL, i, "Change interval from callback, hires, variation %u", i);
 #  endif
-#   ifndef RT_OS_SOLARIS // one-shot timers currently not supported on Solaris
         RTR3TestR0SimpleTest(TSTRTR0TIMER_ONE_SHOT_SPECIFIC_HIRES, "One shot hires cpu specific");
-#   endif
         RTR3TestR0SimpleTest(TSTRTR0TIMER_PERIODIC_SPECIFIC_HIRES, "Periodic hires cpu specific");
         RTR3TestR0SimpleTest(TSTRTR0TIMER_PERIODIC_OMNI, "Periodic omni hires timer");
     }

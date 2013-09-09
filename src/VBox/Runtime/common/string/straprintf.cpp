@@ -1,4 +1,4 @@
-/* $Id: straprintf.cpp $ */
+/* $Id: straprintf.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * IPRT - Allocating String Formatters.
  */

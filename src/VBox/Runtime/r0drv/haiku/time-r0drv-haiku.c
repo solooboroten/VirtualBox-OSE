@@ -1,4 +1,4 @@
-/* $Id: time-r0drv-haiku.c $ */
+/* $Id: time-r0drv-haiku.c 43403 2012-09-22 11:48:24Z vboxsync $ */
 /** @file
  * IPRT - Time, Ring-0 Driver, Haiku.
  */

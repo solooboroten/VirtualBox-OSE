@@ -1,8 +1,6 @@
-/* $Id: NATNetworkImpl.h $ */
-
+/* $Id: NATNetworkImpl.h 48107 2013-08-27 22:15:13Z vboxsync $ */
 /** @file
- *
- * VirtualBox COM class implementation
+ * INATNetwork implementation header, lives in VBoxSVC.
  */
 
 /*
@@ -128,7 +126,8 @@ public:
     STDMETHOD(Stop)();
 
 private:
-    int RecalculateIpv4AddressAssignments();
+    int recalculateIpv4AddressAssignments();
+    int findFirstAvailableOffset(uint32_t *);
 
     typedef std::map<Utf8Str, settings::NATRule> NATRuleMap;
     typedef NATRuleMap::const_iterator constNATRuleMapIterator;
@@ -143,4 +142,4 @@ private:
 
 };
 
-#endif // ____H_H_NATNETWORKIMPL
+#endif // !____H_H_NATNETWORKIMPL

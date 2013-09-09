@@ -1,4 +1,4 @@
-/* $Id: driver.cpp $ */
+/* $Id: driver.cpp 46001 2013-05-13 07:11:05Z vboxsync $ */
 /** @file
  * VBoxVideo driver, Haiku Guest Additions, implementation.
  */

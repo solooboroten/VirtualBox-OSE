@@ -1,4 +1,4 @@
-/* $Id: rtPathRootSpecLen.cpp $ */
+/* $Id: rtPathRootSpecLen.cpp 45389 2013-04-07 16:11:30Z vboxsync $ */
 /** @file
  * IPRT - rtPathRootSpecLen (internal).
  */

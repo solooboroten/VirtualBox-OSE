@@ -1,4 +1,4 @@
-/* $Id: BusAssignmentManager.cpp $ */
+/* $Id: BusAssignmentManager.cpp 47223 2013-07-17 19:26:28Z vboxsync $ */
 
 /** @file
  *

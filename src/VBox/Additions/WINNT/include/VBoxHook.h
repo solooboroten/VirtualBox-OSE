@@ -1,4 +1,4 @@
-/* $Id: VBoxHook.h $ */
+/* $Id: VBoxHook.h 46978 2013-07-04 10:55:20Z vboxsync $ */
 /** @file
  * VBoxHook -- Global windows hook dll.
  */

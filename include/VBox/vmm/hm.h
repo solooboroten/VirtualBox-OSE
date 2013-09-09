@@ -219,12 +219,31 @@ VMMR3_INT_DECL(bool)            HMR3IsVmxPreemptionTimerUsed(PVM pVM);
 /** @addtogroup grp_hm_r0
  * @{
  */
+/** Disables preemption if required. */
+# define HM_DISABLE_PREEMPT_IF_NEEDED() \
+   RTTHREADPREEMPTSTATE PreemptStateInternal = RTTHREADPREEMPTSTATE_INITIALIZER; \
+   bool fPreemptDisabledInternal = false; \
+   if (RTThreadPreemptIsEnabled(NIL_RTTHREAD)) \
+   { \
+       Assert(VMMR0ThreadCtxHooksAreRegistered(pVCpu)); \
+       RTThreadPreemptDisable(&PreemptStateInternal); \
+       fPreemptDisabledInternal = true; \
+   }
+
+/** Restores preemption if previously disabled by HM_DISABLE_PREEMPT(). */
+# define HM_RESTORE_PREEMPT_IF_NEEDED() \
+   do \
+   { \
+        if (fPreemptDisabledInternal) \
+            RTThreadPreemptRestore(&PreemptStateInternal); \
+   } while (0)
+
 VMMR0_INT_DECL(int)             HMR0SetupVM(PVM pVM);
 VMMR0_INT_DECL(int)             HMR0RunGuestCode(PVM pVM, PVMCPU pVCpu);
 VMMR0_INT_DECL(int)             HMR0Enter(PVM pVM, PVMCPU pVCpu);
 VMMR0_INT_DECL(int)             HMR0Leave(PVM pVM, PVMCPU pVCpu);
-VMMR0_INT_DECL(void)            HMR0EnterEx(PVMCPU pVCpu);
-VMMR0_INT_DECL(int)             HMR0LeaveEx(PVMCPU pVCpu);
+VMMR0_INT_DECL(int)             HMR0EnterCpu(PVMCPU pVCpu);
+VMMR0_INT_DECL(int)             HMR0LeaveCpu(PVMCPU pVCpu);
 VMMR0_INT_DECL(void)            HMR0ThreadCtxCallback(RTTHREADCTXEVENT enmEvent, void *pvUser);
 VMMR0_INT_DECL(bool)            HMR0SuspendPending(void);
 

@@ -1,4 +1,4 @@
-/* $Id: tstRTProcQueryUsername.cpp $ */
+/* $Id: tstRTProcQueryUsername.cpp 42067 2012-07-09 17:49:58Z vboxsync $ */
 /** @file
  * IPRT Testcase - RTProcQueryUsername.
  */

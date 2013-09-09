@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibSeamless.cpp $ */
+/* $Id: VBoxGuestR3LibSeamless.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Seamless mode.
  */

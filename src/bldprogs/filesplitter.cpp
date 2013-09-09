@@ -1,4 +1,4 @@
-/* $Id: filesplitter.cpp $ */
+/* $Id: filesplitter.cpp 42414 2012-07-26 15:06:15Z vboxsync $ */
 /** @file
  * File splitter - Splits a text file according to ###### markers in it.
  */

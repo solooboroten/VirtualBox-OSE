@@ -1,4 +1,4 @@
-/* $Id: VBoxBusMouseMain.cpp $ */
+/* $Id: VBoxBusMouseMain.cpp 44446 2013-01-29 15:07:28Z vboxsync $ */
 /** @file
  * Bus Mouse main module.
  */

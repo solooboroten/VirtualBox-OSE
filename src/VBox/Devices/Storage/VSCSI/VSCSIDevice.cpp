@@ -1,4 +1,4 @@
-/* $Id: VSCSIDevice.cpp $ */
+/* $Id: VSCSIDevice.cpp 46509 2013-06-12 14:41:25Z vboxsync $ */
 /** @file
  * Virtual SCSI driver: Device handling
  */

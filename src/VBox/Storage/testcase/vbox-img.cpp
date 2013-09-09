@@ -1,4 +1,4 @@
-/* $Id: vbox-img.cpp $ */
+/* $Id: vbox-img.cpp 46721 2013-06-21 10:54:28Z vboxsync $ */
 /** @file
  * Standalone image manipulation tool
  */

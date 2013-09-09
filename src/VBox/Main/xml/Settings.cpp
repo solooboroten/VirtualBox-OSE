@@ -1,4 +1,4 @@
-/* $Id: Settings.cpp $ */
+/* $Id: Settings.cpp 48093 2013-08-27 16:39:15Z vboxsync $ */
 /** @file
  * Settings File Manipulation API.
  *
@@ -836,6 +836,21 @@ void ConfigFileBase::readNATForwardRuleList(const xml::ElementNode &elmParent, N
     }
 }
 
+void ConfigFileBase::readNATLoopbacks(const xml::ElementNode &elmParent, NATLoopbackOffsetList &llLoopbacks)
+{
+    xml::ElementNodesList plstLoopbacks;
+    elmParent.getChildElements(plstLoopbacks, "Loopback4");
+    for (xml::ElementNodesList::iterator lo = plstLoopbacks.begin();
+         lo != plstLoopbacks.end(); ++lo)
+    {
+        NATHostLoopbackOffset loopback;
+        (*lo)->getAttributeValue("address", loopback.strLoopbackHostAddress);
+        (*lo)->getAttributeValue("offset", (uint32_t&)loopback.u32Offset);
+        llLoopbacks.push_back(loopback);
+    }
+}
+
+
 /**
  * Adds a "version" attribute to the given XML element with the
  * VirtualBox settings version (e.g. "1.10-linux"). Used by
@@ -1191,6 +1206,19 @@ void ConfigFileBase::buildNATForwardRuleList(xml::ElementNode &elmParent, const 
     }
 }
 
+
+void ConfigFileBase::buildNATLoopbacks(xml::ElementNode &elmParent, const NATLoopbackOffsetList &natLoopbackOffsetList)
+{
+    for (NATLoopbackOffsetList::const_iterator lo = natLoopbackOffsetList.begin();
+         lo != natLoopbackOffsetList.end(); ++lo)
+    {
+        xml::ElementNode *pelmLo;
+        pelmLo = elmParent.createChild("Loopback4");
+        pelmLo->setAttribute("address", (*lo).strLoopbackHostAddress);
+        pelmLo->setAttribute("offset", (*lo).u32Offset);
+    }
+}
+
 /**
  * Cleans up memory allocated by the internal XML parser. To be called by
  * descendant classes when they're done analyzing the DOM tree to discard it.
@@ -1378,6 +1406,11 @@ void MainConfigFile::readNATNetworks(const xml::ElementNode &elmNATNetworks)
                  && (pelmNet->getAttributeValue("needDhcp", net.fNeedDhcpServer))
                )
             {
+                pelmNet->getAttributeValue("loopback6", net.u32HostLoopback6Offset);
+                const xml::ElementNode *pelmMappings;
+                if ((pelmMappings = pelmNet->findChildElement("Mappings")))
+                    readNATLoopbacks(*pelmMappings, net.llHostLoopbackOffsetList);
+
                 const xml::ElementNode *pelmPortForwardRules4;
                 if ((pelmPortForwardRules4 = pelmNet->findChildElement("PortForwarding4")))
                     readNATForwardRuleList(*pelmPortForwardRules4,
@@ -1439,6 +1472,7 @@ MainConfigFile::MainConfigFile(const Utf8Str *pstrFilename)
                         pelmGlobalChild->getAttributeValue("LogHistoryCount", systemProperties.ulLogHistoryCount);
                         pelmGlobalChild->getAttributeValue("autostartDatabasePath", systemProperties.strAutostartDatabasePath);
                         pelmGlobalChild->getAttributeValue("defaultFrontend", systemProperties.strDefaultFrontend);
+                        pelmGlobalChild->getAttributeValue("exclusiveHwVirt", systemProperties.fExclusiveHwVirt);
                     }
                     else if (pelmGlobalChild->nameEquals("ExtraData"))
                         readExtraData(*pelmGlobalChild, mapExtraDataItems);
@@ -1505,6 +1539,7 @@ void MainConfigFile::bumpSettingsVersionIfNeeded()
             m->sv = SettingsVersion_v1_14;
     }
 }
+
 
 /**
  * Called from the IVirtualBox interface to write out VirtualBox.xml. This
@@ -1631,6 +1666,13 @@ void MainConfigFile::write(const com::Utf8Str strFilename)
                 xml::ElementNode *pelmPf6 = pelmThis->createChild("PortForwarding6");
                 buildNATForwardRuleList(*pelmPf6, n.llPortForwardRules6);
             }
+
+            if (n.llHostLoopbackOffsetList.size())
+            {
+                xml::ElementNode *pelmMappings = pelmThis->createChild("Mappings");
+                buildNATLoopbacks(*pelmMappings, n.llHostLoopbackOffsetList);
+
+            }
         }
     }
 
@@ -1653,6 +1695,7 @@ void MainConfigFile::write(const com::Utf8Str strFilename)
         pelmSysProps->setAttribute("autostartDatabasePath", systemProperties.strAutostartDatabasePath);
     if (systemProperties.strDefaultFrontend.length())
         pelmSysProps->setAttribute("defaultFrontend", systemProperties.strDefaultFrontend);
+    pelmSysProps->setAttribute("exclusiveHwVirt", systemProperties.fExclusiveHwVirt);
 
     buildUSBDeviceFilters(*pelmGlobal->createChild("USBDeviceFilters"),
                           host.llUSBDeviceFilters,
@@ -1839,19 +1882,9 @@ bool GuestProperty::operator==(const GuestProperty &g) const
            );
 }
 
-// use a define for the platform-dependent default value of
-// hwvirt exclusivity, since we'll need to check that value
-// in bumpSettingsVersionIfNeeded()
-#if defined(RT_OS_DARWIN) || defined(RT_OS_WINDOWS)
-    #define HWVIRTEXCLUSIVEDEFAULT false
-#else
-    #define HWVIRTEXCLUSIVEDEFAULT true
-#endif
-
 Hardware::Hardware()
         : strVersion("1"),
           fHardwareVirt(true),
-          fHardwareVirtExclusive(HWVIRTEXCLUSIVEDEFAULT),
           fNestedPaging(true),
           fVPID(true),
           fUnrestrictedExecution(true),
@@ -1922,7 +1955,6 @@ bool Hardware::operator==(const Hardware& h) const
              || (    (strVersion                == h.strVersion)
                   && (uuid                      == h.uuid)
                   && (fHardwareVirt             == h.fHardwareVirt)
-                  && (fHardwareVirtExclusive    == h.fHardwareVirtExclusive)
                   && (fNestedPaging             == h.fNestedPaging)
                   && (fLargePages               == h.fLargePages)
                   && (fVPID                     == h.fVPID)
@@ -2652,7 +2684,6 @@ void MachineConfigFile::readHardware(const xml::ElementNode &elmHardware,
             if ((pelmCPUChild = pelmHwChild->findChildElement("HardwareVirtEx")))
             {
                 pelmCPUChild->getAttributeValue("enabled", hw.fHardwareVirt);
-                pelmCPUChild->getAttributeValue("exclusive", hw.fHardwareVirtExclusive);        // settings version 1.9
             }
             if ((pelmCPUChild = pelmHwChild->findChildElement("HardwareVirtExNestedPaging")))
                 pelmCPUChild->getAttributeValue("enabled", hw.fNestedPaging);
@@ -3924,8 +3955,6 @@ void MachineConfigFile::buildHardwareXML(xml::ElementNode &elmParent,
 
     xml::ElementNode *pelmHwVirtEx = pelmCPU->createChild("HardwareVirtEx");
     pelmHwVirtEx->setAttribute("enabled", hw.fHardwareVirt);
-    if (m->sv >= SettingsVersion_v1_9)
-        pelmHwVirtEx->setAttribute("exclusive", hw.fHardwareVirtExclusive);
 
     pelmCPU->createChild("HardwareVirtExNestedPaging")->setAttribute("enabled", hw.fNestedPaging);
     pelmCPU->createChild("HardwareVirtExVPID")->setAttribute("enabled", hw.fVPID);
@@ -5675,7 +5704,6 @@ void MachineConfigFile::bumpSettingsVersionIfNeeded()
     // all the following require settings version 1.9
     if (    (m->sv < SettingsVersion_v1_9)
          && (    (hardwareMachine.firmwareType >= FirmwareType_EFI)
-              || (hardwareMachine.fHardwareVirtExclusive != HWVIRTEXCLUSIVEDEFAULT)
               || machineUserData.fTeleporterEnabled
               || machineUserData.uTeleporterPort
               || !machineUserData.strTeleporterAddress.isEmpty()

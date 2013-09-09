@@ -25,7 +25,7 @@
 --  covered by the  GNU Public License.                                     --
 ------------------------------------------------------------------------------
 
---  $Id: zlib.ads $
+--  $Id: zlib.ads 40354 2012-03-05 13:39:00Z vboxsync $
 
 with Ada.Streams;
 

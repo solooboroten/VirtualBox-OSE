@@ -1,4 +1,4 @@
-/* $Id: tstMouseImpl.cpp $ */
+/* $Id: tstMouseImpl.cpp 47841 2013-08-19 13:20:58Z vboxsync $ */
 /** @file
  * Main unit test - Mouse class.
  */

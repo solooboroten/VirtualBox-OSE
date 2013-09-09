@@ -1,4 +1,4 @@
-/* $Id: vreg.cpp $ */
+/* $Id: vreg.cpp 47623 2013-08-08 21:19:43Z vboxsync $ */
 
 /** @file
  * Visible Regions processing API implementation

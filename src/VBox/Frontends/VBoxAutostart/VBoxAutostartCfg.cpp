@@ -1,4 +1,4 @@
-/* $Id: VBoxAutostartCfg.cpp $ */
+/* $Id: VBoxAutostartCfg.cpp 46737 2013-06-23 12:11:45Z vboxsync $ */
 /** @file
  * VBoxAutostart - VirtualBox Autostart service, configuration parser.
  */

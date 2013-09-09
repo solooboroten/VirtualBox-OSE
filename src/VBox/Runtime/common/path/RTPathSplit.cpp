@@ -1,4 +1,4 @@
-/* $Id: RTPathSplit.cpp $ */
+/* $Id: RTPathSplit.cpp 45394 2013-04-07 19:03:00Z vboxsync $ */
 /** @file
  * IPRT - RTPathSplit
  */

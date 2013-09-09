@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogicFullscreen.cpp $ */
+/* $Id: UIMachineLogicFullscreen.cpp 46924 2013-07-03 11:10:18Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

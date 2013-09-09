@@ -1,4 +1,4 @@
-/* $Id: VBoxDispMouse.cpp $ */
+/* $Id: VBoxDispMouse.cpp 38560 2011-08-29 15:14:03Z vboxsync $ */
 
 /** @file
  * VBox XPDM Display driver, mouse pointer related functions

@@ -1,4 +1,4 @@
-/* $Id: GuestSessionImplTasks.cpp $ */
+/* $Id: GuestSessionImplTasks.cpp 47905 2013-08-20 12:47:22Z vboxsync $ */
 /** @file
  * VirtualBox Main - Guest session tasks.
  */

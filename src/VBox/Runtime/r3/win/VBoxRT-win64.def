@@ -1,4 +1,4 @@
-; $Id: VBoxRT-win64.def $
+; $Id: VBoxRT-win64.def 44528 2013-02-04 14:27:54Z vboxsync $
 ;; @file
 ; IPRT - Win64 ASM exports.
 ;

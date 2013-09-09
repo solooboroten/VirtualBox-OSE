@@ -1,4 +1,4 @@
-/* $Id: tstGetPagingMode.cpp $ */
+/* $Id: tstGetPagingMode.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * SUP Testcase - Host paging mode interface (ring 3).
  */

@@ -1,4 +1,4 @@
-/* $Id: tstVMStructSize.cpp $ */
+/* $Id: tstVMStructSize.cpp 48216 2013-08-31 18:47:14Z vboxsync $ */
 /** @file
  * tstVMStructSize - testcase for check structure sizes/alignment
  *                   and to verify that HC and GC uses the same
@@ -214,6 +214,7 @@ int main()
     CHECK_PADDING_VM(64, selm);
     CHECK_PADDING_VM(64, mm);
     CHECK_PADDING_VM(64, pdm);
+    PRINT_OFFSET(VM, pdm.s.CritSect);
     CHECK_PADDING_VM(64, iom);
 #ifdef VBOX_WITH_RAW_MODE
     CHECK_PADDING_VM(64, patm);
@@ -222,6 +223,7 @@ int main()
     CHECK_PADDING_VM(64, em);
     /*CHECK_PADDING_VM(64, iem);*/
     CHECK_PADDING_VM(64, tm);
+    PRINT_OFFSET(VM, tm.s.VirtualSyncLock);
     CHECK_PADDING_VM(64, dbgf);
     CHECK_PADDING_VM(64, ssm);
     CHECK_PADDING_VM(64, rem);
@@ -402,8 +404,8 @@ int main()
 
     /* hm - 32-bit gcc won't align uint64_t naturally, so check. */
     CHECK_MEMBER_ALIGNMENT(HM, uMaxAsid, 8);
-    CHECK_MEMBER_ALIGNMENT(HM, vmx.hostCR4, 8);
-    CHECK_MEMBER_ALIGNMENT(HM, vmx.msr.feature_ctrl, 8);
+    CHECK_MEMBER_ALIGNMENT(HM, vmx.u64HostCr4, 8);
+    CHECK_MEMBER_ALIGNMENT(HM, vmx.Msrs.u64FeatureCtrl, 8);
     CHECK_MEMBER_ALIGNMENT(HM, StatTprPatchSuccess, 8);
     CHECK_MEMBER_ALIGNMENT(HMCPU, StatEntry, 8);
     CHECK_MEMBER_ALIGNMENT(HMCPU, vmx.HCPhysVmcs, sizeof(RTHCPHYS));

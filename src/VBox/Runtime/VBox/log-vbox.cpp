@@ -1,4 +1,4 @@
-/* $Id: log-vbox.cpp $ */
+/* $Id: log-vbox.cpp 48233 2013-09-02 16:10:38Z vboxsync $ */
 /** @file
  * VirtualBox Runtime - Logging configuration.
  */
@@ -161,6 +161,10 @@
 # include <iprt/string.h>
 # include <iprt/mem.h>
 # include <stdio.h>
+#endif
+#if defined(IN_RING0) && defined(RT_OS_DARWIN)
+# include <iprt/asm-amd64-x86.h>
+# include <iprt/thread.h>
 #endif
 
 
@@ -423,6 +427,15 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
 # endif /* IN_GUEST */
 
 #else /* IN_RING0 */
+
+    /* Some platforms has trouble allocating memory with interrupts and/or
+       preemption disabled. Check and fail before we panic. */
+# if defined(RT_OS_DARWIN)
+    if (   !ASMIntAreEnabled()
+        || !RTThreadPreemptIsEnabled(NIL_RTTHREAD))
+        return NULL;
+# endif
+
 # ifndef IN_GUEST
     rc = RTLogCreate(&pLogger, 0, NULL, "VBOX_LOG", RT_ELEMENTS(g_apszGroups), &g_apszGroups[0], RTLOGDEST_FILE, "VBox-ring0.log");
 # else  /* IN_GUEST */
@@ -469,8 +482,8 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
         RTLogFlags(pLogger, "enabled unbuffered");
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif
-# if defined(DEBUG_leo) /* Guest ring-0 as well */
-        RTLogGroupSettings(pLogger, "+drv_mouse.e.l.f+drv_miniport.e.l.f+drv_display.e.l.f");
+# if defined(DEBUG_michael) && defined(IN_GUEST)
+        RTLogGroupSettings(pLogger, "+all.e.l.f");
         RTLogFlags(pLogger, "enabled unbuffered");
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif

@@ -1,4 +1,4 @@
-/* $Id: UIMessageCenter.cpp $ */
+/* $Id: UIMessageCenter.cpp 48316 2013-09-05 16:14:52Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -29,14 +29,15 @@
 #endif /* Q_WS_MAC */
 
 /* GUI includes: */
-#include "UIMessageCenter.h"
 #include "VBoxGlobal.h"
+#include "UIConverter.h"
+#include "UIMessageCenter.h"
 #include "UISelectorWindow.h"
 #include "UIProgressDialog.h"
 #include "UINetworkManager.h"
 #include "UINetworkManagerDialog.h"
-#include "UIConverter.h"
 #include "UIModalWindowManager.h"
+#include "UIMedium.h"
 #ifdef VBOX_OSE
 # include "UIDownloaderUserManual.h"
 #endif /* VBOX_OSE */
@@ -948,23 +949,6 @@ void UIMessageCenter::warnAboutUnaccessibleUSB(const COMBaseWithEI &object, QWid
           tr("Failed to access the USB subsystem."),
           formatErrorInfo(res),
           "warnAboutUnaccessibleUSB");
-}
-
-void UIMessageCenter::warnAboutUnsupportedUSB2(const QString &strExtPackName, QWidget *pParent /*= 0*/)
-{
-    if (warningShown("warnAboutUnsupportedUSB2"))
-        return;
-    setWarningShown("warnAboutUnsupportedUSB2", true);
-
-    alert(pParent, MessageType_Warning,
-          tr("<p>USB 2.0 is currently enabled for this virtual machine. "
-             "However, this requires the <b><nobr>%1</nobr></b> to be installed.</p>"
-             "<p>Please install the Extension Pack from the VirtualBox download site. "
-             "After this you will be able to re-enable USB 2.0. "
-             "It will be disabled in the meantime unless you cancel the current settings changes.</p>")
-             .arg(strExtPackName));
-
-    setWarningShown("warnAboutUnsupportedUSB2", false);
 }
 
 void UIMessageCenter::warnAboutStateChange(QWidget *pParent /*= 0*/) const
@@ -2371,9 +2355,11 @@ QString UIMessageCenter::formatErrorInfo(const CProgress &progress)
     if (!errorInfo.isNull())
         return formatErrorInfo(errorInfo);
     /* Handle NULL error-info otherwise: */
-    return tr("Progress result-code: %1")
-             .arg(QString::number(progress.GetResultCode(), 16 /* hex */))
-             .prepend("<!--EOM-->") /* move to details instead of mesasage body */;
+    return QString("<table bgcolor=#EEEEEE border=0 cellspacing=0 cellpadding=0 width=100%>"
+                   "<tr><td>%1</td><td><tt>%2</tt></td></tr></table>")
+                   .arg(tr("Result&nbsp;Code: ", "error info"))
+                   .arg(formatRC(progress.GetResultCode()))
+                   .prepend("<!--EOM-->") /* move to details */;
 }
 
 /* static */

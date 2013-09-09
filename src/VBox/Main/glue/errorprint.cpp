@@ -1,4 +1,4 @@
-/* $Id: errorprint.cpp $ */
+/* $Id: errorprint.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:

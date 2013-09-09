@@ -229,17 +229,6 @@ static inline int load_segment(uint32_t *e1_ptr, uint32_t *e2_ptr,
     int index;
     target_ulong ptr;
 
-#ifdef VBOX
-    /* Trying to load a selector with CPL=1? */
-    /** @todo this is a hack to correct the incorrect checking order for pending interrupts in the patm iret replacement code (corrected in the ring-1 version) */
-    /** @todo in theory the iret could fault and we'd still need this. */
-    if ((env->hflags & HF_CPL_MASK) == 0 && (selector & 3) == 1 && (env->state & CPU_RAW_RING0) && !EMIsRawRing1Enabled(env->pVM))
-    {
-        Log(("RPL 1 -> sel %04X -> %04X\n", selector, selector & 0xfffc));
-        selector = selector & 0xfffc;
-    }
-#endif /* VBOX */
-        
     if (selector & 0x4)
         dt = &env->ldt;
     else

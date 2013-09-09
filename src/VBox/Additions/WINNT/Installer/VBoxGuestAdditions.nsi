@@ -1,4 +1,4 @@
-; $Id: VBoxGuestAdditions.nsi $
+; $Id: VBoxGuestAdditions.nsi 46866 2013-06-28 14:16:47Z vboxsync $
 ; @file
 ; VBoxGuestAdditions.nsi - Main file for Windows Guest Additions installation.
 ;

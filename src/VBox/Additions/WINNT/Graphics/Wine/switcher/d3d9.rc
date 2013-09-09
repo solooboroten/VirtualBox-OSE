@@ -1,4 +1,4 @@
-/* $Id: d3d9.rc $ */
+/* $Id: d3d9.rc 32394 2010-09-10 12:13:11Z vboxsync $ */
 /** @file
  * VBoxD3D9 - Resource file containing version info and icon.
  */

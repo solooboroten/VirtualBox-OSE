@@ -1,4 +1,4 @@
-/* $Id: accelerant.cpp $ */
+/* $Id: accelerant.cpp 43408 2012-09-22 16:53:18Z vboxsync $ */
 /** @file
  * VBoxVideo Accelerant; Haiku Guest Additions, implementation.
  */

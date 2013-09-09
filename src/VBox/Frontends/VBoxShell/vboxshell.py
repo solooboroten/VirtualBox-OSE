@@ -1,5 +1,24 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# $Id: vboxshell.py 48300 2013-09-05 11:21:57Z vboxsync $
+"""
+VirtualBox Python Shell.
 
+This program is a simple interactive shell for VirtualBox. You can query
+information and issue commands from a simple command line.
+
+It also provides you with examples on how to use VirtualBox's Python API.
+This shell is even somewhat documented, supports TAB-completion and
+history if you have Python readline installed.
+
+Finally, shell allows arbitrary custom extensions, just create
+.VirtualBox/shexts/ and drop your extensions there.
+                                               Enjoy.
+
+P.S. Our apologies for the code quality.
+"""
+
+__copyright__ = \
 """
 Copyright (C) 2009-2013 Oracle Corporation
 
@@ -11,19 +30,8 @@ Foundation, in version 2 as it comes in the "COPYING" file of the
 VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 """
+__version__ = "$Revision: 48300 $"
 
-#################################################################################
-# This program is a simple interactive shell for VirtualBox. You can query      #
-# information and issue commands from a simple command line.                    #
-#                                                                               #
-# It also provides you with examples on how to use VirtualBox's Python API.     #
-# This shell is even somewhat documented, supports TAB-completion and           #
-# history if you have Python readline installed.                                #
-#                                                                               #
-# Finally, shell allows arbitrary custom extensions, just create                #
-# .VirtualBox/shexts/ and drop your extensions there.                           #
-#                                                Enjoy.                         #
-################################################################################
 
 import os, sys
 import traceback
@@ -34,6 +42,11 @@ import platform
 from optparse import OptionParser
 from pprint import pprint
 
+
+
+#
+# Global Variables
+#
 g_fBatchMode = False
 g_sScriptFile = None
 g_sCmd = None
@@ -46,26 +59,28 @@ except ImportError:
 
 g_sPrompt = "vbox> "
 
-g_fHasColors = True
-g_aTermColors = {
-    'red':'\033[31m',
-    'blue':'\033[94m',
-    'green':'\033[92m',
-    'yellow':'\033[93m',
-    'magenta':'\033[35m',
-    'cyan':'\033[36m'
-    }
+g_fHasColors  = True
+g_dTermColors = {
+    'red':      '\033[31m',
+    'blue':     '\033[94m',
+    'green':    '\033[92m',
+    'yellow':   '\033[93m',
+    'magenta':  '\033[35m',
+    'cyan':     '\033[36m'
+}
+
+
+
 def colored(strg, color):
     """
     Translates a string to one including coloring settings, if enabled.
     """
     if not g_fHasColors:
         return strg
-    col = g_aTermColors.get(color, None)
+    col = g_dTermColors.get(color, None)
     if col:
         return col+str(strg)+'\033[0m'
-    else:
-        return strg
+    return strg
 
 if g_fHasReadline:
     class CompleterNG(rlcompleter.Completer):
@@ -189,7 +204,11 @@ def progressBar(ctx, progress, wait=1000):
         return 0
 
 def printErr(_ctx, e):
-    print colored(str(e), 'red')
+    oVBoxMgr = _ctx['global'];
+    if oVBoxMgr.errIsOurXcptKind(e):
+        print colored('%s: %s' % (oVBoxMgr.xcptToString(e), oVBoxMgr.xcptGetMessage(e)), 'red');
+    else:
+        print colored(str(e), 'red')
 
 def reportError(_ctx, progress):
     errorinfo = progress.errorInfo
@@ -237,10 +256,9 @@ def removeVm(ctx, mach):
     getMachines(ctx, True)
 
 def startVm(ctx, mach, vmtype):
-    mgr = ctx['mgr']
     vbox = ctx['vb']
     perf = ctx['perf']
-    session = mgr.getSessionObject(vbox)
+    session = ctx['global'].getSessionObject(vbox)
     progress = mach.launchVMProcess(session, vmtype, "")
     if progressBar(ctx, progress, 100) and int(progress.resultCode) == 0:
         # we ignore exceptions to allow starting VM even if
@@ -669,7 +687,7 @@ def cmdExistingVm(ctx, mach, cmd, args):
     session = None
     try:
         vbox = ctx['vb']
-        session = ctx['mgr'].getSessionObject(vbox)
+        session = ctx['global'].getSessionObject(vbox)
         mach.lockMachine(session, ctx['global'].constants.LockType_Shared)
     except Exception, e:
         printErr(ctx, "Session to '%s' not open: %s" % (mach.name, str(e)))
@@ -826,8 +844,7 @@ class XPathNodeVM(XPathNode):
     #    return subexp=='vm'
     def enum(self):
         return [XPathNodeHolderNIC(self, self.obj),
-                XPathNodeValue(self, self.obj.BIOSSettings,  'bios'),
-                XPathNodeValue(self, self.obj.USBController, 'usb')]
+                XPathNodeValue(self, self.obj.BIOSSettings,  'bios'), ]
 
 class XPathNodeHolderNIC(XPathNodeHolder):
     def __init__(self, parent, mach):
@@ -973,8 +990,6 @@ def infoCmd(ctx, args):
     print "  HPET [HPETEnabled]: %s" % (asState(mach.HPETEnabled))
     if mach.audioAdapter.enabled:
         print "  Audio [via audioAdapter]: chip %s; host driver %s" % (asEnumElem(ctx, "AudioControllerType", mach.audioAdapter.audioController), asEnumElem(ctx, "AudioDriverType",  mach.audioAdapter.audioDriver))
-    if mach.USBController.enabled:
-        print "  USB [via USBController]: high speed %s" % (asState(mach.USBController.enabledEHCI))
     print "  CPU hotplugging [CPUHotPlugEnabled]: %s" % (asState(mach.CPUHotPlugEnabled))
 
     print "  Keyboard [keyboardHIDType]: %s (%s)" % (asEnumElem(ctx, "KeyboardHIDType", mach.keyboardHIDType), mach.keyboardHIDType)
@@ -985,6 +1000,13 @@ def infoCmd(ctx, args):
         print "  VRDE server [VRDEServer.enabled]: %s" % (asState(mach.VRDEServer.enabled))
     except:
         pass
+
+    print
+    print colCat(ctx, "  USB Controllers:")
+    for oUsbCtrl in ctx['global'].getArray(mach, 'USBControllers'):
+        print "    '%s': type %s  standard: %#x" \
+            % (oUsbCtrl.name, asEnumElem(ctx, "USBControllerType", oUsbCtrl.type), oUsbCtrl.USBStandard);
+
     print
     print colCat(ctx, "  I/O subsystem info:")
     print "   Cache enabled [IOCacheEnabled]: %s" % (asState(mach.IOCacheEnabled))
@@ -993,7 +1015,7 @@ def infoCmd(ctx, args):
     controllers = ctx['global'].getArray(mach, 'storageControllers')
     if controllers:
         print
-        print colCat(ctx, "  Controllers:")
+        print colCat(ctx, "  Storage Controllers:")
     for controller in controllers:
         print "    '%s': bus %s type %s" % (controller.name, asEnumElem(ctx, "StorageBus", controller.bus), asEnumElem(ctx, "StorageControllerType", controller.controllerType))
 
@@ -3470,10 +3492,10 @@ def runGuestCommandCb(ctx, uuid, guestLambda, args):
     return 0
 
 def main(argv):
-    style = None
-    params = None
-    autopath = False
-    script_file = None
+
+    #
+    # Parse command line arguments.
+    #
     parse = OptionParser()
     parse.add_option("-v", "--verbose", dest="verbose", action="store_true", default=False, help = "switch on verbose")
     parse.add_option("-a", "--autopath", dest="autopath", action="store_true", default=False, help = "switch on autopath")
@@ -3494,6 +3516,8 @@ def main(argv):
         g_fHasColors = False
         g_fHasReadline = False
         g_sCmd = options.command_line
+
+    params = None
     if options.opt_line is not None:
         params = {}
         strparams = options.opt_line
@@ -3501,48 +3525,71 @@ def main(argv):
         for strparam in strparamlist:
             (key, value) = strparam.split('=')
             params[key] = value
-    else:
-        params = None
 
     if options.autopath:
-        cwd = os.getcwd()
-        vpp = os.environ.get("VBOX_PROGRAM_PATH")
-        if vpp is None and (os.path.isfile(os.path.join(cwd, "VirtualBox")) or os.path.isfile(os.path.join(cwd, "VirtualBox.exe"))) :
-            vpp = cwd
-            print "Autodetected VBOX_PROGRAM_PATH as", vpp
-            os.environ["VBOX_PROGRAM_PATH"] = vpp
-            sys.path.append(os.path.join(vpp, "sdk", "installer"))
-        vsp = os.environ.get("VBOX_SDK_PATH")
-        if vsp is None and os.path.isfile(os.path.join(cwd, "sdk", "bindings", "VirtualBox.xidl")) :
-            vsp = os.path.join(cwd, "sdk")
-        if vsp is None and os.path.isfile(os.path.join(vpp, "sdk", "bindings", "VirtualBox.xidl")) :
-            vsp = os.path.join(vpp, "sdk")
-        if vsp is not None :
-            print "Autodetected VBOX_SDK_PATH as", vsp
-            os.environ["VBOX_SDK_PATH"] = vsp
+        asLocations = [ os.getcwd(), ];
+        try:    sScriptDir = os.path.dirname(os.path.abspath(__file__));
+        except: pass; # In case __file__ isn't there.
+        else:
+            if platform.system() in [ 'SunOS', ]:
+                asLocations.append(os.path.join(sScriptDir, 'amd64'));
+            asLocations.append(sScriptDir);
 
+
+        sPath = os.environ.get("VBOX_PROGRAM_PATH")
+        if sPath is None:
+            for sCurLoc in asLocations:
+                if   os.path.isfile(os.path.join(sCurLoc, "VirtualBox")) \
+                  or os.path.isfile(os.path.join(sCurLoc, "VirtualBox.exe")):
+                    print "Autodetected VBOX_PROGRAM_PATH as", sCurLoc
+                    os.environ["VBOX_PROGRAM_PATH"] = sCurLoc
+                    sPath = sCurLoc
+                    break;
+        if sPath:
+            sys.path.append(os.path.join(sPath, "sdk", "installer"))
+
+        sPath = os.environ.get("VBOX_SDK_PATH")
+        if sPath is None:
+            for sCurLoc in asLocations:
+                if os.path.isfile(os.path.join(sCurLoc, "sdk", "bindings", "VirtualBox.xidl")):
+                    print "Autodetected VBOX_SDK_PATH as", sCurLoc
+                    os.environ["VBOX_SDK_PATH"] = sCurLoc
+                    sPath = sCurLoc;
+                    break;
+        if sPath:
+            sTmp = os.path.join(sCurLoc, 'sdk', 'bindings', 'xpcom', 'python');
+            if os.path.isdir(sTmp):
+                sys.path.append(sTmp);
+            del sTmp;
+        del sPath, asLocations;
+
+
+    #
+    # Set up the shell interpreter context and
+    #
     from vboxapi import VirtualBoxManager
-    virtualBoxManager = VirtualBoxManager(style, params)
-    ctx = {'global':virtualBoxManager,
-           'mgr':virtualBoxManager.mgr,
-           'vb':virtualBoxManager.vbox,
-           'const':virtualBoxManager.constants,
-           'remote':virtualBoxManager.remote,
-           'type':virtualBoxManager.type,
-           'run': lambda cmd, args: runCommandCb(ctx, cmd, args),
-           'guestlambda': lambda uuid, guestLambda, args: runGuestCommandCb(ctx, uuid, guestLambda, args),
-           'machById': lambda uuid: machById(ctx, uuid),
-           'argsToMach': lambda args: argsToMach(ctx, args),
-           'progressBar': lambda p: progressBar(ctx, p),
-           'typeInGuest': typeInGuest,
-           '_machlist': None,
-           'prompt': g_sPrompt,
-           'scriptLine': 0,
-           'interrupt': False
-           }
+    oVBoxMgr = VirtualBoxManager(style, params)
+    ctx = {
+        'global':       oVBoxMgr,
+        'vb':           oVBoxMgr.vbox,
+        'const':        oVBoxMgr.constants,
+        'remote':       oVBoxMgr.remote,
+        'type':         oVBoxMgr.type,
+        'run':          lambda cmd, args: runCommandCb(ctx, cmd, args),
+        'guestlambda':  lambda uuid, guestLambda, args: runGuestCommandCb(ctx, uuid, guestLambda, args),
+        'machById':     lambda uuid: machById(ctx, uuid),
+        'argsToMach':   lambda args: argsToMach(ctx, args),
+        'progressBar':  lambda p: progressBar(ctx, p),
+        'typeInGuest':  typeInGuest,
+        '_machlist':    None,
+        'prompt':       g_sPrompt,
+        'scriptLine':   0,
+        'interrupt':    False,
+    }
     interpret(ctx)
-    virtualBoxManager.deinit()
-    del virtualBoxManager
+    oVBoxMgr.deinit()
+    del oVBoxMgr
 
 if __name__ == '__main__':
     main(sys.argv)
+

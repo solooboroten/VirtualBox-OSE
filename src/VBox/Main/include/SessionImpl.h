@@ -1,5 +1,4 @@
 /** @file
- *
  * VBox Client Session COM Class definition
  */
 
@@ -103,9 +102,6 @@ public:
                                         ComSafeArrayOut(BSTR, aFlags));
     STDMETHOD(OnlineMergeMedium)(IMediumAttachment *aMediumAttachment,
                                  ULONG aSourceIdx, ULONG aTargetIdx,
-                                 IMedium *aSource, IMedium *aTarget,
-                                 BOOL aMergeForward, IMedium *aParentForTarget,
-                                 ComSafeArrayIn(IMedium *, aChildrenToReparent),
                                  IProgress *aProgress);
     STDMETHOD(EnableVMMStatistics)(BOOL aEnable);
     STDMETHOD(PauseWithReason)(Reason_T aReason);
@@ -121,7 +117,9 @@ private:
 
     ComPtr<IInternalMachineControl> mControl;
 
+#ifndef VBOX_COM_INPROC_API_CLIENT
     ComObjPtr<Console> mConsole;
+#endif
 
     ComPtr<IMachine> mRemoteMachine;
     ComPtr<IConsole> mRemoteConsole;
@@ -133,5 +131,5 @@ private:
     ClientTokenHolder *mClientTokenHolder;
 };
 
-#endif // ____H_SESSIONIMPL
+#endif // !____H_SESSIONIMPL
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 42261 2012-07-20 13:27:47Z vboxsync $
 ## @file
 # Sub-Makefile for the Guest Control Host Service.
 #

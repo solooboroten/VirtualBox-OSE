@@ -1,4 +1,4 @@
-/* $Id: SUPSvcGlobal.cpp $ */
+/* $Id: SUPSvcGlobal.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * VirtualBox Support Service - The Global Service.
  */

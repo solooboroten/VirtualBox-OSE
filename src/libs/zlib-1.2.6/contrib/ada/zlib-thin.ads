@@ -6,7 +6,7 @@
 --  Open source license information is in the zlib.ads file.  --
 ----------------------------------------------------------------
 
---  $Id: zlib-thin.ads $
+--  $Id: zlib-thin.ads 40354 2012-03-05 13:39:00Z vboxsync $
 
 with Interfaces.C.Strings;
 

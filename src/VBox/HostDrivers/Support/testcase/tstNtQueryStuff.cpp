@@ -1,4 +1,4 @@
-/* $Id: tstNtQueryStuff.cpp $ */
+/* $Id: tstNtQueryStuff.cpp 45161 2013-03-25 11:08:50Z vboxsync $ */
 /** @file
  * SUP Testcase - Exploring some NT Query APIs.
  */

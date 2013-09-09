@@ -1,4 +1,4 @@
-/* $Id: gzipvfs.cpp $ */
+/* $Id: gzipvfs.cpp 47359 2013-07-24 00:45:47Z vboxsync $ */
 /** @file
  * IPRT - GZIP Compressor and Decompressor I/O Stream.
  */

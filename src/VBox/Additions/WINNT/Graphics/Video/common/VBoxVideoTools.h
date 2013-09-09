@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoTools.h $ */
+/* $Id: VBoxVideoTools.h 45132 2013-03-21 16:11:28Z vboxsync $ */
 
 /** @file
  * VBox Video tooling

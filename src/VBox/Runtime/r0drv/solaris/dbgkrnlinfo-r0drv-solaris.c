@@ -1,4 +1,4 @@
-/* $Id: dbgkrnlinfo-r0drv-solaris.c $ */
+/* $Id: dbgkrnlinfo-r0drv-solaris.c 41946 2012-06-28 04:49:50Z vboxsync $ */
 /** @file
  * IPRT - Kernel debug information, Ring-0 Driver, Solaris Code.
  */

@@ -1,4 +1,4 @@
-/* $Id: thread2-r0drv-haiku.c $ */
+/* $Id: thread2-r0drv-haiku.c 43403 2012-09-22 11:48:24Z vboxsync $ */
 /** @file
  * IPRT - Threads (Part 2), Ring-0 Driver, Haiku.
  */

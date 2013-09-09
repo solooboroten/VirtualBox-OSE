@@ -1,4 +1,4 @@
-/* $Id: VMMDevInterface.cpp $ */
+/* $Id: VMMDevInterface.cpp 47308 2013-07-22 14:40:12Z vboxsync $ */
 /** @file
  * VirtualBox Driver Interface to VMM device.
  */

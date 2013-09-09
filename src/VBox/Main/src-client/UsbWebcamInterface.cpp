@@ -1,4 +1,4 @@
-/* $Id: UsbWebcamInterface.cpp $ */
+/* $Id: UsbWebcamInterface.cpp 47416 2013-07-26 06:55:18Z vboxsync $ */
 /** @file
  * UsbWebcamInterface - Driver Interface for USB Webcam emulation.
  */

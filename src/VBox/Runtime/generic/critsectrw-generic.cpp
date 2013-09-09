@@ -1,4 +1,4 @@
-/* $Id: critsectrw-generic.cpp $ */
+/* $Id: critsectrw-generic.cpp 46495 2013-06-11 15:07:08Z vboxsync $ */
 /** @file
  * IPRT - Read/Write Critical Section, Generic.
  */

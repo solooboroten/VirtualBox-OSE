@@ -1,4 +1,4 @@
-/* $Id: RTLogWriteDebugger-r0drv-haiku.c $ */
+/* $Id: RTLogWriteDebugger-r0drv-haiku.c 43366 2012-09-20 12:31:54Z vboxsync $ */
 /** @file
  * IPRT - Log To Debugger, Ring-0 Driver, Haiku.
  */

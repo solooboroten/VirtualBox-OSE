@@ -32,8 +32,8 @@
 
 /* GUI includes: */
 #include "UIDefs.h"
+#include "UIMediumDefs.h"
 #include "VBoxGlobalSettings.h"
-#include "UIMedium.h"
 
 /* COM includes: */
 #include "VBox/com/Guid.h"
@@ -51,6 +51,8 @@ class CMachine;
 class CMedium;
 class CUSBDevice;
 class QSpinBox;
+class UIMediumEnumerator;
+class UIMedium;
 
 // VBoxGlobal class
 ////////////////////////////////////////////////////////////////////////////////
@@ -123,7 +125,6 @@ public:
 
     const QRect availableGeometry(int iScreen = 0) const;
 
-    bool agressiveCaching() const { return mAgressiveCaching; }
     bool shouldRestoreCurrentSnapshot() const { return mRestoreCurrentSnapshot; }
     bool isPatmDisabled() const { return mDisablePatm; }
     bool isCsamDisabled() const { return mDisableCsam; }
@@ -225,7 +226,7 @@ public:
 
     /* details generators */
 
-    QString details (const CMedium &aHD, bool aPredictDiff, bool fUseHtml = true);
+    QString details(const CMedium &medium, bool fPredictDiff, bool fUseHtml = true);
 
     QString details (const CUSBDevice &aDevice) const;
     QString toolTip (const CUSBDevice &aDevice) const;
@@ -240,46 +241,22 @@ public:
     /** Shortcut to openSession (aId, true). */
     CSession openExistingSession(const QString &aId) { return openSession(aId, KLockType_Shared); }
 
-    void startEnumeratingMedia(bool fReallyNecessary);
-
     void reloadProxySettings();
 
-    /**
-     * Returns a list of all currently registered media. This list is used to
-     * globally track the accessibility state of all media on a dedicated thread.
-     *
-     * Note that the media list is initially empty (i.e. before the enumeration
-     * process is started for the first time using #startEnumeratingMedia()).
-     * See #startEnumeratingMedia() for more information about how meida are
-     * sorted in the returned list.
-     */
-    const VBoxMediaList &currentMediaList() const { return mMediaList; }
-
-    /** Returns true if the media enumeration is in progress. */
-    bool isMediaEnumerationStarted() const { return mMediaEnumThread != NULL; }
-
-    void addMedium (const UIMedium &);
-    void updateMedium (const UIMedium &);
-    void removeMedium (UIMediumType, const QString &);
-
-    bool findMedium (const CMedium &, UIMedium &) const;
-    UIMedium findMedium (const QString &aMediumId) const;
-
-    /** Compact version of #findMediumTo(). Asserts if not found. */
-    UIMedium getMedium (const CMedium &aObj) const
-    {
-        UIMedium medium;
-        if (!findMedium (aObj, medium))
-            AssertFailed();
-        return medium;
-    }
-
+    /* API: Medium-processing stuff: */
+    void createMedium(const UIMedium &medium);
+    void updateMedium(const UIMedium &medium);
+    void deleteMedium(const QString &strMediumID);
     QString openMediumWithFileOpenDialog(UIMediumType mediumType, QWidget *pParent = 0,
                                          const QString &strDefaultFolder = QString(), bool fUseLastFolder = true);
     QString openMedium(UIMediumType mediumType, QString strMediumLocation, QWidget *pParent = 0);
 
-    /* Returns the number of current running Fe/Qt4 main windows. */
-    int mainWindowCount();
+    /* API: Medium-enumeration stuff: */
+    void startMediumEnumeration(bool fForceStart = true);
+    bool agressiveCaching() const { return mAgressiveCaching; }
+    bool isMediumEnumerationInProgress() const;
+    UIMedium medium(const QString &strMediumID) const;
+    QList<QString> mediumIDs() const;
 
     /* various helpers */
 
@@ -394,33 +371,15 @@ public:
 
 signals:
 
-    /**
-     * Emitted at the beginning of the enumeration process started by
-     * #startEnumeratingMedia().
-     */
-    void mediumEnumStarted();
+    /* Notifiers: Medium-processing stuff: */
+    void sigMediumCreated(const QString &strMediumID);
+    void sigMediumUpdated(const QString &strMediumID);
+    void sigMediumDeleted(const QString &strMediumID);
 
-    /**
-     * Emitted when a new medium item from the list has updated its
-     * accessibility state.
-     */
-    void mediumEnumerated (const UIMedium &aMedum);
-
-    /**
-     * Emitted at the end of the enumeration process started by
-     * #startEnumeratingMedia(). The @a aList argument is passed for
-     * convenience, it is exactly the same as returned by #currentMediaList().
-     */
-    void mediumEnumFinished (const VBoxMediaList &aList);
-
-    /** Emitted when a new media is added using #addMedia(). */
-    void mediumAdded (const UIMedium &);
-
-    /** Emitted when the media is updated using #updateMedia(). */
-    void mediumUpdated (const UIMedium &);
-
-    /** Emitted when the media is removed using #removeMedia(). */
-    void mediumRemoved (UIMediumType, const QString &);
+    /* Notifiers: Medium-enumeration stuff: */
+    void sigMediumEnumerationStarted();
+    void sigMediumEnumerated(const QString &strMediumID);
+    void sigMediumEnumerationFinished();
 
 public slots:
 
@@ -437,7 +396,6 @@ protected slots:
 
 protected:
 
-    bool event (QEvent *e);
     bool eventFilter (QObject *, QEvent *);
 
 private:
@@ -468,8 +426,8 @@ private:
     /** Whether to show error message boxes for VM start errors. */
     bool mShowStartVMErrors;
 
-    QThread *mMediaEnumThread;
-    VBoxMediaList mMediaList;
+    /* Variable: Medium-enumeration stuff: */
+    UIMediumEnumerator *m_pMediumEnumerator;
 
     RenderMode vm_render_mode;
     const char * vm_render_mode_str;

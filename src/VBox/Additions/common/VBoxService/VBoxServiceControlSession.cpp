@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControlSession.cpp $ */
+/* $Id: VBoxServiceControlSession.cpp 47849 2013-08-19 16:41:09Z vboxsync $ */
 /** @file
  * VBoxServiceControlSession - Guest session handling. Also handles
  *                             the forked session processes.

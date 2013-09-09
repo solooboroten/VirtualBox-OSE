@@ -1,4 +1,4 @@
-; $Id: VMMRC0.asm $
+; $Id: VMMRC0.asm 44528 2013-02-04 14:27:54Z vboxsync $
 ;; @file
 ; VMMGC0 - The first object module in the link.
 ;

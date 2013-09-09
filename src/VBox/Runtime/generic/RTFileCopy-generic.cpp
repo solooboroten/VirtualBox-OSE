@@ -1,4 +1,4 @@
-/* $Id: RTFileCopy-generic.cpp $ */
+/* $Id: RTFileCopy-generic.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * IPRT - RTFileCopy, generic implementation.
  */

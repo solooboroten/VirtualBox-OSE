@@ -1,4 +1,4 @@
-/* $Id: KeyboardImpl.h $ */
+/* $Id: KeyboardImpl.h 45029 2013-03-13 20:57:11Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */

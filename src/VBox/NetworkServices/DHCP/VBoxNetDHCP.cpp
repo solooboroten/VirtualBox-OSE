@@ -1,4 +1,4 @@
-/* $Id: VBoxNetDHCP.cpp $ */
+/* $Id: VBoxNetDHCP.cpp 48377 2013-09-09 07:19:32Z vboxsync $ */
 /** @file
  * VBoxNetDHCP - DHCP Service for connecting to IntNet.
  */
@@ -382,6 +382,91 @@ int VBoxNetDhcp::init()
         RTNetStrToIPv4Addr(com::Utf8Str(strGateway).c_str(), &gateway);
 
         confManager->addToAddressList(RTNET_DHCP_OPT_ROUTERS, gateway);
+
+        unsigned int i;
+        int count_strs;
+        com::SafeArray<BSTR> strs;
+        std::map<RTNETADDRIPV4, uint32_t> MapIp4Addr2Off;
+
+        hrc = m_NATNetwork->COMGETTER(LocalMappings)(ComSafeArrayAsOutParam(strs));
+        if (   SUCCEEDED(hrc) 
+            && (count_strs = strs.size()))
+        {
+            for (i = 0; i < count_strs; ++i)
+            {
+                char aszAddr[17];
+                RTNETADDRIPV4 ip4addr;
+                char *pszTerm;
+                uint32_t u32Off;
+                const char *pszLo2Off = com::Utf8Str(strs[i]).c_str();
+        
+                RT_ZERO(aszAddr);
+                
+                pszTerm = RTStrStr(pszLo2Off, ";");
+
+                if (   pszTerm
+                       && (pszTerm - pszLo2Off) >= 17)
+                {
+                
+                    memcpy(aszAddr, pszLo2Off, (pszTerm - pszLo2Off));
+                    int rc = RTNetStrToIPv4Addr(aszAddr, &ip4addr);
+                    if (RT_SUCCESS(rc))
+                    {
+
+                        u32Off = RTStrToUInt32(pszTerm + 1);
+                        if (u32Off != 0)
+                            MapIp4Addr2Off.insert(
+                              std::map<RTNETADDRIPV4,uint32_t>::value_type(ip4addr, u32Off));
+                    }
+                }
+            }
+        }
+
+        strs.setNull();
+        ComPtr<IHost> host;
+        if (SUCCEEDED(virtualbox->COMGETTER(Host)(host.asOutParam())))
+        {
+            if (SUCCEEDED(host->COMGETTER(NameServers)(ComSafeArrayAsOutParam(strs))))
+            {
+                RTNETADDRIPV4 addr;
+                confManager->flushAddressList(RTNET_DHCP_OPT_DNS);
+                int rc;
+                for (i = 0; i < strs.size(); ++i)
+                {
+                    rc = RTNetStrToIPv4Addr(com::Utf8Str(strs[i]).c_str(), &addr);
+                    if (RT_SUCCESS(rc))
+                    {
+                        if (addr.au8[0] == 127)
+                        {
+                            if (MapIp4Addr2Off[addr] != 0)
+                            {
+                                addr.u = RT_H2N_U32(RT_N2H_U32(m_Ipv4Address.u & m_Ipv4Netmask.u) 
+                                                    + MapIp4Addr2Off[addr]);
+                            }
+                            else
+                                continue;
+                        }
+                        
+                        confManager->addToAddressList(RTNET_DHCP_OPT_DNS, addr);
+                    }
+                }
+            }
+
+            strs.setNull();
+#if 0
+            if (SUCCEEDED(host->COMGETTER(SearchStrings)(ComSafeArrayAsOutParam(strs))))
+            {
+                /* XXX: todo. */;
+            }
+            strs.setNull();
+
+            Bstr domain;
+            if (SUCCEEDED(host->COMGETTER(DomainName)(domain.asOutPutParam())))
+            {
+                /* XXX: todo. */
+            }
+#endif
+        }
     }
 
     NetworkManager *netManager = NetworkManager::getNetworkManager();

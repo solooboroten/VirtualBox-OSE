@@ -673,7 +673,7 @@ protected:
     bool changed() const { return m_cache.wasChanged(); }
 
     /* API: Validation stuff: */
-    bool validate(QString &strWarning, QString &strTitle);
+    bool validate(QList<UIValidationMessage> &messages);
 
     void retranslateUi();
 
@@ -681,8 +681,9 @@ protected:
 
 private slots:
 
-    void mediumUpdated (const UIMedium &aMedium);
-    void mediumRemoved (UIMediumType aType, const QString &aMediumId);
+    /* Handlers: Medium-processing stuff: */
+    void sltHandleMediumUpdated(const QString &strMediumID);
+    void sltHandleMediumDeleted(const QString &strMediumID);
 
     void addController();
     void addIDEController();

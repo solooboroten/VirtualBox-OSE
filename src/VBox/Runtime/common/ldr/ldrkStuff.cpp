@@ -1,4 +1,4 @@
-/* $Id: ldrkStuff.cpp $ */
+/* $Id: ldrkStuff.cpp 47339 2013-07-23 11:57:38Z vboxsync $ */
 /** @file
  * IPRT - Binary Image Loader, kLdr Interface.
  */

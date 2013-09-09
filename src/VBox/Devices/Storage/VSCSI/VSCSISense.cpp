@@ -1,4 +1,4 @@
-/* $Id: VSCSISense.cpp $ */
+/* $Id: VSCSISense.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * Virtual SCSI driver: Sense handling
  */

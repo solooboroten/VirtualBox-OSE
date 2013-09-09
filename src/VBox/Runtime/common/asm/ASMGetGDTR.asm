@@ -1,4 +1,4 @@
-; $Id: ASMGetGDTR.asm $
+; $Id: ASMGetGDTR.asm 46941 2013-07-03 14:48:42Z vboxsync $
 ;; @file
 ; IPRT - ASMGetGDTR().
 ;

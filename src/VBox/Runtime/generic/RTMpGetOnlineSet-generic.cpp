@@ -1,4 +1,4 @@
-/* $Id: RTMpGetOnlineSet-generic.cpp $ */
+/* $Id: RTMpGetOnlineSet-generic.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpGetOnlineSet.
  */

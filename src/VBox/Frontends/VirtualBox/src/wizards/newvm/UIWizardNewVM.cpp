@@ -1,4 +1,4 @@
-/* $Id: UIWizardNewVM.cpp $ */
+/* $Id: UIWizardNewVM.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -18,13 +18,14 @@
  */
 
 /* GUI includes: */
+#include "VBoxGlobal.h"
 #include "UIWizardNewVM.h"
 #include "UIWizardNewVMPageBasic1.h"
 #include "UIWizardNewVMPageBasic2.h"
 #include "UIWizardNewVMPageBasic3.h"
 #include "UIWizardNewVMPageExpert.h"
-#include "VBoxGlobal.h"
 #include "UIMessageCenter.h"
+#include "UIMedium.h"
 
 /* COM includes: */
 #include "CAudioAdapter.h"
@@ -209,7 +210,7 @@ bool UIWizardNewVM::createVM()
             /* Boot virtual hard drive: */
             if (!strId.isNull())
             {
-                UIMedium vmedium = vboxGlobal().findMedium(strId);
+                UIMedium vmedium = vboxGlobal().medium(strId);
                 CMedium medium = vmedium.medium();              // @todo r=dj can this be cached somewhere?
                 machine.AttachDevice(strHDName, 0, 0, KDeviceType_HardDisk, medium);
                 if (!machine.isOk())

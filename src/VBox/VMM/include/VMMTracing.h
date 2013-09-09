@@ -1,4 +1,4 @@
-/* $Id: VMMTracing.h $ */
+/* $Id: VMMTracing.h 40517 2012-03-17 19:30:54Z vboxsync $ */
 /** @file
  * VBoxVMM - Trace point macros for the VMM.
  */

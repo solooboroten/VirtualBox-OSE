@@ -1,4 +1,4 @@
-/* $Id: VBoxMPIf.h $ */
+/* $Id: VBoxMPIf.h 48070 2013-08-26 18:13:22Z vboxsync $ */
 
 /** @file
  * VBox WDDM Miniport driver
@@ -251,7 +251,11 @@ typedef enum
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_UHGSMI_3D,
     VBOXWDDM_CONTEXT_TYPE_CUSTOM_UHGSMI_GL,
     /* context created by the kernel->user communication mechanism for visible rects reporting, etc.  */
-    VBOXWDDM_CONTEXT_TYPE_CUSTOM_SESSION
+    VBOXWDDM_CONTEXT_TYPE_CUSTOM_SESSION,
+    /* context created by VBoxTray to handle resize operations */
+    VBOXWDDM_CONTEXT_TYPE_CUSTOM_DISPIF_RESIZE,
+    /* context created by VBoxTray to handle seamless operations */
+    VBOXWDDM_CONTEXT_TYPE_CUSTOM_DISPIF_SEAMLESS
 } VBOXWDDM_CONTEXT_TYPE;
 
 typedef struct VBOXWDDM_CREATECONTEXT_INFO

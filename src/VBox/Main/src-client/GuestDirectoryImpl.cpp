@@ -1,5 +1,5 @@
 
-/* $Id: GuestDirectoryImpl.cpp $ */
+/* $Id: GuestDirectoryImpl.cpp 47627 2013-08-09 08:31:24Z vboxsync $ */
 /** @file
  * VirtualBox Main - Guest directory handling.
  */

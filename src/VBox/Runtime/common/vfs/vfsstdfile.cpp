@@ -1,4 +1,4 @@
-/* $Id: vfsstdfile.cpp $ */
+/* $Id: vfsstdfile.cpp 47356 2013-07-23 17:45:07Z vboxsync $ */
 /** @file
  * IPRT - Virtual File System, Standard File Implementation.
  */

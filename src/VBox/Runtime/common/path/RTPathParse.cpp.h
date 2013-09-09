@@ -1,4 +1,4 @@
-/* $Id: RTPathParse.cpp.h $ */
+/* $Id: RTPathParse.cpp.h 46179 2013-05-20 21:38:38Z vboxsync $ */
 /** @file
  * IPRT - RTPathParse - Code Template.
  *

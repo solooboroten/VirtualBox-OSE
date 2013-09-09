@@ -1,4 +1,4 @@
-/* $Id: logging.cpp $ */
+/* $Id: logging.cpp 44864 2013-02-28 12:18:42Z vboxsync $ */
 /** @file
  * VBoxMMR - Multimedia Redirection
  */

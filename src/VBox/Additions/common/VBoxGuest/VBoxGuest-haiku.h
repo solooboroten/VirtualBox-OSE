@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-haiku.h $ */
+/* $Id: VBoxGuest-haiku.h 43411 2012-09-22 18:42:16Z vboxsync $ */
 /** @file
  * VBoxGuest kernel module, Haiku Guest Additions, header.
  */

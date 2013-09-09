@@ -1,4 +1,4 @@
-/* $Id: initterm.cpp $ */
+/* $Id: initterm.cpp 48282 2013-09-04 23:59:15Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer - Initialization and Termination.
@@ -23,16 +23,6 @@
 #else /* !defined (VBOX_WITH_XPCOM) */
 
 # include <stdlib.h>
-
-  /* XPCOM_GLUE is defined when the client uses the standalone glue
-   * (i.e. dynamically picks up the existing XPCOM shared library installation).
-   * This is not the case for VirtualBox XPCOM clients (they are always
-   * distributed with the self-built XPCOM library, and therefore have a binary
-   * dependency on it) but left here for clarity.
-   */
-# if defined(XPCOM_GLUE)
-#  include <nsXPCOMGlue.h>
-# endif
 
 # include <nsIComponentRegistrar.h>
 # include <nsIServiceManager.h>
@@ -347,17 +337,20 @@ HRESULT Initialize(bool fGui)
     AssertRCReturn(vrc, NS_ERROR_FAILURE);
     vrc = RTStrCopy(szXptiDat, sizeof(szXptiDat), szCompReg);
     AssertRCReturn(vrc, NS_ERROR_FAILURE);
+#ifdef VBOX_IN_32_ON_64_MAIN_API
+    vrc = RTPathAppend(szCompReg, sizeof(szCompReg), "compreg-x86.dat");
+    AssertRCReturn(vrc, NS_ERROR_FAILURE);
+    vrc = RTPathAppend(szXptiDat, sizeof(szXptiDat), "xpti-x86.dat");
+    AssertRCReturn(vrc, NS_ERROR_FAILURE);
+#else
     vrc = RTPathAppend(szCompReg, sizeof(szCompReg), "compreg.dat");
     AssertRCReturn(vrc, NS_ERROR_FAILURE);
     vrc = RTPathAppend(szXptiDat, sizeof(szXptiDat), "xpti.dat");
     AssertRCReturn(vrc, NS_ERROR_FAILURE);
+#endif
 
     LogFlowFunc(("component registry  : \"%s\"\n", szCompReg));
     LogFlowFunc(("XPTI data file      : \"%s\"\n", szXptiDat));
-
-#if defined (XPCOM_GLUE)
-    XPCOMGlueStartup(nsnull);
-#endif
 
     static const char *kAppPathsToProbe[] =
     {
@@ -583,10 +576,6 @@ HRESULT Shutdown()
                 bool wasInited = ASMAtomicXchgBool(&gIsXPCOMInitialized, false);
                 Assert(wasInited == true);
                 NOREF(wasInited);
-
-# if defined (XPCOM_GLUE)
-                XPCOMGlueShutdown();
-# endif
             }
         }
     }

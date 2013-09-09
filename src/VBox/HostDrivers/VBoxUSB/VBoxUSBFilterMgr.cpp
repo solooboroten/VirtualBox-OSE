@@ -1,4 +1,4 @@
-/* $Id: VBoxUSBFilterMgr.cpp $ */
+/* $Id: VBoxUSBFilterMgr.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * VirtualBox Ring-0 USB Filter Manager.
  */

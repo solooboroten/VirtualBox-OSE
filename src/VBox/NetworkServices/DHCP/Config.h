@@ -1,4 +1,4 @@
-/* $Id: Config.h $ */
+/* $Id: Config.h 47501 2013-08-01 06:24:41Z vboxsync $ */
 /**
  * This file contains declarations of DHCP config.
  */

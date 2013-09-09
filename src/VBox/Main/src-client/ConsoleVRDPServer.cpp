@@ -1,4 +1,4 @@
-/* $Id: ConsoleVRDPServer.cpp $ */
+/* $Id: ConsoleVRDPServer.cpp 47571 2013-08-07 09:49:33Z vboxsync $ */
 /** @file
  * VBox Console VRDP Helper class
  */

@@ -1,4 +1,4 @@
-/* $Id: UIApplianceEditorWidget.cpp $ */
+/* $Id: UIApplianceEditorWidget.cpp 47833 2013-08-19 08:08:42Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-/* $Id: VBoxVNCMain.cpp $ */
+/* $Id: VBoxVNCMain.cpp 43110 2012-08-30 14:32:29Z vboxsync $ */
 /** @file
  * VNC main module.
  */

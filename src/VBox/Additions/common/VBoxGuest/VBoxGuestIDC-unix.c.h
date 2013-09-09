@@ -1,4 +1,4 @@
-/* $Rev: 84795 $ */
+/* $Rev: 45372 $ */
 /** @file
  * VBoxGuest - Inter Driver Communication, unix implementation.
  *

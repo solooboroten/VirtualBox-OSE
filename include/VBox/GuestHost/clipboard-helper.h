@@ -1,4 +1,4 @@
-/* $Id: clipboard-helper.h $ */
+/* $Id: clipboard-helper.h 41210 2012-05-08 15:06:18Z vboxsync $ */
 /** @file
  * Shared Clipboard: Some helper function for converting between the various eol.
  */

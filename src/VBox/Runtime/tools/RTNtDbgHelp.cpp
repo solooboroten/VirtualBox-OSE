@@ -1,4 +1,4 @@
-﻿/* $Id: RTNtDbgHelp.cpp $ */
+﻿/* $Id: RTNtDbgHelp.cpp 46127 2013-05-16 14:11:26Z vboxsync $ */
 /** @file
  * IPRT - RTNtDbgHelp -  Tool for working/exploring DbgHelp.dll.
  */
@@ -358,7 +358,7 @@ int main(int argc, char **argv)
 
 
             case 'V':
-                RTPrintf("$Revision: 85818 $");
+                RTPrintf("$Revision: 46127 $");
                 break;
 
             case 'h':

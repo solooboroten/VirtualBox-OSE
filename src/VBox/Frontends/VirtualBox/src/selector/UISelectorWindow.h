@@ -25,7 +25,6 @@
 
 /* GUI includes: */
 #include "QIWithRetranslateUI.h"
-#include "UIMedium.h"
 #include "UINetworkDefs.h"
 
 /* Forward declarations: */
@@ -64,7 +63,7 @@ private slots:
     void sltDetailsViewIndexChanged(int iWidgetIndex);
 
     /* Handler: Medium enumeration stuff: */
-    void sltMediumEnumFinished();
+    void sltHandleMediumEnumerationFinish();
 
     /* Handler: Menubar/status stuff: */
     void sltShowSelectorContextMenu(const QPoint &pos);

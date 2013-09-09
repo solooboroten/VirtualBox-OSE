@@ -1,4 +1,4 @@
-/** $Id: USBLib-solaris.cpp $ */
+/** $Id: USBLib-solaris.cpp 47496 2013-07-31 15:52:29Z vboxsync $ */
 /** @file
  * USBLib - Library for wrapping up the VBoxUSB functionality, Solaris flavor.
  */

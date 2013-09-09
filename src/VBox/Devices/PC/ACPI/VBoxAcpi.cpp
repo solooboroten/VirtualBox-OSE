@@ -1,4 +1,4 @@
-/* $Id: VBoxAcpi.cpp $ */
+/* $Id: VBoxAcpi.cpp 44514 2013-02-01 14:26:03Z vboxsync $ */
 /** @file
  * VBoxAcpi - VirtualBox ACPI manipulation functionality.
  */

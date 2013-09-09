@@ -1,4 +1,4 @@
-/* $Id: dnsproxy.c $ */
+/* $Id: dnsproxy.c 47702 2013-08-13 17:21:41Z vboxsync $ */
 
 /*
  * Copyright (C) 2009-2013 Oracle Corporation

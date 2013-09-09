@@ -1,4 +1,4 @@
-/* $Id: DisplayImpl.h $ */
+/* $Id: DisplayImpl.h 47774 2013-08-15 15:13:01Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */

@@ -1,4 +1,4 @@
-/* $Id: PDMInline.h $ */
+/* $Id: PDMInline.h 41783 2012-06-16 19:24:15Z vboxsync $ */
 /** @file
  * PDM - Internal header file containing the inlined functions.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestInst.cpp $ */
+/* $Id: VBoxGuestInst.cpp 44977 2013-03-11 11:36:51Z vboxsync $ */
 /** @file
  * Small tool to (un)install the VBoxGuest device driver.
  */

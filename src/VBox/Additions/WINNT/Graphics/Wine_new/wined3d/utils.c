@@ -24,6 +24,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+/*
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
+
 #include "config.h"
 #include "wine/port.h"
 
@@ -3556,8 +3565,7 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct
     {
         memset(settings, 0, sizeof(*settings));
 
-        settings->clipping = state->render_states[WINED3D_RS_CLIPPING]
-                && state->render_states[WINED3D_RS_CLIPPLANEENABLE];
+        settings->transformed = 1;
         settings->point_size = state->gl_primitive_type == GL_POINTS;
         if (!state->render_states[WINED3D_RS_FOGENABLE])
             settings->fog_mode = WINED3D_FFP_VS_FOG_OFF;
@@ -3577,6 +3585,7 @@ void wined3d_ffp_get_vs_settings(const struct wined3d_state *state, const struct
         return;
     }
 
+    settings->transformed = 0;
     settings->clipping = state->render_states[WINED3D_RS_CLIPPING]
             && state->render_states[WINED3D_RS_CLIPPLANEENABLE];
     settings->normal = !!(si->use_map & (1 << WINED3D_FFP_NORMAL));

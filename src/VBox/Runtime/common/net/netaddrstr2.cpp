@@ -1,4 +1,4 @@
-/* $Id: netaddrstr2.cpp $ */
+/* $Id: netaddrstr2.cpp 45123 2013-03-21 10:42:26Z vboxsync $ */
 /** @file
  * IPRT - Network Address String Handling.
  */

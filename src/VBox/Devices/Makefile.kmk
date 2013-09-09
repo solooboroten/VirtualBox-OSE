@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 48214 2013-08-31 16:16:58Z vboxsync $
 ## @file
 # Top-level sub-makefile for the devices, drivers and services.
 #
@@ -128,6 +128,7 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
 	\
  	Input/DevPS2.cpp \
  	Input/PS2K.cpp \
+ 	Input/PS2M.cpp \
  	Input/UsbKbd.cpp \
  	Input/UsbMouse.cpp \
  	Bus/DevPCI.cpp \
@@ -192,7 +193,8 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  	-framework AudioToolbox \
  	-framework IOKit \
  	-framework Carbon \
- 	-framework DiskArbitration
+ 	-framework DiskArbitration \
+ 	-framework SystemConfiguration
  VBoxDD_LDFLAGS.linux    = -Wl,--no-undefined
 
  # --- Tracing bits. ---
@@ -322,16 +324,25 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  # --- Networking bits. ---
 
  ifdef VBOX_WITH_INIP
+  VBoxDD_DEFS           += VBOX_WITH_INIP
+  VBoxDD_SOURCES        += \
+        Network/DevINIP.cpp
   ifndef VBOX_WITH_NEW_LWIP
     include $(PATH_SUB_CURRENT)/Network/lwip/Makefile.kmk
+    VBoxDD_INCS         += $(LWIP_INCS)
+    VBoxDD_SOURCES      += $(LWIP_SOURCES)
   else
-    include $(PATH_SUB_CURRENT)/Network/lwip-new/Makefile.kmk
+    # XXX: do not depend on order
+    ifndef LWIP_SOURCES
+      include $(PATH_SUB_CURRENT)/Network/lwip-new/Makefile.kmk
+    endif
+    Network/DevINIP.cpp_DEFS += VBOX_WITH_NEW_LWIP
+    $(eval $(call def_vbox_lwip_private, \
+                      VBoxDD, Network/lwip-new))
+    $(eval $(call def_vbox_lwip_flags, \
+                      Network/DevINIP.cpp, Network/lwip-new))
   endif
-  VBoxDD_DEFS           += VBOX_WITH_INIP
-  VBoxDD_SOURCES += $(LWIP_SOURCES)
-  VBoxDD_INCS += $(LWIP_INCS)
-  VBoxDD_SOURCES += Network/DevINIP.cpp
- endif
+ endif # VBOX_WITH_INIP
 
  ifdef VBOX_WITH_E1000
   VBoxDD_DEFS           += VBOX_WITH_E1000
@@ -401,7 +412,13 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  endif
 
  ifdef VBOX_WITH_ISCSI
-  Storage/DrvVD.cpp_INCS = $(LWIP_INCS)
+  ifdef VBOX_WITH_NEW_LWIP
+    Storage/DrvVD.cpp_DEFS += VBOX_WITH_NEW_LWIP
+    $(eval $(call def_vbox_lwip_flags, \
+                      Storage/DrvVD.cpp, Network/lwip-new))
+  else
+    Storage/DrvVD.cpp_INCS = $(LWIP_INCS)
+  endif
  endif
 
  ifdef VBOX_WITH_DRV_DISK_INTEGRITY
@@ -433,6 +450,13 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
 
  ifdef VBOX_WITH_DYNAMIC_DSDT
   VBoxDD_DEFS           += VBOX_WITH_DYNAMIC_DSDT
+ endif
+
+
+ # --- Input bits. ---
+
+ ifdef VBOX_WITH_NEW_PS2M
+  VBoxDD_DEFS           += VBOX_WITH_NEW_PS2M
  endif
 
 
@@ -740,6 +764,7 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
   	Graphics/DevVGA.cpp \
   	Input/DevPS2.cpp \
  	Input/PS2K.cpp \
+ 	Input/PS2M.cpp \
   	PC/DevACPI.cpp \
   	PC/DevPit-i8254.cpp \
   	PC/DevPIC.cpp \
@@ -821,6 +846,10 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
   	Storage/DevLsiLogicSCSI.cpp
   endif
 
+  ifdef VBOX_WITH_NEW_PS2M
+  VBoxDDGC_DEFS         += VBOX_WITH_NEW_PS2M
+  endif
+
   if1of ($(VBOX_LDR_FMT32), pe lx)
   VBoxDDGC_LIBS           = \
   	$(PATH_STAGE_LIB)/VMMRCBuiltin$(VBOX_SUFF_LIB) \
@@ -877,6 +906,7 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  	Graphics/DevVGA.cpp \
  	Input/DevPS2.cpp \
  	Input/PS2K.cpp \
+ 	Input/PS2M.cpp \
  	PC/DevACPI.cpp \
  	PC/DevPit-i8254.cpp \
  	PC/DevPIC.cpp \
@@ -967,6 +997,10 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  VBoxDDR0_DEFS          += VBOX_WITH_LSILOGIC
  VBoxDDR0_SOURCES       += \
  	Storage/DevLsiLogicSCSI.cpp
+ endif
+
+ ifdef VBOX_WITH_NEW_PS2M
+  VBoxDDR0_DEFS         += VBOX_WITH_NEW_PS2M
  endif
 
  ifdef VBOX_WITH_HGSMI

@@ -6,7 +6,7 @@
 --  Open source license information is in the zlib.ads file.  --
 ----------------------------------------------------------------
 
---  $Id: zlib-streams.ads $
+--  $Id: zlib-streams.ads 40354 2012-03-05 13:39:00Z vboxsync $
 
 package ZLib.Streams is
 

@@ -1,4 +1,4 @@
-/* $Id: VBoxMF.rc $ */
+/* $Id: VBoxMF.rc 37163 2011-05-20 11:46:18Z vboxsync $ */
 /** @file
  * Windows NT5+ Guest Additions Mouse Filter Driver version info
  */

@@ -1,4 +1,4 @@
-/* $Id: USBProxyDevice-darwin.cpp $ */
+/* $Id: USBProxyDevice-darwin.cpp 46046 2013-05-14 05:36:41Z vboxsync $ */
 /** @file
  * USB device proxy - the Darwin backend.
  */

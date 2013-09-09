@@ -1,4 +1,4 @@
-/* $Id: tstVDCompact.vd $ */
+/* $Id: tstVDCompact.vd 44943 2013-03-06 23:07:00Z vboxsync $ */
 /**
  * Storage: Testcase for compacting disks.
  */

@@ -1,4 +1,4 @@
-/* $Id: BusMouse.cpp $ */
+/* $Id: BusMouse.cpp 47259 2013-07-19 13:58:26Z vboxsync $ */
 /** @file
  * BusMouse - Microsoft Bus (parallel) mouse controller device.
  */

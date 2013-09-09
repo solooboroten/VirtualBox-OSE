@@ -1,4 +1,4 @@
-/* $Id: gvm.h $ */
+/* $Id: gvm.h 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * GVM - The Global VM Data.
  */

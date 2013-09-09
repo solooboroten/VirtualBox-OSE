@@ -1,4 +1,4 @@
-/* $Id: tstUsbMouse.cpp $ */
+/* $Id: tstUsbMouse.cpp 47855 2013-08-19 18:48:51Z vboxsync $ */
 /** @file
  * tstUsbMouse.cpp - testcase USB mouse and tablet devices.
  */

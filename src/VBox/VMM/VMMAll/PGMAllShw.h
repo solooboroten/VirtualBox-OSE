@@ -1,4 +1,4 @@
-/* $Id: PGMAllShw.h $ */
+/* $Id: PGMAllShw.h 45798 2013-04-29 03:40:54Z vboxsync $ */
 /** @file
  * VBox - Page Manager, Shadow Paging Template - All context code.
  */

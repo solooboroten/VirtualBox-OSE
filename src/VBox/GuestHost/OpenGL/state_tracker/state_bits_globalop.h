@@ -1,4 +1,4 @@
-/* $Id: state_bits_globalop.h $ */
+/* $Id: state_bits_globalop.h 46037 2013-05-13 17:29:18Z vboxsync $ */
 
 /** @file
  * Global State bits operation

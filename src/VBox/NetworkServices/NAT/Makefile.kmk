@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 48365 2013-09-06 15:49:18Z vboxsync $
 ## @file
 #
 
@@ -16,55 +16,12 @@
 
 SUB_DEPTH = ../../../..
 include $(KBUILD_PATH)/subheader.kmk
-#
-# Disable Slirp based service.
-#ifdef VBOX_WITH_HARDENING
-# PROGRAMS += VBoxNetSlirpNATHardened
-# DLLS += VBoxNetSlirpNAT
-#else
-# PROGRAMS += VBoxNetSlirpNAT
-#endif
-VBoxNetSlirpNAT_TEMPLATE =
-VBoxNetSlirpNAT_TEMPLATE := VBOXR3$(if-expr defined(VBOX_WITH_HARDENING),,EXE)
-VBoxNetSlirpNAT_INCS = ../../Devices/Network/slirp
-VBoxNetSlirpNAT_DEFS = VBOX_WITH_NAT_SERVICE
-VBoxNetSlirpNAT_SOURCES += VBoxNetSlirpNAT.cpp
-VBoxNetSlirpNAT_DEFS += VBOX_WITH_NAT_SERVICE
-
-#define def_vbox_slirp_service_cflags
-#  $(file)_DEFS += VBOX_WITH_NAT_SERVICE
-#endef
-
-define def_vbox_nat_network_service_sources
-    $(1)_SOURCES += $2/$3
-endef
-
-define def_vbox_nat_network_service_incs
-    $(1)_INCS += $2/$3
-endef
-
-VBOX_NOT_IN_NATSERVICE = Network/DrvNAT.cpp
-$(foreach file,$(filter-out $(VBOX_NOT_IN_NATSERVICE), $(VBOX_SLIRP_SOURCES)),$(eval $(call def_vbox_nat_network_service_sources,VBoxNetSlirpNAT,../../Devices,$(file))))
-$(foreach file,$(VBOX_SLIRP_ALIAS_SOURCES),$(eval $(call def_vbox_nat_network_service_sources, VBoxSlirpNetNAT,../../Devices,$(file))))
-$(foreach file,$(VBOX_SLIRP_BSD_SOURCES),$(eval $(call def_vbox_nat_network_service_sources, VBoxNetSlirpNAT,../../Devices,$(file))))
-
-$(foreach file,$(addprefix ../../Devices/, $(VBOX_SLIRP_BSD_SOURCES)),$(eval $(call def_vbox_slirp_cflags,../../Devices/Network)))
-$(foreach file,$(addprefix ../../Devices/, $(VBOX_SLIRP_BSD_SOURCES)),$(eval $(call def_vbox_slirp_bsd_cflags,../../Devices/Network)))
-$(foreach file,$(addprefix ../../Devices/, $(filter-out $(VBOX_WITH_NAT_SERVICE), $(VBOX_SLIRP_SOURCES))),$(eval $(call def_vbox_slirp_service_cflags, ../../Devices/Network)))
-$(foreach file,$(addprefix ../../Devices/, $(filter-out $(VBOX_WITH_NAT_SERVICE), $(VBOX_SLIRP_SOURCES))),$(eval $(call def_vbox_slirp_cflags,../../Devices/Network)))
-
-$(foreach file,$(addprefix ../../Devices/, $(VBOX_SLIRP_ALIAS_SOURCES)),$(eval $(call def_vbox_slirp_cflags, ../../Devices/Network)))
-
-
-$(foreach file,$(addprefix ../../Devices/, $(VBOX_SLIRP_ALIAS_SOURCES)),$(eval $(call def_vbox_slirp_alias_cflags, ../../Devices/Network)))
-
-VBoxNetSlirpNAT_SOURCES += ../NetLib/VBoxNetBaseService.cpp
-
-VBoxNetSlirpNAT_LIBS = \
-	$(LIB_RUNTIME)
-VBoxNetSlirpNAT_LDFLAGS.win = /SUBSYSTEM:windows
 
 ifdef VBOX_WITH_LWIP_NAT
+# XXX: do not depend on order
+ifndef LWIP_SOURCES
+  include ../../Devices/Network/lwip-new/Makefile.kmk
+endif
 
 ifdef VBOX_WITH_HARDENING
  PROGRAMS += VBoxNetLwipNATHardened
@@ -83,9 +40,7 @@ endif
 VBoxNetLwipNAT_TEMPLATE =
 VBoxNetLwipNAT_TEMPLATE := VBOXMAIN$(if-expr defined(VBOX_WITH_HARDENING),DLL,CLIENTEXE)
 VBoxNetLwipNAT_NAME = VBoxNetNAT
-VBoxNetLwipNAT_INCS += ../../Devices/Network \
-	../../Devices/Network/lwip-new/vbox # testproxy.h
-VBoxNetLwipNAT_DEFS += ${LWIP_DEFS}
+VBoxNetLwipNAT_DEFS += ${LWIP_DEFS} IPv6
 VBoxNetLwipNAT_DEFS.win += _WIN32_WINNT=0x501 # Windows XP 
 VBoxNetLwipNAT_SOURCES += VBoxNetLwipNAT.cpp	\
 	../NetLib/VBoxNetBaseService.cpp \
@@ -95,22 +50,31 @@ VBoxNetLwipNAT_LIBS = \
 VBoxNetLwipNAT_LIBS.solaris += socket nsl
 VBoxNetLwipNAT_LDFLAGS.win = /SUBSYSTEM:windows
 
-#
-# Note: not spaces please in "Devices,$("
-#
-$(foreach file,$(LWIP_SOURCES) $(LWIP_NAT_SOURCES),$(eval $(call def_vbox_nat_network_service_sources, VBoxNetLwipNAT, ../../Devices,$(file))))
+VBoxNetLwipNAT_SOURCES += \
+    proxy_pollmgr.c \
+    proxy_rtadvd.c \
+    proxytest.c \
+    pxremap.c \
+    pxtcp.c \
+    pxudp.c \
+    fwtcp.c \
+    fwudp.c \
+    portfwd.c \
+    proxy_dhcp6ds.c \
+    proxy_tftpd.c
 
-$(foreach incs,$(LWIP_INCS),$(eval $(call def_vbox_nat_network_service_incs, VBoxNetLwipNAT, ../../Devices,$(incs))))
+VBoxNetLwipNAT_SOURCES.darwin  += rtmon_bsd.c
+VBoxNetLwipNAT_SOURCES.freebsd += rtmon_bsd.c
+VBoxNetLwipNAT_SOURCES.linux   += rtmon_linux.c
+VBoxNetLwipNAT_SOURCES.solaris += rtmon_bsd.c
+VBoxNetLwipNAT_SOURCES.win     += rtmon_win.c
 
-endif
+VBoxNetLwipNAT_SOURCES.win += \
+    RTWinPoll.cpp \
+    RTWinSocketPair.cpp
 
-ifdef VBOX_WITH_TESTCASES
-PROGRAMS += tstNetPfAddressPortPairParse
-
-tstNetPfAddressPortPairParse_TEMPLATE = VBOXR3TSTEXE
-#tstNetPfAddressPortPairParse_INSTTYPE = none
-tstNetPfAddressPortPairParse_SOURCES = 	../NetLib/testcase/tstNetPfAddressPortPairParse.cpp \
-	../NetLib/VBoxNetPortForwardString.cpp
+$(eval $(call def_vbox_lwip_public, \
+    VBoxNetLwipNAT, ../../Devices/Network/lwip-new))
 endif
 
 include $(FILE_KBUILD_SUB_FOOTER)

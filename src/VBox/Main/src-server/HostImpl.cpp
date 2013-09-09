@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp $ */
+/* $Id: HostImpl.cpp 48333 2013-09-06 03:22:47Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -22,6 +22,7 @@
 #include "VBox/com/ptr.h"
 
 #include "HostImpl.h"
+#include "HostDnsService.h"
 
 #ifdef VBOX_WITH_USB
 # include "HostUSBDeviceImpl.h"
@@ -221,44 +222,9 @@ struct Host::Data
     int                     f3DAccelerationSupported;
 
     HostPowerService        *pHostPowerService;
-
-    /* Name resolving */
-    std::list<com::Bstr>     llNameServers;
-    std::list<com::Bstr>     llSearchStrings;
-    Bstr                     DomainName;
-    /* XXX: we need timestamp when these values were set, on repeate in some 
-     *  (~1h?, 5 min?) period, this values should be refetched from host syetem.
-     */
+    /** Host's DNS informaton fetching */
+    HostDnsService          *pHostDnsService;
 };
-
-#ifndef RT_OS_WINDOWS
-static char g_aszResolvConf[RTPATH_MAX];
-
-static inline char *getResolvConfPath()
-{
-    if (!g_aszResolvConf[0]) return g_aszResolvConf;
-# ifdef RT_OS_OS2
-    /*
-     * This was in an old Slirp code:
-     * IBM's "Technical Document # - 16070238", clearly says \MPTN\ETC\RESOLV2 
-     * no redolv.conf (remark to code in old Slirp code)
-     */
-    if (RTEnvExists("ETC"))
-    {
-        RTStrmPrintf(g_aszResolvConf, MAX_PATH, "%/RESOLV2", RTEnvGet("ETC"));
-        int rc = RTFileExists(g_aszResolvConf);
-        if (RT_SUCCESS(rc))
-            return g_aszResolvConf;
-    }
-
-    RT_ZERO(g_aszResolvConf);
-    RTStrmPrintf(g_aszResolvConf, sizeof(g_aszResolvConf), "%/RESOLV2", _PATH_ETC);
-# else
-    RTStrCopy(g_aszResolvConf, sizeof(g_aszResolvConf), "/etc/resolv.conf");
-# endif    
-    return g_aszResolvConf;
-}
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -323,6 +289,26 @@ HRESULT Host::init(VirtualBox *aParent)
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
     /* Create the list of network interfaces so their metrics get registered. */
     updateNetIfList();
+
+# if defined (RT_OS_DARWIN)
+    m->pHostDnsService = new HostDnsServiceDarwin();
+# elif defined(RT_OS_WINDOWS)
+    m->pHostDnsService = new HostDnsServiceWin();
+# elif defined(RT_OS_LINUX)
+    m->pHostDnsService = new HostDnsServiceLinux();
+# elif defined(RT_OS_SOLARIS)
+    m->pHostDnsService = new HostDnsServiceSolaris();
+# elif defined(RT_OS_OS2)
+    m->pHostDnsService = new HostDnsServiceOs2();
+# else
+    m->pHostDnsService = new HostDnsService();
+# endif
+
+    hrc = m->pHostDnsService->init();
+    AssertComRCReturn(hrc, hrc);
+
+    hrc = m->pHostDnsService->start();
+    AssertComRCReturn(hrc, hrc);
 
 #if defined (RT_OS_WINDOWS)
     m->pHostPowerService = new HostPowerServiceWin(m->pParent);
@@ -525,6 +511,9 @@ void Host::uninit()
     m->llUSBDeviceFilters.clear();
 #endif
 
+    m->pHostDnsService->stop();
+
+    delete m->pHostDnsService;
     delete m;
     m = NULL;
 }
@@ -853,11 +842,14 @@ STDMETHODIMP Host::COMGETTER(USBDevices)(ComSafeArrayOut(IHostUSBDevice*, aUSBDe
  */
 STDMETHODIMP Host::COMGETTER(NameServers)(ComSafeArrayOut(BSTR, aNameServers))
 {
-    NOREF(aNameServers);
-#ifndef RT_OS_WINDOWS
-    NOREF(aNameServersSize);
-#endif
-    return E_NOTIMPL;
+    CheckComArgOutSafeArrayPointerValid(aNameServers);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    return m->pHostDnsService->COMGETTER(NameServers)(ComSafeArrayOutArg(aNameServers));
 }
 
 
@@ -866,8 +858,13 @@ STDMETHODIMP Host::COMGETTER(NameServers)(ComSafeArrayOut(BSTR, aNameServers))
  */
 STDMETHODIMP Host::COMGETTER(DomainName)(BSTR *aDomainName)
 {
-    NOREF(aDomainName);
-    return E_NOTIMPL;
+    /* XXX: note here should be synchronization with thread polling state 
+     * changes in name resoving system on host */
+    
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    return m->pHostDnsService->COMGETTER(DomainName)(aDomainName);
 }
 
 
@@ -876,11 +873,14 @@ STDMETHODIMP Host::COMGETTER(DomainName)(BSTR *aDomainName)
  */
 STDMETHODIMP Host::COMGETTER(SearchStrings)(ComSafeArrayOut(BSTR, aSearchStrings))
 {
-    NOREF(aSearchStrings);
-#ifndef RT_OS_WINDOWS
-    NOREF(aSearchStringsSize);
-#endif
-    return E_NOTIMPL;
+    CheckComArgOutSafeArrayPointerValid(aSearchStrings);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    return m->pHostDnsService->COMGETTER(SearchStrings)(ComSafeArrayOutArg(aSearchStrings));
 }
 
 

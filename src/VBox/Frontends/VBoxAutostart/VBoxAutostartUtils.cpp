@@ -1,4 +1,4 @@
-/* $Id: VBoxAutostartUtils.cpp $ */
+/* $Id: VBoxAutostartUtils.cpp 43967 2012-11-26 19:35:33Z vboxsync $ */
 /** @file
  * VBoxAutostart - VirtualBox Autostart service, start machines during system boot.
  *                 Utils used by the windows and posix frontends.

@@ -1,4 +1,4 @@
-/* $Id: time-haiku.cpp $ */
+/* $Id: time-haiku.cpp 45356 2013-04-05 07:01:27Z vboxsync $ */
 /** @file
  * IPRT - Time, Haiku.
  */

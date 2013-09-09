@@ -1,4 +1,4 @@
-/* $Id: USBProxyDevice-freebsd.cpp $ */
+/* $Id: USBProxyDevice-freebsd.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * USB device proxy - the FreeBSD backend.
  */

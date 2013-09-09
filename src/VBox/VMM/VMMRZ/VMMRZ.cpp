@@ -1,4 +1,4 @@
-/* $Id: VMMRZ.cpp $ */
+/* $Id: VMMRZ.cpp 48230 2013-09-02 14:52:50Z vboxsync $ */
 /** @file
  * VMM - Virtual Machine Monitor, Raw-mode and ring-0 context code.
  */
@@ -85,12 +85,15 @@ VMMRZDECL(int) VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, 
 #ifdef IN_RC
     pVM->vmm.s.pfnRCToHost(VINF_VMM_CALL_HOST);
 #else
+    int rc;
     if (   pVCpu->vmm.s.pfnCallRing3CallbackR0
         && enmOperation != VMMCALLRING3_VM_R0_ASSERTION)
     {
-        pVCpu->vmm.s.pfnCallRing3CallbackR0(pVCpu, enmOperation, pVCpu->vmm.s.pvCallRing3CallbackUserR0);
+        rc = pVCpu->vmm.s.pfnCallRing3CallbackR0(pVCpu, enmOperation, pVCpu->vmm.s.pvCallRing3CallbackUserR0);
+        if (RT_FAILURE(rc))
+            return rc;
     }
-    int rc = vmmR0CallRing3LongJmp(&pVCpu->vmm.s.CallRing3JmpBufR0, VINF_VMM_CALL_HOST);
+    rc = vmmR0CallRing3LongJmp(&pVCpu->vmm.s.CallRing3JmpBufR0, VINF_VMM_CALL_HOST);
     if (RT_FAILURE(rc))
         return rc;
 #endif
@@ -211,5 +214,17 @@ VMMRZDECL(int) VMMRZCallRing3SetNotification(PVMCPU pVCpu, R0PTRTYPE(PFNVMMR0CAL
 VMMRZDECL(void) VMMRZCallRing3RemoveNotification(PVMCPU pVCpu)
 {
     pVCpu->vmm.s.pfnCallRing3CallbackR0 = NULL;
+}
+
+
+/**
+ * Checks whether there is a ring-0 callback notification active.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @returns true if there the notification is active, false otherwise.
+ */
+VMMRZDECL(bool) VMMRZCallRing3IsNotificationSet(PVMCPU pVCpu)
+{
+    return pVCpu->vmm.s.pfnCallRing3CallbackR0 != NULL;
 }
 

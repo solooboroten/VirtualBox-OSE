@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-solaris.c $ */
+/* $Id: mp-r0drv-solaris.c 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Solaris.
  */

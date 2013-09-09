@@ -1,4 +1,4 @@
-/* $Id: PCIDeviceAttachmentImpl.cpp $ */
+/* $Id: PCIDeviceAttachmentImpl.cpp 42551 2012-08-02 16:44:39Z vboxsync $ */
 
 /** @file
  *

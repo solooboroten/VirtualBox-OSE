@@ -161,16 +161,20 @@ typedef const X86RFLAGS *PCX86RFLAGS;
  */
 /** Bit 0 - CF - Carry flag - Status flag. */
 #define X86_EFL_CF          RT_BIT(0)
+#define X86_EFL_CF_BIT      0
 /** Bit 1 - Reserved, reads as 1. */
 #define X86_EFL_1           RT_BIT(1)
 /** Bit 2 - PF - Parity flag - Status flag. */
 #define X86_EFL_PF          RT_BIT(2)
 /** Bit 4 - AF - Auxiliary carry flag - Status flag. */
 #define X86_EFL_AF          RT_BIT(4)
+#define X86_EFL_AF_BIT      4
 /** Bit 6 - ZF - Zero flag - Status flag. */
 #define X86_EFL_ZF          RT_BIT(6)
+#define X86_EFL_ZF_BIT      6
 /** Bit 7 - SF - Signed flag - Status flag. */
 #define X86_EFL_SF          RT_BIT(7)
+#define X86_EFL_SF_BIT      7
 /** Bit 8 - TF - Trap flag - System flag. */
 #define X86_EFL_TF          RT_BIT(8)
 /** Bit 9 - IF - Interrupt flag - System flag. */
@@ -179,6 +183,7 @@ typedef const X86RFLAGS *PCX86RFLAGS;
 #define X86_EFL_DF          RT_BIT(10)
 /** Bit 11 - OF - Overflow flag - Status flag. */
 #define X86_EFL_OF          RT_BIT(11)
+#define X86_EFL_OF_BIT      11
 /** Bit 12-13 - IOPL - I/O prvilege level flag - System flag. */
 #define X86_EFL_IOPL        (RT_BIT(12) | RT_BIT(13))
 /** Bit 14 - NT - Nested task flag - System flag. */
@@ -206,6 +211,8 @@ typedef const X86RFLAGS *PCX86RFLAGS;
 /** Bits restored by popf */
 #define X86_EFL_POPF_BITS       (  X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_TF | X86_EFL_IF \
                                  | X86_EFL_DF | X86_EFL_OF | X86_EFL_IOPL | X86_EFL_NT | X86_EFL_AC | X86_EFL_ID )
+/** The status bits commonly updated by arithmetic instructions. */
+#define X86_EFL_STATUS_BITS     ( X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_OF )
 /** @} */
 
 
@@ -914,9 +921,15 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 /** @name Machine Specific Registers
  * @{
  */
-
+/** Machine check address register (P5). */
+#define MSR_P5_MC_ADDR                      UINT32_C(0x00000000)
+/** Machine check type register (P5). */
+#define MSR_P5_MC_TYPE                      UINT32_C(0x00000001)
 /** Time Stamp Counter. */
 #define MSR_IA32_TSC                        0x10
+#define MSR_IA32_CESR                       UINT32_C(0x00000011)
+#define MSR_IA32_CTR0                       UINT32_C(0x00000012)
+#define MSR_IA32_CTR1                       UINT32_C(0x00000013)
 
 #define MSR_IA32_PLATFORM_ID                0x17
 
@@ -936,6 +949,7 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 /** CPU Feature control. */
 #define MSR_IA32_FEATURE_CONTROL            0x3A
 #define MSR_IA32_FEATURE_CONTROL_LOCK       RT_BIT(0)
+#define MSR_IA32_FEATURE_CONTROL_SMX_VMXON  RT_BIT(1)
 #define MSR_IA32_FEATURE_CONTROL_VMXON      RT_BIT(2)
 
 /** BIOS update trigger (microcode update). */
@@ -959,9 +973,19 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 /** Get FSB clock status (Intel-specific). */
 #define MSR_IA32_FSB_CLOCK_STS              0xCD
 
+/** C-State configuration control. Intel specific: Nehalem, Sandy Bridge. */
+#define MSR_PKG_CST_CONFIG_CONTROL          UINT32_C(0x000000e2)
+
+/** C0 Maximum Frequency Clock Count */
+#define MSR_IA32_MPERF                      0xE7
+/** C0 Actual Frequency Clock Count */
+#define MSR_IA32_APERF                      0xE8
+
 /** MTRR Capabilities. */
 #define MSR_IA32_MTRR_CAP                   0xFE
 
+/** Cache control/info. */
+#define MSR_BBL_CR_CTL3                     UINT32_C(0x11e)
 
 #ifndef MSR_IA32_SYSENTER_CS /* qemu cpu.h kludge */
 /** SYSENTER_CS - the R0 CS, indirectly giving R0 SS, R3 CS and R3 DS.
@@ -977,14 +1001,11 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 #endif
 
 /** Machine Check Global Capabilities Register. */
-#define MSR_IA32_MCP_CAP                    0x179
+#define MSR_IA32_MCG_CAP                    0x179
 /** Machine Check Global Status Register. */
-#define MSR_IA32_MCP_STATUS                 0x17A
+#define MSR_IA32_MCG_STATUS                 0x17A
 /** Machine Check Global Control Register. */
-#define MSR_IA32_MCP_CTRL                   0x17B
-
-/** Trace/Profile Resource Control (R/W) */
-#define MSR_IA32_DEBUGCTL                   0x1D9
+#define MSR_IA32_MCG_CTRL                   0x17B
 
 /** Page Attribute Table. */
 #define MSR_IA32_CR_PAT                     0x277
@@ -1019,6 +1040,20 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 #define MSR_IA32_MISC_ENABLE_XTPR_MSG_DISABLE  RT_BIT(23)
 /** When set to 1, the Execute Disable Bit feature (XD Bit) is disabled (R/W). */
 #define MSR_IA32_MISC_ENABLE_XD_DISABLE        RT_BIT(34)
+
+/** Trace/Profile Resource Control (R/W) */
+#define MSR_IA32_DEBUGCTL                   UINT32_C(0x000001d9)
+/** The number (0..3 or 0..15) of the last branch record register on P4 and
+ * related Xeons. */
+#define MSR_P4_LASTBRANCH_TOS               UINT32_C(0x000001da)
+/** @name Last branch registers for P4 and Xeon, models 0 thru 2.
+ * @{ */
+#define MSR_P4_LASTBRANCH_0                 UINT32_C(0x000001db)
+#define MSR_P4_LASTBRANCH_1                 UINT32_C(0x000001dc)
+#define MSR_P4_LASTBRANCH_2                 UINT32_C(0x000001dd)
+#define MSR_P4_LASTBRANCH_3                 UINT32_C(0x000001de)
+/** @} */
+
 
 #define IA32_MTRR_PHYSBASE0                 0x200
 #define IA32_MTRR_PHYSMASK0                 0x201
@@ -1092,13 +1127,15 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 #define MSR_IA32_VMX_EPT_VPID_CAP           0x48C
 /** DS Save Area (R/W). */
 #define MSR_IA32_DS_AREA                    0x600
+/** Running Average Power Limit (RAPL) power units. */
+#define MSR_RAPL_POWER_UNIT                 0x606
 /** X2APIC MSR ranges. */
 #define MSR_IA32_X2APIC_START               0x800
 #define MSR_IA32_X2APIC_TPR                 0x808
 #define MSR_IA32_X2APIC_END                 0xBFF
 
 /** K6 EFER - Extended Feature Enable Register. */
-#define MSR_K6_EFER                         0xc0000080
+#define MSR_K6_EFER                         UINT32_C(0xc0000080)
 /** @todo document EFER */
 /** Bit 0 - SCE - System call extensions (SYSCALL / SYSRET). (R/W) */
 #define  MSR_K6_EFER_SCE                     RT_BIT(0)
@@ -1115,65 +1152,71 @@ AssertCompile(X86_DR7_ANY_RW_IO(UINT32_C(0x00040000)) == 0);
 /** Bit 14 - FFXSR - Fast FXSAVE / FXRSTOR (skip XMM*). (R/W) */
 #define  MSR_K6_EFER_FFXSR                   RT_BIT(14)
 /** K6 STAR - SYSCALL/RET targets. */
-#define MSR_K6_STAR                         0xc0000081
+#define MSR_K6_STAR                         UINT32_C(0xc0000081)
 /** Shift value for getting the SYSRET CS and SS value. */
 #define  MSR_K6_STAR_SYSRET_CS_SS_SHIFT     48
 /** Shift value for getting the SYSCALL CS and SS value. */
 #define  MSR_K6_STAR_SYSCALL_CS_SS_SHIFT    32
 /** Selector mask for use after shifting. */
-#define  MSR_K6_STAR_SEL_MASK               0xffff
+#define  MSR_K6_STAR_SEL_MASK               UINT32_C(0xffff)
 /** The mask which give the SYSCALL EIP. */
-#define  MSR_K6_STAR_SYSCALL_EIP_MASK       0xffffffff
+#define  MSR_K6_STAR_SYSCALL_EIP_MASK       UINT32_C(0xffffffff)
 /** K6 WHCR - Write Handling Control Register. */
-#define MSR_K6_WHCR                         0xc0000082
+#define MSR_K6_WHCR                         UINT32_C(0xc0000082)
 /** K6 UWCCR - UC/WC Cacheability Control Register. */
-#define MSR_K6_UWCCR                        0xc0000085
+#define MSR_K6_UWCCR                        UINT32_C(0xc0000085)
 /** K6 PSOR - Processor State Observability Register. */
-#define MSR_K6_PSOR                         0xc0000087
+#define MSR_K6_PSOR                         UINT32_C(0xc0000087)
 /** K6 PFIR - Page Flush/Invalidate Register. */
-#define MSR_K6_PFIR                         0xc0000088
+#define MSR_K6_PFIR                         UINT32_C(0xc0000088)
 
 /** Performance counter MSRs. (AMD only) */
-#define MSR_K7_EVNTSEL0                     0xc0010000
-#define MSR_K7_EVNTSEL1                     0xc0010001
-#define MSR_K7_EVNTSEL2                     0xc0010002
-#define MSR_K7_EVNTSEL3                     0xc0010003
-#define MSR_K7_PERFCTR0                     0xc0010004
-#define MSR_K7_PERFCTR1                     0xc0010005
-#define MSR_K7_PERFCTR2                     0xc0010006
-#define MSR_K7_PERFCTR3                     0xc0010007
+#define MSR_K7_EVNTSEL0                     UINT32_C(0xc0010000)
+#define MSR_K7_EVNTSEL1                     UINT32_C(0xc0010001)
+#define MSR_K7_EVNTSEL2                     UINT32_C(0xc0010002)
+#define MSR_K7_EVNTSEL3                     UINT32_C(0xc0010003)
+#define MSR_K7_PERFCTR0                     UINT32_C(0xc0010004)
+#define MSR_K7_PERFCTR1                     UINT32_C(0xc0010005)
+#define MSR_K7_PERFCTR2                     UINT32_C(0xc0010006)
+#define MSR_K7_PERFCTR3                     UINT32_C(0xc0010007)
 
 /** K8 LSTAR - Long mode SYSCALL target (RIP). */
-#define MSR_K8_LSTAR                        0xc0000082
+#define MSR_K8_LSTAR                        UINT32_C(0xc0000082)
 /** K8 CSTAR - Compatibility mode SYSCALL target (RIP). */
-#define MSR_K8_CSTAR                        0xc0000083
+#define MSR_K8_CSTAR                        UINT32_C(0xc0000083)
 /** K8 SF_MASK - SYSCALL flag mask. (aka SFMASK) */
-#define MSR_K8_SF_MASK                      0xc0000084
+#define MSR_K8_SF_MASK                      UINT32_C(0xc0000084)
 /** K8 FS.base - The 64-bit base FS register. */
-#define MSR_K8_FS_BASE                      0xc0000100
+#define MSR_K8_FS_BASE                      UINT32_C(0xc0000100)
 /** K8 GS.base - The 64-bit base GS register. */
-#define MSR_K8_GS_BASE                      0xc0000101
+#define MSR_K8_GS_BASE                      UINT32_C(0xc0000101)
 /** K8 KernelGSbase - Used with SWAPGS. */
-#define MSR_K8_KERNEL_GS_BASE               0xc0000102
+#define MSR_K8_KERNEL_GS_BASE               UINT32_C(0xc0000102)
 /** K8 TSC_AUX - Used with RDTSCP. */
-#define MSR_K8_TSC_AUX                      0xc0000103
-#define MSR_K8_SYSCFG                       0xc0010010
-#define MSR_K8_HWCR                         0xc0010015
-#define MSR_K8_IORRBASE0                    0xc0010016
-#define MSR_K8_IORRMASK0                    0xc0010017
-#define MSR_K8_IORRBASE1                    0xc0010018
-#define MSR_K8_IORRMASK1                    0xc0010019
-#define MSR_K8_TOP_MEM1                     0xc001001a
-#define MSR_K8_TOP_MEM2                     0xc001001d
-#define MSR_K8_VM_CR                        0xc0010114
+#define MSR_K8_TSC_AUX                      UINT32_C(0xc0000103)
+#define MSR_K8_SYSCFG                       UINT32_C(0xc0010010)
+#define MSR_K8_HWCR                         UINT32_C(0xc0010015)
+#define MSR_K8_IORRBASE0                    UINT32_C(0xc0010016)
+#define MSR_K8_IORRMASK0                    UINT32_C(0xc0010017)
+#define MSR_K8_IORRBASE1                    UINT32_C(0xc0010018)
+#define MSR_K8_IORRMASK1                    UINT32_C(0xc0010019)
+#define MSR_K8_TOP_MEM1                     UINT32_C(0xc001001a)
+#define MSR_K8_TOP_MEM2                     UINT32_C(0xc001001d)
+/** North bridge config? See BIOS & Kernel dev guides for
+ * details. */
+#define MSR_K8_NB_CFG                       UINT32_C(0xc001001f)
+
+/** Hypertransport interrupt pending register.
+ * "BIOS and Kernel Developer's Guide for AMD NPT Family 0Fh Processors" */
+#define MSR_K8_INT_PENDING                  UINT32_C(0xc0010055)
+#define MSR_K8_VM_CR                        UINT32_C(0xc0010114)
 #define MSR_K8_VM_CR_SVM_DISABLE            RT_BIT(4)
 
-#define MSR_K8_IGNNE                        0xc0010115
-#define MSR_K8_SMM_CTL                      0xc0010116
+#define MSR_K8_IGNNE                        UINT32_C(0xc0010115)
+#define MSR_K8_SMM_CTL                      UINT32_C(0xc0010116)
 /** SVM - VM_HSAVE_PA - Physical address for saving and restoring
- *                      host state during world switch.
- */
-#define MSR_K8_VM_HSAVE_PA                  0xc0010117
+ *                      host state during world switch. */
+#define MSR_K8_VM_HSAVE_PA                  UINT32_C(0xc0010117)
 
 /** @} */
 
@@ -3230,6 +3273,19 @@ typedef const X86XCPT *PCX86XCPT;
 /** Bit 4 - I/D - Instruction fetch (set) / Data access (clear) - PAE + NXE. */
 #define X86_TRAP_PF_ID              RT_BIT(4)
 /** @} */
+
+#pragma pack(1)
+/**
+ * 16-bit IDTR.
+ */
+typedef struct X86IDTR16
+{
+    /** Offset. */
+    uint16_t    offSel;
+    /** Selector. */
+    uint16_t    uSel;
+} X86IDTR16, *PX86IDTR16;
+#pragma pack()
 
 #pragma pack(1)
 /**

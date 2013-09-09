@@ -1,4 +1,4 @@
-/* $Id: dir.h $ */
+/* $Id: dir.h 47535 2013-08-05 01:54:25Z vboxsync $ */
 /** @file
  * IPRT - Internal Header for RTDir.
  */

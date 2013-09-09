@@ -1,4 +1,4 @@
-; $Id: ResetVectorVtf0.asm $
+; $Id: ResetVectorVtf0.asm 43313 2012-09-12 14:58:36Z vboxsync $
 ;; @file
 
 

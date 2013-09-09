@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.h $ */
+/* $Id: ConsoleImpl.h 48313 2013-09-05 15:35:22Z vboxsync $ */
 /** @file
  * VBox Console COM Class definition
  */
@@ -220,6 +220,7 @@ public:
     HRESULT onUSBDeviceDetach(IN_BSTR aId, IVirtualBoxErrorInfo *aError);
     HRESULT onBandwidthGroupChange(IBandwidthGroup *aBandwidthGroup);
     HRESULT onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOOL aRemove, BOOL aSilent);
+
     HRESULT getGuestProperty(IN_BSTR aKey, BSTR *aValue, LONG64 *aTimestamp, BSTR *aFlags);
     HRESULT setGuestProperty(IN_BSTR aKey, IN_BSTR aValue, IN_BSTR aFlags);
     HRESULT enumerateGuestProperties(IN_BSTR aPatterns,
@@ -229,10 +230,8 @@ public:
                                      ComSafeArrayOut(BSTR, aFlags));
     HRESULT onlineMergeMedium(IMediumAttachment *aMediumAttachment,
                               ULONG aSourceIdx, ULONG aTargetIdx,
-                              IMedium *aSource, IMedium *aTarget,
-                              BOOL aMergeForward, IMedium *aParentForTarget,
-                              ComSafeArrayIn(IMedium *, aChildrenToReparent),
                               IProgress *aProgress);
+    int hgcmLoadService(const char *pszServiceLibrary, const char *pszServiceName);
     VMMDev *getVMMDev() { return m_pVMMDev; }
     AudioSniffer *getAudioSniffer() { return mAudioSniffer; }
 #ifdef VBOX_WITH_EXTPACK
@@ -617,6 +616,7 @@ private:
 
     static DECLCALLBACK(int) configGuestProperties(void *pvConsole, PUVM pUVM);
     static DECLCALLBACK(int) configGuestControl(void *pvConsole);
+    void vmstateChangePowerOff(bool fCalledFromReset /* = false */);
     static DECLCALLBACK(void) vmstateChangeCallback(PUVM pUVM, VMSTATE enmState, VMSTATE enmOldState, void *pvUser);
     static DECLCALLBACK(int) unplugCpu(Console *pThis, PUVM pUVM, VMCPUID idCpu);
     static DECLCALLBACK(int) plugCpu(Console *pThis, PUVM pUVM, VMCPUID idCpu);
@@ -723,6 +723,8 @@ private:
     void guestPropertiesVRDPUpdateOtherInfoChange(uint32_t u32ClientId, const char *pszOtherInfo);
     void guestPropertiesVRDPUpdateDisconnect(uint32_t u32ClientId);
 #endif
+
+    bool isResetTurnedIntoPowerOff(void);
 
     /** @name Teleporter support
      * @{ */

@@ -1,4 +1,4 @@
-/* $Id: USBFilter.cpp $ */
+/* $Id: USBFilter.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * VirtualBox USB filter abstraction.
  */

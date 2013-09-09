@@ -1,4 +1,4 @@
-/* $Id: ClientTokenHolder.h $ */
+/* $Id: ClientTokenHolder.h 47561 2013-08-06 15:18:17Z vboxsync $ */
 
 /** @file
  *

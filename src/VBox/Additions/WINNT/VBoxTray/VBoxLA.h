@@ -1,4 +1,4 @@
-/* $Id: VBoxLA.h $ */
+/* $Id: VBoxLA.h 40498 2012-03-16 10:45:05Z vboxsync $ */
 /** @file
  * VBoxLA - Location Awareness
  */

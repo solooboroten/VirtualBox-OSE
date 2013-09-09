@@ -1,4 +1,4 @@
-/* $Id: VBoxDef2LazyLoad.cpp $ */
+/* $Id: VBoxDef2LazyLoad.cpp 47685 2013-08-13 10:19:25Z vboxsync $ */
 /** @file
  * VBoxDef2LazyLoad - Lazy Library Loader Generator.
  *
@@ -589,7 +589,7 @@ int main(int argc, char **argv)
             else if (   !strcmp(psz, "--version")
                      || !strcmp(psz, "-V"))
             {
-                printf("$Revision: 87893 $\n");
+                printf("$Revision: 47685 $\n");
                 return RTEXITCODE_SUCCESS;
             }
             else

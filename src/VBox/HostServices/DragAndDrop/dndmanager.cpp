@@ -1,4 +1,4 @@
-/* $Id: dndmanager.cpp $ */
+/* $Id: dndmanager.cpp 44102 2012-12-12 09:36:49Z vboxsync $ */
 /** @file
  * Drag and Drop manager.
  */

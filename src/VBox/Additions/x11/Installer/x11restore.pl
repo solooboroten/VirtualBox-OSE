@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Revision: 83575 $
+# $Revision: 44528 $
 #
 # Restore xorg.conf while removing Guest Additions.
 #

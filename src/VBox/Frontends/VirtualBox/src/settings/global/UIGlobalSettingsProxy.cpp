@@ -1,4 +1,4 @@
-/* $Id: UIGlobalSettingsProxy.cpp $ */
+/* $Id: UIGlobalSettingsProxy.cpp 47946 2013-08-21 07:50:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -38,6 +38,8 @@ UIGlobalSettingsProxy::UIGlobalSettingsProxy()
 
     /* Setup connections: */
     connect(m_pCheckboxProxy, SIGNAL(toggled(bool)), this, SLOT(sltProxyToggled()));
+    connect(m_pHostEditor, SIGNAL(textEdited(const QString&)), this, SLOT(revalidate()));
+    connect(m_pPortEditor, SIGNAL(textEdited(const QString&)), this, SLOT(revalidate()));
 
     /* Apply language settings: */
     retranslateUi();
@@ -101,26 +103,38 @@ void UIGlobalSettingsProxy::saveFromCacheTo(QVariant &data)
     UISettingsPageGlobal::uploadData(data);
 }
 
-bool UIGlobalSettingsProxy::validate(QString &strWarning, QString&)
+bool UIGlobalSettingsProxy::validate(QList<UIValidationMessage> &messages)
 {
     /* Pass if proxy is disabled: */
     if (!m_pCheckboxProxy->isChecked())
         return true;
 
-    /* Check for host/port values: */
+    /* Pass by default: */
+    bool fPass = true;
+
+    /* Prepare message: */
+    UIValidationMessage message;
+
+    /* Check for host value: */
     if (m_pHostEditor->text().trimmed().isEmpty())
     {
-        strWarning = tr("No proxy host is currently specified.");
-        return false;
-    }
-    else if (m_pPortEditor->text().trimmed().isEmpty())
-    {
-        strWarning = tr("No proxy port is currently specified.");
-        return false;
+        message.second << tr("No proxy host is currently specified.");
+        fPass = false;
     }
 
-    /* Pass by default: */
-    return true;
+    /* Check for port value: */
+    if (m_pPortEditor->text().trimmed().isEmpty())
+    {
+        message.second << tr("No proxy port is currently specified.");
+        fPass = false;
+    }
+
+    /* Serialize message: */
+    if (!message.second.isEmpty())
+        messages << message;
+
+    /* Return result: */
+    return fPass;
 }
 
 void UIGlobalSettingsProxy::setOrderAfter(QWidget *pWidget)

@@ -1,4 +1,4 @@
-; $Id: tstAsmMovFixedReg-1.asm $
+; $Id: tstAsmMovFixedReg-1.asm 46949 2013-07-03 19:22:34Z vboxsync $
 ;; @file
 ; Disassembly testcase - Valid mov immediate to fixed registers.
 ;

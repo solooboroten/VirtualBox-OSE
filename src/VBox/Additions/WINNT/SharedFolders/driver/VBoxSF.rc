@@ -1,4 +1,4 @@
-/* $Id: VBoxSF.rc $ */
+/* $Id: VBoxSF.rc 40269 2012-02-28 10:47:33Z vboxsync $ */
 /** @file
  * VBoxSF - Resource file containing version info and icon.
  */

@@ -1,4 +1,4 @@
-/* $Id: symdb.h $ */
+/* $Id: symdb.h 45350 2013-04-04 20:22:25Z vboxsync $ */
 /** @file
  * IPRT - Internal Header for the NT Ring-0 Driver Symbol DB.
  */

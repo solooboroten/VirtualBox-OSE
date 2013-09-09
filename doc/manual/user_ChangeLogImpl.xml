@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.3.0 Beta 1 (2013-08-20)</title>
+    <title>Version 4.3.0 Beta 2 (2013-xx-xx)</title>
 
     <para>This is a major update. The following major new features
       were added:</para>
@@ -9,8 +9,13 @@
     <itemizedlist>
 
       <listitem>
-        <para>VMM: major rewrite of the VT-x code including many bug fixes and
-        performance improvements (for example bug #9659)</para>
+        <para>VMM: major rewrite of the VT-x code and the AMD-V code including
+          many bug fixes and performance improvements (for example bug #9659)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: extended messaging mechanism (new non-modal popup overlays
+          used to show non-critical warnings and provide user with additional information)</para>
       </listitem>
 
       <listitem>
@@ -20,24 +25,28 @@
       </listitem>
 
       <listitem>
-        <para>GUI: extended messaging mechanism (new non-modal popup overlays
-          used to show non-critical warnings and provide user with additional information)</para>
-      </listitem>
-
-      <listitem>
         <para>GUI: video capturing support (bug #4766)</para>
       </listitem>
 
       <listitem>
-        <para>GUI: host touch devices support (GUI passes host touch-events to guest)</para>
+        <para>Added USB touch device emulation</para>
       </listitem>
 
       <listitem>
-        <para>Emulated USB touch devices</para>
+        <para>Added SCSI CD-ROM emulation, including boot support</para>
       </listitem>
 
       <listitem>
         <para>VRDP: support for IPv6</para>
+      </listitem>
+
+      <listitem>
+        <para>Guest Control: guest sessions now are running in dedicated, impersonated
+          session processes (needs at least Guest Additions 4.3 installed)</para>
+      </listitem>
+
+      <listitem>
+        <para>Guest Control: implemented IGuestFile support</para>
       </listitem>
 
       <listitem>
@@ -59,11 +68,54 @@
       </listitem>
 
       <listitem>
+        <para>VMM: significantly improved performance of NetWare 5.x/6.x
+          guests on host systems without nested paging support</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed losing host NMIs while in VT-x guest-context</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: changed order of actions in emulated task switch
+          (bug #10532)</para>
+      </listitem>
+
+      <listitem>
         <para>GUI: update check uses https</para>
       </listitem>
 
       <listitem>
-        <para>GUI: lot of internal stuff rewritten (cleanup and bug-fixes)</para>
+        <para>GUI: numerous minor internal cleanups and bug fixes</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI, VBoxManage: when unregistering a VM, also unregister the
+          hard disk images which are used exclusively (bug #10311)</para>
+      </listitem>
+
+      <listitem>
+        <para>Snapshots: made live snapshots work again (bug #9255)</para>
+      </listitem>
+
+      <listitem>
+        <para>Teleportation: made it work again (bug #9455)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: implemented AHA-154x compatibility mode in the
+          emulated BusLogic SCSI HBA</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: significantly improved performance of large ATAPI PIO
+          transfers (BeOS, Minix 3 guests affected)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: added floppy formatting emulation (NB: cannot be used
+          to change existing media geometry)
+        </para>
       </listitem>
 
       <listitem>
@@ -76,7 +128,12 @@
           will lead to decreased performance and may trigger crashes</para>
       </listitem>
 
-       <listitem>
+      <listitem>
+        <para>Settings: the per-VM hwvirtextexcl setting has been replaced
+          by a global hwvirtexclusive property</para>
+      </listitem>
+
+      <listitem>
         <para>Main: new event queue implementation which does not use the host's
           native event queue for processing VirtualBox events anymore</para>
       </listitem>
@@ -84,6 +141,11 @@
       <listitem>
         <para>Main: use the XDG standard configuration folder instead of
            .VirtualBox on systems where it is appropriate (bug #5099)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: extension pack framework can now support loading HGCM
+          modules, contributed by Jeff Westphal</para>
       </listitem>
 
       <listitem>
@@ -147,26 +209,37 @@
       <listitem>
         <para>Shared Clipboard/X11: support for BMP-format images, contributed
            by François Revol</para>
-       </listitem>
+      </listitem>
 
-       <listitem>
-         <para>Windows hosts: don't cause massive DPC latency (bug #6242)</para>
-       </listitem>
+      <listitem>
+        <para>Windows hosts: don't cause massive DPC latency (only on certain
+          hosts; still needs improving; bug #6242)</para>
+      </listitem>
 
-       <listitem>
-         <para>Windows hosts: consider symlinks when retrieving volume information
-           (bug #11962)</para>
-       </listitem>
+      <listitem>
+        <para>Windows hosts: consider symlinks when retrieving volume information
+          (bug #11962)</para>
+      </listitem>
 
-       <listitem>
-         <para>Windows Additions: fixed misbehavior with guest display
-           power management (WDDM driver only; bug #11170)</para>
-       </listitem>
+      <listitem>
+        <para>Windows hosts: fixed an issue with USB2 devices being inaccessible
+          when plugged into USB 3.0 ports</para>
+      </listitem>
 
-       <listitem>
-         <para>Windows guests: ability to track guest user idle times through
-           the newly introduced event IGuestUserStateChangedEvent</para>
-       </listitem>
+      <listitem>
+        <para>Windows Additions: fixed misbehavior with guest display
+          power management (WDDM driver only; bug #11170)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed udev detection in the init script
+          with Linux 3.x kernels</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows guests: ability to track guest user idle times through
+          the newly introduced event <emphasis>IGuestUserStateChangedEvent</emphasis></para>
+      </listitem>
 
     </itemizedlist>
 

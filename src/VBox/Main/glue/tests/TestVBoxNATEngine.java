@@ -1,4 +1,4 @@
-/* $Id: TestVBoxNATEngine.java $ */
+/* $Id: TestVBoxNATEngine.java 45186 2013-03-26 07:59:00Z vboxsync $ */
 
 /* Small sample/testcase which demonstrates that the same source code can
  * be used to connect to the webservice and (XP)COM APIs. */

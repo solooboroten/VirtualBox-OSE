@@ -1,4 +1,4 @@
-; $Id: tstAsm3DNow-1.asm $
+; $Id: tstAsm3DNow-1.asm 43120 2012-08-30 18:15:00Z vboxsync $
 ;; @file
 ; Disassembly testcase - 3DNow!
 ;

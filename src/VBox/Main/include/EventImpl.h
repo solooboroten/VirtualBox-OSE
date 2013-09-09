@@ -1,4 +1,4 @@
-/* $Id: EventImpl.h $ */
+/* $Id: EventImpl.h 39714 2012-01-07 02:04:33Z vboxsync $ */
 /** @file
  * VirtualBox COM IEvent implementation
  */

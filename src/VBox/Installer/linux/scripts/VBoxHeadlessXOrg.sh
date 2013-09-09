@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: VBoxHeadlessXOrg.sh $
+# $Id: VBoxHeadlessXOrg.sh 46352 2013-05-31 21:07:53Z vboxsync $
 #
 # VirtualBox X Server auto-start service.
 #

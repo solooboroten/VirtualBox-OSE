@@ -1,4 +1,4 @@
-/* $Id: alias_dns.c $ */
+/* $Id: alias_dns.c 46765 2013-06-24 20:17:31Z vboxsync $ */
 /** @file
  * libalias helper for using the host resolver instead of dnsproxy.
  */

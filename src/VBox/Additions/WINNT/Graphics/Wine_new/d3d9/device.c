@@ -20,6 +20,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+/*
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
+
 #include "config.h"
 #include "d3d9_private.h"
 
@@ -987,7 +996,7 @@ static HRESULT WINAPI d3d9_device_CreateTexture(IDirect3DDevice9Ex *iface,
 
         resource = wined3d_texture_get_sub_resource(object->wined3d_texture, 0);
         surface = wined3d_resource_get_parent(resource);
-        wined3d_surface_set_mem(surface->wined3d_surface, *shared_handle);
+        wined3d_surface_set_mem(surface->wined3d_surface, *shared_handle, 0);
     }
 
     TRACE("Created texture %p.\n", object);
@@ -3713,6 +3722,11 @@ static const struct wined3d_device_parent_ops d3d9_wined3d_device_parent_ops =
     device_parent_create_swapchain,
 };
 
+#if defined(VBOX) && defined(RT_ARCH_AMD64)
+DECLASM(uint16_t) VBoxAsmFpuFCWGet();
+DECLASM(void) VBoxAsmFpuFCWSet(uint16_t u16FCW);
+#endif
+
 static void setup_fpu(void)
 {
 #if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
@@ -3725,8 +3739,10 @@ static void setup_fpu(void)
     __asm fnstcw cw;
     cw = (cw & ~0xf3f) | 0x3f;
     __asm fldcw cw;
-#elif defined(RT_ARCH_AMD64)
-    /* @todo: impl*/
+#elif defined(VBOX) && defined(RT_ARCH_AMD64)
+    uint16_t cw = VBoxAsmFpuFCWGet();
+    cw = (cw & ~0xf3f) | 0x3f;
+    VBoxAsmFpuFCWSet(cw);
 #else
     FIXME("FPU setup not implemented for this platform.\n");
 #endif

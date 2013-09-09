@@ -1,4 +1,4 @@
-/* $Id: VBoxNetCfg.cpp $ */
+/* $Id: VBoxNetCfg.cpp 46593 2013-06-17 14:32:51Z vboxsync $ */
 /** @file
  * VBoxNetCfg.cpp - Network Configuration API.
  */

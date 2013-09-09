@@ -1,4 +1,4 @@
-/* $Id: VBoxStubBld.cpp $ */
+/* $Id: VBoxStubBld.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * VBoxStubBld - VirtualBox's Windows installer stub builder.
  */

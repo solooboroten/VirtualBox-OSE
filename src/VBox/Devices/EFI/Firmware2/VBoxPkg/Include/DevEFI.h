@@ -1,4 +1,4 @@
-/* $Id: DevEFI.h $ */
+/* $Id: DevEFI.h 44601 2013-02-08 12:27:08Z vboxsync $ */
 /** @file
  * EFI for VirtualBox Common Definitions.
  *

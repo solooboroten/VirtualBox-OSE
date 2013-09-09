@@ -164,32 +164,50 @@ struct MediaRegistry
 /**
  *
  */
- struct NATRule
- {
-     NATRule()
-         : proto(NATProtocol_TCP),
-           u16HostPort(0),
-           u16GuestPort(0)
-     {}
+struct NATRule
+{
+    NATRule()
+    : proto(NATProtocol_TCP),
+      u16HostPort(0),
+      u16GuestPort(0)
+    {}
 
-     bool operator==(const NATRule &r) const
-     {
-         return strName == r.strName
-             && proto == r.proto
-             && u16HostPort == r.u16HostPort
-             && strHostIP == r.strHostIP
-             && u16GuestPort == r.u16GuestPort
-             && strGuestIP == r.strGuestIP;
-     }
+    bool operator==(const NATRule &r) const
+    {
+        return    strName == r.strName
+               && proto == r.proto
+               && u16HostPort == r.u16HostPort
+               && strHostIP == r.strHostIP
+               && u16GuestPort == r.u16GuestPort
+               && strGuestIP == r.strGuestIP;
+    }
 
-     com::Utf8Str            strName;
-     NATProtocol_T           proto;
-     uint16_t                u16HostPort;
-     com::Utf8Str            strHostIP;
-     uint16_t                u16GuestPort;
-     com::Utf8Str            strGuestIP;
- };
- typedef std::list<NATRule> NATRuleList;
+    com::Utf8Str            strName;
+    NATProtocol_T           proto;
+    uint16_t                u16HostPort;
+    com::Utf8Str            strHostIP;
+    uint16_t                u16GuestPort;
+    com::Utf8Str            strGuestIP;
+};
+typedef std::list<NATRule> NATRuleList;
+
+
+struct NATHostLoopbackOffset
+{
+    /** Note: 128/8 is only acceptable */
+    com::Utf8Str strLoopbackHostAddress;
+    uint32_t u32Offset;
+    bool operator == (const com::Utf8Str& strAddr)
+    {
+        return (strLoopbackHostAddress == strAddr);
+    }
+    
+    bool operator == (uint32_t off)
+    {
+        return (this->u32Offset == off);
+    }
+};
+typedef std::list<NATHostLoopbackOffset> NATLoopbackOffsetList;
 
 /**
  * Common base class for both MainConfigFile and MachineConfigFile
@@ -225,6 +243,7 @@ protected:
     void readMedium(MediaType t, const xml::ElementNode &elmMedium, MediaList &llMedia);
     void readMediaRegistry(const xml::ElementNode &elmMediaRegistry, MediaRegistry &mr);
     void readNATForwardRuleList(const xml::ElementNode  &elmParent, NATRuleList &llRules);
+    void readNATLoopbacks(const xml::ElementNode &elmParent, NATLoopbackOffsetList &llLoopBacks);
 
     void setVersionAttribute(xml::ElementNode &elm);
     void createStubDocument();
@@ -240,6 +259,7 @@ protected:
     void buildMediaRegistry(xml::ElementNode &elmParent,
                             const MediaRegistry &mr);
     void buildNATForwardRuleList(xml::ElementNode &elmParent, const NATRuleList &natRuleList);
+    void buildNATLoopbacks(xml::ElementNode &elmParent, const NATLoopbackOffsetList &natLoopbackList);
     void clearDocument();
 
     struct Data;
@@ -263,6 +283,11 @@ struct SystemProperties
 {
     SystemProperties()
         : ulLogHistoryCount(3)
+#if defined(RT_OS_DARWIN) || defined(RT_OS_WINDOWS)
+        , fExclusiveHwVirt(false)
+#else
+        , fExclusiveHwVirt(true)
+#endif
     {}
 
     com::Utf8Str            strDefaultMachineFolder;
@@ -276,6 +301,7 @@ struct SystemProperties
     com::Utf8Str            strDefaultFrontend;
     com::Utf8Str            strLoggingLevel;
     uint32_t                ulLogHistoryCount;
+    bool                    fExclusiveHwVirt;
 };
 
 struct MachineRegistryEntry
@@ -335,6 +361,8 @@ struct NATNetwork
     com::Utf8Str strNetwork;
     bool         fIPv6;
     com::Utf8Str strIPv6Prefix;
+    uint32_t     u32HostLoopback6Offset;
+    NATLoopbackOffsetList llHostLoopbackOffsetList;
     bool         fAdvertiseDefaultIPv6Route;
     bool         fNeedDhcpServer;
     NATRuleList  llPortForwardRules4;
@@ -840,7 +868,6 @@ struct Hardware
     com::Guid           uuid;                   // hardware uuid, optional (null).
 
     bool                fHardwareVirt,
-                        fHardwareVirtExclusive,
                         fNestedPaging,
                         fLargePages,
                         fVPID,

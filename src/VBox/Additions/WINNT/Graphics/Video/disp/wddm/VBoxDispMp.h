@@ -1,4 +1,4 @@
-/* $Id: VBoxDispMp.h $ */
+/* $Id: VBoxDispMp.h 46757 2013-06-24 14:30:18Z vboxsync $ */
 
 /** @file
  * VBoxVideo Display external interface

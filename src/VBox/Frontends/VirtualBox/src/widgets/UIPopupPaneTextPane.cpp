@@ -1,4 +1,4 @@
-/* $Id: UIPopupPaneTextPane.cpp $ */
+/* $Id: UIPopupPaneTextPane.cpp 47694 2013-08-13 13:12:05Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

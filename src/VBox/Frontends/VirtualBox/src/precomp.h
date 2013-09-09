@@ -1,4 +1,4 @@
-/* $Id: precomp.h $*/
+/* $Id: precomp.h 46224 2013-05-22 17:46:22Z vboxsync $*/
 /** @file
  * Header used if VBOX_WITH_PRECOMPILED_HEADERS is active.
  */

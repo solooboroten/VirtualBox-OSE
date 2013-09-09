@@ -1,4 +1,4 @@
-/* $Id: USBProxyDevice-win.cpp $ */
+/* $Id: USBProxyDevice-win.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * USBPROXY - USB proxy, Win32 backend
  *

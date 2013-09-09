@@ -1,4 +1,4 @@
-/* $Id: VBoxCredProvProvider.cpp $ */
+/* $Id: VBoxCredProvProvider.cpp 46382 2013-06-04 13:32:38Z vboxsync $ */
 /** @file
  * VBoxCredProvProvider - The actual credential provider class.
  */

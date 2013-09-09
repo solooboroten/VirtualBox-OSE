@@ -1,4 +1,4 @@
-/* $Revision: 83575 $ */
+/* $Revision: 44528 $ */
 /** @file
  * VBoxGuestLibR0 - System dependent helpers internal header.
  */

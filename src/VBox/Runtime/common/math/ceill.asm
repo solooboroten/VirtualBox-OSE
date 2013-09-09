@@ -1,4 +1,4 @@
-; $Id: ceill.asm $
+; $Id: ceill.asm 46548 2013-06-14 09:42:21Z vboxsync $
 ;; @file
 ; IPRT - No-CRT ceill - AMD64 & X86.
 ;

@@ -1,4 +1,4 @@
-/* $Id: PGMPhysRWTmpl.h $ */
+/* $Id: PGMPhysRWTmpl.h 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Access Template.
  */

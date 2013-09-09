@@ -1,4 +1,4 @@
-/* $Id: UINetworkReply.cpp $ */
+/* $Id: UINetworkReply.cpp 45574 2013-04-16 15:01:53Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

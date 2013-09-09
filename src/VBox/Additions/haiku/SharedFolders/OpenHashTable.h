@@ -1,4 +1,4 @@
-/* $Id: OpenHashTable.h $ */
+/* $Id: OpenHashTable.h 43364 2012-09-20 12:12:09Z vboxsync $ */
 /** @file
  * OpenHashTable, Haiku Guest Additions.
  */

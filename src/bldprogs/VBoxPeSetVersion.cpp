@@ -1,4 +1,4 @@
-/* $Id: VBoxPeSetVersion.cpp $ */
+/* $Id: VBoxPeSetVersion.cpp 43134 2012-08-31 12:17:52Z vboxsync $ */
 /** @file
  * IPRT - Change the OS and SubSystem version to 4.0 (VS2010 trick).
  */

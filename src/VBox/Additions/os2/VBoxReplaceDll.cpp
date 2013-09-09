@@ -1,4 +1,4 @@
-/** $Id: VBoxReplaceDll.cpp $ */
+/** $Id: VBoxReplaceDll.cpp 46694 2013-06-19 20:13:38Z vboxsync $ */
 /** @file
  * VBoxReplaceDll - helper for replacing a dll when it's in use by the system
  */
@@ -67,7 +67,7 @@ int main(int argc, char **argv)
             else if (   !strcmp(argv[i], "--version")
                      || !strcmp(argv[i], "-V") )
             {
-                printf("$Revision: 86592 $\n");
+                printf("$Revision: 46694 $\n");
                 return 0;
             }
             else

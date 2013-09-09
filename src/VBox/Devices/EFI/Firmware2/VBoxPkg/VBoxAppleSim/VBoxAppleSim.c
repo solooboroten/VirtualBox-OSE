@@ -1,4 +1,4 @@
-/* $Id: VBoxAppleSim.c $ */
+/* $Id: VBoxAppleSim.c 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * VBoxAppleSim.c - VirtualBox Apple Firmware simulation support
  */

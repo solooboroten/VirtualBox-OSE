@@ -1,4 +1,4 @@
-/* $Id: VBoxManageList.cpp $ */
+/* $Id: VBoxManageList.cpp 48097 2013-08-27 17:03:26Z vboxsync $ */
 /** @file
  * VBoxManage - The 'list' command.
  */
@@ -524,6 +524,7 @@ static HRESULT listSystemProperties(const ComPtr<IVirtualBox> &pVirtualBox)
     Bstr str;
     ULONG ulValue;
     LONG64 i64Value;
+    BOOL fValue;
 
     pVirtualBox->COMGETTER(APIVersion)(str.asOutParam());
     RTPrintf("API version:                     %ls\n", str.raw());
@@ -606,6 +607,8 @@ static HRESULT listSystemProperties(const ComPtr<IVirtualBox> &pVirtualBox)
 #endif
     systemProperties->COMGETTER(DefaultMachineFolder)(str.asOutParam());
     RTPrintf("Default machine folder:          %ls\n", str.raw());
+    systemProperties->COMGETTER(ExclusiveHwVirt)(&fValue);
+    RTPrintf("Exclusive HW virtualization use: %ls\n", fValue ? L"on" : L"off");
     systemProperties->COMGETTER(DefaultHardDiskFormat)(str.asOutParam());
     RTPrintf("Default hard disk format:        %ls\n", str.raw());
     systemProperties->COMGETTER(VRDEAuthLibrary)(str.asOutParam());
@@ -1034,6 +1037,31 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
                 RTPrintf("DHCP Enabled:   %s\n", fEnabled ? "Yes" : "No");
                 net->COMGETTER(Enabled)(&fEnabled);
                 RTPrintf("Enabled:        %s\n", fEnabled ? "Yes" : "No");
+                
+#define PRINT_STRING_ARRAY(title) \
+                if (strs.size() > 0)    \
+                { \
+                    RTPrintf(title); \
+                    size_t j = 0; \
+                    for (;j < strs.size(); ++j) \
+                        RTPrintf("        %s\n", Utf8Str(strs[j]).c_str()); \
+                } 
+
+                com::SafeArray<BSTR> strs;
+
+                CHECK_ERROR(nets[i], COMGETTER(PortForwardRules4)(ComSafeArrayAsOutParam(strs)));
+                PRINT_STRING_ARRAY("Port-forwarding (ipv4)\n");
+                strs.setNull();
+
+                CHECK_ERROR(nets[i], COMGETTER(PortForwardRules6)(ComSafeArrayAsOutParam(strs)));
+                PRINT_STRING_ARRAY("Port-forwarding (ipv6)\n");
+                strs.setNull();
+
+                CHECK_ERROR(nets[i], COMGETTER(LocalMappings)(ComSafeArrayAsOutParam(strs)));
+                PRINT_STRING_ARRAY("loopback mappings (ipv4)\n");
+                strs.setNull();
+
+#undef PRINT_STRING_ARRAY
                 RTPrintf("\n");
             }
             break;

@@ -1,4 +1,4 @@
-; $Id: 32BitTo32Bit.asm $
+; $Id: 32BitTo32Bit.asm 41933 2012-06-27 18:37:33Z vboxsync $
 ;; @file
 ; VMM - World Switchers, 32-Bit to 32-Bit.
 ;

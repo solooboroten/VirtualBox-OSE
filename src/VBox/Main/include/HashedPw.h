@@ -1,4 +1,4 @@
-/* $Id: HashedPw.h $ */
+/* $Id: HashedPw.h 40066 2012-02-10 14:52:47Z vboxsync $ */
 /** @file
  * Main - Password Hashing
  */

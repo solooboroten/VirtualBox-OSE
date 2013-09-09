@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsStorage.cpp $ */
+/* $Id: UIMachineSettingsStorage.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -36,6 +36,7 @@
 #include "UIMessageCenter.h"
 #include "UIMachineSettingsStorage.h"
 #include "UIConverter.h"
+#include "UIMedium.h"
 
 /* COM includes: */
 #include "CStorageController.h"
@@ -652,7 +653,7 @@ void AttachmentItem::setAttDevice (KDeviceType aAttDeviceType)
 void AttachmentItem::setAttMediumId (const QString &aAttMediumId)
 {
     AssertMsg(!aAttMediumId.isEmpty(), ("Medium ID value can't be null/empty!\n"));
-    mAttMediumId = vboxGlobal().findMedium(aAttMediumId).id();
+    mAttMediumId = vboxGlobal().medium(aAttMediumId).id();
     cache();
 }
 
@@ -703,7 +704,7 @@ QString AttachmentItem::attUsage() const
 
 void AttachmentItem::cache()
 {
-    UIMedium medium = vboxGlobal().findMedium (mAttMediumId);
+    UIMedium medium = vboxGlobal().medium(mAttMediumId);
 
     /* Cache medium information */
     mAttName = medium.name (true);
@@ -1734,7 +1735,7 @@ UIMachineSettingsStorage::UIMachineSettingsStorage()
     /* Enumerate Mediums. We need at least the MediaList filled, so this is the
      * lasted point, where we can start. The rest of the media checking is done
      * in a background thread. */
-    vboxGlobal().startEnumeratingMedia(true /*fReallyNecessary*/);
+    vboxGlobal().startMediumEnumeration();
 
     /* Initialize pixmap pool */
     PixmapPool::pool (this);
@@ -1829,13 +1830,13 @@ UIMachineSettingsStorage::UIMachineSettingsStorage()
     mLbLocationValue->setFullSizeSelection (true);
     mLbUsageValue->setFullSizeSelection (true);
 
-    /* Setup connections */
-    connect (&vboxGlobal(), SIGNAL (mediumEnumerated (const UIMedium &)),
-             this, SLOT (mediumUpdated (const UIMedium &)));
-    connect (&vboxGlobal(), SIGNAL (mediumUpdated (const UIMedium &)),
-             this, SLOT (mediumUpdated (const UIMedium &)));
-    connect (&vboxGlobal(), SIGNAL (mediumRemoved (UIMediumType, const QString &)),
-             this, SLOT (mediumRemoved (UIMediumType, const QString &)));
+    /* Setup connections: */
+    connect(&vboxGlobal(), SIGNAL(sigMediumEnumerated(const QString&)),
+            this, SLOT(sltHandleMediumUpdated(const QString&)));
+    connect(&vboxGlobal(), SIGNAL(sigMediumUpdated(const QString&)),
+            this, SLOT(sltHandleMediumUpdated(const QString&)));
+    connect(&vboxGlobal(), SIGNAL(sigMediumDeleted(const QString&)),
+            this, SLOT(sltHandleMediumDeleted(const QString&)));
     connect (mAddCtrAction, SIGNAL (triggered (bool)), this, SLOT (addController()));
     connect (mAddIDECtrAction, SIGNAL (triggered (bool)), this, SLOT (addIDEController()));
     connect (mAddSATACtrAction, SIGNAL (triggered (bool)), this, SLOT (addSATAController()));
@@ -1960,10 +1961,8 @@ void UIMachineSettingsStorage::loadToCacheFrom(QVariant &data)
                     storageAttachmentData.m_fAttachmentPassthrough = attachment.GetPassthrough();
                     storageAttachmentData.m_fAttachmentTempEject = attachment.GetTemporaryEject();
                     storageAttachmentData.m_fAttachmentNonRotational = attachment.GetNonRotational();
-                    CMedium comMedium(attachment.GetMedium());
-                    UIMedium vboxMedium;
-                    vboxGlobal().findMedium(comMedium, vboxMedium);
-                    storageAttachmentData.m_strAttachmentMediumId = vboxMedium.id();
+                    const CMedium cmedium = attachment.GetMedium();
+                    storageAttachmentData.m_strAttachmentMediumId = cmedium.isNull() ? UIMedium::nullID() : cmedium.GetId();
                 }
 
                 /* Cache storage attachment data: */
@@ -2103,8 +2102,14 @@ void UIMachineSettingsStorage::saveFromCacheTo(QVariant &data)
     UISettingsPageMachine::uploadData(data);
 }
 
-bool UIMachineSettingsStorage::validate(QString &strWarning, QString&)
+bool UIMachineSettingsStorage::validate(QList<UIValidationMessage> &messages)
 {
+    /* Pass by default: */
+    bool fPass = true;
+
+    /* Prepare message: */
+    UIValidationMessage message;
+
     /* Check controllers for name emptiness & coincidence.
      * Check attachments for the hd presence / uniqueness. */
     QModelIndex rootIndex = mStorageModel->root();
@@ -2115,20 +2120,23 @@ bool UIMachineSettingsStorage::validate(QString &strWarning, QString&)
     {
         QModelIndex ctrIndex = rootIndex.child (i, 0);
         QString ctrName = mStorageModel->data (ctrIndex, StorageModel::R_CtrName).toString();
+
         /* Check for name emptiness: */
         if (ctrName.isEmpty())
         {
-            strWarning = tr("No name is currently specified for the controller at position <b>%1</b>.").arg(i + 1);
-            return false;
+            message.second << tr("No name is currently specified for the controller at position <b>%1</b>.").arg(i + 1);
+            fPass = false;
         }
         /* Check for name coincidence: */
         if (names.values().contains(ctrName))
         {
-            strWarning = tr("The controller at position <b>%1</b> has the same name as the controller at position <b>%2</b>.")
-                            .arg(i + 1).arg(names.key(ctrName) + 1);
-            return false;
+            message.second << tr("The controller at position <b>%1</b> has the same name as the controller at position <b>%2</b>.")
+                                 .arg(i + 1).arg(names.key(ctrName) + 1);
+            fPass = false;
         }
-        else names.insert(i, ctrName);
+        else
+            names.insert(i, ctrName);
+
         /* For each attachment: */
         for (int j = 0; j < mStorageModel->rowCount (ctrIndex); ++ j)
         {
@@ -2137,20 +2145,21 @@ bool UIMachineSettingsStorage::validate(QString &strWarning, QString&)
             KDeviceType attDevice = mStorageModel->data (attIndex, StorageModel::R_AttDevice).value <KDeviceType>();
             QString key (mStorageModel->data (attIndex, StorageModel::R_AttMediumId).toString());
             QString value (QString ("%1 (%2)").arg (ctrName, gpConverter->toString (attSlot)));
-            /* Check for emptiness */
-            if (vboxGlobal().findMedium (key).isNull() && attDevice == KDeviceType_HardDisk)
+            /* Check for emptiness: */
+            if (vboxGlobal().medium(key).isNull() && attDevice == KDeviceType_HardDisk)
             {
-                strWarning = tr("No hard disk is selected for <i>%1</i>.").arg (value);
-                return false;
+                message.second << tr("No hard disk is selected for <i>%1</i>.").arg (value);
+                fPass = false;
             }
-            /* Check for coincidence */
-            if (!vboxGlobal().findMedium (key).isNull() && config.contains (key))
+            /* Check for coincidence: */
+            if (!vboxGlobal().medium(key).isNull() && config.contains (key))
             {
-                strWarning = tr("<i>%1</i> is using a disk that is already attached to <i>%2</i>.")
-                                .arg (value).arg (config [key]);
-                return false;
+                message.second << tr("<i>%1</i> is using a disk that is already attached to <i>%2</i>.")
+                                     .arg (value).arg (config [key]);
+                fPass = false;
             }
-            else config.insert (key, value);
+            else
+                config.insert (key, value);
         }
     }
 
@@ -2172,16 +2181,20 @@ bool UIMachineSettingsStorage::validate(QString &strWarning, QString&)
     }
     if (!excessiveList.isEmpty())
     {
-        strWarning = tr("The machine currently has more storage controllers assigned than a %1 chipset supports. "
-                        "Please change the chipset type on the System settings page or reduce the number "
-                        "of the following storage controllers on the Storage settings page: %2")
-                        .arg(gpConverter->toString(mStorageModel->chipsetType()))
-                        .arg(excessiveList.join(", "));
-        return false;
+        message.second << tr("The machine currently has more storage controllers assigned than a %1 chipset supports. "
+                             "Please change the chipset type on the System settings page or reduce the number "
+                             "of the following storage controllers on the Storage settings page: %2")
+                             .arg(gpConverter->toString(mStorageModel->chipsetType()))
+                             .arg(excessiveList.join(", "));
+        fPass = false;
     }
 
-    /* Pass by default: */
-    return true;
+    /* Serialize message: */
+    if (!message.second.isEmpty())
+        messages << message;
+
+    /* Return result: */
+    return fPass;
 }
 
 void UIMachineSettingsStorage::retranslateUi()
@@ -2256,19 +2269,22 @@ void UIMachineSettingsStorage::showEvent (QShowEvent *aEvent)
     UISettingsPageMachine::showEvent (aEvent);
 }
 
-void UIMachineSettingsStorage::mediumUpdated (const UIMedium &aMedium)
+void UIMachineSettingsStorage::sltHandleMediumUpdated(const QString &strMediumID)
 {
+    /* Search for corresponding medium: */
+    UIMedium medium = vboxGlobal().medium(strMediumID);
+
     QModelIndex rootIndex = mStorageModel->root();
-    for (int i = 0; i < mStorageModel->rowCount (rootIndex); ++ i)
+    for (int i = 0; i < mStorageModel->rowCount(rootIndex); ++i)
     {
-        QModelIndex ctrIndex = rootIndex.child (i, 0);
-        for (int j = 0; j < mStorageModel->rowCount (ctrIndex); ++ j)
+        QModelIndex ctrIndex = rootIndex.child(i, 0);
+        for (int j = 0; j < mStorageModel->rowCount(ctrIndex); ++j)
         {
-            QModelIndex attIndex = ctrIndex.child (j, 0);
-            QString attMediumId = mStorageModel->data (attIndex, StorageModel::R_AttMediumId).toString();
-            if (attMediumId == aMedium.id())
+            QModelIndex attIndex = ctrIndex.child(j, 0);
+            QString attMediumId = mStorageModel->data(attIndex, StorageModel::R_AttMediumId).toString();
+            if (attMediumId == medium.id())
             {
-                mStorageModel->setData (attIndex, attMediumId, StorageModel::R_AttMediumId);
+                mStorageModel->setData(attIndex, attMediumId, StorageModel::R_AttMediumId);
 
                 /* Revalidate: */
                 revalidate();
@@ -2277,19 +2293,19 @@ void UIMachineSettingsStorage::mediumUpdated (const UIMedium &aMedium)
     }
 }
 
-void UIMachineSettingsStorage::mediumRemoved (UIMediumType /* aType */, const QString &aMediumId)
+void UIMachineSettingsStorage::sltHandleMediumDeleted(const QString &strMediumID)
 {
     QModelIndex rootIndex = mStorageModel->root();
-    for (int i = 0; i < mStorageModel->rowCount (rootIndex); ++ i)
+    for (int i = 0; i < mStorageModel->rowCount(rootIndex); ++i)
     {
-        QModelIndex ctrIndex = rootIndex.child (i, 0);
-        for (int j = 0; j < mStorageModel->rowCount (ctrIndex); ++ j)
+        QModelIndex ctrIndex = rootIndex.child(i, 0);
+        for (int j = 0; j < mStorageModel->rowCount(ctrIndex); ++j)
         {
-            QModelIndex attIndex = ctrIndex.child (j, 0);
-            QString attMediumId = mStorageModel->data (attIndex, StorageModel::R_AttMediumId).toString();
-            if (attMediumId == aMediumId)
+            QModelIndex attIndex = ctrIndex.child(j, 0);
+            QString attMediumId = mStorageModel->data(attIndex, StorageModel::R_AttMediumId).toString();
+            if (attMediumId == strMediumID)
             {
-                mStorageModel->setData (attIndex, UIMedium().id(), StorageModel::R_AttMediumId);
+                mStorageModel->setData(attIndex, UIMedium().id(), StorageModel::R_AttMediumId);
 
                 /* Revalidate: */
                 revalidate();
@@ -3065,7 +3081,7 @@ void UIMachineSettingsStorage::addAttachmentWrapper(KDeviceType deviceType)
         {
             int iAnswer = msgCenter().confirmOpticalAttachmentCreation(strControllerName, this);
             if (iAnswer == AlertButton_Choice1)
-                strMediumId = vboxGlobal().findMedium(strMediumId).id();
+                strMediumId = vboxGlobal().medium(strMediumId).id();
             else if (iAnswer == AlertButton_Choice2)
                 strMediumId = vboxGlobal().openMediumWithFileOpenDialog(UIMediumType_DVD, this, strMachineFolder);
             break;
@@ -3074,7 +3090,7 @@ void UIMachineSettingsStorage::addAttachmentWrapper(KDeviceType deviceType)
         {
             int iAnswer = msgCenter().confirmFloppyAttachmentCreation(strControllerName, this);
             if (iAnswer == AlertButton_Choice1)
-                strMediumId = vboxGlobal().findMedium(strMediumId).id();
+                strMediumId = vboxGlobal().medium(strMediumId).id();
             else if (iAnswer == AlertButton_Choice2)
                 strMediumId = vboxGlobal().openMediumWithFileOpenDialog(UIMediumType_Floppy, this, strMachineFolder);
             break;
@@ -3175,11 +3191,9 @@ void UIMachineSettingsStorage::addChooseExistingMediumAction(QMenu *pOpenMediumM
 
 void UIMachineSettingsStorage::addChooseHostDriveActions(QMenu *pOpenMediumMenu)
 {
-    const VBoxMediaList &mediums = vboxGlobal().currentMediaList();
-    VBoxMediaList::const_iterator it;
-    for (it = mediums.begin(); it != mediums.end(); ++it)
+    foreach (const QString &strMediumID, vboxGlobal().mediumIDs())
     {
-        const UIMedium &medium = *it;
+        const UIMedium medium = vboxGlobal().medium(strMediumID);
         if (medium.isHostDrive() && m_pMediumIdHolder->type() == medium.type())
         {
             QAction *pHostDriveAction = pOpenMediumMenu->addAction(medium.name());
@@ -3480,7 +3494,7 @@ bool UIMachineSettingsStorage::createStorageAttachment(const UICacheSettingsMach
         bool fAttachmentTempEject = attachmentData.m_fAttachmentTempEject;
         bool fAttachmentNonRotational = attachmentData.m_fAttachmentNonRotational;
         /* Get GUI medium object: */
-        UIMedium vboxMedium = vboxGlobal().findMedium(strAttachmentMediumId);
+        UIMedium vboxMedium = vboxGlobal().medium(strAttachmentMediumId);
         /* Get COM medium object: */
         CMedium comMedium = vboxMedium.medium();
 
@@ -3564,7 +3578,7 @@ bool UIMachineSettingsStorage::updateStorageAttachment(const UICacheSettingsMach
         if (fSuccess && !attachment.isNull())
         {
             /* Get GUI medium object: */
-            UIMedium vboxMedium = vboxGlobal().findMedium(strAttachmentMediumId);
+            UIMedium vboxMedium = vboxGlobal().medium(strAttachmentMediumId);
             /* Get COM medium object: */
             CMedium comMedium = vboxMedium.medium();
             /* Remount storage attachment: */

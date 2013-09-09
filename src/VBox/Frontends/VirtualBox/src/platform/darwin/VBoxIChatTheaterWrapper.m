@@ -1,4 +1,4 @@
-/* $Id: VBoxIChatTheaterWrapper.m $ */
+/* $Id: VBoxIChatTheaterWrapper.m 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * Qt GUI - iChat Theater cocoa wrapper.
  */

@@ -1,4 +1,4 @@
-/* $Id: DevVGAModes.h $ */
+/* $Id: DevVGAModes.h 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * DevVGA - VBox VGA/VESA device, VBE modes.
  *

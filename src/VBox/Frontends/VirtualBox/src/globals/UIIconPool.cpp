@@ -1,4 +1,4 @@
-/* $Id: UIIconPool.cpp $ */
+/* $Id: UIIconPool.cpp 47153 2013-07-15 11:08:03Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

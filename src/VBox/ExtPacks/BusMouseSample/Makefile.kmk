@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 44446 2013-01-29 15:07:28Z vboxsync $
 ## @file
 # Sub-Makefile for the Bus Mouse Extension Pack Sample.
 #

@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp $ */
+/* $Id: MachineImpl.cpp 48299 2013-09-05 11:07:08Z vboxsync $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -180,11 +180,6 @@ Machine::HWData::HWData()
     mHWVirtExVPIDEnabled = true;
     mHWVirtExUXEnabled = true;
     mHWVirtExForceEnabled = false;
-#if defined(RT_OS_DARWIN) || defined(RT_OS_WINDOWS)
-    mHWVirtExExclusive = false;
-#else
-    mHWVirtExExclusive = true;
-#endif
 #if HC_ARCH_BITS == 64 || defined(RT_OS_WINDOWS) || defined(RT_OS_DARWIN)
     mPAEEnabled = true;
 #else
@@ -907,6 +902,10 @@ STDMETHODIMP Machine::COMGETTER(Accessible)(BOOL *aAccessible)
 
     LogFlowThisFunc(("ENTER\n"));
 
+    /* In some cases (medium registry related), it is necessary to be able to
+     * go through the list of all machines. Happens when an inaccessible VM
+     * has a sensible medium registry. */
+    AutoReadLock mllock(mParent->getMachinesListLockHandle() COMMA_LOCKVAL_SRC_POS);
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
     HRESULT rc = S_OK;
@@ -2539,10 +2538,6 @@ STDMETHODIMP Machine::GetHWVirtExProperty(HWVirtExPropertyType_T property, BOOL 
             *aVal = mHWData->mHWVirtExEnabled;
             break;
 
-        case HWVirtExPropertyType_Exclusive:
-            *aVal = mHWData->mHWVirtExExclusive;
-            break;
-
         case HWVirtExPropertyType_VPID:
             *aVal = mHWData->mHWVirtExVPIDEnabled;
             break;
@@ -2588,12 +2583,6 @@ STDMETHODIMP Machine::SetHWVirtExProperty(HWVirtExPropertyType_T property, BOOL 
             setModified(IsModified_MachineData);
             mHWData.backup();
             mHWData->mHWVirtExEnabled = !!aVal;
-            break;
-
-        case HWVirtExPropertyType_Exclusive:
-            setModified(IsModified_MachineData);
-            mHWData.backup();
-            mHWData->mHWVirtExExclusive = !!aVal;
             break;
 
         case HWVirtExPropertyType_VPID:
@@ -3615,7 +3604,7 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
         if (FAILED(rc))
             // the failure may occur w/o any error info (from RPC), so provide one
             return setError(VBOX_E_VM_ERROR,
-                            tr("Failed to get a console object from the direct session (%Rrc)"), rc);
+                            tr("Failed to get a console object from the direct session (%Rhrc)"), rc);
 
         ComAssertRet(!pConsoleW.isNull(), E_FAIL);
 
@@ -3627,7 +3616,7 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
         if (FAILED(rc))
             // the failure may occur w/o any error info (from RPC), so provide one
             return setError(VBOX_E_VM_ERROR,
-                            tr("Failed to assign the machine to the session (%Rrc)"), rc);
+                            tr("Failed to assign the machine to the session (%Rhrc)"), rc);
         alock.acquire();
 
         // need to revalidate the state after acquiring the lock again
@@ -3728,7 +3717,7 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
             /* The failure may occur w/o any error info (from RPC), so provide one */
             if (FAILED(rc))
                 setError(VBOX_E_VM_ERROR,
-                         tr("Failed to assign the machine to the session (%Rrc)"), rc);
+                         tr("Failed to assign the machine to the session (%Rhrc)"), rc);
 
             if (    SUCCEEDED(rc)
                  && fLaunchingVMProcess
@@ -3761,7 +3750,7 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
                     /* The failure may occur w/o any error info (from RPC), so provide one */
                     if (FAILED(rc))
                         setError(VBOX_E_VM_ERROR,
-                                 tr("Failed to assign the machine to the remote session (%Rrc)"), rc);
+                                 tr("Failed to assign the machine to the remote session (%Rhrc)"), rc);
                 }
 
                 if (FAILED(rc))
@@ -5945,6 +5934,9 @@ HRESULT Machine::getGuestPropertyFromVM(IN_BSTR aName,
     /* fail if we were called after #OnSessionEnd() is called.  This is a
      * silly race condition. */
 
+    /** @todo This code is bothering API clients (like python script clients) with
+     *        the AccessGuestProperty call, creating unncessary IPC.  Need to
+     *        have a way of figuring out which kind of direct session it is... */
     if (!directControl)
         rc = E_ACCESSDENIED;
     else
@@ -8133,7 +8125,7 @@ HRESULT Machine::launchVMProcess(IInternalSessionControl *aControl,
         mData->mSession.mState = SessionState_Unlocked;
         /* The failure may occur w/o any error info (from RPC), so provide one */
         return setError(VBOX_E_VM_ERROR,
-                        tr("Failed to assign the machine to the session (%Rrc)"), rc);
+                        tr("Failed to assign the machine to the session (%Rhrc)"), rc);
     }
 
     /* attach launch data to the machine */
@@ -8273,7 +8265,7 @@ bool Machine::checkForSpawnFailure()
         else
             rc = setError(E_FAIL,
                           tr("The virtual machine '%s' has terminated unexpectedly during startup (%Rrc)"),
-                          getName().c_str(), rc);
+                          getName().c_str(), vrc);
     }
 
     if (FAILED(rc))
@@ -9158,7 +9150,6 @@ HRESULT Machine::loadHardware(const settings::Hardware &data, const settings::De
         mHWData->mHardwareUUID = data.uuid;
 
         mHWData->mHWVirtExEnabled             = data.fHardwareVirt;
-        mHWData->mHWVirtExExclusive           = data.fHardwareVirtExclusive;
         mHWData->mHWVirtExNestedPagingEnabled = data.fNestedPaging;
         mHWData->mHWVirtExLargePagesEnabled   = data.fLargePages;
         mHWData->mHWVirtExVPIDEnabled         = data.fVPID;
@@ -10483,7 +10474,6 @@ HRESULT Machine::saveHardware(settings::Hardware &data, settings::Debugging *pDb
 
         // CPU
         data.fHardwareVirt          = !!mHWData->mHWVirtExEnabled;
-        data.fHardwareVirtExclusive = !!mHWData->mHWVirtExExclusive;
         data.fNestedPaging          = !!mHWData->mHWVirtExNestedPagingEnabled;
         data.fLargePages            = !!mHWData->mHWVirtExLargePagesEnabled;
         data.fVPID                  = !!mHWData->mHWVirtExVPIDEnabled;

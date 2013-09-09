@@ -1,4 +1,4 @@
-/* $Id: systemmem-os2.cpp $ */
+/* $Id: systemmem-os2.cpp 45176 2013-03-25 14:06:49Z vboxsync $ */
 /** @file
  * IPRT - RTSystemQueryTotalRam, OS/2 ring-3.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-win-legacy.cpp $ */
+/* $Id: VBoxGuest-win-legacy.cpp 44988 2013-03-11 14:34:08Z vboxsync $ */
 /** @file
  * VBoxGuest-win-legacy - Windows NT4 specifics.
  */

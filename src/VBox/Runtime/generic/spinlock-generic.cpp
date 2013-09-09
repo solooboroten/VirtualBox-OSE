@@ -1,4 +1,4 @@
-/* $Id: spinlock-generic.cpp $ */
+/* $Id: spinlock-generic.cpp 40951 2012-04-16 19:25:26Z vboxsync $ */
 /** @file
  * IPRT - Spinlock, generic implementation.
  */

@@ -1,4 +1,4 @@
-; $Id: CPUMRCA.asm $
+; $Id: CPUMRCA.asm 42771 2012-08-11 20:15:47Z vboxsync $
 ;; @file
 ; CPUM - Raw-mode Context Assembly Routines.
 ;

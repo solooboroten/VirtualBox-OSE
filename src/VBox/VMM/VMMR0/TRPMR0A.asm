@@ -1,4 +1,4 @@
-; $Id: TRPMR0A.asm $
+; $Id: TRPMR0A.asm 44528 2013-02-04 14:27:54Z vboxsync $
 ;; @file
 ; TRPM - Host Context Ring-0
 ;

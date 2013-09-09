@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 48335 2013-09-06 03:42:27Z vboxsync $
 ## @file
 # Makefile for the VBox Main module.
 #
@@ -167,7 +167,7 @@ endif
 # Generate library with API class wrappers from the XIDL file.
 #
 LIBRARIES += VBoxAPIWrap
-VBoxAPIWrap_TEMPLATE        = VBOXMAINLIB
+VBoxAPIWrap_TEMPLATE        = VBoxMainLib
 VBoxAPIWrap_SOURCES         = $(VBoxAPIWrap_GENERATEDCPP)
 VBoxAPIWrap_GENERATEDCPP    = $(filter %.cpp,$(VBoxAPIWrap_GENERATEDSOURCES))
 VBoxAPIWrap_GENERATEDSOURCES = $(addprefix $(VBoxAPIWrap_0_OUTDIR)/,$(VBoxAPIWrap_VBOX_APIWRAPPERFILES))
@@ -186,6 +186,11 @@ VBoxAPIWrap_CLEAN           = \
 VBoxAPIWrap_KMK = $(PATH_OUT)/vboxapiwrap.kmk
 include $(VBoxAPIWrap_KMK)
 
+ifdef VBOX_WITH_32_ON_64_MAIN_API
+LIBRARIES += VBoxAPIWrap-x86
+VBoxAPIWrap-x86_TEMPLATE = VBoxMainLib-x86
+VBoxAPIWrap-x86_EXTENDS  = VBoxAPIWrap
+endif
 
 #
 # Some SDK bit.
@@ -339,6 +344,7 @@ VBoxSVC_SOURCES = \
 	src-server/NetworkServiceRunner.cpp \
 	src-server/NATNetworkImpl.cpp \
 	src-server/GuestOSTypeImpl.cpp \
+	src-server/HostDnsService.cpp \
 	src-server/HostImpl.cpp \
 	src-server/HostNetworkInterfaceImpl.cpp \
 	src-server/HostPower.cpp \
@@ -357,6 +363,7 @@ VBoxSVC_SOURCES = \
 	src-server/SnapshotImpl.cpp \
 	src-server/StorageControllerImpl.cpp \
 	src-server/SystemPropertiesImpl.cpp \
+	src-server/TokenImpl.cpp \
 	src-server/USBControllerImpl.cpp \
 	src-server/USBDeviceFiltersImpl.cpp \
 	src-server/VFSExplorerImpl.cpp \
@@ -371,21 +378,28 @@ VBoxSVC_SOURCES = \
 
 VBoxSVC_SOURCES.darwin = \
 	src-server/darwin/iokit.cpp \
-	src-server/darwin/HostPowerDarwin.cpp
+	src-server/darwin/HostPowerDarwin.cpp \
+	src-server/darwin/HostDnsServiceDarwin.cpp
 
 VBoxSVC_SOURCES.win = \
 	src-server/win/svcmain.cpp \
 	src-server/win/svchlp.cpp \
 	src-server/win/HostPowerWin.cpp \
 	src-server/win/VBoxSVC.rc \
-	src-server/win/VBoxComEvents.cpp
+	src-server/win/VBoxComEvents.cpp \
+	src-server/win/HostDnsServiceWin.cpp
 
 VBoxSVC_SOURCES.linux = \
-	src-server/linux/HostHardwareLinux.cpp
+	src-server/linux/HostHardwareLinux.cpp \
+	src-server/HostDnsServiceResolvConf.cpp
 
 VBoxSVC_SOURCES.solaris = \
 	src-server/linux/vbox-libhal.cpp \
-	src-server/solaris/DynLoadLibSolaris.cpp
+	src-server/solaris/DynLoadLibSolaris.cpp \
+	src-server/HostDnsServiceResolvConf.cpp
+
+VBoxSVC_SOURCES.os2 = \
+	src-server/HostDnsServiceResolvConf.cpp
 
 VBoxSVC_SOURCES.freebsd = \
 	src-server/freebsd/HostHardwareFreeBSD.cpp
@@ -541,6 +555,14 @@ $$(VBoxSVCM_0_OUTDIR)/VBoxSVCM.def:
 	$(APPEND) $@ _NSGetModule
  endif
 VBoxSVCM_INTERMEDIATES += $(VBOX_IDL_HEADER.XPCOM)
+
+ # 32-bit version of the module.
+ ifdef VBOX_WITH_32_ON_64_MAIN_API
+DLLS += VBoxSVCM-x86
+VBoxSVCM-x86_TEMPLATE = VBoxMainComp-x86
+VBoxSVCM-x86_EXTENDS  = VBoxSVCM
+ endif
+
 endif # VBOX_WITH_XPCOM
 
 
@@ -573,8 +595,12 @@ VBoxC_DEFS = \
 	$(if $(VBOX_WITH_EXTPACK),VBOX_WITH_EXTPACK,) \
 	$(if $(VBOX_WITH_PCI_PASSTHROUGH),VBOX_WITH_PCI_PASSTHROUGH,) \
 	$(if $(VBOX_WITH_VPX),VBOX_WITH_VPX,)
-
-
+ifdef VBOX_WITH_CRHGSMI
+ VBoxC_DEFS += VBOX_WITH_CRHGSMI
+endif
+ifdef VBOX_WITH_NETSHAPER
+ VBoxC_DEFS += VBOX_WITH_NETSHAPER
+endif
 VBoxC_DEFS.darwin.x86 = VBOX_WITH_2X_4GB_ADDR_SPACE
 VBoxC_DEFS.win.x86 += _WIN32_WINNT=0x0500
 VBoxC_DEFS.win.amd64 += _WIN32_WINNT=0x0510
@@ -604,7 +630,6 @@ VBoxC_LDFLAGS.win += /MANIFEST
 VBoxC_LIBS += \
 	$(if-expr "$(LIB_VMM)" == "$(VBOX_LIB_VMM_LAZY)",$(LIB_REM),) \
 	$(VBOX_LIB_VMM_LAZY)
-
 ifdef VBOX_WITH_NETFLT
  VBoxC_LIBS.win += \
 	$(PATH_STAGE_LIB)/VBoxDrvCfg$(VBOX_SUFF_LIB) \
@@ -620,9 +645,8 @@ ifdef VBOX_WITH_CROGL
  VBoxC_LDFLAGS.darwin += -framework OpenGL
 endif
 
-
-VBoxC_INTERMEDIATES =            \
-	$(VBOX_MAIN_PREREQS)     \
+VBoxC_INTERMEDIATES = \
+	$(VBOX_MAIN_PREREQS) \
 	$(VBOX_XML_SCHEMADEFS_H) \
 	$(VBOX_AUTOGEN_EVENT_H)
 
@@ -675,47 +699,33 @@ VBoxC_SOURCES.win = \
 	src-client/win/dllmain.cpp \
 	src-client/win/VBoxC.def \
 	src-client/win/VBoxC.rc
-
 ifdef VBOX_WITH_GUEST_CONTROL
-VBoxC_SOURCES += \
+ VBoxC_SOURCES += \
 	src-client/GuestSessionImplTasks.cpp \
 	src-client/GuestCtrlPrivate.cpp
 endif
-
 ifdef VBOX_WITH_DRAG_AND_DROP
-VBoxC_SOURCES += \
+ VBoxC_SOURCES += \
 	src-client/GuestDnDImpl.cpp
 endif
-
 ifdef VBOX_WITH_XPCOM
-VBoxC_SOURCES += \
+ VBoxC_SOURCES += \
 	src-client/xpcom/module.cpp
 endif
-
 ifdef VBOX_WITH_HGCM
-VBoxC_SOURCES += \
+ VBoxC_SOURCES += \
 	src-client/HGCMObjects.cpp \
 	src-client/HGCMThread.cpp \
 	src-client/HGCM.cpp
 endif
-
-ifdef VBOX_WITH_CRHGSMI
-VBoxC_DEFS += VBOX_WITH_CRHGSMI
-endif
-
 ifdef VBOX_WITH_USB
-VBoxC_SOURCES += \
+ VBoxC_SOURCES += \
 	src-client/RemoteUSBBackend.cpp
 endif
-
 ifdef VBOX_WITH_VPX
-VBoxC_SOURCES += \
+ VBoxC_SOURCES += \
 	src-client/EbmlWriter.cpp \
 	src-client/VideoRec.cpp
-endif
-
-ifdef VBOX_WITH_NETSHAPER
-VBoxC_DEFS += VBOX_WITH_NETSHAPER
 endif
 
 ifeq ($(KBUILD_TARGET),darwin)
@@ -737,12 +747,64 @@ VBoxC_CLEAN.win  += $(VBoxC_0_OUTDIR)/VBoxC.rgs
 $$(VBoxC_0_OUTDIR)/VBoxC.rgs: $(VBOX_PATH_MAIN_SRC)/src-all/win/VirtualBox_rgs.xsl $(VBOX_XIDL_FILE) | $$(dir $$@)
 	$(VBOX_XSLTPROC) --stringparam Module VBoxC -o $@ $< $(VBOX_XIDL_FILE)
 
+ifdef VBOX_WITH_32_ON_64_MAIN_API
+ #
+ # 32-bit VBox API Client In-Process module.
+ #
+ # This is currently just a 32-bit version of VBoxC.  It might be desirable to
+ # split up VBoxC into a simple client and a VM client part later, in which
+ # case this module will be a simple client.
+ #
+ # Note! One important thing is that the typelib for this DLL must be build
+ #       with the /env win32 switch and the VBoxC typelib with /env amd64, if
+ #       not they will overwrite each others typelib module entry.
+ #
+ DLLS += VBoxClient-x86
+ VBoxClient-x86_TEMPLATE = VBoxMainComp-x86
+ VBoxClient-x86_EXTENDS  = VBoxC
+ VBoxClient-x86_DEFS = VBOX_COM_INPROC_API_CLIENT $(VBoxC_DEFS)
+ VBoxClient-x86_INCS.win = \
+ 	$(VBoxClient-x86_0_OUTDIR) \
+ 	$(VBoxCOM-x86_0_OUTDIR) \
+	$(VBoxC_INCS.win)
+ VBoxClient-x86_SOURCES = \
+ 	src-all/EventImpl.cpp \
+ 	src-all/Global.cpp \
+ 	src-all/VirtualBoxBase.cpp \
+ 	src-all/VirtualBoxErrorInfoImpl.cpp \
+ 	src-client/ClientTokenHolder.cpp \
+ 	src-client/SessionImpl.cpp \
+ 	src-client/VirtualBoxClientImpl.cpp \
+ 	$(VBOX_AUTOGEN_EVENT_CPP) \
+ 	$(VBOX_XML_SCHEMADEFS_CPP)
+ VBoxClient-x86_SOURCES.win = \
+ 	src-client/win/dllmain.cpp \
+ 	src-client/win/VBoxClient-x86.def \
+ 	src-client/win/VBoxClient-x86.rc
+ ifdef VBOX_WITH_XPCOM
+  VBoxClient-x86_SOURCES += \
+  	src-client/xpcom/module.cpp
+ endif
+ VBoxClient-x86_LIBS = $(NO_SUCH_VARIABLE)
+ VBoxClient-x86_LIBS.win = $(NO_SUCH_VARIABLE)
+ VBoxClient-x86_CLEAN.win += $$(VBoxClient-x86_0_OUTDIR)/VBoxClient-x86.rgs
+ src-client/win/VBoxClient-x86.rc_DEPS = \
+ 	$(VBoxClient-x86_0_OUTDIR)/VBoxClient-x86.rgs \
+ 	$(VBoxCOM-x86_0_OUTDIR)/VirtualBox-x86.tlb
+
+ $$(VBoxClient-x86_0_OUTDIR)/VBoxClient-x86.rgs: \
+ 		$(VBOX_PATH_MAIN_SRC)/src-all/win/VirtualBox_rgs.xsl \
+		$(VBOX_XIDL_FILE) | $$(dir $$@)
+	$(VBOX_XSLTPROC) --stringparam Module VBoxC -o $@ $< $(VBOX_XIDL_FILE)
+
+endif
+
 
 #
 # VBoxCOM - COM Abstraction Layer library
 #
 LIBRARIES += VBoxCOM
-VBoxCOM_TEMPLATE        = VBOXMAINLIB
+VBoxCOM_TEMPLATE        = VBoxMainLib
 VBoxCOM_INTERMEDIATES   = $(VBOX_MAIN_PREREQS)
 VBoxCOM_SOURCES         = \
 	glue/com.cpp \
@@ -756,9 +818,9 @@ VBoxCOM_SOURCES         = \
 VBoxCOM_INCS          += \
 	include
 ifeq ($(KBUILD_TARGET),win)
- VBoxCOM_DEFS.x86      += _WIN32_WINNT=0x0500
- VBoxCOM_DEFS.amd64    += _WIN32_WINNT=0x0510
- VBoxCOM_SOURCES       += \
+ VBoxCOM_DEFS.x86       = _WIN32_WINNT=0x0500
+ VBoxCOM_DEFS.amd64     = _WIN32_WINNT=0x0510
+ VBoxCOM_SOURCES.win    = \
 	$(VBoxCOM_0_OUTDIR)/VirtualBox_i.c
 else # !win
  VBoxCOM_SOURCES       += \
@@ -767,6 +829,16 @@ endif # !win
 
 glue/com.cpp_DEFS = \
 	$(if $(VBOX_BLEEDING_EDGE),VBOX_BLEEDING_EDGE=\"$(VBOX_BLEEDING_EDGE)\",)
+
+# 32-bit version of VBoxCOM.
+ifdef VBOX_WITH_32_ON_64_MAIN_API
+ LIBRARIES += VBoxCOM-x86
+ VBoxCOM-x86_TEMPLATE = VBoxMainLib-x86
+ VBoxCOM-x86_EXTENDS  = VBoxCOM
+ VBoxCOM-x86_SOURCES.win    = \
+	$(VBoxCOM-x86_0_OUTDIR)/VirtualBox_i.c
+endif
+
 
 
 #
@@ -847,7 +919,8 @@ ifdef VBOX_WITH_XPCOM
 testidl:    $(VBOX_IDL_FILE.XPCOM) $(VBOX_IDL_TYPELIB.XPCOM)
 testidlhdr: $(VBOX_IDL_HEADER.XPCOM)
 else
-testidl:    $(VBOX_IDL_FILE.MSCOM) $(VBoxCOM_0_OUTDIR)/VirtualBox_i.c
+testidl:    $(VBOX_IDL_FILE.MSCOM) $(VBoxCOM_0_OUTDIR)/VirtualBox_i.c \
+	$(if $(VBOX_WITH_32_ON_64_MAIN_API),$(VBoxCOM-x86_0_OUTDIR)/VirtualBox_i.c,)
 endif
 
 
@@ -855,8 +928,20 @@ $(VBoxCOM_0_OUTDIR)/VirtualBox_i.c \
 + $(VBoxCOM_0_OUTDIR)/VirtualBox.h \
 + $(VBoxCOM_0_OUTDIR)/VirtualBox.tlb: $(VBOX_IDL_FILE.MSCOM) | $$(dir $$@)
 	$(VBOX_WIN_MIDL) /nologo \
+		$(if-expr "$(KBUILD_TARGET_ARCH)" == "amd64" && "$(KBUILD_HOST)" == "win",/env amd64,/env win32) /target NT51 \
 		/out $(call VBOX_FN_MAKE_WIN_PATH,$(VBoxCOM_0_OUTDIR)) \
 		/cpp_cmd $(subst $(EXEC_X86_WIN32),,$(call VBOX_FN_MAKE_WIN_PATH,$(TOOL_$(VBOX_VCC_TOOL)_CC))) \
+		/I $(call VBOX_FN_MAKE_WIN_PATH,$(PATH_SDK_$(VBOX_WINPSDK)_INC)) \
+		/I idl \
+		$(call VBOX_FN_MAKE_WIN_PATH,$<)
+
+$(VBoxCOM-x86_0_OUTDIR)/VirtualBox_i.c \
++ $(VBoxCOM-x86_0_OUTDIR)/VirtualBox.h \
++ $(VBoxCOM-x86_0_OUTDIR)/VirtualBox-x86.tlb: $(VBOX_IDL_FILE.MSCOM) | $$(dir $$@)
+	$(VBOX_WIN_MIDL) /nologo /env win32 /target NT51 \
+		/out $(call VBOX_FN_MAKE_WIN_PATH,$(VBoxCOM-x86_0_OUTDIR)) \
+		/tlb $(call VBOX_FN_MAKE_WIN_PATH,$(VBoxCOM-x86_0_OUTDIR)/VirtualBox-x86.tlb) \
+		/cpp_cmd $(subst $(EXEC_X86_WIN32),,$(call VBOX_FN_MAKE_WIN_PATH,$(TOOL_$(VBOX_VCC_TOOL_STEM)X86_CC))) \
 		/I $(call VBOX_FN_MAKE_WIN_PATH,$(PATH_SDK_$(VBOX_WINPSDK)_INC)) \
 		/I idl \
 		$(call VBOX_FN_MAKE_WIN_PATH,$<)

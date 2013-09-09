@@ -1,4 +1,4 @@
-/** $Id: USBLib-darwin.cpp $ */
+/** $Id: USBLib-darwin.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * USBLib - Library for wrapping up the VBoxUSB functionality, Darwin flavor.
  */

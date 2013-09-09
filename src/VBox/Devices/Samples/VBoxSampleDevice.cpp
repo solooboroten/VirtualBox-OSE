@@ -1,4 +1,4 @@
-/* $Id: VBoxSampleDevice.cpp $ */
+/* $Id: VBoxSampleDevice.cpp 45025 2013-03-13 16:45:15Z vboxsync $ */
 /** @file
  * VBox Sample Device.
  */

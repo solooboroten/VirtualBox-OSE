@@ -1,4 +1,4 @@
-/* $Id: SUPDrv.c $ */
+/* $Id: SUPDrv.c 48328 2013-09-05 22:20:18Z vboxsync $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Common code.
  */
@@ -3366,11 +3366,12 @@ SUPR0DECL(void) SUPR0ResumeVTxOnCpu(bool fSuspended)
 
 
 /**
- * Quries the AMD-V and VT-x capabilities of the calling CPU.
+ * Queries the AMD-V and VT-x capabilities of the calling CPU.
  *
  * @returns VBox status code.
  * @retval  VERR_VMX_NO_VMX
- * @retval  VERR_VMX_MSR_LOCKED_OR_DISABLED
+ * @retval  VERR_VMX_MSR_SMX_VMXON_DISABLED
+ * @retval  VERR_VMX_MSR_VMXON_DISABLED
  * @retval  VERR_SVM_NO_SVM
  * @retval  VERR_SVM_DISABLED
  * @retval  VERR_UNSUPPORTED_CPU if not identifiable as an AMD, Intel or VIA
@@ -3389,17 +3390,20 @@ SUPR0DECL(int) SUPR0QueryVTCaps(PSUPDRVSESSION pSession, uint32_t *pfCaps)
 
     *pfCaps = 0;
 
+    /** @todo r=ramshankar: Although we're only reading CPUIDs/MSRs here which
+     *        should be identical on all CPUs on the system, it's probably
+     *        cleaner to prevent migration nonetheless? */
     if (ASMHasCpuId())
     {
         uint32_t fFeaturesECX, fFeaturesEDX, uDummy;
         uint32_t uMaxId, uVendorEBX, uVendorECX, uVendorEDX;
-        uint64_t u64Value;
+        uint64_t u64FeatMsr;
 
         ASMCpuId(0, &uMaxId, &uVendorEBX, &uVendorECX, &uVendorEDX);
         ASMCpuId(1, &uDummy, &uDummy, &fFeaturesECX, &fFeaturesEDX);
 
         if (   ASMIsValidStdRange(uMaxId)
-            && (   ASMIsIntelCpuEx(    uVendorEBX, uVendorECX, uVendorEDX)
+            && (   ASMIsIntelCpuEx(     uVendorEBX, uVendorECX, uVendorEDX)
                 || ASMIsViaCentaurCpuEx(uVendorEBX, uVendorECX, uVendorEDX) )
            )
         {
@@ -3408,15 +3412,24 @@ SUPR0DECL(int) SUPR0QueryVTCaps(PSUPDRVSESSION pSession, uint32_t *pfCaps)
                  && (fFeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
                )
             {
+                bool fInSmxMode;
+                bool fMsrLocked;
+                bool fSmxVmxAllowed;
+                bool fVmxAllowed;
+                bool fAllowed;
+
                 /*
-                 * Both the LOCK and VMXON bit must be set; otherwise VMXON will generate a #GP.
-                 * Once the lock bit is set, this MSR can no longer be modified.
+                 * We require the lock bit and the appropriate VMXON bit to be set otherwise VMXON will generate a #GP
+                 * This is a simplified check (assumes BIOS does it job and properly locks the control bit). For the more
+                 * extensive procedure see hmR0InitIntelCpu().
                  */
-                u64Value = ASMRdMsr(MSR_IA32_FEATURE_CONTROL);
-                if (      (u64Value & (MSR_IA32_FEATURE_CONTROL_VMXON | MSR_IA32_FEATURE_CONTROL_LOCK))
-                       ==             (MSR_IA32_FEATURE_CONTROL_VMXON | MSR_IA32_FEATURE_CONTROL_LOCK) /* enabled and locked */
-                    || !(u64Value & MSR_IA32_FEATURE_CONTROL_LOCK) /* not enabled, but not locked either */
-                   )
+                u64FeatMsr     = ASMRdMsr(MSR_IA32_FEATURE_CONTROL);
+                fInSmxMode     = !!(ASMGetCR4() & X86_CR4_SMXE);
+                fMsrLocked     = !!(u64FeatMsr & MSR_IA32_FEATURE_CONTROL_LOCK);
+                fSmxVmxAllowed = fMsrLocked && !!(u64FeatMsr & MSR_IA32_FEATURE_CONTROL_SMX_VMXON);
+                fVmxAllowed    = fMsrLocked && !!(u64FeatMsr & MSR_IA32_FEATURE_CONTROL_VMXON);
+                fAllowed       = fInSmxMode ? fSmxVmxAllowed : fVmxAllowed;
+                if (fAllowed)
                 {
                     VMX_CAPABILITY vtCaps;
 
@@ -3431,7 +3444,7 @@ SUPR0DECL(int) SUPR0QueryVTCaps(PSUPDRVSESSION pSession, uint32_t *pfCaps)
                     }
                     return VINF_SUCCESS;
                 }
-                return VERR_VMX_MSR_LOCKED_OR_DISABLED;
+                return fInSmxMode ? VERR_VMX_MSR_SMX_VMXON_DISABLED : VERR_VMX_MSR_VMXON_DISABLED;
             }
             return VERR_VMX_NO_VMX;
         }
@@ -3450,8 +3463,8 @@ SUPR0DECL(int) SUPR0QueryVTCaps(PSUPDRVSESSION pSession, uint32_t *pfCaps)
                )
             {
                 /* Check if SVM is disabled */
-                u64Value = ASMRdMsr(MSR_K8_VM_CR);
-                if (!(u64Value & MSR_K8_VM_CR_SVM_DISABLE))
+                u64FeatMsr = ASMRdMsr(MSR_K8_VM_CR);
+                if (!(u64FeatMsr & MSR_K8_VM_CR_SVM_DISABLE))
                 {
                     uint32_t fSvmFeatures;
                     *pfCaps |= SUPVTCAPS_AMD_V;
@@ -5163,7 +5176,7 @@ static int supdrvGipCreate(PSUPDRVDEVEXT pDevExt)
         }
     }
     if (pGip->u32Mode != SUPGIPMODE_ASYNC_TSC)
-        rc = RTTimerCreateEx(&pDevExt->pGipTimer, u32Interval, 0, supdrvGipSyncTimer, pDevExt);
+        rc = RTTimerCreateEx(&pDevExt->pGipTimer, u32Interval, 0 /* fFlags */, supdrvGipSyncTimer, pDevExt);
     if (RT_SUCCESS(rc))
     {
         rc = RTMpNotificationRegister(supdrvGipMpEvent, pDevExt);

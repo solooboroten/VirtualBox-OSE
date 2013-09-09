@@ -1,4 +1,4 @@
-/* $Id: HGSMICommon.cpp $ */
+/* $Id: HGSMICommon.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
 /** @file
  * VBox Host Guest Shared Memory Interface (HGSMI) - Functions common to both host and guest.
  */

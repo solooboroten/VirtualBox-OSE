@@ -1,4 +1,4 @@
-/* $Id: RTSystemShutdown-win.cpp $ */
+/* $Id: RTSystemShutdown-win.cpp 39729 2012-01-08 17:29:43Z vboxsync $ */
 /** @file
  * IPRT - RTSystemShutdown, Windows.
  */

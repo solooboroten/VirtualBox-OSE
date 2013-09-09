@@ -1,4 +1,4 @@
-/* $Id: VSCSIVpdPages.h $ */
+/* $Id: VSCSIVpdPages.h 38694 2011-09-08 21:44:08Z vboxsync $ */
 /** @file
  * Virtual SCSI driver: Definitions for VPD pages.
  */

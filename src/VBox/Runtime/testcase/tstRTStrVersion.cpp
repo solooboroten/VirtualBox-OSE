@@ -1,4 +1,4 @@
-/* $Id: tstRTStrVersion.cpp $ */
+/* $Id: tstRTStrVersion.cpp 39176 2011-11-02 13:34:06Z vboxsync $ */
 /** @file
  * IPRT Testcase - Version String Comparison.
  */

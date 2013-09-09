@@ -1,4 +1,4 @@
-; $Id: strncpy.asm $
+; $Id: strncpy.asm 40789 2012-04-06 12:54:00Z vboxsync $
 ;; @file
 ; IPRT - No-CRT strncpy - AMD64 & X86.
 ;

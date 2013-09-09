@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-win-pnp.cpp $ */
+/* $Id: VBoxGuest-win-pnp.cpp 45013 2013-03-13 08:42:43Z vboxsync $ */
 /** @file
  * VBoxGuest-win-pnp - Windows Plug'n'Play specifics.
  */

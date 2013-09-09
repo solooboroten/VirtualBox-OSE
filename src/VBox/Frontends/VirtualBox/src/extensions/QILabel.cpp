@@ -1,4 +1,4 @@
-/* $Id: QILabel.cpp $ */
+/* $Id: QILabel.cpp 46834 2013-06-27 12:19:51Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-/* $Id: ApplianceImplImport.cpp $ */
+/* $Id: ApplianceImplImport.cpp 48117 2013-08-28 08:29:36Z vboxsync $ */
 /** @file
  *
  * IAppliance and IVirtualSystem COM class implementations.
@@ -624,15 +624,15 @@ STDMETHODIMP Appliance::Interpret()
                         di = foundDisk->second;
                     }
 
-                    /* 
+                    /*
                      * Figure out from URI which format the image of disk has.
                      * URI must have inside section <Disk>                   .
-                     * But there aren't strong requirements about correspondence one URI for one disk virtual format. 
+                     * But there aren't strong requirements about correspondence one URI for one disk virtual format.
                      * So possibly, we aren't able to recognize some URIs.
                      */
                     Utf8Str vdf = typeOfVirtualDiskFormatFromURI(di.strFormat);
 
-                    /* 
+                    /*
                      * fallback, if we can't determine virtual disk format using URI from the attribute ovf:format
                      * in the corresponding section <Disk> in the OVF file.
                      */
@@ -827,7 +827,7 @@ HRESULT Appliance::preCheckImageAvailability(PSHASTORAGE pSHAStorage,
         if (vrc == VINF_TAR_DIR_PATH)
         {
             throw setError(VBOX_E_FILE_ERROR,
-                   tr("Empty directory folder (%s) isn't allowed in the OVA package (%Rrc)"), 
+                   tr("Empty directory folder (%s) isn't allowed in the OVA package (%Rrc)"),
                       pszFilename,
                       vrc);
         }
@@ -1007,10 +1007,11 @@ HRESULT Appliance::readFSOVF(TaskOVF *pTask)
                     RTDIGESTTYPE digestType;
                     vrc = RTManifestVerifyDigestType(pBuf, cbRead, &digestType);
 
+                    if (pBuf)
+                        RTMemFree(pBuf);
+
                     if (RT_FAILURE(vrc))
                     {
-                        if (pBuf)
-                            RTMemFree(pBuf);
                         throw setError(VBOX_E_FILE_ERROR,
                                tr("Could not verify supported digest types in the manifest file '%s' (%Rrc)"),
                                RTPathFilename(strMfFile.c_str()), vrc);
@@ -1555,7 +1556,7 @@ HRESULT Appliance::importFSOVF(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             storage.fCreateDigest = true;
 
             size_t cbMfSize = 0;
-            
+
             /* Now import the appliance. */
             importMachines(stack, pShaIo, &storage);
             /* Read & verify the manifest file. */
@@ -1567,15 +1568,15 @@ HRESULT Appliance::importFSOVF(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             if (FAILED(rc)) throw rc;
 
             size_t cbCertSize = 0;
-            Utf8Str manifestShaDigest;
+
+            /* Save the SHA digest of the manifest file for the next validation */
+            Utf8Str manifestShaDigest = storage.strDigest;
+
             Utf8Str strCertFile = Utf8Str(pTask->locInfo.strPath).stripExt().append(".cert");
             if (RTFileExists(strCertFile.c_str()))
             {
                 rc = readFileToBuf(strCertFile, &pvCertBuf, &cbCertSize, false, pShaIo, &storage);
                 if (FAILED(rc)) throw rc;
-
-                /* Save the SHA digest of the manifest file for the next validation */
-                manifestShaDigest = storage.strDigest;
 
                 /* verify Certificate */
             }
@@ -1628,6 +1629,7 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
     char *pszFilename = 0;
     void *pvMfBuf = 0;
     void *pvCertBuf = 0;
+    Utf8Str OVFfilename;
 
     writeLock.release();
     try
@@ -1666,17 +1668,25 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
         vrc = RTTarCurrentFile(tar, &pszFilename);
         if (RT_FAILURE(vrc))
             throw setError(VBOX_E_IPRT_ERROR,
-                           tr("Getting the current file within the archive failed (%Rrc)"), vrc);
+                           tr("Getting the OVF file within the archive failed (%Rrc)"), vrc);
         else
         {
             if (vrc == VINF_TAR_DIR_PATH)
             {
                 throw setError(VBOX_E_FILE_ERROR,
-                       tr("Empty directory folder (%s) isn't allowed in the OVA package (%Rrc)"), 
+                       tr("Empty directory folder (%s) isn't allowed in the OVA package (%Rrc)"),
                           pszFilename,
                           vrc);
             }
         }
+
+        /* save original OVF filename */
+        OVFfilename = pszFilename;
+        size_t cbMfSize = 0;
+        size_t cbCertSize = 0;
+        Utf8Str strMfFile = (Utf8Str(pszFilename)).stripExt().append(".mf");
+        Utf8Str strCertFile = (Utf8Str(pszFilename)).stripExt().append(".cert");
+
         /* Skip the OVF file, cause this was read in IAppliance::Read already. */
         vrc = RTTarSeekNextFile(tar);
         if (   RT_FAILURE(vrc)
@@ -1689,7 +1699,7 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             if (vrc == VINF_TAR_DIR_PATH)
             {
                 throw setError(VBOX_E_FILE_ERROR,
-                       tr("Empty directory folder (%s) isn't allowed in the OVA package (%Rrc)"), 
+                       tr("Empty directory folder (%s) isn't allowed in the OVA package (%Rrc)"),
                           pszFilename,
                           vrc);
             }
@@ -1702,8 +1712,6 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
          * is a manifest file in the stream. */
         pStorage->fCreateDigest = true;
 
-        size_t cbMfSize = 0;
-        Utf8Str strMfFile = Utf8Str(pszFilename).stripExt().append(".mf");
         /* Create the import stack for the rollback on errors. */
         ImportStack stack(pTask->locInfo, m->pReader->m_mapDisks, pTask->pProgress);
         /*
@@ -1721,28 +1729,25 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
         rc = readTarFileToBuf(tar, strMfFile, &pvMfBuf, &cbMfSize, true, pCallbacks, pStorage);
         if (FAILED(rc)) throw rc;
 
-        /* 
+        /*
          * Try to read the certificate file. First try.
-         * Logic is the same as with manifest file 
-         * Only if the manifest file had been read successfully before 
+         * Logic is the same as with manifest file
+         * Only if the manifest file had been read successfully before
          */
         vrc = RTTarCurrentFile(tar, &pszFilename);
-        if (RT_FAILURE(vrc))
-            throw setError(VBOX_E_IPRT_ERROR,
-                           tr("Getting the current file within the archive failed (%Rrc)"), vrc);
-
-        size_t cbCertSize = 0;
-        Utf8Str strCertFile = Utf8Str(pszFilename).stripExt().append(".cert");
-        if (pvMfBuf)
+        if (RT_SUCCESS(vrc))
         {
-            if (strCertFile.compare(pszFilename) == 0)
+            if (pvMfBuf)
             {
-                rc = readTarFileToBuf(tar, strCertFile, &pvCertBuf, &cbCertSize, false, pCallbacks, pStorage);
-                if (FAILED(rc)) throw rc;
-
-                if (pvCertBuf)
+                if (strCertFile.compare(pszFilename) == 0)
                 {
-                /* verify the certificate */
+                    rc = readTarFileToBuf(tar, strCertFile, &pvCertBuf, &cbCertSize, false, pCallbacks, pStorage);
+                    if (FAILED(rc)) throw rc;
+
+                    if (pvCertBuf)
+                    {
+                    /* verify the certificate */
+                    }
                 }
             }
         }
@@ -1759,8 +1764,7 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             if (pvMfBuf)
             {
                 /* Add the ovf file to the digest list. */
-                stack.llSrcDisksDigest.push_front(STRPAIR(Utf8Str(pszFilename).stripExt().append(".ovf"),
-                                                  m->strOVFSHADigest));
+                stack.llSrcDisksDigest.push_front(STRPAIR(OVFfilename, m->strOVFSHADigest));
                 rc = verifyManifestFile(strMfFile, stack, pvMfBuf, cbMfSize);
                 if (FAILED(rc)) throw rc;
 
@@ -1770,18 +1774,17 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
                  */
 
                 vrc = RTTarCurrentFile(tar, &pszFilename);
-                if (RT_FAILURE(vrc))
-                    throw setError(VBOX_E_IPRT_ERROR,
-                                   tr("Getting the current file within the archive failed (%Rrc)"), vrc);
-
-                if (strCertFile.compare(pszFilename) == 0)
+                if (RT_SUCCESS(vrc))
                 {
-                    rc = readTarFileToBuf(tar, strCertFile, &pvCertBuf, &cbCertSize, false, pCallbacks, pStorage);
-                    if (FAILED(rc)) throw rc;
-
-                    if (pvCertBuf)
+                    if (strCertFile.compare(pszFilename) == 0)
                     {
-                    /* verify the certificate */
+                        rc = readTarFileToBuf(tar, strCertFile, &pvCertBuf, &cbCertSize, false, pCallbacks, pStorage);
+                        if (FAILED(rc)) throw rc;
+
+                        if (pvCertBuf)
+                        {
+                        /* verify the certificate */
+                        }
                     }
                 }
             }
@@ -2022,7 +2025,7 @@ HRESULT Appliance::readFileToBuf(const Utf8Str &strFile,
     HRESULT rc = S_OK;
 
     bool fOldDigest = pStorage->fCreateDigest;/* Save the old digest property */
-    pStorage->fCreateDigest = fCreateDigest; 
+    pStorage->fCreateDigest = fCreateDigest;
     int vrc = ShaReadBuf(strFile.c_str(), ppvBuf, pcbSize, pCallbacks, pStorage);
     if (   RT_FAILURE(vrc)
         && vrc != VERR_FILE_NOT_FOUND)
@@ -2243,10 +2246,10 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
     /* Get the system properties. */
     SystemProperties *pSysProps = mVirtualBox->getSystemProperties();
 
-    /* 
+    /*
      * we put strSourceOVF into the stack.llSrcDisksDigest in the end of this
-     * function like a key for a later validation of the SHA digests 
-     */ 
+     * function like a key for a later validation of the SHA digests
+     */
     const Utf8Str &strSourceOVF = di.strHref;
 
     Utf8Str strSrcFilePath(stack.strSourceDir);
@@ -2275,17 +2278,18 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
     }
     else
     {
+        bool fGzipUsed = !(di.strCompression.compare("gzip",Utf8Str::CaseInsensitive));
         /* check read file to GZIP compression */
         try
         {
-            if (di.strCompression.compare("gzip",Utf8Str::CaseInsensitive) == 0)
+            if (fGzipUsed == true)
             {
                 /*
-                 * 1. extract a file to the local/temporary folder
-                 * 2. apply GZIP decompression for the file
-                 * 3. replace the value of strSrcFilePath with a new path to the file
-                 * 4. replace SHA-TAR I/O interface with File I/O interface
-                 * 5. save calculated SHA digest of GZIPed file for later validation
+                 * Create the necessary file access interfaces.
+                 * For the next step:
+                 * We need to replace the previously created chain of SHA-TAR or SHA-FILE interfaces
+                 * with simple FILE interface because we don't need SHA or TAR interfaces here anymore.
+                 * But we mustn't delete the chain of SHA-TAR or SHA-FILE interfaces.
                  */
 
                 /* Decompress the GZIP file and save a new file in the target path */
@@ -2307,7 +2311,6 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
                                    RTPathFilename(strSrcFilePath.c_str()), vrc);
 
                 /* Create the necessary file access interfaces. */
-
                 pFileIo = FileCreateInterface();
                 if (!pFileIo)
                     throw setError(E_OUTOFMEMORY);
@@ -2321,6 +2324,7 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
                     throw setError(VBOX_E_IPRT_ERROR,
                                    tr("Creation of the VD interface failed (%Rrc)"), vrc);
 
+                /* Correct the source and the target with the actual values */
                 strSrcFilePath = strTargetDir;
                 strTargetDir = strTargetDir.stripFilename();
                 strTargetDir.append(RTPATH_SLASH_STR);
@@ -2332,10 +2336,11 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
 
             Utf8Str strTrgFormat = "VMDK";
             ULONG lCabs = 0;
+            char *pszExt = NULL;
 
             if (RTPathHaveExt(strTargetPath->c_str()))
             {
-                char *pszExt = RTPathExt(strTargetPath->c_str());
+                pszExt = RTPathExt(strTargetPath->c_str());
                 /* Figure out which format the user like to have. Default is VMDK. */
                 ComObjPtr<MediumFormat> trgFormat = pSysProps->mediumFormatFromExtension(&pszExt[1]);
                 if (trgFormat.isNull())
@@ -2365,6 +2370,12 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
                 if (FAILED(rc)) throw rc;
                 strTrgFormat = Utf8Str(bstrFormatName);
             }
+            else
+            {
+                throw setError(VBOX_E_FILE_ERROR,
+                               tr("The target disk '%s' has no extension "),
+                               strTargetPath->c_str(), VERR_INVALID_NAME);
+            }
 
             /* Create an IMedium object. */
             pTargetHD.createObject();
@@ -2372,65 +2383,42 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
             /*CD/DVD case*/
             if (strTrgFormat.compare("RAW", Utf8Str::CaseInsensitive) == 0)
             {
-                void *pvTmpBuf = 0;
-                size_t cbSize = 0;
                 try
                 {
-                    /* Read the ISO file into a memory buffer */
-                    vrc = ShaReadBuf(strSrcFilePath.c_str(), &pvTmpBuf, &cbSize, pCallbacks, pRealUsedStorage);
-
-                    if ( RT_FAILURE(vrc) || !pvTmpBuf)
-                        throw setError(VBOX_E_FILE_ERROR,
-                                       tr("Could not read ISO file '%s' listed in the OVF file (%Rrc)"),
-                                       RTPathFilename(strSourceOVF.c_str()), vrc);
-
-                    if (RTFileExists(strTargetPath->c_str()) == false)
+                    if (fGzipUsed == true)
                     {
+                        /*
+                         * The source and target pathes are the same.
+                         * It means that we have the needed file already.
+                         * For example, in GZIP case, we decompress the file and save it in the target path,
+                         * but with some prefix like "temp_". See part "check read file to GZIP compression" earlier
+                         * in this function.
+                         * Just rename the file by deleting "temp_" from it's name
+                         */
+                        vrc = RTFileRename(strSrcFilePath.c_str(), strTargetPath->c_str(), RTPATHRENAME_FLAGS_NO_REPLACE);
+                        if (RT_FAILURE(vrc))
+                            throw setError(VBOX_E_FILE_ERROR,
+                                           tr("Could not rename the file '%s' (%Rrc)"),
+                                           RTPathFilename(strSourceOVF.c_str()), vrc);
+                    }
+                    else
+                    {
+                        /* Calculating SHA digest for ISO file while copying one */
+                        vrc = copyFileAndCalcShaDigest(strSrcFilePath.c_str(),
+                                                       strTargetPath->c_str(),
+                                                       pCallbacks,
+                                                       pRealUsedStorage);
 
-                        /* ensure the directory exists */
-                        if (lCabs & MediumFormatCapabilities_File)
-                        {
-                            rc = VirtualBox::ensureFilePathExists(*strTargetPath, true);
-                            if (FAILED(rc))
-                                throw rc;
-                        }
-
-                        // create a new file and copy raw data into one from buffer pvTmpBuf
-                        RTFILE pFile = NULL;
-                        vrc = RTFileOpen(&pFile,
-                                         strTargetPath->c_str(),
-                                         RTFILE_O_OPEN_CREATE | RTFILE_O_WRITE | RTFILE_O_DENY_NONE);
-
-                        if (RT_SUCCESS(vrc) && pFile != NULL)
-                        {
-                            size_t cbWritten = 0;
-
-                            vrc = RTFileWrite(pFile, pvTmpBuf, cbSize, &cbWritten);
-
-                            if (RT_FAILURE(vrc))
-                            {
-                                Utf8Str path(*strTargetPath);
-                                path = path.stripFilename();
-
-                                throw setError(VBOX_E_FILE_ERROR,
-                                               tr("Could not write the ISO file '%s' into the folder %s (%Rrc)"),
-                                               strSrcFilePath.stripPath().c_str(),
-                                               path.c_str(),
-                                               vrc);
-                            }
-                        }
-                        RTFileClose(pFile);
+                        if (RT_FAILURE(vrc))
+                            throw setError(VBOX_E_FILE_ERROR,
+                                           tr("Could not copy ISO file '%s' listed in the OVF file (%Rrc)"),
+                                           RTPathFilename(strSourceOVF.c_str()), vrc);
                     }
                 }
                 catch (HRESULT arc)
                 {
-                    if (pvTmpBuf)
-                        RTMemFree(pvTmpBuf);
                     throw;
                 }
-
-                if (pvTmpBuf)
-                    RTMemFree(pvTmpBuf);
 
                 /* Advance to the next operation. */
                 /* operation's weight, as set up with the IProgress originally */
@@ -2500,6 +2488,8 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
                                                pProgress);
                     if (FAILED(rc)) throw rc;
 
+
+
                     /* Advance to the next operation. */
                     /* operation's weight, as set up with the IProgress originally */
                     stack.pProgress->SetNextOperation(BstrFmt(tr("Importing virtual disk image '%s'"),
@@ -2511,6 +2501,18 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
                  * HRESULTs on error. */
                 ComPtr<IProgress> pp(pProgress);
                 waitForAsyncProgress(stack.pProgress, pp);
+
+                if (fGzipUsed == true)
+                {
+                    /*
+                     * Just delete the temporary file
+                     */
+                    vrc = RTFileDelete(strSrcFilePath.c_str());
+                    if (RT_FAILURE(vrc))
+                        setWarning(VBOX_E_FILE_ERROR,
+                                   tr("Could not delete the file '%s' (%Rrc)"),
+                                   RTPathFilename(strSrcFilePath.c_str()), vrc);
+                }
             }
         }
         catch (...)
@@ -2978,11 +2980,11 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
 
                 VirtualSystemDescriptionEntry *vsdeTargetHD = 0;
 
-                /* 
-                 * 
+                /*
+                 *
                  * Iterate over all given disk images of the virtual system
                  * disks description. We need to find the target disk path,
-                 * which could be changed by the user. 
+                 * which could be changed by the user.
                  *
                  */
                 {
@@ -3041,7 +3043,7 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                         /* current opened file isn't the same as passed one */
                         if(availableImage.compare(diCurrent.strHref, Utf8Str::CaseInsensitive) != 0)
                         {
-                            /* 
+                            /*
                              * availableImage contains the disk file reference (e.g. "disk1.vmdk"), which should exist
                              * in the global images map.
                              * And find the disk from the OVF's disk list
@@ -3067,9 +3069,9 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                                 diCurrent = *(&itDiskImage->second);
                             }
 
-                            /* 
+                            /*
                              * Again iterate over all given disk images of the virtual system
-                             * disks description using the found disk image 
+                             * disks description using the found disk image
                              */
                             {
                                 list<VirtualSystemDescriptionEntry*>::const_iterator itHD;
@@ -3147,7 +3149,7 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                                             mhda.lControllerPort,
                                             mhda.lDevice);
 
-                Log(("Attaching disk %s to port %d on device %d\n", 
+                Log(("Attaching disk %s to port %d on device %d\n",
                 vsdeTargetHD->strVboxCurrent.c_str(), mhda.lControllerPort, mhda.lDevice));
 
                 Utf8Str vdf = typeOfVirtualDiskFormatFromURI(diCurrent.strFormat);
@@ -3277,13 +3279,32 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
     /* USB controller */
     if (stack.fUSBEnabled)
     {
-        settings::USBController ctrl;
+        /** @todo r=klaus add support for arbitrary USB controller types, this can't handle multiple controllers due to its design anyway */
 
-        ctrl.strName = "OHCI";
-        ctrl.enmType = USBControllerType_OHCI;
+        /* usually the OHCI controller is enabled already, need to check */
+        bool fOHCIEnabled = false;
+        settings::USBControllerList &llUSBControllers = config.hardwareMachine.usbSettings.llUSBControllers;
+        settings::USBControllerList::iterator it;
+        for (it = llUSBControllers.begin(); it != llUSBControllers.end(); ++it)
+        {
+            if (it->enmType == USBControllerType_OHCI)
+            {
+                fOHCIEnabled = true;
+                break;
+            }
+        }
 
-        config.hardwareMachine.usbSettings.llUSBControllers.push_back(ctrl);
+        if (!fOHCIEnabled)
+        {
+            settings::USBController ctrl;
+            ctrl.strName = "OHCI";
+            ctrl.enmType = USBControllerType_OHCI;
+
+            llUSBControllers.push_back(ctrl);
+        }
     }
+    else
+        config.hardwareMachine.usbSettings.llUSBControllers.clear();
 #endif
     /* Audio adapter */
     if (stack.strAudioAdapter.isNotEmpty())
@@ -3492,7 +3513,7 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
                     /* replace with a new found disk image */
                     diCurrent = *(&itDiskImage->second);
 
-                    /* 
+                    /*
                      * Again iterate over all given disk images of the virtual system
                      * disks description using the found disk image
                      */
@@ -3687,8 +3708,8 @@ void Appliance::importMachines(ImportStack &stack,
     // this is safe to access because this thread only gets started
     const ovf::OVFReader &reader = *m->pReader;
 
-    /* 
-     * get the SHA digest version that was set in accordance with the value of attribute "xmlns:ovf" 
+    /*
+     * get the SHA digest version that was set in accordance with the value of attribute "xmlns:ovf"
      * of the element <Envelope> in the OVF file during reading operation. See readFSImpl().
      */
     pStorage->fSha256 = m->fSha256;

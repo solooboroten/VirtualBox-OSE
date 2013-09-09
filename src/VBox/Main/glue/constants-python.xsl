@@ -47,7 +47,7 @@ VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 """
 
-__version__ = "$Revision: 87223 $";
+__version__ = "$Revision: 47125 $";
 
 
 

@@ -1,4 +1,4 @@
-/* $Id: VBoxDispDriver.cpp $ */
+/* $Id: VBoxDispDriver.cpp 46896 2013-07-02 08:16:43Z vboxsync $ */
 
 /** @file
  * VBox XPDM Display driver interface functions

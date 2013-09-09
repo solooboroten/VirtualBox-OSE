@@ -1,4 +1,4 @@
-/* $Id: RTLogWriteStdOut-r0drv-haiku.c $ */
+/* $Id: RTLogWriteStdOut-r0drv-haiku.c 43363 2012-09-20 09:56:07Z vboxsync $ */
 /** @file
  * IPRT - Log To StdOut, Ring-0 Driver, Haiku.
  */

@@ -1,5 +1,5 @@
 
-/* $Id: GuestFsObjInfoImpl.cpp $ */
+/* $Id: GuestFsObjInfoImpl.cpp 42897 2012-08-21 10:03:52Z vboxsync $ */
 /** @file
  * VirtualBox Main - XXX.
  */

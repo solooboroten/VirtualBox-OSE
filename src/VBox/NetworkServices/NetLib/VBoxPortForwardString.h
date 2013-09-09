@@ -1,6 +1,6 @@
-/* $Id: VBoxPortForwardString.h $ */
+/* $Id: VBoxPortForwardString.h 48363 2013-09-06 15:47:40Z vboxsync $ */
 /** @file
- * VBoxPortForwardString 
+ * VBoxPortForwardString
  */
 
 /*
@@ -22,11 +22,6 @@
 #include <VBox/intnet.h>
 
 RT_C_DECLS_BEGIN
-
-#ifndef INET6_ADDRSTRLEN
-  /* from netinet6/in6.h */
-# define INET6_ADDRSTRLEN 46
-#endif
 
 #define PF_NAMELEN 64
 /*

@@ -1,4 +1,4 @@
-/* $Id: DevFdc.cpp $ */
+/* $Id: DevFdc.cpp 48162 2013-08-29 14:27:01Z vboxsync $ */
 /** @file
  * VBox storage devices: Floppy disk controller
  */
@@ -176,6 +176,7 @@ typedef struct fdrive_t {
     uint8_t head;
     uint8_t track;
     uint8_t sect;
+    uint8_t ltrk;             /* Logical track */
     /* Media */
     fdrive_flags_t flags;
     uint8_t last_sect;        /* Nb sector per track    */
@@ -286,6 +287,7 @@ static int fd_seek(fdrive_t *drv, uint8_t head, uint8_t track, uint8_t sect,
         drv->track = track;
         drv->sect = sect;
     }
+    drv->ltrk = drv->track;
 
     return ret;
 }
@@ -296,6 +298,7 @@ static void fd_recalibrate(fdrive_t *drv)
     FLOPPY_DPRINTF("recalibrate\n");
     drv->head = 0;
     drv->track = 0;
+    drv->ltrk = 0;
     drv->sect = 1;
 }
 
@@ -534,7 +537,8 @@ enum {
     FD_DIR_READ    = 1,
     FD_DIR_SCANE   = 2,
     FD_DIR_SCANL   = 3,
-    FD_DIR_SCANH   = 4
+    FD_DIR_SCANH   = 4,
+    FD_DIR_FORMAT  = 5
 };
 
 enum {
@@ -1099,8 +1103,8 @@ static uint32_t fdctrl_read_dir(fdctrl_t *fdctrl)
 
 #ifdef VBOX
     /* The change line signal is reported by the currently selected
-     * drive. If the corresponding motor on bit is not set, the drive 
-     * is *not* selected! 
+     * drive. If the corresponding motor on bit is not set, the drive
+     * is *not* selected!
      */
     if (fdctrl_media_changed(get_cur_drv(fdctrl))
      && (fdctrl->dor & (0x10 << fdctrl->cur_drv)))
@@ -1164,12 +1168,12 @@ static int fdctrl_seek_to_next_sect(fdctrl_t *fdctrl, fdrive_t *cur_drv)
                 cur_drv->head = 1;
             } else {
                 cur_drv->head = 0;
-                cur_drv->track++;
+                cur_drv->ltrk++;
                 if ((cur_drv->flags & FDISK_DBL_SIDES) == 0)
                     return 0;
             }
         } else {
-            cur_drv->track++;
+            cur_drv->ltrk++;
             return 0;
         }
         FLOPPY_DPRINTF("seek to next track (%d %02x %02x => %d)\n",
@@ -1194,10 +1198,14 @@ static void fdctrl_stop_transfer(fdctrl_t *fdctrl, uint8_t status0,
     fdctrl->fifo[0] = status0 | (cur_drv->head << 2) | GET_CUR_DRV(fdctrl);
     fdctrl->fifo[1] = status1;
     fdctrl->fifo[2] = status2;
-    fdctrl->fifo[3] = cur_drv->track;
+    fdctrl->fifo[3] = cur_drv->ltrk;
     fdctrl->fifo[4] = cur_drv->head;
     fdctrl->fifo[5] = cur_drv->sect;
     fdctrl->fifo[6] = FD_SECTOR_SC;
+    FLOPPY_DPRINTF("ST0:%02x ST1:%02x ST2:%02x C:%02x H:%02x R:%02x N:%02x\n",
+                   fdctrl->fifo[0], fdctrl->fifo[1], fdctrl->fifo[2], fdctrl->fifo[3],
+                   fdctrl->fifo[4], fdctrl->fifo[5], fdctrl->fifo[6]);
+
     fdctrl->data_dir = FD_DIR_READ;
     if (!(fdctrl->msr & FD_MSR_NONDMA)) {
 #ifdef VBOX
@@ -1226,6 +1234,10 @@ static void fdctrl_start_transfer(fdctrl_t *fdctrl, int direction)
     FLOPPY_DPRINTF("Start transfer at %d %d %02x %02x (%d)\n",
                    GET_CUR_DRV(fdctrl), kh, kt, ks,
                    fd_sector_calc(kh, kt, ks, cur_drv->last_sect, NUM_SIDES(cur_drv)));
+    FLOPPY_DPRINTF("CMD:%02x SEL:%02x C:%02x H:%02x R:%02x N:%02x EOT:%02x GPL:%02x DTL:%02x\n",
+                   fdctrl->fifo[0], fdctrl->fifo[1], fdctrl->fifo[2],
+                   fdctrl->fifo[3], fdctrl->fifo[4], fdctrl->fifo[5],
+                   fdctrl->fifo[6], fdctrl->fifo[7], fdctrl->fifo[8]);
     switch (fd_seek(cur_drv, kh, kt, ks, fdctrl->config & FD_CONFIG_EIS)) {
     case 2:
         /* sect too big */
@@ -1307,7 +1319,7 @@ static void fdctrl_start_transfer(fdctrl_t *fdctrl, int direction)
         if (((direction == FD_DIR_SCANE || direction == FD_DIR_SCANL ||
               direction == FD_DIR_SCANH) && dma_mode == 0) ||
             (direction == FD_DIR_WRITE && dma_mode == 2) ||
-            (direction == FD_DIR_READ && dma_mode == 1)) {
+            (direction == FD_DIR_READ && (dma_mode == 1 || dma_mode == 0))) {
             /* No access is allowed until DMA transfer has completed */
             fdctrl->msr &= ~FD_MSR_RQM;
             /* Now, we just have to wait for the DMA controller to
@@ -1329,6 +1341,110 @@ static void fdctrl_start_transfer(fdctrl_t *fdctrl, int direction)
     fdctrl->msr |= FD_MSR_NONDMA;
     if (direction != FD_DIR_WRITE)
         fdctrl->msr |= FD_MSR_DIO;
+    /* IO based transfer: calculate len */
+    fdctrl_raise_irq(fdctrl, 0x00);
+
+    return;
+}
+
+/* Prepare a format data transfer (either DMA or FIFO) */
+static void fdctrl_start_format(fdctrl_t *fdctrl)
+{
+    fdrive_t *cur_drv;
+    uint8_t ns, dp, kh, kt, ks;
+
+    SET_CUR_DRV(fdctrl, fdctrl->fifo[1] & FD_DOR_SELMASK);
+    cur_drv = get_cur_drv(fdctrl);
+    kt = cur_drv->track;
+    kh = (fdctrl->fifo[1] & 0x04) >> 2;
+    ns = fdctrl->fifo[3];
+    dp = fdctrl->fifo[5];
+    ks = 1;
+    FLOPPY_DPRINTF("Start format at %d %d %02x, %d sect, pat %02x (%d)\n",
+                   GET_CUR_DRV(fdctrl), kh, kt, ns, dp,
+                   fd_sector_calc(kh, kt, ks, cur_drv->last_sect, NUM_SIDES(cur_drv)));
+    switch (fd_seek(cur_drv, kh, kt, ks, false)) {
+    case 2:
+        /* sect too big */
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, 0x00, 0x00);
+        fdctrl->fifo[3] = kt;
+        fdctrl->fifo[4] = kh;
+        fdctrl->fifo[5] = ks;
+        return;
+    case 3:
+        /* track too big */
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_EC, 0x00);
+        fdctrl->fifo[3] = kt;
+        fdctrl->fifo[4] = kh;
+        fdctrl->fifo[5] = ks;
+        return;
+    case 4:
+        /* No seek enabled */
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, 0x00, 0x00);
+        fdctrl->fifo[3] = kt;
+        fdctrl->fifo[4] = kh;
+        fdctrl->fifo[5] = ks;
+        return;
+    case 1:
+        break;
+    default:
+        break;
+    }
+    /* It's not clear what should happen if the data rate does not match. */
+#if 0
+    /* Check the data rate. If the programmed data rate does not match
+     * the currently inserted medium, the operation has to fail.
+     */
+    if ((fdctrl->dsr & FD_DSR_DRATEMASK) != cur_drv->media_rate) {
+        FLOPPY_DPRINTF("data rate mismatch (fdc=%d, media=%d)\n",
+                       fdctrl->dsr & FD_DSR_DRATEMASK, cur_drv->media_rate);
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_MA, FD_SR2_MD);
+        fdctrl->fifo[3] = kt;
+        fdctrl->fifo[4] = kh;
+        fdctrl->fifo[5] = ks;
+        return;
+    }
+#endif
+    /* Set the FIFO state */
+    fdctrl->data_dir = FD_DIR_FORMAT;
+    fdctrl->data_pos = 0;
+    fdctrl->msr |= FD_MSR_CMDBUSY;
+    fdctrl->data_state &= ~(FD_STATE_MULTI | FD_STATE_SEEK);
+    fdctrl->data_len = ns * 4;
+    fdctrl->eot = ns;
+    if (fdctrl->dor & FD_DOR_DMAEN) {
+        int dma_mode;
+        /* DMA transfer are enabled. Check if DMA channel is well programmed */
+#ifndef VBOX
+        dma_mode = DMA_get_channel_mode(fdctrl->dma_chann);
+#else
+        dma_mode = PDMDevHlpDMAGetChannelMode (fdctrl->pDevIns, fdctrl->dma_chann);
+#endif
+        dma_mode = (dma_mode >> 2) & 3;
+        FLOPPY_DPRINTF("dma_mode=%d direction=%d (%d - %d)\n",
+                       dma_mode, fdctrl->data_dir,
+                       (128 << fdctrl->fifo[2]) *
+                       (cur_drv->last_sect + 1), fdctrl->data_len);
+        if (fdctrl->data_dir == FD_DIR_FORMAT && dma_mode == 2) {
+            /* No access is allowed until DMA transfer has completed */
+            fdctrl->msr &= ~FD_MSR_RQM;
+            /* Now, we just have to wait for the DMA controller to
+             * recall us...
+             */
+#ifndef VBOX
+            DMA_hold_DREQ(fdctrl->dma_chann);
+            DMA_schedule(fdctrl->dma_chann);
+#else
+            PDMDevHlpDMASetDREQ (fdctrl->pDevIns, fdctrl->dma_chann, 1);
+            PDMDevHlpDMASchedule (fdctrl->pDevIns);
+#endif
+            return;
+        } else {
+            FLOPPY_ERROR("dma_mode=%d direction=%d\n", dma_mode, fdctrl->data_dir);
+        }
+    }
+    FLOPPY_DPRINTF("start non-DMA format\n");
+    fdctrl->msr |= FD_MSR_NONDMA;
     /* IO based transfer: calculate len */
     fdctrl_raise_irq(fdctrl, 0x00);
 
@@ -1400,7 +1516,8 @@ static int fdctrl_transfer_handler (void *opaque, int nchan,
     fdrive_t *cur_drv;
 #ifdef VBOX
     int rc;
-    uint32_t len, start_pos, rel_pos;
+    uint32_t len = 0;
+    uint32_t start_pos, rel_pos;
 #else
     int len, start_pos, rel_pos;
 #endif
@@ -1427,9 +1544,27 @@ static int fdctrl_transfer_handler (void *opaque, int nchan,
             fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
         else
             fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, 0x00, 0x00);
-        len = 0;
+        Assert(len == 0);
         goto transfer_error;
     }
+
+#ifdef VBOX
+        if (cur_drv->ro)
+        {
+            if (fdctrl->data_dir == FD_DIR_WRITE || fdctrl->data_dir == FD_DIR_FORMAT)
+            {
+                /* Handle readonly medium early, no need to do DMA, touch the
+                 * LED or attempt any writes. A real floppy doesn't attempt
+                 * to write to readonly media either. */
+                fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, FD_SR1_NW,
+                                     0x00);
+                Assert(len == 0);
+                goto transfer_error;
+            }
+        }
+#endif
+
+
     rel_pos = fdctrl->data_pos % FD_SECTOR_LEN;
     for (start_pos = fdctrl->data_pos; fdctrl->data_pos < dma_len;) {
         len = dma_len - fdctrl->data_pos;
@@ -1440,8 +1575,9 @@ static int fdctrl_transfer_handler (void *opaque, int nchan,
                        fdctrl->data_len, GET_CUR_DRV(fdctrl), cur_drv->head,
                        cur_drv->track, cur_drv->sect, fd_sector(cur_drv),
                        fd_sector(cur_drv) * FD_SECTOR_LEN);
-        if (fdctrl->data_dir != FD_DIR_WRITE ||
-            len < FD_SECTOR_LEN || rel_pos != 0) {
+        if (fdctrl->data_dir != FD_DIR_FORMAT &&
+            (fdctrl->data_dir != FD_DIR_WRITE ||
+            len < FD_SECTOR_LEN || rel_pos != 0)) {
             /* READ & SCAN commands and realign to a sector for WRITE */
 #ifdef VBOX
             rc = blk_read(cur_drv, fd_sector(cur_drv), fdctrl->fifo, 1);
@@ -1479,16 +1615,6 @@ static int fdctrl_transfer_handler (void *opaque, int nchan,
         case FD_DIR_WRITE:
             /* WRITE commands */
 #ifdef VBOX
-            if (cur_drv->ro)
-            {
-                /* Handle readonly medium early, no need to do DMA, touch the
-                 * LED or attempt any writes. A real floppy doesn't attempt
-                 * to write to readonly media either. */
-                fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, FD_SR1_NW,
-                                     0x00);
-                goto transfer_error;
-            }
-
             {
                 uint32_t written;
                 int rc2 = PDMDevHlpDMAReadMemory(fdctrl->pDevIns, nchan,
@@ -1512,6 +1638,38 @@ static int fdctrl_transfer_handler (void *opaque, int nchan,
                 goto transfer_error;
             }
             break;
+#ifdef VBOX
+        case FD_DIR_FORMAT:
+            /* FORMAT command */
+            {
+                uint8_t  eot    = fdctrl->fifo[3];
+                uint8_t  filler = fdctrl->fifo[5];
+                uint32_t written;
+                int      sct;
+                int rc2 = PDMDevHlpDMAReadMemory(fdctrl->pDevIns, nchan,
+                                                 fdctrl->fifo + rel_pos,
+                                                 fdctrl->data_pos,
+                                                 len, &written);
+                AssertMsgRC (rc2, ("DMAReadMemory -> %Rrc\n", rc2));
+
+                /* Fill the entire track with desired data pattern. */
+                FLOPPY_DPRINTF("formatting track: %d sectors, pattern %02x\n",
+                               eot, filler);
+                memset(fdctrl->fifo, filler, FD_SECTOR_LEN);
+                for (sct = 0; sct < eot; ++sct)
+                {
+                    rc = blk_write(cur_drv, fd_sector(cur_drv), fdctrl->fifo, 1);
+                    if (RT_FAILURE(rc))
+                    {
+                        FLOPPY_ERROR("formatting sector %d\n", fd_sector(cur_drv));
+                        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM | FD_SR0_SEEK, 0x00, 0x00);
+                        goto transfer_error;
+                    }
+                    fdctrl_seek_to_next_sect(fdctrl, cur_drv);
+                }
+            }
+            break;
+#endif
         default:
             /* SCAN commands */
             {
@@ -1801,6 +1959,8 @@ static void fdctrl_handle_readid(fdctrl_t *fdctrl, int direction)
 {
     fdrive_t *cur_drv = get_cur_drv(fdctrl);
 
+    FLOPPY_DPRINTF("CMD:%02x SEL:%02x\n", fdctrl->fifo[0], fdctrl->fifo[1]);
+
     /* XXX: should set main status register to busy */
     cur_drv->head = (fdctrl->fifo[1] >> 2) & 1;
 #ifdef VBOX
@@ -1814,30 +1974,33 @@ static void fdctrl_handle_readid(fdctrl_t *fdctrl, int direction)
 static void fdctrl_handle_format_track(fdctrl_t *fdctrl, int direction)
 {
     fdrive_t *cur_drv;
+    uint8_t ns, dp;
 
     SET_CUR_DRV(fdctrl, fdctrl->fifo[1] & FD_DOR_SELMASK);
     cur_drv = get_cur_drv(fdctrl);
-    fdctrl->data_state |= FD_STATE_FORMAT;
-    if (fdctrl->fifo[0] & 0x80)
-        fdctrl->data_state |= FD_STATE_MULTI;
-    else
-        fdctrl->data_state &= ~FD_STATE_MULTI;
-    fdctrl->data_state &= ~FD_STATE_SEEK;
-    cur_drv->bps =
-        fdctrl->fifo[2] > 7 ? 16384 : 128 << fdctrl->fifo[2];
-#if 0
-    cur_drv->last_sect =
-        cur_drv->flags & FDISK_DBL_SIDES ? fdctrl->fifo[3] :
-        fdctrl->fifo[3] / 2;
-#else
-    cur_drv->last_sect = fdctrl->fifo[3];
-#endif
-    /* TODO: implement format using DMA expected by the Bochs BIOS
-     * and Linux fdformat (read 3 bytes per sector via DMA and fill
-     * the sector with the specified fill byte
+    fdctrl->data_state &= ~(FD_STATE_MULTI | FD_STATE_SEEK);
+    ns = fdctrl->fifo[3];
+    dp = fdctrl->fifo[5];
+
+    FLOPPY_DPRINTF("Format track %d at %d, %d sectors, filler %02x\n",
+                   cur_drv->track, GET_CUR_DRV(fdctrl), ns, dp);
+    FLOPPY_DPRINTF("CMD:%02x SEL:%02x N:%02x SC:%02x GPL:%02x D:%02x\n",
+                   fdctrl->fifo[0], fdctrl->fifo[1], fdctrl->fifo[2],
+                   fdctrl->fifo[3], fdctrl->fifo[4], fdctrl->fifo[5]);
+
+    /* Since we cannot actually format anything, we have to make sure that
+     * whatever new format the guest is trying to establish matches the
+     * existing format of the medium.
      */
-    fdctrl->data_state &= ~FD_STATE_FORMAT;
-    fdctrl_stop_transfer(fdctrl, 0x00, 0x00, 0x00);
+    if (cur_drv->last_sect != ns || fdctrl->fifo[2] != 2)
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_NW, 0);
+    else
+    {
+        cur_drv->bps = fdctrl->fifo[2] > 7 ? 16384 : 128 << fdctrl->fifo[2];
+        cur_drv->last_sect = ns;
+
+        fdctrl_start_format(fdctrl);
+    }
 }
 
 static void fdctrl_handle_specify(fdctrl_t *fdctrl, int direction)
@@ -1889,6 +2052,7 @@ static void fdctrl_handle_sense_interrupt_status(fdctrl_t *fdctrl, int direction
 {
     fdrive_t *cur_drv = get_cur_drv(fdctrl);
 
+    FLOPPY_DPRINTF("CMD:%02x\n", fdctrl->fifo[0]);
     if(fdctrl->reset_sensei > 0) {
         fdctrl->fifo[0] =
             FD_SR0_RDYCHG + FD_RESET_SENSEI_COUNT - fdctrl->reset_sensei;
@@ -1906,12 +2070,16 @@ static void fdctrl_handle_sense_interrupt_status(fdctrl_t *fdctrl, int direction
 
     fdctrl->fifo[1] = cur_drv->track;
     fdctrl_set_fifo(fdctrl, 2, 0);
+    FLOPPY_DPRINTF("ST0:%02x PCN:%02x\n", fdctrl->fifo[0], fdctrl->fifo[1]);
     fdctrl->status0 = FD_SR0_RDYCHG;
 }
 
 static void fdctrl_handle_seek(fdctrl_t *fdctrl, int direction)
 {
     fdrive_t *cur_drv;
+
+    FLOPPY_DPRINTF("CMD:%02x SEL:%02x NCN:%02x\n", fdctrl->fifo[0],
+                   fdctrl->fifo[1], fdctrl->fifo[2]);
 
     SET_CUR_DRV(fdctrl, fdctrl->fifo[1] & FD_DOR_SELMASK);
     cur_drv = get_cur_drv(fdctrl);
@@ -1921,6 +2089,8 @@ static void fdctrl_handle_seek(fdctrl_t *fdctrl, int direction)
      * there's a medium inserted or if it's banging the head against the drive.
      */
     cur_drv->track = fdctrl->fifo[2];
+    cur_drv->ltrk = cur_drv->track;
+    cur_drv->head = (fdctrl->fifo[1] >> 2) & 1;
     /* Raise Interrupt */
     fdctrl_raise_irq(fdctrl, FD_SR0_SEEK | GET_CUR_DRV(fdctrl));
 #else
@@ -2147,6 +2317,11 @@ static void fdctrl_result_timer(void *opaque)
     } else if ((fdctrl->dsr & FD_DSR_DRATEMASK) != cur_drv->media_rate) {
         FLOPPY_DPRINTF("read id rate mismatch (fdc=%d, media=%d)\n",
                        fdctrl->dsr & FD_DSR_DRATEMASK, cur_drv->media_rate);
+        fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_MA | FD_SR1_ND, FD_SR2_MD);
+    } else if (cur_drv->track >= cur_drv->max_track) {
+        FLOPPY_DPRINTF("read id past last track (%d >= %d)\n",
+                       cur_drv->track, cur_drv->max_track);
+        cur_drv->ltrk = 0;
         fdctrl_stop_transfer(fdctrl, FD_SR0_ABNTERM, FD_SR1_MA | FD_SR1_ND, FD_SR2_MD);
     }
     else

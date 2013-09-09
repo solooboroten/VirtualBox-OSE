@@ -1,4 +1,4 @@
-/* $Id: tstRTS3.cpp $ */
+/* $Id: tstRTS3.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT Testcase - Simple Storage Service (S3) Communication API
  */

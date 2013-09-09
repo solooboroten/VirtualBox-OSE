@@ -1,4 +1,4 @@
-/* $Id: tstRTInlineAsm.cpp $ */
+/* $Id: tstRTInlineAsm.cpp 48131 2013-08-28 17:21:06Z vboxsync $ */
 /** @file
  * IPRT Testcase - inline assembly.
  */
@@ -368,6 +368,8 @@ void tstASMCpuId(void)
 
         if (iExt > cExtFunctions)
             continue;   /* Invalid extended functions seems change the value if ECX changes */
+        if (iExt == 0x8000001d)
+            continue;   /* Takes cache level in ecx. */
 
         u32 = ASMCpuId_EAX(iExt);
         CHECKVAL(u32, s.uEAX, "%x");

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 42303 2012-07-22 01:31:18Z vboxsync $
 ## @file
 # Sub-Makefile for the VirtualBox Windows Guest Shared Folders Network Provider.
 #

@@ -1,5 +1,5 @@
 @echo off
-rem $Id: retry.cmd $
+rem $Id: retry.cmd 45594 2013-04-17 17:23:21Z vboxsync $
 rem rem @file
 rem Windows NT batch script that retries a command 5 times.
 rem

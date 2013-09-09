@@ -1,4 +1,4 @@
-/* $Id: UIWizardCloneVDPageBasic1.cpp $ */
+/* $Id: UIWizardCloneVDPageBasic1.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -28,6 +28,7 @@
 #include "QIRichTextLabel.h"
 #include "VBoxMediaComboBox.h"
 #include "QIToolButton.h"
+#include "UIMedium.h"
 
 UIWizardCloneVDPage1::UIWizardCloneVDPage1()
 {
@@ -48,7 +49,7 @@ void UIWizardCloneVDPage1::onHandleOpenSourceDiskClick()
 
 CMedium UIWizardCloneVDPage1::sourceVirtualDisk() const
 {
-    return vboxGlobal().findMedium(m_pSourceDiskSelector->id()).medium();
+    return vboxGlobal().medium(m_pSourceDiskSelector->id()).medium();
 }
 
 void UIWizardCloneVDPage1::setSourceVirtualDisk(const CMedium &sourceVirtualDisk)

@@ -1,4 +1,4 @@
-/* $Id: RTPathIsSame-generic.cpp $ */
+/* $Id: RTPathIsSame-generic.cpp 46254 2013-05-24 10:21:44Z vboxsync $ */
 /** @file
  * IPRT - Assertions, generic RTPathIsSame.
  */

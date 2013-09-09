@@ -1,4 +1,4 @@
-/* $Id: UIDnDHandler.cpp $ */
+/* $Id: UIDnDHandler.cpp 45358 2013-04-05 08:56:49Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

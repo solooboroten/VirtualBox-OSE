@@ -1,4 +1,4 @@
-/* $Id: UISelectorWindow.cpp $ */
+/* $Id: UISelectorWindow.cpp 48316 2013-09-05 16:14:52Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -45,6 +45,7 @@
 #include "UIVMDesktop.h"
 #include "UIVirtualBoxEventHandler.h"
 #include "UIMediumManager.h"
+#include "UIMedium.h"
 #include "UIMessageCenter.h"
 #include "UISelectorWindow.h"
 #include "UISettingsDialogSpecific.h"
@@ -176,7 +177,7 @@ void UISelectorWindow::sltDetailsViewIndexChanged(int iWidgetIndex)
         m_pContainer->setCurrentWidget(m_pDetails);
 }
 
-void UISelectorWindow::sltMediumEnumFinished()
+void UISelectorWindow::sltHandleMediumEnumerationFinish()
 {
     /* We try to warn about inaccessible mediums only once
      * (after media emumeration started from main() at startup),
@@ -186,18 +187,22 @@ void UISelectorWindow::sltMediumEnumFinished()
     m_fWarningAboutInaccessibleMediumShown = true;
 
     /* Make sure MM window is not opened: */
-    if (UIMediumManager::modelessInstance())
+    if (UIMediumManager::instance())
         return;
 
     /* Look for at least one inaccessible medium: */
-    const VBoxMediaList &list = vboxGlobal().currentMediaList();
-    VBoxMediaList::const_iterator it;
-    for (it = list.begin(); it != list.end(); ++it)
-        if ((*it).state() == KMediumState_Inaccessible)
+    bool fIsThereAnyInaccessibleMedium = false;
+    foreach (const QString &strMediumID, vboxGlobal().mediumIDs())
+    {
+        if (vboxGlobal().medium(strMediumID).state() == KMediumState_Inaccessible)
+        {
+            fIsThereAnyInaccessibleMedium = true;
             break;
+        }
+    }
 
     /* Warn the user about inaccessible medium: */
-    if (it != list.end() && !msgCenter().warnAboutInaccessibleMedia())
+    if (fIsThereAnyInaccessibleMedium && !msgCenter().warnAboutInaccessibleMedia())
     {
         /* Open the MM window (without refresh): */
         UIMediumManager::showModeless(this, false /* refresh? */);
@@ -1035,7 +1040,7 @@ void UISelectorWindow::polishEvent(QShowEvent*)
 {
     /* Make sure user warned about inaccessible medium(s)
      * even if enumeration had finished before selector window shown: */
-    QTimer::singleShot(0, this, SLOT(sltMediumEnumFinished()));
+    QTimer::singleShot(0, this, SLOT(sltHandleMediumEnumerationFinish()));
 }
 
 #ifdef Q_WS_MAC
@@ -1402,7 +1407,7 @@ void UISelectorWindow::prepareWidgets()
 void UISelectorWindow::prepareConnections()
 {
     /* Medium enumeration connections: */
-    connect(&vboxGlobal(), SIGNAL(mediumEnumFinished(const VBoxMediaList &)), this, SLOT(sltMediumEnumFinished()));
+    connect(&vboxGlobal(), SIGNAL(sigMediumEnumerationFinished()), this, SLOT(sltHandleMediumEnumerationFinish()));
 
     /* Menu-bar connections: */
     connect(menuBar(), SIGNAL(customContextMenuRequested(const QPoint&)), this, SLOT(sltShowSelectorContextMenu(const QPoint&)));

@@ -1,4 +1,4 @@
-/* $Id: renderspu_cocoa_helper.m $ */
+/* $Id: renderspu_cocoa_helper.m 48348 2013-09-06 10:22:11Z vboxsync $ */
 /** @file
  * VirtualBox OpenGL Cocoa Window System Helper Implementation.
  */
@@ -31,6 +31,10 @@
 #include <cr_vreg.h>
 #include <cr_error.h>
 #include <cr_blitter.h>
+#ifdef VBOX_WITH_CRDUMPER_THUMBNAIL
+# include <cr_pixeldata.h>
+#endif
+
 
 #include "renderspu.h"
 
@@ -176,30 +180,33 @@
     while(0);
 
 
-static NSOpenGLContext * vboxCtxGetCurrent()
+static bool vboxCtxSyncCurrentInfo()
 {
-	GET_CONTEXT(pCtxInfo);
-	if (pCtxInfo)
-	{
-#ifdef DEBUG
-		NSOpenGLContext *pDbgCur = [NSOpenGLContext currentContext];
-		Assert(pCtxInfo->context == pDbgCur);
-		if (pDbgCur)
-		{
-			NSView *pDbgView = [pDbgCur view];
-			Assert(pCtxInfo->currentWindow->window == pDbgView);
-		}
-#endif
-		return pCtxInfo->context;
-	}
-
-#ifdef DEBUG
-	{
-		NSOpenGLContext *pDbgCur = [NSOpenGLContext currentContext];
-		Assert(!pDbgCur);
-	}
-#endif
-	return nil;
+    GET_CONTEXT(pCtxInfo);
+    NSOpenGLContext *pCtx = [NSOpenGLContext currentContext];
+    NSView *pView = pCtx ? [pCtx view] : nil;
+    bool fAdjusted = false;
+    if (pCtxInfo)
+    {
+        WindowInfo *pWinInfo = pCtxInfo->currentWindow;
+        Assert(pWinInfo);
+        if (pCtxInfo->context != pCtx
+            || pWinInfo->window != pView)
+        {
+            renderspu_SystemMakeCurrent(pWinInfo, 0, pCtxInfo);
+            fAdjusted = true;
+        }
+    }
+    else
+    {
+        if (pCtx)
+        {
+            [NSOpenGLContext clearCurrentContext];
+            fAdjusted = true;
+        }
+    }
+    
+    return fAdjusted;
 }
 
 typedef struct VBOX_CR_RENDER_CTX_INFO
@@ -211,7 +218,7 @@ typedef struct VBOX_CR_RENDER_CTX_INFO
 
 static void vboxCtxEnter(NSOpenGLContext*pCtx, PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
 {
-    NSOpenGLContext *pOldCtx = vboxCtxGetCurrent();
+    NSOpenGLContext *pOldCtx = [NSOpenGLContext currentContext];
     NSView *pOldView = (pOldCtx ? [pOldCtx view] : nil);
     NSView *pView = [pCtx view];
     bool fNeedCtxSwitch = (pOldCtx != pCtx || pOldView != pView);
@@ -322,7 +329,8 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     NSSize           m_Size;
 
     /** This is necessary for clipping on the root window */
-    NSPoint          m_RootShift;
+    NSRect           m_RootRect;
+    float            m_yInvRootOffset;
     
     CR_BLITTER *m_pBlitter;
     WindowInfo *m_pWinInfo;
@@ -752,7 +760,8 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     m_paClipRects             = NULL;
     m_Pos                     = NSZeroPoint;
     m_Size                    = NSMakeSize(1, 1);
-    m_RootShift               = NSZeroPoint;
+    m_RootRect                = NSMakeRect(0, 0, m_Size.width, m_Size.height);
+    m_yInvRootOffset          = 0;
     m_pBlitter                = nil;
     m_pWinInfo             	  = pWinInfo;
     m_fNeedViewportUpdate     = true;        
@@ -882,7 +891,7 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     [self createDockTile];
     /* have to rebind GL_TEXTURE_RECTANGLE_ARB as m_FBOTexId could be changed in updateFBO call */
     m_fNeedViewportUpdate = true;
-    pCurCtx = vboxCtxGetCurrent();
+    pCurCtx = [NSOpenGLContext currentContext];
     if (pCurCtx && pCurCtx == m_pGLCtx && (pCurView = [pCurCtx view]) == self)
     {
         [m_pGLCtx update];
@@ -912,16 +921,13 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
 {
     DEBUG_MSG(("OVIW(%p): updateViewport\n", (void*)self));
 
-    {
-        /* Update the viewport for our OpenGL view */
-        [m_pSharedGLCtx update];
+    /* Update the viewport for our OpenGL view */
+    [m_pSharedGLCtx update];
 
-        [self vboxBlitterSyncWindow];
+    [self vboxBlitterSyncWindow];
         
-        /* Clear background to transparent */
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    }
-}
+    /* Clear background to transparent */
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);}
 
 - (void)reshapeLocked
 {
@@ -952,17 +958,33 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
      * frame for the window. */
     newFrame = NSIntersectionRect(parentFrame, childFrame);
 
+    DEBUG_MSG(("[%#p]: parentFrame pos[%f : %f] size[%f : %f]\n",
+          (void*)self, 
+         parentFrame.origin.x, parentFrame.origin.y,
+         parentFrame.size.width, parentFrame.size.height));
+    DEBUG_MSG(("[%#p]: childFrame pos[%f : %f] size[%f : %f]\n",
+          (void*)self, 
+         childFrame.origin.x, childFrame.origin.y,
+         childFrame.size.width, childFrame.size.height));
+         
+    DEBUG_MSG(("[%#p]: newFrame pos[%f : %f] size[%f : %f]\n",
+          (void*)self, 
+         newFrame.origin.x, newFrame.origin.y,
+         newFrame.size.width, newFrame.size.height));
+    
     /* Later we have to correct the texture position in the case the window is
-     * out of the parents window frame. So save the shift values for later use. */
-    if (parentFrame.origin.x > childFrame.origin.x)
-        m_RootShift.x = parentFrame.origin.x - childFrame.origin.x;
-    else
-        m_RootShift.x = 0;
-    if (parentFrame.origin.y > childFrame.origin.y)
-        m_RootShift.y = parentFrame.origin.y - childFrame.origin.y;
-    else
-        m_RootShift.y = 0;
-
+     * out of the parents window frame. So save the shift values for later use. */ 
+    m_RootRect.origin.x = newFrame.origin.x - childFrame.origin.x;
+    m_RootRect.origin.y =  childFrame.size.height + childFrame.origin.y - (newFrame.size.height + newFrame.origin.y);
+    m_RootRect.size = newFrame.size;
+    m_yInvRootOffset = newFrame.origin.y - childFrame.origin.y;
+    
+    DEBUG_MSG(("[%#p]: m_RootRect pos[%f : %f] size[%f : %f]\n",
+         (void*)self, 
+         m_RootRect.origin.x, m_RootRect.origin.y,
+         m_RootRect.size.width, m_RootRect.size.height));
+    
+        
     /*
     NSScrollView *pScrollView = [[[m_pParentView window] contentView] enclosingScrollView];
     if (pScrollView)
@@ -993,6 +1015,8 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
         [self updateViewportCS];
     
         vboxCtxLeave(&CtxInfo);
+        
+        vboxCtxSyncCurrentInfo();
     }
 }
 
@@ -1083,7 +1107,7 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
                 m_pBlitter = RTMemAlloc(sizeof (*m_pBlitter));
                 if (m_pBlitter)
                 {
-                    int rc = CrBltInit(m_pBlitter, NULL, false, false, render_spu.blitterDispatch);
+                    int rc = CrBltInit(m_pBlitter, NULL, false, false, &render_spu.GlobalShaders, render_spu.blitterDispatch);
                     if (RT_SUCCESS(rc))
                     {
                         DEBUG_MSG(("blitter created successfully for view 0x%p\n", (void*)self));
@@ -1161,6 +1185,10 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
 		}
         [self unlockFocus];
     }
+    else
+    {
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void)vboxTryDrawUI
@@ -1169,14 +1197,46 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     {
         if (m_pSharedGLCtx)
 	    {
+#if 1
+            /* tmp workaround to prevent potential deadlock:
+             * crOpenGL service thread does compositor lock acquire and calls cocoa NS methods that could synchronize on the GUI thread
+             * while here we do a reverse order: acquire compositor lock being in gui thread.
+             * this is why we do only try acquire and re-submit repaint event if compositor lock is busy */
+             VBOXVR_SCR_COMPOSITOR *pCompositor = NULL;
+            int rc = renderspuVBoxCompositorTryAcquire(m_pWinInfo, &pCompositor);
+            if (RT_SUCCESS(rc))
+            {
+                Assert(pCompositor);
+                [self vboxPresent:pCompositor];
+                renderspuVBoxCompositorRelease(m_pWinInfo);
+            }
+            else if (rc == VERR_SEM_BUSY)
+            {
+                /* re-issue to the gui thread */
+# ifdef DEBUG_misha
+                DEBUG_WARN(("renderspuVBoxCompositorTryAcquire busy\n"));
+# endif 
+                [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(vboxTryDrawUI) userInfo:nil repeats:NO];
+            }
+            else
+            {
+                /* this is somewhat we do not expect */
+                DEBUG_WARN(("renderspuVBoxCompositorTryAcquire failed rc %d", rc));
+            }
+#else
 	    	VBOXVR_SCR_COMPOSITOR *pCompositor = renderspuVBoxCompositorAcquire(m_pWinInfo);
 	    	if (pCompositor)
 	    	{
 	    		[self vboxPresent:pCompositor];
 				renderspuVBoxCompositorRelease(m_pWinInfo);
 			}
+#endif
 		}
         [self unlockFocus];
+    }
+    else
+    {
+        [self setNeedsDisplay:YES];
     }
 }
 
@@ -1207,6 +1267,8 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     [self vboxPresentCS:pCompositor];
     
     vboxCtxLeave(&CtxInfo);
+    
+    vboxCtxSyncCurrentInfo();
 }
 
 - (void)vboxPresentCS:(PVBOXVR_SCR_COMPOSITOR)pCompositor
@@ -1227,14 +1289,45 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
             
             /* Render FBO content to the dock tile when necessary. */
             [self vboxPresentToDockTileCS:pCompositor];
-            
+            /* change to #if 0 to see thumbnail image */            
+#if 1
             [self vboxPresentToViewCS:pCompositor];
+#else
+            glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+            [m_pSharedGLCtx flushBuffer];
+#endif
+           
         }
+}
+
+DECLINLINE(void) vboxNSRectToRect(const NSRect *pR, RTRECT *pRect)
+{
+    pRect->xLeft = (int)pR->origin.x;
+    pRect->yTop = (int)pR->origin.y;
+    pRect->xRight = (int)(pR->origin.x + pR->size.width);
+    pRect->yBottom = (int)(pR->origin.y + pR->size.height);
+}
+
+DECLINLINE(void) vboxNSRectToRectUnstretched(const NSRect *pR, RTRECT *pRect, float xStretch, float yStretch)
+{
+    pRect->xLeft = (int)(pR->origin.x / xStretch);
+    pRect->yTop = (int)(pR->origin.y / yStretch);
+    pRect->xRight = (int)((pR->origin.x + pR->size.width) / xStretch);
+    pRect->yBottom = (int)((pR->origin.y + pR->size.height) / yStretch);
+}
+
+DECLINLINE(void) vboxNSRectToRectStretched(const NSRect *pR, RTRECT *pRect, float xStretch, float yStretch)
+{
+    pRect->xLeft = (int)(pR->origin.x * xStretch);
+    pRect->yTop = (int)(pR->origin.y * yStretch);
+    pRect->xRight = (int)((pR->origin.x + pR->size.width) * xStretch);
+    pRect->yBottom = (int)((pR->origin.y + pR->size.height) * yStretch);
 }
 
 - (void)vboxPresentToViewCS:(PVBOXVR_SCR_COMPOSITOR)pCompositor
 {
     NSRect r = [self frame];
+    float xStretch, yStretch;
     DEBUG_MSG(("OVIW(%p): rF2V frame: [%i, %i, %i, %i]\n", (void*)self, (int)r.origin.x, (int)r.origin.y, (int)r.size.width, (int)r.size.height));
 
 #if 1 /* Set to 0 to see the docktile instead of the real output */
@@ -1248,6 +1341,8 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
 
     /* Clear background to transparent */
     glClear(GL_COLOR_BUFFER_BIT);
+    
+    CrVrScrCompositorGetStretching(pCompositor, &xStretch, &yStretch);
         
     while ((pEntry = CrVrScrCompositorIterNext(&CIter)) != NULL)
     {
@@ -1265,26 +1360,26 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
                 {
                     const RTRECT * pSrcRect = &paSrcRegions[i];
                     const RTRECT * pDstRect = &paDstRegions[i];
-                    RTRECT SrcRect, DstRect;
-                    if (m_RootShift.x)
-                    {
-                        DstRect.xLeft = pDstRect->xLeft - m_RootShift.x;
-                        DstRect.yTop = pDstRect->yTop;
-                        DstRect.xRight = pDstRect->xRight - m_RootShift.x;
-                        DstRect.yBottom = pDstRect->yBottom;
-                        pDstRect = &DstRect;
-                    }
+                    RTRECT SrcRect, DstRect, RestrictSrcRect, RestrictDstRect;
                     
-                    if (m_RootShift.y)
-                    {
-                        SrcRect.xLeft = pSrcRect->xLeft;
-                        SrcRect.yTop = pSrcRect->yTop - m_RootShift.y;
-                        SrcRect.xRight = pSrcRect->xRight;
-                        SrcRect.yBottom = pSrcRect->yBottom - m_RootShift.y;
-                        pSrcRect = &SrcRect;
-                    }
+                    vboxNSRectToRect(&m_RootRect, &RestrictDstRect);
+                    VBoxRectIntersected(&RestrictDstRect, pDstRect, &DstRect);
                     
-                    CrBltBlitTexMural(m_pBlitter, true, &pEntry->Tex, pSrcRect, pDstRect, 1, fFlags);
+                    if (VBoxRectIsZero(&DstRect))
+                        continue;
+
+                    VBoxRectTranslate(&DstRect, -RestrictDstRect.xLeft, -RestrictDstRect.yTop);
+                        
+                    vboxNSRectToRectUnstretched(&m_RootRect, &RestrictSrcRect, xStretch, yStretch);
+                    VBoxRectIntersected(&RestrictSrcRect, pSrcRect, &SrcRect);
+                    
+                    if (VBoxRectIsZero(&SrcRect))
+                        continue;
+
+                    pSrcRect = &SrcRect;
+                    pDstRect = &DstRect;
+                    
+                    CrBltBlitTexMural(m_pBlitter, true, &pEntry->Tex, pSrcRect, pDstRect, 1, fFlags | CRBLT_F_NOALPHA);
                 }
                 CrBltLeave(m_pBlitter);
             }
@@ -1326,16 +1421,25 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     WinInfo.width = r.size.width;
     WinInfo.height = r.size.height;
     
+    Assert(WinInfo.width = m_RootRect.size.width);
+    Assert(WinInfo.height = m_RootRect.size.height);
+
+    /*CrBltMuralSetCurrent(m_pBlitter, NULL);*/
+    
     CrBltMuralSetCurrent(m_pBlitter, &WinInfo);
     CrBltCheckUpdateViewport(m_pBlitter);
 }
 
+#ifdef VBOX_WITH_CRDUMPER_THUMBNAIL
+static int g_cVBoxTgaCtr = 0;
+#endif
 - (void)vboxPresentToDockTileCS:(PVBOXVR_SCR_COMPOSITOR)pCompositor
 {
     NSRect r        = [self frame];
     NSRect rr       = NSZeroRect;
     GLint i         = 0;
     NSDockTile *pDT = nil;
+    float xStretch, yStretch;
 
     if ([m_DockTileView thumbBitmap] != nil)
     {
@@ -1372,6 +1476,8 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
 
             rr = [m_DockTileView frame];
             
+            CrVrScrCompositorGetStretching(pCompositor, &xStretch, &yStretch);
+            
             CrVrScrCompositorIterInit(pCompositor, &CIter);
             while ((pEntry = CrVrScrCompositorIterNext(&CIter)) != NULL)
             {
@@ -1389,25 +1495,27 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
                         {
                             const RTRECT * pSrcRect = &paSrcRegions[i];
                             const RTRECT * pDstRect = &paDstRegions[i];
-                            RTRECT SrcRect, DstRect;
-                            /*if (m_RootShift.x)*/
-                            {
-                                DstRect.xLeft = pDstRect->xLeft * m_FBOThumbScaleX;
-                                DstRect.yTop = (r.size.height - pDstRect->yTop) * m_FBOThumbScaleY;
-                                DstRect.xRight = pDstRect->xRight * m_FBOThumbScaleX;
-                                DstRect.yBottom = (r.size.height - pDstRect->yBottom) * m_FBOThumbScaleY;
-                                pDstRect = &DstRect;
-                            }
+                            RTRECT SrcRect, DstRect, RestrictSrcRect, RestrictDstRect;
                     
-                            if (m_RootShift.y)
-                            {
-                                SrcRect.xLeft = pSrcRect->xLeft;
-                                SrcRect.yTop = pSrcRect->yTop - m_RootShift.y;
-                                SrcRect.xRight = pSrcRect->xRight;
-                                SrcRect.yBottom = pSrcRect->yBottom - m_RootShift.y;
-                                pSrcRect = &SrcRect;
-                            }
+                            vboxNSRectToRect(&m_RootRect, &RestrictDstRect);
+                            VBoxRectIntersected(&RestrictDstRect, pDstRect, &DstRect);
+                            
+                            VBoxRectTranslate(&DstRect, -RestrictDstRect.xLeft, -RestrictDstRect.yTop);
+                            
+                            VBoxRectStretch(&DstRect, m_FBOThumbScaleX, m_FBOThumbScaleY);
                     
+                            if (VBoxRectIsZero(&DstRect))
+                                continue;
+                        
+                            vboxNSRectToRectUnstretched(&m_RootRect, &RestrictSrcRect, xStretch, yStretch);
+                            VBoxRectIntersected(&RestrictSrcRect, pSrcRect, &SrcRect);
+                    
+                            if (VBoxRectIsZero(&SrcRect))
+                                continue;
+
+                            pSrcRect = &SrcRect;
+                            pDstRect = &DstRect;
+                            
                             CrBltBlitTexMural(m_pBlitter, true, &pEntry->Tex, pSrcRect, pDstRect, 1, fFlags);
                         }
                         CrBltLeave(m_pBlitter);
@@ -1432,11 +1540,17 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
              * happens. We have to lock this access, in the case the dock
              * is updated currently. */
             [m_DockTileView lock];
-            glReadPixels(0, 0, rr.size.width, rr.size.height,
+            glReadPixels(0, m_RootRect.size.height - rr.size.height, rr.size.width, rr.size.height,
                          GL_BGRA,
                          GL_UNSIGNED_INT_8_8_8_8,
                          [[m_DockTileView thumbBitmap] bitmapData]);
             [m_DockTileView unlock];
+            
+#ifdef VBOX_WITH_CRDUMPER_THUMBNAIL
+            ++g_cVBoxTgaCtr;
+            crDumpNamedTGAF((GLint)rr.size.width, (GLint)rr.size.height, 
+                [[m_DockTileView thumbBitmap] bitmapData], "/Users/leo/vboxdumps/dump%d.tga", g_cVBoxTgaCtr);
+#endif                
 
             pDT = [[NSApplication sharedApplication] dockTile];
 
@@ -1506,11 +1620,12 @@ static void vboxCtxLeave(PVBOX_CR_RENDER_CTX_INFO pCtxInfo)
     if (pView != nil)
     {
         NSRect dockFrame = [pView frame];
+        /* todo: this is not correct, we should use framebuffer size here, while parent view frame size may differ in case of scrolling */
         NSRect parentFrame = [m_pParentView frame];
 
         m_FBOThumbScaleX = (float)dockFrame.size.width / parentFrame.size.width;
         m_FBOThumbScaleY = (float)dockFrame.size.height / parentFrame.size.height;
-        newFrame = NSMakeRect((int)(m_Pos.x * m_FBOThumbScaleX), (int)(dockFrame.size.height - (m_Pos.y + m_Size.height - m_RootShift.y) * m_FBOThumbScaleY), (int)(m_Size.width * m_FBOThumbScaleX), (int)(m_Size.height * m_FBOThumbScaleY));
+        newFrame = NSMakeRect((int)(m_Pos.x * m_FBOThumbScaleX), (int)(dockFrame.size.height - (m_Pos.y + m_Size.height - m_yInvRootOffset) * m_FBOThumbScaleY), (int)(m_Size.width * m_FBOThumbScaleX), (int)(m_Size.height * m_FBOThumbScaleY));
         /*
         NSRect newFrame = NSMakeRect ((int)roundf(m_Pos.x * m_FBOThumbScaleX), (int)roundf(dockFrame.size.height - (m_Pos.y + m_Size.height) * m_FBOThumbScaleY), (int)roundf(m_Size.width * m_FBOThumbScaleX), (int)roundf(m_Size.height * m_FBOThumbScaleY));
         NSRect newFrame = NSMakeRect ((m_Pos.x * m_FBOThumbScaleX), (dockFrame.size.height - (m_Pos.y + m_Size.height) * m_FBOThumbScaleY), (m_Size.width * m_FBOThumbScaleX), (m_Size.height * m_FBOThumbScaleY));
@@ -1780,7 +1895,26 @@ void cocoaViewGetGeometry(NativeNSViewRef pView, int *pX, int *pY, int *pW, int 
 void cocoaViewPresentComposition(NativeNSViewRef pView, struct VBOXVR_SCR_COMPOSITOR_ENTRY *pChangedEntry)
 {
     NSAutoreleasePool *pPool = [[NSAutoreleasePool alloc] init];
-
+    NSOpenGLContext *pCtx;
+    
+    /* view should not necesserily have a context set */
+    pCtx = [(OverlayView*)pView glCtx];
+    if (!pCtx)
+    {
+        ContextInfo * pCtxInfo = renderspuDefaultSharedContextAcquire();
+        if (!pCtxInfo)
+        {
+            DEBUG_WARN(("renderspuDefaultSharedContextAcquire returned NULL"));
+            
+            [pPool release];
+            return;
+        }
+        
+        pCtx = pCtxInfo->context;
+        
+        [(OverlayView*)pView setGLCtx:pCtx];
+    }
+    
     [(OverlayView*)pView presentComposition:pChangedEntry];
 
     [pPool release];

@@ -1,4 +1,4 @@
-/* $Id: sha512str.cpp $ */
+/* $Id: sha512str.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
 /** @file
  * IPRT - SHA-512 string functions.
  */

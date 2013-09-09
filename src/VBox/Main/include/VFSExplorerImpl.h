@@ -1,4 +1,4 @@
-/* $Id: VFSExplorerImpl.h $ */
+/* $Id: VFSExplorerImpl.h 47922 2013-08-20 14:36:24Z vboxsync $ */
 
 /** @file
  *
