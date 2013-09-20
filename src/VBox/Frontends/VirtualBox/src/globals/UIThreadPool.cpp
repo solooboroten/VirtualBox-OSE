@@ -1,4 +1,4 @@
-/* $Id: UIThreadPool.cpp 48317 2013-09-05 16:25:14Z vboxsync $ */
+/* $Id: UIThreadPool.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

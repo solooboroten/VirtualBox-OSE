@@ -1,4 +1,4 @@
-/* $Id: slirp_dns.c 43714 2012-10-24 06:57:32Z vboxsync $ */
+/* $Id: slirp_dns.c 48526 2013-09-18 17:31:56Z vboxsync $ */
 /** @file
  * NAT - dns initialization.
  */

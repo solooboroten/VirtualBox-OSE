@@ -1,4 +1,4 @@
-/* $Id: UIMediumEnumerator.cpp 48307 2013-09-05 13:30:12Z vboxsync $ */
+/* $Id: UIMediumEnumerator.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-/* $Id: UINetworkManagerDialog.cpp 45432 2013-04-09 13:03:52Z vboxsync $ */
+/* $Id: UINetworkManagerDialog.cpp 48467 2013-09-13 11:44:38Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

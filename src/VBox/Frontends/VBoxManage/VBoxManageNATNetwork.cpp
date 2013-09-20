@@ -1,4 +1,4 @@
-/* $Id: VBoxManageNATNetwork.cpp 48363 2013-09-06 15:47:40Z vboxsync $ */
+/* $Id: VBoxManageNATNetwork.cpp 48405 2013-09-10 12:22:17Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of NAT Network command command.
  */

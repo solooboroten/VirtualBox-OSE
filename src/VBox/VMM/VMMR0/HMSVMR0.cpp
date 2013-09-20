@@ -1,4 +1,4 @@
-/* $Id: HMSVMR0.cpp 48370 2013-09-06 18:28:00Z vboxsync $ */
+/* $Id: HMSVMR0.cpp 48571 2013-09-19 23:57:13Z vboxsync $ */
 /** @file
  * HM SVM (AMD-V) - Host Context Ring-0.
  */

@@ -1,4 +1,4 @@
-/* $Id: SessionImpl.cpp 48299 2013-09-05 11:07:08Z vboxsync $ */
+/* $Id: SessionImpl.cpp 48431 2013-09-11 14:08:36Z vboxsync $ */
 /** @file
  * VBox Client Session COM Class implementation in VBoxC.
  */

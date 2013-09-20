@@ -1,4 +1,4 @@
-/* $Id: HMR0.cpp 48328 2013-09-05 22:20:18Z vboxsync $ */
+/* $Id: HMR0.cpp 48591 2013-09-20 13:42:09Z vboxsync $ */
 /** @file
  * Hardware Assisted Virtualization Manager (HM) - Host Context Ring-0.
  */

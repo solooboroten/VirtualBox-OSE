@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: EmulatedUSBImpl.h 48406 2013-09-10 12:53:50Z vboxsync $ */
 
 /** @file
  *

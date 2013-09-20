@@ -1,4 +1,4 @@
-/* $Id: DevVGA.cpp 45808 2013-04-29 12:41:07Z vboxsync $ */
+/* $Id: DevVGA.cpp 48468 2013-09-13 12:09:17Z vboxsync $ */
 /** @file
  * DevVGA - VBox VGA/VESA device.
  */

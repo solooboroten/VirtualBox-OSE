@@ -1,4 +1,4 @@
-/* $Id: VBoxManageModifyVM.cpp 47991 2013-08-22 14:31:52Z vboxsync $ */
+/* $Id: VBoxManageModifyVM.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of modifyvm command.
  */

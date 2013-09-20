@@ -1,4 +1,4 @@
-/* $Id: NATNetworkImpl.cpp 48379 2013-09-09 08:00:26Z vboxsync $ */
+/* $Id: NATNetworkImpl.cpp 48522 2013-09-18 15:25:51Z vboxsync $ */
 /** @file
  * INATNetwork implementation.
  */

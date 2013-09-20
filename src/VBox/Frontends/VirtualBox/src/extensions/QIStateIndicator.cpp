@@ -1,4 +1,4 @@
-/* $Id: QIStateIndicator.cpp 46650 2013-06-19 11:49:38Z vboxsync $ */
+/* $Id: QIStateIndicator.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

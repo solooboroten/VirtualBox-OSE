@@ -1,4 +1,4 @@
-/* $Id: HostDnsServiceDarwin.cpp 48346 2013-09-06 09:50:19Z vboxsync $ */
+/* $Id: HostDnsServiceDarwin.cpp 48492 2013-09-16 15:40:44Z vboxsync $ */
 /** @file
  * Darwin specific DNS information fetching.
  */

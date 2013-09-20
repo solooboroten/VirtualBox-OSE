@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: EmulatedUSBImpl.cpp 48423 2013-09-11 10:44:36Z vboxsync $ */
 /** @file
  *
  * Emulated USB manager implementation.

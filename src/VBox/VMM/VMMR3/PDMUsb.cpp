@@ -1,4 +1,4 @@
-/* $Id: PDMUsb.cpp 48234 2013-09-02 17:09:24Z vboxsync $ */
+/* $Id: PDMUsb.cpp 48406 2013-09-10 12:53:50Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, USB part.
  */

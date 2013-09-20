@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: DevSmc.cpp 48451 2013-09-12 15:01:07Z vboxsync $ */
 /** @file
  * DevSmc - Apple System Manaagement Controller.
  *

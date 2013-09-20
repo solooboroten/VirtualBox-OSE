@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp 48314 2013-09-05 15:54:32Z vboxsync $ */
+/* $Id: VBoxGlobal.cpp 48576 2013-09-20 09:08:41Z vboxsync $ */
 /** @file
  * VBox Qt GUI - VBoxGlobal class implementation.
  */

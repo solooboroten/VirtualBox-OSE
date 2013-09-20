@@ -1,4 +1,4 @@
-/* $Id: VMMR0.cpp 48391 2013-09-09 12:51:09Z vboxsync $ */
+/* $Id: VMMR0.cpp 48448 2013-09-12 12:53:17Z vboxsync $ */
 /** @file
  * VMM - Host Context Ring 0.
  */

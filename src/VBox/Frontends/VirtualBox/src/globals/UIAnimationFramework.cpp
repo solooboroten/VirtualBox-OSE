@@ -1,4 +1,4 @@
-/* $Id: UIAnimationFramework.cpp 47015 2013-07-05 16:51:25Z vboxsync $ */
+/* $Id: UIAnimationFramework.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

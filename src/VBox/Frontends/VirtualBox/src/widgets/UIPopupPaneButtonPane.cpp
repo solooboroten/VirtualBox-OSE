@@ -1,4 +1,4 @@
-/* $Id: UIPopupPaneButtonPane.cpp 47121 2013-07-12 13:48:24Z vboxsync $ */
+/* $Id: UIPopupPaneButtonPane.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

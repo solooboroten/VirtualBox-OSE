@@ -1,4 +1,4 @@
-/* $Id: UINameAndSystemEditor.cpp 41832 2012-06-19 15:21:20Z vboxsync $ */
+/* $Id: UINameAndSystemEditor.cpp 48576 2013-09-20 09:08:41Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

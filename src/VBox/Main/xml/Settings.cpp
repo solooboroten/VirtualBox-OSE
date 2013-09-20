@@ -1,4 +1,4 @@
-/* $Id: Settings.cpp 48093 2013-08-27 16:39:15Z vboxsync $ */
+/* $Id: Settings.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
 /** @file
  * Settings File Manipulation API.
  *

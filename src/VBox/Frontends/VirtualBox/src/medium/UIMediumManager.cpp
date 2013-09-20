@@ -1,4 +1,4 @@
-/* $Id: UIMediumManager.cpp 48316 2013-09-05 16:14:52Z vboxsync $ */
+/* $Id: UIMediumManager.cpp 48603 2013-09-20 15:09:18Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

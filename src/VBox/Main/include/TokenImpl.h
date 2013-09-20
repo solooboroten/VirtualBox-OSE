@@ -1,4 +1,4 @@
-/* $Id: TokenImpl.h 48297 2013-09-05 09:57:44Z vboxsync $ */
+/* $Id: TokenImpl.h 48431 2013-09-11 14:08:36Z vboxsync $ */
 
 /** @file
  *

@@ -1,4 +1,4 @@
-/* $Id: NATNetworkImpl.h 48107 2013-08-27 22:15:13Z vboxsync $ */
+/* $Id: NATNetworkImpl.h 48417 2013-09-10 15:58:39Z vboxsync $ */
 /** @file
  * INATNetwork implementation header, lives in VBoxSVC.
  */

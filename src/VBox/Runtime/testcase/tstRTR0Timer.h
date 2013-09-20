@@ -1,4 +1,4 @@
-/* $Id: tstRTR0Timer.h 32736 2010-09-23 16:19:46Z vboxsync $ */
+/* $Id: tstRTR0Timer.h 48411 2013-09-10 14:36:31Z vboxsync $ */
 /** @file
  * IPRT R0 Testcase - Timers, common header.
  */

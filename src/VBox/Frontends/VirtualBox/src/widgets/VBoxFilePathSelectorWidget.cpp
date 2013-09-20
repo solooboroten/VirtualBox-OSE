@@ -1,4 +1,4 @@
-/* $Id: VBoxFilePathSelectorWidget.cpp 47184 2013-07-16 09:28:19Z vboxsync $ */
+/* $Id: VBoxFilePathSelectorWidget.cpp 48577 2013-09-20 10:10:18Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

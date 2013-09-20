@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: HostVideoInputDeviceImpl.h 48607 2013-09-20 15:47:37Z vboxsync $ */
 
 /** @file
  *

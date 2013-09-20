@@ -1,4 +1,4 @@
-/* $Id: HM.cpp 48267 2013-09-04 14:06:50Z vboxsync $ */
+/* $Id: HM.cpp 48606 2013-09-20 15:27:39Z vboxsync $ */
 /** @file
  * HM - Intel/AMD VM Hardware Support Manager.
  */
