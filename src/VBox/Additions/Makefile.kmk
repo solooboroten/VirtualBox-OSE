@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 48187 2013-08-30 11:42:03Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Top-level makefile for the VirtualBox Guest Additions.
 #

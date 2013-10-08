@@ -1,4 +1,4 @@
-/* $Id: switcher.h 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: switcher.h $ */
 
 /** @file
  * VBox D3D8/9 dll switcher

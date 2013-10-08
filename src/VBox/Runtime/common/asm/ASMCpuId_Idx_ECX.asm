@@ -1,4 +1,4 @@
-; $Id: ASMCpuId_Idx_ECX.asm 44529 2013-02-04 15:54:15Z vboxsync $
+; $Id: ASMCpuId_Idx_ECX.asm $
 ;; @file
 ; IPRT - ASMCpuId_Idx_ECX().
 ;

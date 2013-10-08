@@ -1,4 +1,4 @@
-/* $Id: Nvram.h 44591 2013-02-08 04:48:00Z vboxsync $ */
+/* $Id: Nvram.h $ */
 
 /** @file
  * VirtualBox COM class implementation

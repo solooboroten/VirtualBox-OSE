@@ -1,4 +1,4 @@
-/* $Id: NativeEventQueue.cpp 47801 2013-08-16 11:24:48Z vboxsync $ */
+/* $Id: NativeEventQueue.cpp $ */
 /** @file
  * MS COM / XPCOM Abstraction Layer:
  * Main event queue class declaration

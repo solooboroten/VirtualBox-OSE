@@ -1,4 +1,4 @@
-/* $Id: alloc-ef-cpp.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: alloc-ef-cpp.cpp $ */
 /** @file
  * IPRT - Memory Allocation, C++ electric fence.
  */

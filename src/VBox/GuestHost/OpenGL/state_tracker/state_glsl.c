@@ -1,4 +1,4 @@
-/* $Id: state_glsl.c 48247 2013-09-03 12:30:47Z vboxsync $ */
+/* $Id: state_glsl.c $ */
 
 /** @file
  * VBox OpenGL: GLSL state tracking

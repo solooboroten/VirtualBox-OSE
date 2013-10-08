@@ -1,4 +1,4 @@
-/* $Id: VBoxUSB.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: VBoxUSB.cpp $ */
 /** @file
  * VirtualBox USB driver for Darwin.
  *

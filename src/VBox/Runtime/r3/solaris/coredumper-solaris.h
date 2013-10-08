@@ -1,4 +1,4 @@
-/* $Id: coredumper-solaris.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: coredumper-solaris.h $ */
 /** @file
  * IPRT - Custom Core Dumper, Solaris.
  */

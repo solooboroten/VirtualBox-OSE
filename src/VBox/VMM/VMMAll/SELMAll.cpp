@@ -1,4 +1,4 @@
-/* $Id: SELMAll.cpp 45786 2013-04-26 22:35:59Z vboxsync $ */
+/* $Id: SELMAll.cpp $ */
 /** @file
  * SELM All contexts.
  */

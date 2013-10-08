@@ -1,4 +1,4 @@
-/* $Id: VDI.cpp 46613 2013-06-18 10:27:13Z vboxsync $ */
+/* $Id: VDI.cpp $ */
 /** @file
  * Virtual Disk Image (VDI), Core Code.
  */
@@ -1239,8 +1239,9 @@ static int vdiDiscardBlockAsync(PVDIIMAGEDESC pImage, PVDIOCTX pIoCtx,
  */
 static void *vdiAllocationBitmapCreate(void *pvData, size_t cbData)
 {
-    unsigned cSectors = cbData / 512;
-    unsigned uSectorCur = 0;
+    Assert(cbData <= UINT32_MAX / 8);
+    uint32_t cSectors = (uint32_t)(cbData / 512);
+    uint32_t uSectorCur = 0;
     void *pbmAllocationBitmap = NULL;
 
     Assert(!(cbData % 512));
@@ -1252,7 +1253,7 @@ static void *vdiAllocationBitmapCreate(void *pvData, size_t cbData)
 
     while (uSectorCur < cSectors)
     {
-        int idxSet = ASMBitFirstSet((uint8_t *)pvData + uSectorCur * 512, cbData * 8);
+        int idxSet = ASMBitFirstSet((uint8_t *)pvData + uSectorCur * 512, (uint32_t)cbData * 8);
 
         if (idxSet != -1)
         {
@@ -1768,6 +1769,22 @@ static unsigned vdiGetVersion(void *pBackendData)
 
     LogFlowFunc(("returns %#x\n", uVersion));
     return uVersion;
+}
+
+/** @copydoc VBOXHDDBACKEND::pfnGetSectorSize */
+static uint32_t vdiGetSectorSize(void *pBackendData)
+{
+    LogFlowFunc(("pBackendData=%#p\n", pBackendData));
+    PVDIIMAGEDESC pImage = (PVDIIMAGEDESC)pBackendData;
+    uint64_t cbSector = 0;
+
+    AssertPtr(pImage);
+
+    if (pImage && pImage->pStorage)
+        cbSector = 512;
+
+    LogFlowFunc(("returns %zu\n", cbSector));
+    return cbSector;
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnGetSize */
@@ -3211,6 +3228,8 @@ VBOXHDDBACKEND g_VDIBackend =
     vdiDiscard,
     /* pfnGetVersion */
     vdiGetVersion,
+    /* pfnGetSectorSize */
+    vdiGetSectorSize,
     /* pfnGetSize */
     vdiGetSize,
     /* pfnGetFileSize */

@@ -1,4 +1,4 @@
-/* $Id: RTPathRmCmd.cpp 45046 2013-03-15 07:52:49Z vboxsync $ */
+/* $Id: RTPathRmCmd.cpp $ */
 /** @file
  * IPRT - TAR Command.
  */

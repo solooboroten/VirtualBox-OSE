@@ -1,4 +1,4 @@
-/* $Id: PerformanceLinux.cpp 48160 2013-08-29 14:17:25Z vboxsync $ */
+/* $Id: PerformanceLinux.cpp $ */
 
 /** @file
  *

@@ -1,4 +1,4 @@
-/* $Id: MachineDebuggerImpl.h 46423 2013-06-06 19:48:27Z vboxsync $ */
+/* $Id: MachineDebuggerImpl.h $ */
 
 /** @file
  *

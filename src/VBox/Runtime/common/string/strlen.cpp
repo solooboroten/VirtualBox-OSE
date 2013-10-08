@@ -1,4 +1,4 @@
-/* $Id: strlen.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: strlen.cpp $ */
 /** @file
  * IPRT - CRT Strings, strlen().
  */

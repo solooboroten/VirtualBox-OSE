@@ -1,4 +1,4 @@
-/* $Id: VBoxDD.cpp 48435 2013-09-11 15:18:22Z vboxsync $ */
+/* $Id: VBoxDD.cpp $ */
 /** @file
  * VBoxDD - Built-in drivers & devices (part 1).
  */

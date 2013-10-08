@@ -1,4 +1,4 @@
-; $Id: VBoxDrv.inf 44528 2013-02-04 14:27:54Z vboxsync $
+; $Id: VBoxDrv.inf $
 ;; @file
 ; VirtualBox Support Driver - Windows Driver INF file.
 ;

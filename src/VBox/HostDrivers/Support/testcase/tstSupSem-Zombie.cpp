@@ -1,4 +1,4 @@
-/* $Id: tstSupSem-Zombie.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: tstSupSem-Zombie.cpp $ */
 /** @file
  * Support Library Testcase - Ring-3 Semaphore interface - Zombie bugs.
  */

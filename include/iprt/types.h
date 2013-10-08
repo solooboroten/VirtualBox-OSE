@@ -207,7 +207,7 @@ typedef uint8_t bool;
 typedef _Bool bool;
 #   endif
 #  else
-#   if (defined(RT_OS_DARWIN) || defined(RT_OS_HAIKU)) && defined(_STDBOOL_H)
+#   if (defined(RT_OS_DARWIN) || defined(RT_OS_HAIKU)) && (defined(_STDBOOL_H) || defined(__STDBOOL_H))
 #    undef bool
 #   endif
 typedef _Bool bool;
@@ -2191,6 +2191,9 @@ typedef union RTUUID
 typedef RTUUID *PRTUUID;
 /** Pointer to readonly UUID data. */
 typedef const RTUUID *PCRTUUID;
+
+/** Initializes a RTUUID structure with all zeros (RTUuidIsNull() true). */
+#define RTUUID_INITIALIZE_NULL  { { 0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0 } }
 
 /** UUID string maximum length. */
 #define RTUUID_STR_LENGTH       37

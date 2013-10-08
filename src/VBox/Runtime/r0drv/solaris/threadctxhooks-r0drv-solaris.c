@@ -1,4 +1,4 @@
-/* $Id: threadctxhooks-r0drv-solaris.c 48051 2013-08-26 09:51:43Z vboxsync $ */
+/* $Id: threadctxhooks-r0drv-solaris.c $ */
 /** @file
  * IPRT - Thread-Context Hook, Ring-0 Driver, Solaris.
  */

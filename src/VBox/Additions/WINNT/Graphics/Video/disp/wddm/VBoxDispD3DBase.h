@@ -1,4 +1,4 @@
-/* $Id: VBoxDispD3DBase.h 48071 2013-08-26 19:12:02Z vboxsync $ */
+/* $Id: VBoxDispD3DBase.h $ */
 /** @file
  * VBoxVideo Display D3D Base Include
  */

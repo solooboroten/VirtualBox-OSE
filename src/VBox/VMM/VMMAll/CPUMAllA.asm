@@ -1,4 +1,4 @@
-; $Id: CPUMAllA.asm 48567 2013-09-19 22:51:40Z vboxsync $
+; $Id: CPUMAllA.asm $
 ;; @file
 ; CPUM - Guest Context Assembly Routines.
 ;
@@ -37,7 +37,6 @@
 %define ENABLE_WRITE_PROTECTION 1
 
 BEGINCODE
-
 
 ;;
 ; Handles lazy FPU saving and restoring.
@@ -170,6 +169,11 @@ hlfpua_switch_fpu_ctx:
     fxrstor [xDX + CPUMCPU.Guest.fpu]
 %endif
 hlfpua_finished_switch:
+
+    ; Load new CR0 value.
+    ; IN_RING0 the caller saves/restores CR0 anyway, so avoid the extra CR0 write.
+    ; Currently the only caller in ring-0 is CPUMR0LoadGuestFPU()->CPUMHandleLazyFPU().
+    ;; @todo Optimize the many unconditional CR0 writes.
 %ifdef IN_RC
     mov     cr0, xCX                            ; load the new cr0 flags.
 %endif

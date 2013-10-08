@@ -1,4 +1,4 @@
-/* $Id: fileaio-solaris.cpp 45678 2013-04-23 11:28:41Z vboxsync $ */
+/* $Id: fileaio-solaris.cpp $ */
 /** @file
  * IPRT - File async I/O, native implementation for the Solaris host platform.
  */

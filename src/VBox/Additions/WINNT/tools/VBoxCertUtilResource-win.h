@@ -1,4 +1,4 @@
-/* $Id: VBoxCertUtilResource-win.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: VBoxCertUtilResource-win.h $ */
 /** @file
  * VBoxService - Guest Additions Service, resource IDs.
  */

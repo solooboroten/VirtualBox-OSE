@@ -1,4 +1,4 @@
-/* $Id: the-haiku-kernel.h 43403 2012-09-22 11:48:24Z vboxsync $ */
+/* $Id: the-haiku-kernel.h $ */
 /** @file
  * IPRT - Include all necessary headers for the Haiku kernel.
  */

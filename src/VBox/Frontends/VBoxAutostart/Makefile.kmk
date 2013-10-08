@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 43967 2012-11-26 19:35:33Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # VBoxAutostart - VM autostart service.
 #

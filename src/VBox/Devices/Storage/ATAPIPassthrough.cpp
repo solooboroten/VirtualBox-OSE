@@ -1,4 +1,4 @@
-/* $Id: ATAPIPassthrough.cpp 47791 2013-08-16 09:40:10Z vboxsync $ */
+/* $Id: ATAPIPassthrough.cpp $ */
 /** @file
  * VBox storage devices: ATAPI emulation (common code for DevATA and DevAHCI).
  */

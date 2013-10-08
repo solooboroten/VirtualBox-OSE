@@ -1,5 +1,5 @@
 #!/sbin/sh
-# $Id: smf-vboxballoonctrl.sh 44336 2013-01-23 13:51:33Z vboxsync $
+# $Id: smf-vboxballoonctrl.sh $
 
 # Copyright (C) 2008-2013 Oracle Corporation
 #

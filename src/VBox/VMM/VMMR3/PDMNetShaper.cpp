@@ -1,4 +1,4 @@
-/* $Id: PDMNetShaper.cpp 45061 2013-03-18 14:09:03Z vboxsync $ */
+/* $Id: PDMNetShaper.cpp $ */
 /** @file
  * PDM Network Shaper - Limit network traffic according to bandwidth group settings.
  */

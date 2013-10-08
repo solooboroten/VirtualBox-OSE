@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 48607 2013-09-20 15:47:37Z vboxsync $ */
+/* $Id: HostImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -305,7 +305,7 @@ HRESULT Host::init(VirtualBox *aParent)
     m->pHostDnsService = new HostDnsService();
 # endif
 
-    hrc = m->pHostDnsService->init();
+    hrc = m->pHostDnsService->init(m->pParent);
     AssertComRCReturn(hrc, hrc);
 
     hrc = m->pHostDnsService->start();
@@ -839,7 +839,7 @@ STDMETHODIMP Host::COMGETTER(USBDevices)(ComSafeArrayOut(IHostUSBDevice*, aUSBDe
 
 
 /**
- * This method return the list of registered name servers 
+ * This method return the list of registered name servers
  */
 STDMETHODIMP Host::COMGETTER(NameServers)(ComSafeArrayOut(BSTR, aNameServers))
 {
@@ -859,9 +859,9 @@ STDMETHODIMP Host::COMGETTER(NameServers)(ComSafeArrayOut(BSTR, aNameServers))
  */
 STDMETHODIMP Host::COMGETTER(DomainName)(BSTR *aDomainName)
 {
-    /* XXX: note here should be synchronization with thread polling state 
+    /* XXX: note here should be synchronization with thread polling state
      * changes in name resoving system on host */
-    
+
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
@@ -955,7 +955,23 @@ STDMETHODIMP Host::COMGETTER(ProcessorCoreCount)(ULONG *aCount)
     CheckComArgOutPointerValid(aCount);
     // no locking required
 
-    return E_NOTIMPL;
+    *aCount = RTMpGetPresentCoreCount();
+    return S_OK;
+}
+
+/**
+ * Returns the number of installed physical processor cores.
+ *
+ * @returns COM status code
+ * @param   count address of result variable
+ */
+STDMETHODIMP Host::COMGETTER(ProcessorOnlineCoreCount)(ULONG *aCount)
+{
+    CheckComArgOutPointerValid(aCount);
+    // no locking required
+
+    *aCount = RTMpGetOnlineCoreCount();
+    return S_OK;
 }
 
 /**

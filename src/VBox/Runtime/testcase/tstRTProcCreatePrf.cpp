@@ -1,4 +1,4 @@
-/* $Id: tstRTProcCreatePrf.cpp 44556 2013-02-06 00:06:34Z vboxsync $ */
+/* $Id: tstRTProcCreatePrf.cpp $ */
 /** @file
  * IPRT Testcase - RTProcCreate Profiling.
  */
@@ -80,5 +80,4 @@ int main(int argc, char **argv)
      */
     return RTTestSummaryAndDestroy(hTest);
 }
-
 

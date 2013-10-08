@@ -1,4 +1,4 @@
-/* $Id: rtpath-expand-template.cpp.h 45395 2013-04-08 07:26:54Z vboxsync $ */
+/* $Id: rtpath-expand-template.cpp.h $ */
 /** @file
  * IPRT - RTPath - Internal header that includes RTPATH_TEMPLATE_CPP_H multiple
  *                 times to expand the code for different path styles.

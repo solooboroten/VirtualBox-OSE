@@ -1,4 +1,4 @@
-/* $Id: tstTSC.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstTSC.cpp $ */
 /** @file
  * IPRT Testcase - SMP TSC testcase.
  */
@@ -437,7 +437,7 @@ int main(int argc, char **argv)
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: $\n");
+                RTPrintf("$Revision: 89632 $\n");
                 return 0;
 
             default:

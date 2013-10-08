@@ -1,4 +1,4 @@
-/* $Id: systemmem-darwin.cpp 43443 2012-09-26 17:40:34Z vboxsync $ */
+/* $Id: systemmem-darwin.cpp $ */
 /** @file
  * IPRT - RTSystemQueryTotalRam, darwin ring-3.
  */

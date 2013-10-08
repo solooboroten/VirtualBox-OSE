@@ -1,4 +1,4 @@
-/* $Id: init-win.cpp 48304 2013-09-05 12:38:39Z vboxsync $ */
+/* $Id: init-win.cpp $ */
 /** @file
  * IPRT - Init Ring-3, Windows Specific Code.
  */

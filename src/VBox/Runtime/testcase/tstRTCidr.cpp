@@ -1,4 +1,4 @@
-/* $Id: tstRTCidr.cpp 45047 2013-03-15 09:19:16Z vboxsync $ */
+/* $Id: tstRTCidr.cpp $ */
 /** @file
  * IPRT Testcase - IPv4.
  */

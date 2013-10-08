@@ -1,4 +1,4 @@
-/* $Id: tstFile.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstFile.cpp $ */
 /** @file
  * IPRT Testcase - File I/O.
  */

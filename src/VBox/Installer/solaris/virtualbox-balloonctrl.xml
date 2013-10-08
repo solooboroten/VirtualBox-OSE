@@ -2,7 +2,7 @@
 <!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
 <!--
 # Solaris SMF service manifest for VirtualBox balloon control service.
-# $Id: virtualbox-balloonctrl.xml 44336 2013-01-23 13:51:33Z vboxsync $
+# $Id: virtualbox-balloonctrl.xml $
 
     Copyright (C) 2008-2013 Oracle Corporation
 

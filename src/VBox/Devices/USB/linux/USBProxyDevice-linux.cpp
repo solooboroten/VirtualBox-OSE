@@ -1,4 +1,4 @@
-/* $Id: USBProxyDevice-linux.cpp 46326 2013-05-30 12:16:53Z vboxsync $ */
+/* $Id: USBProxyDevice-linux.cpp $ */
 /** @file
  * USB device proxy - the Linux backend.
  */

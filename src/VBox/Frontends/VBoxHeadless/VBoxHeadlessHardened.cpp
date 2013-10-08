@@ -1,4 +1,4 @@
-/* $Id: VBoxHeadlessHardened.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: VBoxHeadlessHardened.cpp $ */
 /** @file
  * VBoxHeadless - Hardened main().
  */

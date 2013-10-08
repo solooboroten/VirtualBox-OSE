@@ -1,4 +1,4 @@
-/* $Id: ErrorInfo.cpp 46372 2013-06-04 08:47:43Z vboxsync $ */
+/* $Id: ErrorInfo.cpp $ */
 
 /** @file
  *

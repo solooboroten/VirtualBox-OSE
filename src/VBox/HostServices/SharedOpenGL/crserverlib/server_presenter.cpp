@@ -1,4 +1,4 @@
-/* $Id: server_presenter.cpp 47628 2013-08-09 09:08:20Z vboxsync $ */
+/* $Id: server_presenter.cpp $ */
 
 /** @file
  * Presenter API
@@ -46,7 +46,9 @@ int CrDpInit(PCR_DISPLAY pDisplay)
         return VERR_GENERAL_FAILURE;
     }
 
-    crServerMuralVisibleRegion(&pDisplay->Mural, 0, NULL);
+    crServerWindowVisibleRegion(&pDisplay->Mural);
+    crServerDEntryAllVibleRegions(&pDisplay->Mural);
+
     crServerMuralShow(&pDisplay->Mural, GL_TRUE);
 
     pDisplay->fForcePresent = GL_FALSE;
@@ -80,6 +82,12 @@ void CrDpReparent(PCR_DISPLAY pDisplay, CRScreenInfo *pScreen)
     renderspuSetWindowId(cr_server.screen[0].winID);
 
     CrDpResize(pDisplay, pScreen->x, pScreen->y, pScreen->w, pScreen->h);
+
+    if (pScreen->winID)
+    {
+        /* need to do this on win, since otherwise the window ends up being with empty visible regions for some reason */
+        crServerWindowVisibleRegion(&pDisplay->Mural);
+    }
 }
 
 
@@ -223,22 +231,60 @@ int CrDpEntryRegionsAdd(PCR_DISPLAY pDisplay, PCR_DISPLAY_ENTRY pEntry, const RT
     {
         if (fChangeFlags & VBOXVR_COMPOSITOR_CF_REGIONS_CHANGED)
         {
-            uint32_t cRects;
-            const RTRECT *pRects;
-            rc = CrVrScrCompositorRegionsGet(&pDisplay->Mural.Compositor, &cRects, NULL, &pRects, NULL);
-            if (RT_SUCCESS(rc))
-                crServerMuralVisibleRegion(&pDisplay->Mural, cRects, (GLint *)pRects);
-            else
-                crWarning("CrVrScrCompositorRegionsGet failed, rc %d", rc);
+            bool fChanged = true;
+            if (pDisplay->Mural.fRootVrOn)
+            {
+                int rc = crServerMuralSynchRootVr(&pDisplay->Mural, &fChanged);
+                if (!RT_SUCCESS(rc))
+                {
+                    crWarning("crServerMuralSynchRootVr failed, rc %d", rc);
+                    fChanged = false;
+                }
+            }
+
+            if (fChanged)
+                crServerWindowVisibleRegion(&pDisplay->Mural);
+
+            crServerDEntryAllVibleRegions(&pDisplay->Mural);
 
             Assert(!pReplacedScrEntry);
         }
-        else if (fChangeFlags & VBOXVR_COMPOSITOR_CF_ENTRY_REPLACED)
+        else if (fChangeFlags & VBOXVR_COMPOSITOR_CF_ENTRY_REGIONS_CHANGED)
         {
-            Assert(pReplacedScrEntry);
+            if (fChangeFlags & VBOXVR_COMPOSITOR_CF_ENTRY_REPLACED)
+            {
+                Assert(pReplacedScrEntry);
+                Assert(pEntry);
+                if (pDisplay->Mural.fRootVrOn)
+                {
+                    CR_DISPLAY_ENTRY *pReplacedDEntry = CR_DENTRY_FROM_CENTRY(pReplacedScrEntry);
+                    Assert(CrVrScrCompositorEntryIsUsed(&pReplacedDEntry->RootVrCEntry));
+                    Assert(!CrVrScrCompositorEntryIsUsed(&pEntry->RootVrCEntry));
+                    CrVrScrCompositorEntryInit(&pEntry->RootVrCEntry, CrVrScrCompositorEntryTexGet(&pEntry->CEntry), NULL);
+                    CrVrScrCompositorEntryFlagsSet(&pEntry->RootVrCEntry, CrVrScrCompositorEntryFlagsGet(&pEntry->CEntry));
+                    CrVrScrCompositorEntryReplace(&pDisplay->Mural.RootVrCompositor, &pReplacedDEntry->RootVrCEntry, &pEntry->RootVrCEntry);
+                }
+            }
+            else
+            {
+                Assert(!pReplacedScrEntry);
+                if (pDisplay->Mural.fRootVrOn)
+                {
+                    bool fChanged = false;
+                    int rc = crServerMuralSynchRootVr(&pDisplay->Mural, &fChanged);
+                    if (RT_SUCCESS(rc))
+                    {
+                        if (fChanged)
+                            crServerWindowVisibleRegion(&pDisplay->Mural);
+                    }
+                    else
+                        crWarning("crServerMuralSynchRootVr failed, rc %d", rc);
+                }
+            }
         }
         else
         {
+            Assert(!(fChangeFlags & VBOXVR_COMPOSITOR_CF_ENTRY_REPLACED));
             Assert(!pReplacedScrEntry);
         }
     }
@@ -314,6 +360,12 @@ void CrDpLeave(PCR_DISPLAY pDisplay)
     crServerVBoxCompositionDisableLeave(&pDisplay->Mural, pDisplay->fForcePresent);
     pDisplay->fForcePresent = GL_FALSE;
 }
+
+void CrDpRootUpdate(PCR_DISPLAY pDisplay)
+{
+    crVBoxServerUpdateMuralRootVisibleRegion(&pDisplay->Mural);
+}
+
 
 typedef struct CR_DEM_ENTRY_INFO
 {
@@ -899,6 +951,11 @@ crServerDispatchVBoxTexPresent(GLuint texture, GLuint cfg, GLint xPos, GLint yPo
             /* no display initialized, and nothing to present */
             return;
         }
+    }
+
+    if (!(cfg & CR_PRESENT_FLAG_CLEAR_RECTS))
+    {
+        CR_SERVER_DUMP_TEXPRESENT(&pEntry->CEntry.Tex);
     }
 
     CrDpEnter(pDisplay);

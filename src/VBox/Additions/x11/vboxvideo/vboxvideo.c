@@ -1,4 +1,4 @@
-/* $Id: vboxvideo.c 45356 2013-04-05 07:01:27Z vboxsync $ */
+/* $Id: vboxvideo.c $ */
 /** @file
  *
  * Linux Additions X11 graphics driver

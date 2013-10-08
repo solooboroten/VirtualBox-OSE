@@ -1,4 +1,4 @@
-/* $Id: IEMAllAImplC.cpp 48173 2013-08-30 00:56:53Z vboxsync $ */
+/* $Id: IEMAllAImplC.cpp $ */
 /** @file
  * IEM - Instruction Implementation in Assembly, portable C variant.
  */

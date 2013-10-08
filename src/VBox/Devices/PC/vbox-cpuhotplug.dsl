@@ -1,4 +1,4 @@
-// $Id: vbox-cpuhotplug.dsl 44528 2013-02-04 14:27:54Z vboxsync $
+// $Id: vbox-cpuhotplug.dsl $
 /// @file
 //
 // VirtualBox ACPI

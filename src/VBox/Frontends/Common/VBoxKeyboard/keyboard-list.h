@@ -1,4 +1,4 @@
-/* $Id: keyboard-list.h 45101 2013-03-20 09:08:45Z vboxsync $ */
+/* $Id: keyboard-list.h $ */
 /** @file
  * VBox/Frontends/Common - X11 keyboard driver translation tables (keyboard layouts)
  */

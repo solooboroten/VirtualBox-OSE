@@ -1,4 +1,4 @@
-/* $Id: tcp_subr.c 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tcp_subr.c $ */
 /** @file
  * NAT - TCP support.
  */

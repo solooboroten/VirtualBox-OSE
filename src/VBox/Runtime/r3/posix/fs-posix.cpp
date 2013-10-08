@@ -1,4 +1,4 @@
-/* $Id: fs-posix.cpp 47071 2013-07-10 11:52:41Z vboxsync $ */
+/* $Id: fs-posix.cpp $ */
 /** @file
  * IPRT - File System, Linux.
  */

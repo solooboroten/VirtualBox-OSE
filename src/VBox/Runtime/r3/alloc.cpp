@@ -1,4 +1,4 @@
-/* $Id: alloc.cpp 46547 2013-06-14 09:22:03Z vboxsync $ */
+/* $Id: alloc.cpp $ */
 /** @file
  * IPRT - Memory Allocation.
  */

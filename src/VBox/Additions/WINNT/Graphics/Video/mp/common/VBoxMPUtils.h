@@ -1,4 +1,4 @@
-/* $Id: VBoxMPUtils.h 46876 2013-07-01 10:09:35Z vboxsync $ */
+/* $Id: VBoxMPUtils.h $ */
 /** @file
  * VBox Miniport common utils header
  */

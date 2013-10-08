@@ -1,4 +1,4 @@
-/* $Id: PerformanceOs2.cpp 48010 2013-08-23 07:41:13Z vboxsync $ */
+/* $Id: PerformanceOs2.cpp $ */
 
 /** @file
  *

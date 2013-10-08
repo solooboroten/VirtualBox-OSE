@@ -1,4 +1,4 @@
-/* $Id: VBoxStubCertUtil.cpp 81975 2012-11-09 13:28:58Z bird $ */
+/* $Id: VBoxStubCertUtil.cpp $ */
 /** @file
  * VBoxStub - VirtualBox's Windows installer stub (certificate manipulations).
  *

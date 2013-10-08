@@ -1,4 +1,4 @@
-/* $Id: RTPathParse.cpp 45391 2013-04-07 17:15:29Z vboxsync $ */
+/* $Id: RTPathParse.cpp $ */
 /** @file
  * IPRT - RTPathParse
  */
@@ -72,5 +72,4 @@ RTDECL(int) RTPathParse(const char *pszPath, PRTPATHPARSED pParsed, size_t cbPar
             AssertFailedReturn(VERR_INVALID_FLAGS); /* impossible */
     }
 }
-
 

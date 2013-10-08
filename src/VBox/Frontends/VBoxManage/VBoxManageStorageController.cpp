@@ -1,4 +1,4 @@
-/* $Id: VBoxManageStorageController.cpp 44132 2012-12-14 10:43:16Z vboxsync $ */
+/* $Id: VBoxManageStorageController.cpp $ */
 /** @file
  * VBoxManage - The storage controller related commands.
  */
@@ -194,7 +194,7 @@ int handleStorageAttach(HandlerArg *a)
                 break;
             }
 
-            case 'u':   // nonrotational <on|off>
+            case 'u':   // discard <on|off>
             {
                 if (ValueUnion.psz)
                     pszDiscard = ValueUnion.psz;

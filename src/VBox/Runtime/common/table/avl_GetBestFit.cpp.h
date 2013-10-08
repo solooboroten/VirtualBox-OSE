@@ -1,4 +1,4 @@
-/* $Id: avl_GetBestFit.cpp.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: avl_GetBestFit.cpp.h $ */
 /** @file
  * kAVLGetBestFit - Get Best Fit routine for AVL trees.
  *                  Intended specially on heaps. The tree should allow duplicate keys.

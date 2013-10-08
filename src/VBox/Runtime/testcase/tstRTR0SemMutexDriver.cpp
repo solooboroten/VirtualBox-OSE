@@ -1,4 +1,4 @@
-/* $Id: tstRTR0SemMutexDriver.cpp 46326 2013-05-30 12:16:53Z vboxsync $ */
+/* $Id: tstRTR0SemMutexDriver.cpp $ */
 /** @file
  * IPRT R0 Testcase - Thread Preemption, driver program.
  */

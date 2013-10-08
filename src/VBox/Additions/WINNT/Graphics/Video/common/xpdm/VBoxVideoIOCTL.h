@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoIOCTL.h 46896 2013-07-02 08:16:43Z vboxsync $ */
+/* $Id: VBoxVideoIOCTL.h $ */
 
 /** @file
  * VBox Miniport IOCTL related header

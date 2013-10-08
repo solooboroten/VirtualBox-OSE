@@ -1,4 +1,4 @@
-/* $Id: avl_DoWithAll.cpp.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: avl_DoWithAll.cpp.h $ */
 /** @file
  * kAVLDoWithAll - Do with all nodes routine for AVL trees.
  */

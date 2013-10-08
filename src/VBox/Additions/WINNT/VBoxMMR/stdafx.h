@@ -1,4 +1,4 @@
-/* $Id: stdafx.h 44864 2013-02-28 12:18:42Z vboxsync $ */
+/* $Id: stdafx.h $ */
 /** @file
  * VBoxMMR - Multimedia Redirection
  */

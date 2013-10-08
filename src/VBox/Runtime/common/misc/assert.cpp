@@ -1,4 +1,4 @@
-/* $Id: assert.cpp 47827 2013-08-18 00:00:44Z vboxsync $ */
+/* $Id: assert.cpp $ */
 /** @file
  * IPRT - Assertions, common code.
  */

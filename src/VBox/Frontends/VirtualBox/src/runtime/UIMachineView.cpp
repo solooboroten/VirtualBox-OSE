@@ -1,4 +1,4 @@
-/* $Id: UIMachineView.cpp 47493 2013-07-31 14:39:13Z vboxsync $ */
+/* $Id: UIMachineView.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -172,6 +172,9 @@ UIMachineView* UIMachineView::create(  UIMachineWindow *pMachineWindow
      * but not for Fullscreen and Scale.  However for Scale it is a no op.,
      * so it would not hurt.  Would it hurt for Fullscreen? */
 
+    /* Set a preliminary maximum size: */
+    pMachineView->setMaxGuestSize();
+
     return pMachineView;
 }
 
@@ -334,9 +337,9 @@ void UIMachineView::sltMachineStateChanged()
         }
         case KMachineState_Running:
         {
-            if (   m_previousState == KMachineState_Paused
-                || m_previousState == KMachineState_TeleportingPausedVM
-                || m_previousState == KMachineState_Restoring)
+            if (m_previousState == KMachineState_Paused ||
+                m_previousState == KMachineState_TeleportingPausedVM ||
+                m_previousState == KMachineState_Restoring)
             {
                 if (m_pFrameBuffer)
                 {
@@ -344,8 +347,12 @@ void UIMachineView::sltMachineStateChanged()
                     resetPauseShot();
                     /* Ask for full guest display update (it will also update
                      * the viewport through IFramebuffer::NotifyUpdate): */
-                    CDisplay dsp = session().GetConsole().GetDisplay();
-                    dsp.InvalidateAndUpdate();
+                    if (m_previousState == KMachineState_Paused ||
+                        m_previousState == KMachineState_TeleportingPausedVM)
+                    {
+                        CDisplay dsp = session().GetConsole().GetDisplay();
+                        dsp.InvalidateAndUpdate();
+                    }
                 }
             }
             break;

@@ -1,4 +1,4 @@
-/* $Id: avlohcphys.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: avlohcphys.cpp $ */
 /** @file
  * IPRT - AVL tree, RTHCPHYS, unique keys, offset pointers.
  */

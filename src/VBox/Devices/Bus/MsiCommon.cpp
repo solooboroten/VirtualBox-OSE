@@ -1,4 +1,4 @@
-/* $Id: MsiCommon.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: MsiCommon.cpp $ */
 /** @file
  * MSI support routines
  */

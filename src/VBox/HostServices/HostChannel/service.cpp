@@ -1,4 +1,4 @@
-/* $Id: service.cpp 43899 2012-11-16 14:34:12Z vboxsync $ */
+/* $Id: service.cpp $ */
 /* @file
  * Host Channel: Host service entry points.
  */

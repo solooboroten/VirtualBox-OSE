@@ -1,4 +1,4 @@
-/* $Id: HM.cpp 48606 2013-09-20 15:27:39Z vboxsync $ */
+/* $Id: HM.cpp $ */
 /** @file
  * HM - Intel/AMD VM Hardware Support Manager.
  */
@@ -278,9 +278,9 @@ static const char * const g_apszAmdVExitReasons[MAX_EXITREASON_STAT] =
         if ((allowed1) & (featflag)) \
             LogRel(("HM:   " #featflag "\n")); \
         else \
-            LogRel(("HM:   " #featflag " *must* be cleared\n")); \
+            LogRel(("HM:   " #featflag " (must be cleared)\n")); \
         if ((disallowed0) & (featflag)) \
-            LogRel(("HM:   " #featflag " *must* be set\n")); \
+            LogRel(("HM:   " #featflag " (must be set)\n")); \
     } while (0)
 
 #define HMVMX_REPORT_ALLOWED_FEATURE(allowed1, featflag) \
@@ -996,7 +996,7 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
     LogRel(("HM: MSR_IA32_FEATURE_CONTROL        = %#RX64\n", pVM->hm.s.vmx.Msrs.u64FeatureCtrl));
     LogRel(("HM: MSR_IA32_VMX_BASIC_INFO         = %#RX64\n", pVM->hm.s.vmx.Msrs.u64BasicInfo));
     LogRel(("HM:   VMCS id                             = %#x\n", MSR_IA32_VMX_BASIC_INFO_VMCS_ID(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
-    LogRel(("HM:   VMCS size                           = %u\n", MSR_IA32_VMX_BASIC_INFO_VMCS_SIZE(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
+    LogRel(("HM:   VMCS size                           = %u bytes\n", MSR_IA32_VMX_BASIC_INFO_VMCS_SIZE(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
     LogRel(("HM:   VMCS physical address limit         = %s\n", MSR_IA32_VMX_BASIC_INFO_VMCS_PHYS_WIDTH(pVM->hm.s.vmx.Msrs.u64BasicInfo) ? "< 4 GB" : "None"));
     LogRel(("HM:   VMCS memory type                    = %#x\n", MSR_IA32_VMX_BASIC_INFO_VMCS_MEM_TYPE(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
     LogRel(("HM:   Dual-monitor treatment support      = %RTbool\n", RT_BOOL(MSR_IA32_VMX_BASIC_INFO_VMCS_DUAL_MON(pVM->hm.s.vmx.Msrs.u64BasicInfo))));
@@ -1238,6 +1238,10 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
         }
     }
 
+    LogRel((pVM->hm.s.fAllow64BitGuests
+            ? "HM: Guest support: 32-bit and 64-bit.\n"
+            : "HM: Guest support: 32-bit only.\n"));
+
     /*
      * Call ring-0 to set up the VM.
      */
@@ -1286,9 +1290,6 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
     /*
      * Log configuration details.
      */
-    LogRel((pVM->hm.s.fAllow64BitGuests
-            ? "HM: Guest support: 32-bit and 64-bit.\n"
-            : "HM: Guest support: 32-bit only.\n"));
     if (pVM->hm.s.fNestedPaging)
     {
         LogRel(("HM: Nested paging enabled!\n"));

@@ -1,4 +1,4 @@
-/* $Id: VBoxAutostart-posix.cpp 46649 2013-06-19 11:47:32Z vboxsync $ */
+/* $Id: VBoxAutostart-posix.cpp $ */
 /** @file
  * VBoxAutostart - VirtualBox Autostart service.
  */

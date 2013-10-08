@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 43363 2012-09-20 09:56:07Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for VBoxTray, Haiku Guest Additions.
 #

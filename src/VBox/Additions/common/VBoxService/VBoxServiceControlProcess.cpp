@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControlProcess.cpp 47695 2013-08-13 14:40:20Z vboxsync $ */
+/* $Id: VBoxServiceControlProcess.cpp $ */
 /** @file
  * VBoxServiceControlThread - Guest process handling.
  */

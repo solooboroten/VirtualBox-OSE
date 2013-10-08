@@ -1,4 +1,4 @@
-/* $Id: RTLogWriteStdErr-generic.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: RTLogWriteStdErr-generic.cpp $ */
 /** @file
  * IPRT - Log To StdErr, Generic.
  */

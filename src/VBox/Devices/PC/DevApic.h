@@ -1,4 +1,4 @@
-/* $Id: DevApic.h 44005 2012-12-02 16:18:09Z vboxsync $ */
+/* $Id: DevApic.h $ */
 /** @file
  * Advanced Programmable Interrupt Controller (APIC) Device Definitions.
  */

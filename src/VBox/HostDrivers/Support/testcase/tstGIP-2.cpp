@@ -1,4 +1,4 @@
-/* $Id: tstGIP-2.cpp 45399 2013-04-08 10:18:06Z vboxsync $ */
+/* $Id: tstGIP-2.cpp $ */
 /** @file
  * SUP Testcase - Global Info Page interface (ring 3).
  */

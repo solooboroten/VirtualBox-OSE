@@ -1,4 +1,4 @@
-/* $Id: VMDK.cpp 47832 2013-08-18 18:32:26Z vboxsync $ */
+/* $Id: VMDK.cpp $ */
 /** @file
  * VMDK disk image, core code.
  */
@@ -1034,7 +1034,7 @@ out:
 static int vmdkReadGrainDirectory(PVMDKIMAGE pImage, PVMDKEXTENT pExtent)
 {
     int rc = VINF_SUCCESS;
-    unsigned i;
+    size_t i;
     uint32_t *pGDTmp, *pRGDTmp;
     size_t cbGD = pExtent->cGDEntries * sizeof(uint32_t);
 
@@ -2350,7 +2350,7 @@ static int vmdkDescriptorPrepare(PVMDKIMAGE pImage, uint64_t cbLimit,
      */
     size_t cbDescriptor = cbLimit ? cbLimit : 4 * _1K;
     char *pszDescriptor = (char *)RTMemAllocZ(cbDescriptor);
-    unsigned offDescriptor = 0;
+    size_t offDescriptor = 0;
 
     if (!pszDescriptor)
         return VERR_NO_MEMORY;
@@ -5753,9 +5753,9 @@ static int vmdkRead(void *pBackendData, uint64_t uOffset, size_t cbToRead,
 
                     uint32_t uSectorInGrain = uSectorExtentRel % pExtent->cSectorsPerGrain;
                     uSectorExtentAbs -= uSectorInGrain;
-                    uint64_t uLBA;
                     if (pExtent->uGrainSectorAbs != uSectorExtentAbs)
                     {
+                        uint64_t uLBA = 0; /* gcc maybe uninitialized */
                         rc = vmdkFileInflateSync(pImage, pExtent,
                                                  VMDK_SECTOR2BYTE(uSectorExtentAbs),
                                                  pExtent->pvGrain,
@@ -5969,6 +5969,20 @@ static unsigned vmdkGetVersion(void *pBackendData)
 
     if (pImage)
         return VMDK_IMAGE_VERSION;
+    else
+        return 0;
+}
+
+/** @copydoc VBOXHDDBACKEND::pfnGetSectorSize */
+static uint32_t vmdkGetSectorSize(void *pBackendData)
+{
+    LogFlowFunc(("pBackendData=%#p\n", pBackendData));
+    PVMDKIMAGE pImage = (PVMDKIMAGE)pBackendData;
+
+    AssertPtr(pImage);
+
+    if (pImage)
+        return 512;
     else
         return 0;
 }
@@ -6571,6 +6585,8 @@ VBOXHDDBACKEND g_VmdkBackend =
     NULL,
     /* pfnGetVersion */
     vmdkGetVersion,
+    /* pfnGetSectorSize */
+    vmdkGetSectorSize,
     /* pfnGetSize */
     vmdkGetSize,
     /* pfnGetFileSize */

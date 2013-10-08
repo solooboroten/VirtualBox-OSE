@@ -1,4 +1,4 @@
-/* $Id: scmsubversion.cpp 41966 2012-06-29 02:53:56Z vboxsync $ */
+/* $Id: scmsubversion.cpp $ */
 /** @file
  * IPRT Testcase / Tool - Source Code Massager, Subversion Access.
  */
@@ -1058,6 +1058,4 @@ int ScmSvnApplyChanges(PSCMRWSTATE pState)
     return VERR_NOT_IMPLEMENTED;
 #endif
 }
-
-
 

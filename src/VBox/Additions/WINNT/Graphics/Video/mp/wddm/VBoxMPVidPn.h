@@ -1,4 +1,4 @@
-/* $Id: VBoxMPVidPn.h 48070 2013-08-26 18:13:22Z vboxsync $ */
+/* $Id: VBoxMPVidPn.h $ */
 
 /** @file
  * VBox WDDM Miniport driver

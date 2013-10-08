@@ -1,4 +1,4 @@
-/* $Id: DevAHCI.cpp 48409 2013-09-10 13:22:32Z vboxsync $ */
+/* $Id: DevAHCI.cpp $ */
 /** @file
  * DevAHCI - AHCI controller device (disk and cdrom).
  *
@@ -2990,7 +2990,8 @@ static int ahciIdentifySS(PAHCIPort pAhciPort, void *pvBuf)
     if (   pAhciPort->pDrvBlock->pfnDiscard
         || ( pAhciPort->fAsyncInterface
             && pAhciPort->pDrvBlockAsync->pfnStartDiscard)
-        || pAhciPort->cbSector != 512)
+        || pAhciPort->cbSector != 512
+        || pAhciPort->fNonRotational)
     {
         p[80] = RT_H2LE_U16(0x1f0); /* support everything up to ATA/ATAPI-8 ACS */
         p[81] = RT_H2LE_U16(0x28); /* conforms to ATA/ATAPI-8 ACS */
@@ -3019,10 +3020,11 @@ static int ahciIdentifySS(PAHCIPort pAhciPort, void *pvBuf)
 
     if (pAhciPort->cbSector != 512)
     {
+        uint32_t cSectorSizeInWords = pAhciPort->cbSector / sizeof(uint16_t);
         /* Enable reporting of logical sector size. */
-        p[106] |= RT_H2LE_U16(RT_BIT(12));
-        p[117] = RT_H2LE_U16(pAhciPort->cbSector);
-        p[118] = RT_H2LE_U16(pAhciPort->cbSector >> 16);
+        p[106] |= RT_H2LE_U16(RT_BIT(12) | RT_BIT(14));
+        p[117] = RT_H2LE_U16(cSectorSizeInWords);
+        p[118] = RT_H2LE_U16(cSectorSizeInWords >> 16);
     }
 
     if (pAhciPort->fNonRotational)

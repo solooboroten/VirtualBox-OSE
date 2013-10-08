@@ -1,4 +1,4 @@
-/* $Id: RTFileOpenV.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: RTFileOpenV.cpp $ */
 /** @file
  * IPRT - RTFileOpenV.
  */

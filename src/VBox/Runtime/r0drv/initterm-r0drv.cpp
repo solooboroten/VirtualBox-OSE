@@ -1,4 +1,4 @@
-/* $Id: initterm-r0drv.cpp 47115 2013-07-12 12:27:42Z vboxsync $ */
+/* $Id: initterm-r0drv.cpp $ */
 /** @file
  * IPRT - Initialization & Termination, R0 Driver, Common.
  */

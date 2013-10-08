@@ -1,4 +1,4 @@
-/* $Id: getoptargv.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: getoptargv.cpp $ */
 /** @file
  * IPRT - Command Line Parsing, Argument Vector.
  */

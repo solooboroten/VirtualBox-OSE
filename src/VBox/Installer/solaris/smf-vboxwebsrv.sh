@@ -1,5 +1,5 @@
 #!/sbin/sh
-# $Id: smf-vboxwebsrv.sh 41369 2012-05-21 13:33:10Z vboxsync $
+# $Id: smf-vboxwebsrv.sh $
 
 # Copyright (C) 2008-2012 Oracle Corporation
 #

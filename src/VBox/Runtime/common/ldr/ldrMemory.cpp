@@ -1,5 +1,5 @@
 
-/* $Id: ldrMemory.cpp 46115 2013-05-15 23:53:03Z vboxsync $ */
+/* $Id: ldrMemory.cpp $ */
 /** @file
  * IPRT - Binary Image Loader, The Memory/Debugger Oriented Parts.
  */

@@ -1,4 +1,4 @@
-/* $Id: IOMAllMMIO.cpp 48410 2013-09-10 14:22:51Z vboxsync $ */
+/* $Id: IOMAllMMIO.cpp $ */
 /** @file
  * IOM - Input / Output Monitor - Any Context, MMIO & String I/O.
  */

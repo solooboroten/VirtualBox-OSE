@@ -61,8 +61,10 @@ public:
     CSession& session() const;
     CMachine machine() const;
 
+#ifndef VBOX_WITH_TRANSLUCENT_SEAMLESS
     /* Virtual caller for base class setMask: */
     virtual void setMask(const QRegion &region);
+#endif /* !VBOX_WITH_TRANSLUCENT_SEAMLESS */
 
 protected slots:
 
@@ -108,6 +110,7 @@ protected:
 
     /* Visibility stuff: */
     void handleScreenCountChange();
+    void handleScreenResize();
 
     /* Update stuff: */
     virtual void updateAppearanceOf(int iElement);

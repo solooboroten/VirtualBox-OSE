@@ -1,4 +1,4 @@
-/* $Id: threadctxhooks-r0drv-linux.c 48383 2013-09-09 10:14:21Z vboxsync $ */
+/* $Id: threadctxhooks-r0drv-linux.c $ */
 /** @file
  * IPRT - Thread-Context Hook, Ring-0 Driver, Linux.
  */

@@ -1,4 +1,4 @@
-/* $Id: AutoLock.cpp 45127 2013-03-21 14:42:22Z vboxsync $ */
+/* $Id: AutoLock.cpp $ */
 /** @file
  * Automatic locks, implementation.
  */

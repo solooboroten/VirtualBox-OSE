@@ -1,4 +1,4 @@
-/* $Id: tstRTSystemQueryOsInfo.cpp 46318 2013-05-30 08:43:46Z vboxsync $ */
+/* $Id: tstRTSystemQueryOsInfo.cpp $ */
 /** @file
  * IPRT Testcase - RTSystemQueryOSInfo.
  */

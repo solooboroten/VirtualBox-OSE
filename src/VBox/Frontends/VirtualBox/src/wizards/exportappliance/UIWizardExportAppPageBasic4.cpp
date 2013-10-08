@@ -1,4 +1,4 @@
-/* $Id: UIWizardExportAppPageBasic4.cpp 45325 2013-04-04 07:20:01Z vboxsync $ */
+/* $Id: UIWizardExportAppPageBasic4.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

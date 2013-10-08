@@ -1,4 +1,4 @@
-/* $Id: VMMRZ.cpp 48473 2013-09-13 14:17:58Z vboxsync $ */
+/* $Id: VMMRZ.cpp $ */
 /** @file
  * VMM - Virtual Machine Monitor, Raw-mode and ring-0 context code.
  */

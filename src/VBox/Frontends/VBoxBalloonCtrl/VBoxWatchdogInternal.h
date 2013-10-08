@@ -1,4 +1,4 @@
-/* $Id: VBoxWatchdogInternal.h 43738 2012-10-25 13:09:26Z vboxsync $ */
+/* $Id: VBoxWatchdogInternal.h $ */
 /** @file
  * VBoxWatchdog - VirtualBox Watchdog Service.
  */

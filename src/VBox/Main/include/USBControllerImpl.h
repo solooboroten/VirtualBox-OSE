@@ -1,4 +1,4 @@
-/* $Id: USBControllerImpl.h 47401 2013-07-25 19:12:24Z vboxsync $ */
+/* $Id: USBControllerImpl.h $ */
 
 /** @file
  *

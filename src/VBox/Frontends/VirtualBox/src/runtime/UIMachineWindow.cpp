@@ -1,4 +1,4 @@
-/* $Id: UIMachineWindow.cpp 46898 2013-07-02 10:59:16Z vboxsync $ */
+/* $Id: UIMachineWindow.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -198,11 +198,13 @@ CMachine UIMachineWindow::machine() const
     return session().GetMachine();
 }
 
+#ifndef VBOX_WITH_TRANSLUCENT_SEAMLESS
 void UIMachineWindow::setMask(const QRegion &region)
 {
     /* Call to base-class: */
     QMainWindow::setMask(region);
 }
+#endif /* !VBOX_WITH_TRANSLUCENT_SEAMLESS */
 
 void UIMachineWindow::retranslateUi()
 {
@@ -432,6 +434,11 @@ void UIMachineWindow::cleanupMachineView()
 }
 
 void UIMachineWindow::handleScreenCountChange()
+{
+    showInNecessaryMode();
+}
+
+void UIMachineWindow::handleScreenResize()
 {
     showInNecessaryMode();
 }

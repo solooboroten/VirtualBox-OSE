@@ -1,4 +1,4 @@
-/* $Id: MMRamRC.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: MMRamRC.cpp $ */
 /** @file
  * MMRamGC - Guest Context Ram access Routines, pair for MMRamGCA.asm.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControlSession.cpp 47849 2013-08-19 16:41:09Z vboxsync $ */
+/* $Id: VBoxServiceControlSession.cpp $ */
 /** @file
  * VBoxServiceControlSession - Guest session handling. Also handles
  *                             the forked session processes.
@@ -147,13 +147,12 @@ static int gstcntlSessionHandleFileOpen(PVBOXSERVICECTRLSESSION pSession,
                                         &uCreationMode,
                                         /* Offset. */
                                         &uOffset);
-#ifdef DEBUG
-    VBoxServiceVerbose(4, "[File %s]: szAccess=%s, szDisposition=%s, szSharing=%s, rc=%Rrc\n",
-                       szFile, szAccess, szDisposition, szSharing, rc);
-#endif
+    VBoxServiceVerbose(4, "[File %s]: szAccess=%s, szDisposition=%s, szSharing=%s, uOffset=%RU64, rc=%Rrc\n",
+                       szFile, szAccess, szDisposition, szSharing, uOffset, rc);
+
     if (RT_SUCCESS(rc))
     {
-        PVBOXSERVICECTRLFILE pFile = (PVBOXSERVICECTRLFILE)RTMemAlloc(sizeof(VBOXSERVICECTRLFILE));
+        PVBOXSERVICECTRLFILE pFile = (PVBOXSERVICECTRLFILE)RTMemAllocZ(sizeof(VBOXSERVICECTRLFILE));
         if (pFile)
         {
             if (!strlen(szFile))
@@ -168,21 +167,23 @@ static int gstcntlSessionHandleFileOpen(PVBOXSERVICECTRLSESSION pSession,
                 uint64_t fFlags;
                 rc = RTFileModeToFlagsEx(szAccess, szDisposition,
                                          NULL /* pszSharing, not used yet */, &fFlags);
-                VBoxServiceVerbose(4, "[File %s]: Opening flags=0x%x, rc=%Rrc\n", pFile->szName, fFlags, rc);
+                VBoxServiceVerbose(4, "[File %s]: Opening flags=0x%x, rc=%Rrc\n",
+                                   pFile->szName, fFlags, rc);
                 if (RT_SUCCESS(rc))
                     rc = RTFileOpen(&pFile->hFile, pFile->szName, fFlags);
                 if (   RT_SUCCESS(rc)
                     && uOffset)
                 {
-                    /* Seeking is optional. */
-                    int rc2 = RTFileSeek(pFile->hFile, (int64_t)uOffset, RTFILE_SEEK_BEGIN, NULL /* Current offset */);
-                    if (RT_FAILURE(rc2))
-                        VBoxServiceVerbose(3, "[File %s]: Seeking to offset %RU64 failed; rc=%Rrc\n",
-                                           pFile->szName, uOffset, rc);
+                    /* Seeking is optional. However, the whole operation
+                     * will fail if we don't succeed seeking to the wanted position. */
+                    rc = RTFileSeek(pFile->hFile, (int64_t)uOffset, RTFILE_SEEK_BEGIN, NULL /* Current offset */);
+                    if (RT_FAILURE(rc))
+                        VBoxServiceError("[File %s]: Seeking to offset %RU64 failed; rc=%Rrc\n",
+                                         pFile->szName, uOffset, rc);
                 }
                 else if (RT_FAILURE(rc))
-                    VBoxServiceVerbose(3, "[File %s]: Opening failed; rc=%Rrc\n",
-                                       pFile->szName, rc);
+                    VBoxServiceError("[File %s]: Opening failed; rc=%Rrc\n",
+                                     pFile->szName, rc);
             }
 
             if (RT_SUCCESS(rc))
@@ -197,7 +198,11 @@ static int gstcntlSessionHandleFileOpen(PVBOXSERVICECTRLSESSION pSession,
             }
 
             if (RT_FAILURE(rc))
+            {
+                if (pFile->hFile)
+                    RTFileClose(pFile->hFile);
                 RTMemFree(pFile);
+            }
         }
         else
             rc = VERR_NO_MEMORY;
@@ -396,7 +401,11 @@ static int gstcntlSessionHandleFileWrite(const PVBOXSERVICECTRLSESSION pSession,
         pFile = gstcntlSessionFileGetLocked(pSession, uHandle);
         if (pFile)
         {
-            rc = RTFileWrite(pFile->hFile, pvScratchBuf, cbScratchBuf, &cbWritten);
+            rc = RTFileWrite(pFile->hFile, pvScratchBuf, cbToWrite, &cbWritten);
+#ifdef DEBUG
+            VBoxServiceVerbose(4, "[File %s]: Writing pvScratchBuf=%p, cbToWrite=%RU32, cbWritten=%zu, rc=%Rrc\n",
+                               pFile->szName, pvScratchBuf, cbToWrite, cbWritten, rc);
+#endif
         }
         else
             rc = VERR_NOT_FOUND;
@@ -441,7 +450,11 @@ static int gstcntlSessionHandleFileWriteAt(const PVBOXSERVICECTRLSESSION pSessio
         if (pFile)
         {
             rc = RTFileWriteAt(pFile->hFile, iOffset,
-                               pvScratchBuf, cbScratchBuf, &cbWritten);
+                               pvScratchBuf, cbToWrite, &cbWritten);
+#ifdef DEBUG
+            VBoxServiceVerbose(4, "[File %s]: Writing iOffset=%RI64, pvScratchBuf=%p, cbToWrite=%RU32, cbWritten=%zu, rc=%Rrc\n",
+                               pFile->szName, iOffset, pvScratchBuf, cbToWrite, cbWritten, rc);
+#endif
         }
         else
             rc = VERR_NOT_FOUND;
@@ -504,8 +517,14 @@ static int gstcntlSessionHandleFileSeek(const PVBOXSERVICECTRLSESSION pSession,
             }
 
             if (RT_SUCCESS(rc))
+            {
                 rc = RTFileSeek(pFile->hFile, (int64_t)uOffset,
                                 uSeekMethodIPRT, &uOffsetActual);
+#ifdef DEBUG
+                VBoxServiceVerbose(4, "[File %s]: Seeking to iOffset=%RI64, uSeekMethodIPRT=%RU16, rc=%Rrc\n",
+                                   pFile->szName, (int64_t)uOffset, uSeekMethodIPRT, rc);
+#endif
+            }
         }
         else
             rc = VERR_NOT_FOUND;
@@ -544,6 +563,10 @@ static int gstcntlSessionHandleFileTell(const PVBOXSERVICECTRLSESSION pSession,
         if (pFile)
         {
             uOffsetActual = RTFileTell(pFile->hFile);
+#ifdef DEBUG
+            VBoxServiceVerbose(4, "[File %s]: Telling uOffsetActual=%RU64\n",
+                               pFile->szName, uOffsetActual);
+#endif
         }
         else
             rc = VERR_NOT_FOUND;

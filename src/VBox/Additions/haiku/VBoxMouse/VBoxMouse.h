@@ -1,4 +1,4 @@
-/* $Id: VBoxMouse.h 43405 2012-09-22 13:53:03Z vboxsync $ */
+/* $Id: VBoxMouse.h $ */
 /** @file
  * VBoxMouse; input_server add-on - Haiku Guest Additions, header.
  */

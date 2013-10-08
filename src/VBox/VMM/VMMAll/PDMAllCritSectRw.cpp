@@ -1,4 +1,4 @@
-/* $Id: PDMAllCritSectRw.cpp 48199 2013-08-30 15:05:23Z vboxsync $ */
+/* $Id: PDMAllCritSectRw.cpp $ */
 /** @file
  * IPRT - Read/Write Critical Section, Generic.
  */
@@ -524,7 +524,7 @@ VMMR3DECL(int) PDMR3CritSectRwEnterSharedEx(PPDMCRITSECTRW pThis, bool fCallRing
  * @returns VBox status code.
  * @retval  VERR_SEM_DESTROYED if the critical section is delete before or
  *          during the operation.
- * @param   pThis       Pointer to the read/write critical section. 
+ * @param   pThis       Pointer to the read/write critical section.
  * @param   fNoVal      No validation records (i.e. queued release).
  * @sa      PDMCritSectRwEnterShared, PDMCritSectRwTryEnterShared,
  *          PDMCritSectRwEnterSharedDebug, PDMCritSectRwTryEnterSharedDebug,

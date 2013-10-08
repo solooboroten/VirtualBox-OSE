@@ -1,4 +1,4 @@
-/* $Id: tstVBoxAPIWin.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstVBoxAPIWin.cpp $ */
 /** @file
  *
  * tstVBoxAPIWin - sample program to illustrate the VirtualBox

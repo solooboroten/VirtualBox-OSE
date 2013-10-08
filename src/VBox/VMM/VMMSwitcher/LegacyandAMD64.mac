@@ -1,4 +1,4 @@
-; $Id: LegacyandAMD64.mac 48249 2013-09-03 14:16:05Z vboxsync $
+; $Id: LegacyandAMD64.mac $
 ;; @file
 ; VMM - World Switchers, 32-bit to AMD64 intermediate context.
 ;

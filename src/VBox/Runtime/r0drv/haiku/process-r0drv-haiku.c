@@ -1,4 +1,4 @@
-/* $Id: process-r0drv-haiku.c 43403 2012-09-22 11:48:24Z vboxsync $ */
+/* $Id: process-r0drv-haiku.c $ */
 /** @file
  * IPRT - Process, Ring-0 Driver, Haiku.
  */

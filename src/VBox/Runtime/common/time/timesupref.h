@@ -1,4 +1,4 @@
-/* $Id: timesupref.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: timesupref.h $ */
 /** @file
  * IPRT - Time using SUPLib, the C Code Template.
  */

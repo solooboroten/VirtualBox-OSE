@@ -1,4 +1,4 @@
-; $Id: VBoxHook.def 46182 2013-05-21 00:04:48Z vboxsync $
+; $Id: VBoxHook.def $
 ;; @file
 ; VBoxHook -- Global windows hook dll
 ;

@@ -1,4 +1,4 @@
-; $Id: tstAsmStructsAsm.asm 46928 2013-07-03 12:12:05Z vboxsync $
+; $Id: tstAsmStructsAsm.asm $
 ;; @file
 ; Assembly / C structure layout testcase.
 ;

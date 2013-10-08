@@ -1,4 +1,4 @@
-/* $Id: UIGraphicsZoomButton.cpp 42795 2012-08-13 17:24:30Z vboxsync $ */
+/* $Id: UIGraphicsZoomButton.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

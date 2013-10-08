@@ -1,4 +1,4 @@
-/* $Id: VBoxClipboard.h 43406 2012-09-22 14:11:49Z vboxsync $ */
+/* $Id: VBoxClipboard.h $ */
 /** @file
  * VBoxClipboard, Haiku Guest Additions, header.
  */

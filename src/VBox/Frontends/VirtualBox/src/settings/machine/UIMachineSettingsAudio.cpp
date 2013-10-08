@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsAudio.cpp 46641 2013-06-18 18:40:33Z vboxsync $ */
+/* $Id: UIMachineSettingsAudio.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

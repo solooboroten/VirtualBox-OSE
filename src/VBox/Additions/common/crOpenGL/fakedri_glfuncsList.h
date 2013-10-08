@@ -1,4 +1,4 @@
-/* $Id: fakedri_glfuncsList.h 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: fakedri_glfuncsList.h $ */
 
 /** @file
  * VBox OpenGL list of opengl functions common in Mesa and vbox opengl stub

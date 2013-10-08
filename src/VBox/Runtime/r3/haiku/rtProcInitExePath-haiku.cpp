@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-haiku.cpp 43363 2012-09-20 09:56:07Z vboxsync $ */
+/* $Id: rtProcInitExePath-haiku.cpp $ */
 /** @file
  * IPRT - rtProcInitName, Haiku.
  */

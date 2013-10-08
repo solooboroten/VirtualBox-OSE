@@ -1,4 +1,4 @@
-/* $Id: RTPathSplitReassemble.cpp 46049 2013-05-14 07:56:54Z vboxsync $ */
+/* $Id: RTPathSplitReassemble.cpp $ */
 /** @file
  * IPRT - RTPathSplitReassemble.
  */
@@ -117,5 +117,4 @@ RTDECL(int) RTPathSplitReassemble(PRTPATHSPLIT pSplit, uint32_t fFlags, char *ps
 
     return VINF_SUCCESS;
 }
-
 

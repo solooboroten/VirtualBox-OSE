@@ -1,4 +1,4 @@
-/* $Id: RTPathCalcRelative.cpp 46187 2013-05-21 06:30:59Z vboxsync $ */
+/* $Id: RTPathCalcRelative.cpp $ */
 /** @file
  * IPRT - RTPathCreateRelative.
  */

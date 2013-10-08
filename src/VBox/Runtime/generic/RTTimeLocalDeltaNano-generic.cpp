@@ -1,4 +1,4 @@
-/* $Id: RTTimeLocalDeltaNano-generic.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: RTTimeLocalDeltaNano-generic.cpp $ */
 /** @file
  * IPRT - Time, generic RTTimeLocalDeltaNano.
  */

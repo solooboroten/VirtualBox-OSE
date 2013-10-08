@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.3.0 Beta 3 (2013-09-20)</title>
+    <title>Version 4.3.0 Release Candidate 1 (2013-10-08)</title>
 
     <para>This is a major update. The following major new features
       were added:</para>
@@ -11,6 +11,11 @@
       <listitem>
         <para>VMM: major rewrite of the VT-x code and the AMD-V code including
           many bug fixes and performance improvements (for example bug #9659)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: introduced a lightweight instruction interpreter for
+          situations not handled by hardware virtualization</para>
       </listitem>
 
       <listitem>
@@ -63,11 +68,6 @@
     <itemizedlist>
 
       <listitem>
-        <para>VMM: properly handle NMIs on Linux hosts with X2APIC
-          enabled</para>
-      </listitem>
-
-      <listitem>
         <para>VMM: significantly improved performance of NetWare 5.x/6.x
           guests on host systems without nested paging support</para>
       </listitem>
@@ -92,6 +92,12 @@
       <listitem>
         <para>GUI, VBoxManage: when unregistering a VM, also unregister the
           hard disk images which are used exclusively (bug #10311)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: use the number of physical presented processor cores instead of
+          the number of logical processor cores to check if the users assigned
+          too many virtual CPUs to the guest</para>
       </listitem>
 
       <listitem>
@@ -209,6 +215,11 @@
       </listitem>
 
       <listitem>
+        <para>Extpack Installer: make it work if the file is located in a folder with
+          special characters</para>
+      </listitem>
+
+      <listitem>
         <para>Keyboard: fix for reporting key sequences like Ctrl+Alt+Del
           for the USB keyboard emulation</para>
       </listitem>
@@ -239,6 +250,11 @@
       </listitem>
 
       <listitem>
+        <para>Windows Additions: fixed memory leak caused by WTSQuerySessionInformation()
+          on Windows 2000 guests (bug #12072)</para>
+      </listitem>
+
+      <listitem>
         <para>Linux Additions: fixed udev detection in the init script
           with Linux 3.x kernels</para>
       </listitem>
@@ -250,6 +266,109 @@
 
     </itemizedlist>
 
+  </sect1>
+
+  <sect1>
+    <title>Version 4.2.18 (2013-09-06)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: properly handle NMIs on Linux hosts with X2APIC
+          enabled</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed potential crashes with 64-bit guests on 32-bit hosts
+          (bug #11979)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI / seamless: properly handle mouse wheel scroll events</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI, VBoxManage: when unregistering a VM, also unregister the
+          hard disk images which are used exclusively (bug #10311)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: prevent crashes under certain conditions on X11 hosts</para>
+      </listitem>
+
+      <listitem>
+        <para>3D: multiscreen fixes (incorrect mouse position, flickets)</para>
+      </listitem>
+
+      <listitem>
+        <para>3D Support: several fixes for the Windows WDDM video driver
+          (multiscreen, seamless)</para>
+      </listitem>
+
+      <listitem>
+        <para>Snapshots: made live snapshots work again (bug #9255)</para>
+      </listitem>
+
+      <listitem>
+        <para>Teleportation: made it work again (bug #9455)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: on <emphasis>snapshot take</emphasis>, <emphasis>
+            --pause</emphasis> is default and <emphasis>--live</emphasis>
+          is for doing live snapshots</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxSVC: don't crash on systems with many VLAN interfaces
+          (Solaris hosts only)</para>
+      </listitem>
+
+      <listitem>
+        <para>Network: after the host resumes from suspend, disconnect and
+          reconnect the virtual network cables to force renewing the DHCP
+          leases for the guests. So far only Mac OS X hosts and Windows hosts
+          (bug #10063).</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: on name server changes force a reconnect of the virtual network
+          cable to notify the guest (Mac OS X hosts only)</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X installer: keep previously installed Extension Packs on
+          VirtualBox upgrade</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: Linux 3.11 fixes (bug #12001)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: fixed a potential kernel panic caused due to
+          unexpected preemption due to logging.</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows hosts: fixed an issue with USB2 devices being inaccessible
+          when plugged into USB3 ports.</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: added PCI device identifier to vboxvideo.ko fixing
+          DRI initialization under certain conditions (bug #11957)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed udev detection in the init script
+          with Linux 3.x kernels</para>
+      </listitem>
+
+    </itemizedlist>
   </sect1>
 
   <sect1>

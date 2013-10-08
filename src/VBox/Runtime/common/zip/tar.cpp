@@ -1,4 +1,4 @@
-/* $Id: tar.cpp 46980 2013-07-04 11:38:28Z vboxsync $ */
+/* $Id: tar.cpp $ */
 /** @file
  * IPRT - Tar archive I/O.
  */

@@ -1,4 +1,4 @@
-/* $Id: RTGzip.cpp 47359 2013-07-24 00:45:47Z vboxsync $ */
+/* $Id: RTGzip.cpp $ */
 /** @file
  * IPRT - GZIP Utility.
  */

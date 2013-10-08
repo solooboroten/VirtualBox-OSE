@@ -1,4 +1,4 @@
-/* $Id: VBoxCmp.cpp 42079 2012-07-10 08:47:16Z vboxsync $ */
+/* $Id: VBoxCmp.cpp $ */
 /** @file
  * File Compare - Compares two files byte by byte.
  */

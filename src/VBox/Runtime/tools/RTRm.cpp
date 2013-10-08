@@ -1,4 +1,4 @@
-/* $Id: RTRm.cpp 44278 2013-01-13 20:52:34Z vboxsync $ */
+/* $Id: RTRm.cpp $ */
 /** @file
  * IPRT - Remove Directory Entries Utility.
  */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 46693 2013-06-19 20:01:05Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the OS/2 specific part of the guest additions.
 #

@@ -1,4 +1,4 @@
-/* $Id: VBoxManageControlVM.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
+/* $Id: VBoxManageControlVM.cpp $ */
 /** @file
  * VBoxManage - Implementation of the controlvm command.
  */

@@ -1,4 +1,4 @@
-/* $Id: systemmem-solaris.cpp 43880 2012-11-15 14:49:25Z vboxsync $ */
+/* $Id: systemmem-solaris.cpp $ */
 /** @file
  * IPRT - RTSystemQueryTotalRam, Solaris ring-3.
  */

@@ -1,4 +1,4 @@
-/* $Id: USBDeviceFiltersImpl.cpp 47401 2013-07-25 19:12:24Z vboxsync $ */
+/* $Id: USBDeviceFiltersImpl.cpp $ */
 /** @file
  * Implementation of IUSBController.
  */

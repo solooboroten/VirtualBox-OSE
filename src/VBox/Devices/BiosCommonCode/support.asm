@@ -1,4 +1,4 @@
-; $Id: support.asm 42147 2012-07-13 13:59:20Z vboxsync $
+; $Id: support.asm $
 ;; @file
 ; Compiler support routines.
 ;

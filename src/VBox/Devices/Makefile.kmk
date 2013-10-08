@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 48435 2013-09-11 15:18:22Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Top-level sub-makefile for the devices, drivers and services.
 #
 
 #
-# Copyright (C) 2006-2012 Oracle Corporation
+# Copyright (C) 2006-2013 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -17,6 +17,9 @@
 
 SUB_DEPTH = ../../..
 include $(KBUILD_PATH)/subheader.kmk
+
+# Enable the new SMC code.
+VBOX_WITH_SMC_NEW = 1
 
 # Make sure our Config.kmk is included.
 ifndef VBOX_DEVICES_CONFIG_KMK_INCLUDED
@@ -430,11 +433,11 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  endif
 
  ifdef VBOX_WITH_EFI
-   VBoxDD_DEFS           += VBOX_WITH_EFI
-   VBoxDD_SOURCES        += EFI/DevEFI.cpp
-   EFI/DevEFI.cpp_INCS       += EFI/tools/include
-   EFI/DevEFI.cpp_INCS.x86   += EFI/tools/include/Ia32
-   EFI/DevEFI.cpp_INCS.amd64 += EFI/tools/include/X64
+  VBoxDD_DEFS           += VBOX_WITH_EFI
+  VBoxDD_SOURCES        += EFI/DevEFI.cpp
+  EFI/DevEFI.cpp_INCS       += EFI/Firmware/BaseTools/Source/C/Include
+  EFI/DevEFI.cpp_INCS.x86   += EFI/Firmware/BaseTools/Source/C/Include/Ia32
+  EFI/DevEFI.cpp_INCS.amd64 += EFI/Firmware/BaseTools/Source/C/Include/X64
  endif
 
  if defined(VBOX_WITH_PCI_PASSTHROUGH_IMPL) && !defined(VBOX_WITH_EXTPACK_PUEL)

@@ -1,4 +1,4 @@
-/* $Id: semfastmutex-generic.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: semfastmutex-generic.cpp $ */
 /** @file
  * IPRT - Fast Mutex, Generic.
  */

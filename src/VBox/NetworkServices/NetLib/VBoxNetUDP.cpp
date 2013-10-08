@@ -1,4 +1,4 @@
-/* $Id: VBoxNetUDP.cpp 46904 2013-07-02 12:59:56Z vboxsync $ */
+/* $Id: VBoxNetUDP.cpp $ */
 /** @file
  * VBoxNetUDP - IntNet UDP Client Routines.
  */

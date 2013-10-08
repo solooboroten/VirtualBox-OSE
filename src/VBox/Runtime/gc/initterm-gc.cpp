@@ -1,4 +1,4 @@
-/* $Id: initterm-gc.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: initterm-gc.cpp $ */
 /** @file
  * IPRT - Init Raw-mode Context.
  */

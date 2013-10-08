@@ -1,4 +1,4 @@
-/* $Id: tstRTFileAio.cpp 45678 2013-04-23 11:28:41Z vboxsync $ */
+/* $Id: tstRTFileAio.cpp $ */
 /** @file
  * IPRT Testcase - File Async I/O.
  */

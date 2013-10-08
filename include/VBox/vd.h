@@ -154,11 +154,11 @@ typedef struct VBOXHDDRAWPARTDESC
  * Auxiliary data structure for difference between GPT and MBR
  * disks.
  */
-enum PARTITIONING_TYPE
+typedef enum VBOXHDDPARTTYPE
 {
     MBR,
     GPT
-};
+} VBOXHDDPARTTYPE;
 
 /**
  * Auxiliary data structure for creating raw disks.
@@ -178,8 +178,8 @@ typedef struct VBOXHDDRAW
     unsigned        cPartDescs;
     /** Pointer to the partition descriptor array. */
     PVBOXHDDRAWPARTDESC pPartDescs;
-    /**partitioning type of the disk */
-    PARTITIONING_TYPE uPartitioningType;
+    /** Partitioning type of the disk */
+    VBOXHDDPARTTYPE uPartitioningType;
 
 } VBOXHDDRAW, *PVBOXHDDRAW;
 
@@ -898,6 +898,16 @@ VBOXDDU_DECL(unsigned) VDGetCount(PVBOXHDD pDisk);
  * @param   pDisk           Pointer to HDD container.
  */
 VBOXDDU_DECL(bool) VDIsReadOnly(PVBOXHDD pDisk);
+
+/**
+ * Get sector size of an image in HDD container.
+ *
+ * @return  Virtual disk sector size in bytes.
+ * @return  0 if image with specified number was not opened.
+ * @param   pDisk           Pointer to HDD container.
+ * @param   nImage          Image number, counts from 0. 0 is always base image of container.
+ */
+VBOXDDU_DECL(uint32_t) VDGetSectorSize(PVBOXHDD pDisk, unsigned nImage);
 
 /**
  * Get total capacity of an image in HDD container.

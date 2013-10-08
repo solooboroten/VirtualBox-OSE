@@ -1,4 +1,4 @@
-/** $Id: VDDefs.h 46247 2013-05-23 19:19:42Z vboxsync $ */
+/** $Id: VDDefs.h $ */
 /** @file
  *
  * VBox HDD container test utility, common definitions.

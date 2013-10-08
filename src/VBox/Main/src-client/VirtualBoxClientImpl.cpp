@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxClientImpl.cpp 44970 2013-03-11 09:59:05Z vboxsync $ */
+/* $Id: VirtualBoxClientImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation
  */

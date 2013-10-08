@@ -1,4 +1,4 @@
-/* $Id: tstFileLock.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstFileLock.cpp $ */
 /** @file
  * IPRT Testcase - File Locks.
  */

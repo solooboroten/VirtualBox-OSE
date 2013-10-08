@@ -1,4 +1,4 @@
-; $Id: vboxport.asm 48345 2013-09-06 09:47:19Z vboxsync $
+; $Id: vboxport.asm $
 ;; @file
 ; asm specifics
 ;

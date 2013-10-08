@@ -1,4 +1,4 @@
-; $Id: ASMMultU64ByU32DivByU32.asm 46941 2013-07-03 14:48:42Z vboxsync $
+; $Id: ASMMultU64ByU32DivByU32.asm $
 ;; @file
 ; IPRT - Assembly Functions, ASMMultU64ByU32DivByU32.
 ;

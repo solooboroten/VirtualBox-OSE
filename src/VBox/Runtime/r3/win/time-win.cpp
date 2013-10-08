@@ -1,4 +1,4 @@
-/* $Id: time-win.cpp 46231 2013-05-23 11:23:15Z vboxsync $ */
+/* $Id: time-win.cpp $ */
 /** @file
  * IPRT - Time, Windows.
  */

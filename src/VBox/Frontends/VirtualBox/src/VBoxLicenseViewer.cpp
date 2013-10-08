@@ -1,4 +1,4 @@
-/* $Id: VBoxLicenseViewer.cpp 46831 2013-06-27 12:03:39Z vboxsync $ */
+/* $Id: VBoxLicenseViewer.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

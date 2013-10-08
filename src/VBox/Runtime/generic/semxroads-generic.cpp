@@ -1,4 +1,4 @@
-/* $Id: semxroads-generic.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: semxroads-generic.cpp $ */
 /** @file
  * IPRT Testcase - RTSemXRoads, generic implementation.
  */

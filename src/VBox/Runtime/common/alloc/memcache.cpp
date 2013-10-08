@@ -1,4 +1,4 @@
-/* $Id: memcache.cpp 46257 2013-05-24 19:18:27Z vboxsync $ */
+/* $Id: memcache.cpp $ */
 /** @file
  * IPRT - Memory Object Allocation Cache.
  */

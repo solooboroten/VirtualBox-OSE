@@ -1,4 +1,4 @@
-/* $Id: memset.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: memset.cpp $ */
 /** @file
  * IPRT - CRT Strings, memset().
  */

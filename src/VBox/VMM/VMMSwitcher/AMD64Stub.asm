@@ -1,4 +1,4 @@
-; $Id: AMD64Stub.asm 45701 2013-04-24 14:21:09Z vboxsync $
+; $Id: AMD64Stub.asm $
 ;; @file
 ; VMM - World Switchers, AMD64 Stub.
 ;

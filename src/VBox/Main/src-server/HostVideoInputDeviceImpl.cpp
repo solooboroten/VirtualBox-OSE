@@ -1,4 +1,4 @@
-/* $Id: HostVideoInputDeviceImpl.cpp 48607 2013-09-20 15:47:37Z vboxsync $ */
+/* $Id: HostVideoInputDeviceImpl.cpp $ */
 /** @file
  *
  * Host video capture device implementation.

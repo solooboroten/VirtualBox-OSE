@@ -1,4 +1,4 @@
-/* $Id: memcpy.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: memcpy.cpp $ */
 /** @file
  * IPRT - CRT Strings, memcpy().
  */

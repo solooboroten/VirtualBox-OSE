@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 48251 2013-09-03 19:21:11Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Mac OS guest additions base directory.
 #

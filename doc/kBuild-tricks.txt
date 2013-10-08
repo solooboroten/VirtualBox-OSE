@@ -57,6 +57,6 @@ VBox checkouts.
 
 -----
 
-:Status: $Id: kBuild-tricks.txt 47159 2013-07-15 12:48:05Z vboxsync $
+:Status: $Id: kBuild-tricks.txt $
 :Copyright: Copyright (C) 2006-2013 Oracle Corporation.
 

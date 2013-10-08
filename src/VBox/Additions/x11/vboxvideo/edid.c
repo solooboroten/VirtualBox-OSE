@@ -1,4 +1,4 @@
-/* $Id: edid.c 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: edid.c $ */
 /** @file
  *
  * Linux Additions X11 graphics driver, EDID construction

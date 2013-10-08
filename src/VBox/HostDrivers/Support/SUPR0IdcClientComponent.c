@@ -1,4 +1,4 @@
-/* $Id: SUPR0IdcClientComponent.c 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: SUPR0IdcClientComponent.c $ */
 /** @file
  * VirtualBox Support Driver - IDC Client Lib, Component APIs.
  */

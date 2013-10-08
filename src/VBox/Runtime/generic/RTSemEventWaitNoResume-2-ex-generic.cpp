@@ -1,4 +1,4 @@
-/* $Id: RTSemEventWaitNoResume-2-ex-generic.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: RTSemEventWaitNoResume-2-ex-generic.cpp $ */
 /** @file
  * IPRT - RTSemEventWaitNoResume, generic implementation based
  *        on RTSemEventWaitEx.

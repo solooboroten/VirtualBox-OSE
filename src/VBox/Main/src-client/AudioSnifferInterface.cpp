@@ -1,4 +1,4 @@
-/* $Id: AudioSnifferInterface.cpp 45029 2013-03-13 20:57:11Z vboxsync $ */
+/* $Id: AudioSnifferInterface.cpp $ */
 /** @file
  * VirtualBox Driver Interface to Audio Sniffer device
  */

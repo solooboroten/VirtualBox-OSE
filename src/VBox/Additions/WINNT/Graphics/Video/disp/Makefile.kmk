@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 46757 2013-06-24 14:30:18Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Windows guest display driver.
 #

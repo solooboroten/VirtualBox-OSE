@@ -1,4 +1,4 @@
-/* $Id: EventQueue.h 47853 2013-08-19 17:10:39Z vboxsync $ */
+/* $Id: EventQueue.h $ */
 /** @file
  * Event queue class declaration.
  */

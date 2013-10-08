@@ -1,4 +1,4 @@
-/* $Id: VBoxMPCommon.h 48070 2013-08-26 18:13:22Z vboxsync $ */
+/* $Id: VBoxMPCommon.h $ */
 /** @file
  * VBox Miniport common functions used by XPDM/WDDM drivers
  */

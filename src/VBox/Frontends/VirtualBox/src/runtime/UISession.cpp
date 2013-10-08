@@ -1,4 +1,4 @@
-/* $Id: UISession.cpp 48515 2013-09-18 11:07:49Z vboxsync $ */
+/* $Id: UISession.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -79,6 +79,7 @@ UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     , m_session(sessionReference)
     /* Common variables: */
     , m_pMenuPool(0)
+    , m_machineStatePrevious(KMachineState_Null)
     , m_machineState(session().GetMachine().GetState())
 #ifdef Q_WS_WIN
     , m_alphaCursor(0)
@@ -723,6 +724,7 @@ void UISession::sltStateChange(KMachineState state)
     if (m_machineState != state)
     {
         /* Store new data: */
+        m_machineStatePrevious = m_machineState;
         m_machineState = state;
 
         /* Update session settings: */
@@ -874,6 +876,11 @@ void UISession::prepareConnections()
 
     connect(QApplication::desktop(), SIGNAL(screenCountChanged(int)),
             this, SIGNAL(sigHostScreenCountChanged(int)));
+
+    connect(QApplication::desktop(), SIGNAL(resized(int)),
+            this, SIGNAL(sigHostScreenFullGeometryResized(int)));
+    connect(QApplication::desktop(), SIGNAL(workAreaResized(int)),
+            this, SIGNAL(sigHostScreenAvailableGeometryResized(int)));
 }
 
 void UISession::prepareScreens()

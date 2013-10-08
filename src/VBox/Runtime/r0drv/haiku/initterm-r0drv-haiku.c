@@ -1,4 +1,4 @@
-/* $Id: initterm-r0drv-haiku.c 43403 2012-09-22 11:48:24Z vboxsync $ */
+/* $Id: initterm-r0drv-haiku.c $ */
 /** @file
  * IPRT - Initialization & Termination, R0 Driver, Haiku.
  */

@@ -1,4 +1,4 @@
-/* $Id: tstIntNetR0.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstIntNetR0.cpp $ */
 /** @file
  * Internal networking - Usermode testcase for the kernel mode bits.
  *

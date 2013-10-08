@@ -1,4 +1,4 @@
-/** $Id: VBoxClient.cpp 48573 2013-09-20 07:24:16Z vboxsync $ */
+/** $Id: VBoxClient.cpp $ */
 /** @file
  * VBoxClient - User specific services, Darwin.
  */

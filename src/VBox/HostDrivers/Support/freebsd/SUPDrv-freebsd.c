@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-freebsd.c 47537 2013-08-05 10:00:02Z vboxsync $ */
+/* $Id: SUPDrv-freebsd.c $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - FreeBSD specifics.
  */

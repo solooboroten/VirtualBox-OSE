@@ -1,4 +1,4 @@
-/* $Id: VMMDevState.h 47294 2013-07-22 11:19:20Z vboxsync $ */
+/* $Id: VMMDevState.h $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device, internal header.
  */

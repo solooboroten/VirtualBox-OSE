@@ -1,5 +1,5 @@
 #! /bin/sh
-# $Id: VBoxCreateUSBNode.sh 44529 2013-02-04 15:54:15Z vboxsync $ */
+# $Id: VBoxCreateUSBNode.sh $ */
 ## @file
 # VirtualBox USB Proxy Service, Linux Specialization.
 # udev helper for creating and removing device nodes for VirtualBox USB devices

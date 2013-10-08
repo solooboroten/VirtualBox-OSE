@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp 48576 2013-09-20 09:08:41Z vboxsync $ */
+/* $Id: VBoxGlobal.cpp $ */
 /** @file
  * VBox Qt GUI - VBoxGlobal class implementation.
  */
@@ -24,6 +24,7 @@
 #include <QDesktopWidget>
 #include <QDesktopServices>
 #include <QMutex>
+#include <QReadLocker>
 #include <QToolButton>
 #include <QProcess>
 #include <QThread>
@@ -942,6 +943,7 @@ QString VBoxGlobal::details(const CMedium &cmedium, bool fPredictDiff, bool fUse
         startMediumEnumeration();
 
         /* Search for corresponding UI medium again: */
+
         uimedium = medium(strMediumID);
         if (uimedium.isNull())
         {
@@ -1663,19 +1665,25 @@ void VBoxGlobal::reloadProxySettings()
 void VBoxGlobal::createMedium(const UIMedium &medium)
 {
     /* Create medium in medium-enumerator: */
-    m_pMediumEnumerator->createMedium(medium);
+    QReadLocker cleanupRacePreventor(&m_mediumEnumeratorDtorRwLock);
+    if (m_pMediumEnumerator)
+        m_pMediumEnumerator->createMedium(medium);
 }
 
 void VBoxGlobal::updateMedium(const UIMedium &medium)
 {
     /* Update medium of medium-enumerator: */
-    m_pMediumEnumerator->updateMedium(medium);
+    QReadLocker cleanupRacePreventor(&m_mediumEnumeratorDtorRwLock);
+    if (m_pMediumEnumerator)
+        m_pMediumEnumerator->updateMedium(medium);
 }
 
 void VBoxGlobal::deleteMedium(const QString &strMediumID)
 {
     /* Delete medium from medium-enumerator: */
-    m_pMediumEnumerator->deleteMedium(strMediumID);
+    QReadLocker cleanupRacePreventor(&m_mediumEnumeratorDtorRwLock);
+    if (m_pMediumEnumerator)
+        m_pMediumEnumerator->deleteMedium(strMediumID);
 }
 
 /* Open some external medium using file open dialog
@@ -1840,25 +1848,34 @@ void VBoxGlobal::startMediumEnumeration(bool fForceStart /* = true*/)
         return;
 
     /* Redirect request to medium-enumerator: */
-    m_pMediumEnumerator->enumerateMediums();
+    QReadLocker cleanupRacePreventor(&m_mediumEnumeratorDtorRwLock);
+    if (m_pMediumEnumerator)
+        m_pMediumEnumerator->enumerateMediums();
 }
 
 bool VBoxGlobal::isMediumEnumerationInProgress() const
 {
     /* Redirect request to medium-enumerator: */
-    return m_pMediumEnumerator->isMediumEnumerationInProgress();
+    return m_pMediumEnumerator
+        && m_pMediumEnumerator->isMediumEnumerationInProgress();
 }
 
 UIMedium VBoxGlobal::medium(const QString &strMediumID) const
 {
     /* Redirect call to medium-enumerator: */
-    return m_pMediumEnumerator->medium(strMediumID);
+    QReadLocker cleanupRacePreventor(&m_mediumEnumeratorDtorRwLock);
+    if (m_pMediumEnumerator)
+        return m_pMediumEnumerator->medium(strMediumID);
+    return UIMedium();
 }
 
 QList<QString> VBoxGlobal::mediumIDs() const
 {
     /* Redirect call to medium-enumerator: */
-    return m_pMediumEnumerator->mediumIDs();
+    QReadLocker cleanupRacePreventor(&m_mediumEnumeratorDtorRwLock);
+    if (m_pMediumEnumerator)
+        return m_pMediumEnumerator->mediumIDs();
+    return QList<QString>();
 }
 
 /**
@@ -2596,16 +2613,6 @@ quint64 VBoxGlobal::parseSize (const QString &aText)
 QString VBoxGlobal::formatSize (quint64 aSize, uint aDecimal /* = 2 */,
                                 FormatSize aMode /* = FormatSize_Round */)
 {
-    static QString Suffixes [7];
-    Suffixes[0] = tr ("B", "size suffix Bytes");
-    Suffixes[1] = tr ("KB", "size suffix KBytes=1024 Bytes");
-    Suffixes[2] = tr ("MB", "size suffix MBytes=1024 KBytes");
-    Suffixes[3] = tr ("GB", "size suffix GBytes=1024 MBytes");
-    Suffixes[4] = tr ("TB", "size suffix TBytes=1024 GBytes");
-    Suffixes[5] = tr ("PB", "size suffix PBytes=1024 TBytes");
-    Suffixes[6] = (const char *)NULL;
-    AssertCompile(6 < RT_ELEMENTS (Suffixes));
-
     quint64 denom = 0;
     int suffix = 0;
 
@@ -2666,7 +2673,7 @@ QString VBoxGlobal::formatSize (quint64 aSize, uint aDecimal /* = 2 */,
             decm = 0;
             ++ intg;
             /* check if we've got 1024 XB after rounding and scale down if so */
-            if (intg == 1024 && Suffixes [suffix + 1] != NULL)
+            if (intg == 1024 && suffix + 1 < (int)SizeSuffix_Max)
             {
                 intg /= 1024;
                 ++ suffix;
@@ -2681,7 +2688,7 @@ QString VBoxGlobal::formatSize (quint64 aSize, uint aDecimal /* = 2 */,
         number = QString::number (intg);
     }
 
-    return QString ("%1 %2").arg (number).arg (Suffixes [suffix]);
+    return QString ("%1 %2").arg (number).arg (gpConverter->toString(static_cast<SizeSuffix>(suffix)));
 }
 
 /**
@@ -4008,6 +4015,11 @@ void VBoxGlobal::prepare()
         {"QNX",             ":/os_qnx.png"},
         {"MacOS",           ":/os_macosx.png"},
         {"MacOS_64",        ":/os_macosx_64.png"},
+        {"MacOS106",        ":/os_macosx.png"},
+        {"MacOS106_64",     ":/os_macosx_64.png"},
+        {"MacOS107_64",     ":/os_macosx_64.png"},
+        {"MacOS108_64",     ":/os_macosx_64.png"},
+        {"MacOS109_64",     ":/os_macosx_64.png"},
         {"JRockitVE",       ":/os_jrockitve.png"},
     };
     for (uint n = 0; n < SIZEOF_ARRAY(s_kOSTypeIcons); ++ n)
@@ -4355,15 +4367,27 @@ void VBoxGlobal::cleanup()
     /* Destroy our event handlers */
     UIExtraDataEventHandler::destroy();
 
+    /* Destroy the GUI root windows _BEFORE_ the media-mess, because there is
+       code in the GUI that's using the media code an will be racing us! */
+    if (mSelectorWnd)
+    {
+        delete mSelectorWnd;
+        mSelectorWnd = NULL;
+    }
+
+    if (m_pVirtualMachine)
+    {
+        delete m_pVirtualMachine;
+        m_pVirtualMachine = NULL;
+    }
+
     /* Cleanup medium-enumerator: */
+    m_mediumEnumeratorDtorRwLock.lockForWrite();
     delete m_pMediumEnumerator;
     m_pMediumEnumerator = 0;
+    m_mediumEnumeratorDtorRwLock.unlock();
 
-    if (mSelectorWnd)
-        delete mSelectorWnd;
-    if (m_pVirtualMachine)
-        delete m_pVirtualMachine;
-
+    /* Destroy whatever this converter stuff is: */
     UIConverter::cleanup();
 
     /* Ensure mOsTypeIcons is cleaned up: */

@@ -1,4 +1,4 @@
-/* $Id: VBoxCredentialProvider.h 46183 2013-05-21 00:26:23Z vboxsync $ */
+/* $Id: VBoxCredentialProvider.h $ */
 /** @file
  * VBoxCredentialProvider - Main file of the VirtualBox Credential Provider.
  */

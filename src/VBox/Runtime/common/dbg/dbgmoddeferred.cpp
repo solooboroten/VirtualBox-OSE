@@ -1,4 +1,4 @@
-/* $Id: dbgmoddeferred.cpp 46281 2013-05-27 10:25:05Z vboxsync $ */
+/* $Id: dbgmoddeferred.cpp $ */
 /** @file
  * IPRT - Debug Module Deferred Loading Stub.
  */

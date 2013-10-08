@@ -1,4 +1,4 @@
-/* $Id: tstRTMemPool.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: tstRTMemPool.cpp $ */
 /** @file
  * IPRT Testcase - MemPool.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxPS2NT.cpp 42154 2012-07-13 23:00:53Z vboxsync $ */
+/* $Id: VBoxPS2NT.cpp $ */
 /** @file
  * VBox NT4 Mouse Driver
  */

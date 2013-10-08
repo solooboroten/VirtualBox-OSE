@@ -1,4 +1,4 @@
-/* $Id: QIMainDialog.cpp 46836 2013-06-27 12:24:18Z vboxsync $ */
+/* $Id: QIMainDialog.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

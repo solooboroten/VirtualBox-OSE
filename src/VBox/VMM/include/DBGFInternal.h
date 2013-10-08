@@ -1,4 +1,4 @@
-/* $Id: DBGFInternal.h 46167 2013-05-19 22:12:49Z vboxsync $ */
+/* $Id: DBGFInternal.h $ */
 /** @file
  * DBGF - Internal header file.
  */

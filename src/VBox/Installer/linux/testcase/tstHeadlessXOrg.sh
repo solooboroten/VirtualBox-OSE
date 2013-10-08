@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: tstHeadlessXOrg.sh 45254 2013-03-30 20:12:23Z vboxsync $
+# $Id: tstHeadlessXOrg.sh $
 ## @file
 # VirtualBox X Server auto-start service unit test.
 #

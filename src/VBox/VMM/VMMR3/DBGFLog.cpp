@@ -1,4 +1,4 @@
-/* $Id: DBGFLog.cpp 46326 2013-05-30 12:16:53Z vboxsync $ */
+/* $Id: DBGFLog.cpp $ */
 /** @file
  * DBGF - Debugger Facility, Log Manager.
  */

@@ -1,4 +1,4 @@
-/* $Id: vscsi.h 47830 2013-08-18 12:33:32Z vboxsync $ */
+/* $Id: vscsi.h $ */
 /** @file
  * VBox storage drivers: Virtual SCSI driver
  */

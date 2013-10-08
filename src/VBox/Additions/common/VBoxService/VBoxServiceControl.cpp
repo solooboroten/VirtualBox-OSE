@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControl.cpp 47817 2013-08-16 15:30:15Z vboxsync $ */
+/* $Id: VBoxServiceControl.cpp $ */
 /** @file
  * VBoxServiceControl - Host-driven Guest Control.
  */

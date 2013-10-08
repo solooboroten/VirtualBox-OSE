@@ -1,4 +1,4 @@
-/* $Id: RTMpCpuIdFromSetIndex-generic.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: RTMpCpuIdFromSetIndex-generic.cpp $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpCpuIdFromSetIndex.
  */

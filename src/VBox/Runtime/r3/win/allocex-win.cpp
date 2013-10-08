@@ -1,4 +1,4 @@
-/* $Id: allocex-win.cpp 46739 2013-06-23 16:10:25Z vboxsync $ */
+/* $Id: allocex-win.cpp $ */
 /** @file
  * IPRT - Memory Allocation, Extended Alloc Workers, Windows.
  */

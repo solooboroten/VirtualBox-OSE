@@ -1,4 +1,4 @@
-/* $Id: fileio-win.cpp 39027 2011-10-19 09:58:41Z vboxsync $ */
+/* $Id: fileio-win.cpp $ */
 /** @file
  * IPRT - File I/O, native implementation for the Windows host platform.
  */

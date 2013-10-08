@@ -1679,9 +1679,11 @@
 # define RTTimerStart                                   RT_MANGLER(RTTimerStart)
 # define RTTimerStop                                    RT_MANGLER(RTTimerStop)
 # define RTTimeSet                                      RT_MANGLER(RTTimeSet)
+# define RTTimeSpecFromString                           RT_MANGLER(RTTimeSpecFromString)
 # define RTTimeSpecToString                             RT_MANGLER(RTTimeSpecToString)
 # define RTTimeSystemMilliTS                            RT_MANGLER(RTTimeSystemMilliTS)
 # define RTTimeSystemNanoTS                             RT_MANGLER(RTTimeSystemNanoTS)
+# define RTTimeFromString                               RT_MANGLER(RTTimeFromString)
 # define RTTimeToString                                 RT_MANGLER(RTTimeToString)
 # define RTTlsAlloc                                     RT_MANGLER(RTTlsAlloc)
 # define RTTlsAllocEx                                   RT_MANGLER(RTTlsAllocEx)
@@ -1867,6 +1869,7 @@
 # define RTZipGzipDecompressIoStream                    RT_MANGLER(RTZipGzipDecompressIoStream)
 # define RTZipTarCmd                                    RT_MANGLER(RTZipTarCmd)
 # define RTZipTarFsStreamFromIoStream                   RT_MANGLER(RTZipTarFsStreamFromIoStream)
+# define RTZipXarFsStreamFromIoStream                   RT_MANGLER(RTZipXarFsStreamFromIoStream)
 /*
  * Stable variables (alphabetical order):
  */

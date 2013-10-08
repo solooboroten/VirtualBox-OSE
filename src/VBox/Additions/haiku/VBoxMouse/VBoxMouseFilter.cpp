@@ -1,4 +1,4 @@
-/* $Id: VBoxMouseFilter.cpp 43405 2012-09-22 13:53:03Z vboxsync $ */
+/* $Id: VBoxMouseFilter.cpp $ */
 /** @file
  * VBoxMouse; input_server filter - Haiku Guest Additions, implementation.
  */

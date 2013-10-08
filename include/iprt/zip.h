@@ -229,6 +229,13 @@ RTDECL(int)     RTZipBlockDecompress(RTZIPTYPE enmType, uint32_t fFlags,
  */
 RTDECL(int) RTZipGzipDecompressIoStream(RTVFSIOSTREAM hVfsIosIn, uint32_t fFlags, PRTVFSIOSTREAM phVfsIosGunzip);
 
+/** @name RTZipGzipDecompressIoStream flags.
+ * @{ */
+/** Allow the smaller ZLIB header as well as the regular GZIP header. */
+#define RTZIPGZIPDECOMP_F_ALLOW_ZLIB_HDR    RT_BIT(0)
+/** @} */
+
+
 /**
  * Opens a gzip decompression I/O stream.
  *
@@ -269,6 +276,21 @@ RTDECL(int) RTZipTarFsStreamFromIoStream(RTVFSIOSTREAM hVfsIosIn, uint32_t fFlag
  *                              reordered, so the memory must be writable.)
  */
 RTDECL(RTEXITCODE) RTZipTarCmd(unsigned cArgs, char **papszArgs);
+
+/**
+ * Opens a XAR filesystem stream.
+ *
+ * This is used to extract, list or check a XAR archive.
+ *
+ * @returns IPRT status code.
+ *
+ * @param   hVfsIosIn           The compressed input stream.  The reference is
+ *                              not consumed, instead another one is retained.
+ * @param   fFlags              Flags, MBZ.
+ * @param   phVfsFss            Where to return the handle to the XAR filesystem
+ *                              stream.
+ */
+RTDECL(int) RTZipXarFsStreamFromIoStream(RTVFSIOSTREAM hVfsIosIn, uint32_t fFlags, PRTVFSFSSTREAM phVfsFss);
 
 /** @} */
 

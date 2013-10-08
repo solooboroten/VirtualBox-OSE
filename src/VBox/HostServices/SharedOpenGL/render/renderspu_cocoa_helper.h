@@ -1,4 +1,4 @@
-/* $Id: renderspu_cocoa_helper.h 45132 2013-03-21 16:11:28Z vboxsync $ */
+/* $Id: renderspu_cocoa_helper.h $ */
 /** @file
  * VirtualBox OpenGL Cocoa Window System Helper definition
  */

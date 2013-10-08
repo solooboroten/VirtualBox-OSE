@@ -1,4 +1,4 @@
-/* $Id: SystemPropertiesImpl.h 47991 2013-08-22 14:31:52Z vboxsync $ */
+/* $Id: SystemPropertiesImpl.h $ */
 
 /** @file
  *

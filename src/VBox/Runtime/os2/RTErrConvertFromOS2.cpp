@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromOS2.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: RTErrConvertFromOS2.cpp $ */
 /** @file
  * IPRT - Convert OS/2 error codes to iprt status codes.
  */

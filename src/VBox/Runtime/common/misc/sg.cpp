@@ -1,4 +1,4 @@
-/* $Id: sg.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: sg.cpp $ */
 /** @file
  * IPRT - S/G buffer handling.
  */

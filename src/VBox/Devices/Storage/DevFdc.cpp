@@ -1,4 +1,4 @@
-/* $Id: DevFdc.cpp 48162 2013-08-29 14:27:01Z vboxsync $ */
+/* $Id: DevFdc.cpp $ */
 /** @file
  * VBox storage devices: Floppy disk controller
  */

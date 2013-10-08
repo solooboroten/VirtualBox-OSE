@@ -1,4 +1,4 @@
-/* $Id: VBoxMPInternal.h 46896 2013-07-02 08:16:43Z vboxsync $ */
+/* $Id: VBoxMPInternal.h $ */
 
 /** @file
  * VBox XPDM Miniport internal header

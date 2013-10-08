@@ -1,4 +1,4 @@
-/* $Id: avl_Destroy.cpp.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: avl_Destroy.cpp.h $ */
 /** @file
  * kAVLDestroy - Walk the tree calling a callback to destroy all the nodes.
  */

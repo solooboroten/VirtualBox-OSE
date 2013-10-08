@@ -1,4 +1,4 @@
-/* $Id: avlou32.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: avlou32.cpp $ */
 /** @file
  * IPRT - AVL tree, uint_32, unique keys, offset pointers.
  */

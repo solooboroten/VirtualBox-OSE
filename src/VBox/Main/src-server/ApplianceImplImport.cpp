@@ -1,4 +1,4 @@
-/* $Id: ApplianceImplImport.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
+/* $Id: ApplianceImplImport.cpp $ */
 /** @file
  *
  * IAppliance and IVirtualSystem COM class implementations.
@@ -3840,5 +3840,4 @@ void Appliance::importMachines(ImportStack &stack,
 
     } // for (it = pAppliance->m->llVirtualSystems.begin() ...
 }
-
 

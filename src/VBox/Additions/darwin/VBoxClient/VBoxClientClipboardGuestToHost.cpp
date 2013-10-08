@@ -1,4 +1,4 @@
-/** $Id: VBoxClientClipboardGuestToHost.cpp 48251 2013-09-03 19:21:11Z vboxsync $ */
+/** $Id: VBoxClientClipboardGuestToHost.cpp $ */
 /** @file
  * VBoxClient - Shared Clipboard Guest -> Host copying, Darwin.
  */

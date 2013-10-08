@@ -1,4 +1,4 @@
-/* $Id: VBoxLwipCore.cpp 48108 2013-08-28 00:06:44Z vboxsync $ */
+/* $Id: VBoxLwipCore.cpp $ */
 /** @file
  * VBox Lwip Core Initiatetor/Finilizer.
  */

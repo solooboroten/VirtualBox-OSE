@@ -1,4 +1,4 @@
-/* $Id: QISplitter.cpp 43926 2012-11-21 09:28:18Z vboxsync $ */
+/* $Id: QISplitter.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

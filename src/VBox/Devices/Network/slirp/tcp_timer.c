@@ -1,4 +1,4 @@
-/* $Id: tcp_timer.c 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tcp_timer.c $ */
 /** @file
  * NAT - TCP timers.
  */

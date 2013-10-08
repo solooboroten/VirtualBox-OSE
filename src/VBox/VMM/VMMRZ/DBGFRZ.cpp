@@ -1,4 +1,4 @@
-/* $Id: DBGFRZ.cpp 47699 2013-08-13 15:04:08Z vboxsync $ */
+/* $Id: DBGFRZ.cpp $ */
 /** @file
  * DBGF - Debugger Facility, RZ part.
  */

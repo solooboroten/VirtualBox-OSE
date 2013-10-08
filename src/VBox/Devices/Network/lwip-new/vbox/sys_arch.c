@@ -1,4 +1,4 @@
-/** $Id: sys_arch.c 48439 2013-09-11 17:17:23Z vboxsync $ */
+/** $Id: sys_arch.c $ */
 /** @file
  * System dependent parts of lwIP, implemented with IPRT.
  */

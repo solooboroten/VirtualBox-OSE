@@ -1,4 +1,4 @@
-; $Id: X86Stub.asm 45721 2013-04-25 08:11:30Z vboxsync $
+; $Id: X86Stub.asm $
 ;; @file
 ; VMM - World Switchers, X86 Stub.
 ;

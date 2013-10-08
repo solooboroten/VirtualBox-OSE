@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-freebsd.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: rtProcInitExePath-freebsd.cpp $ */
 /** @file
  * IPRT - rtProcInitName, FreeBSD.
  */

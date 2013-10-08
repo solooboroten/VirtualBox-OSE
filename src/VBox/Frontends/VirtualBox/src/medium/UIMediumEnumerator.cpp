@@ -1,8 +1,6 @@
-/* $Id: UIMediumEnumerator.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
+/* $Id: UIMediumEnumerator.cpp $ */
 /** @file
- *
- * VBox frontends: Qt GUI ("VirtualBox"):
- * UIMediumEnumerator class implementation
+ * VBox Qt GUI - UIMediumEnumerator class implementation.
  */
 
 /*
@@ -50,6 +48,16 @@ private:
     /* Helper: Run stuff: */
     void run();
 };
+
+void UITaskMediumEnumeration::run()
+{
+    /* Get medium: */
+    UIMedium medium = m_data.value<UIMedium>();
+    /* Enumerate it: */
+    medium.blockAndQueryState();
+    /* Put medium back: */
+    m_data = QVariant::fromValue(medium);
+}
 
 
 UIMediumEnumerator::UIMediumEnumerator(ulong uWorkerCount /* = 3*/, ulong uWorkerTimeout /* = 5000*/)
@@ -155,6 +163,8 @@ void UIMediumEnumerator::enumerateMediums()
     addMediumsToMap(vboxGlobal().virtualBox().GetDVDImages(), mediums, UIMediumType_DVD);
     addMediumsToMap(vboxGlobal().host().GetFloppyDrives(), mediums, UIMediumType_Floppy);
     addMediumsToMap(vboxGlobal().virtualBox().GetFloppyImages(), mediums, UIMediumType_Floppy);
+    if (vboxGlobal().isCleaningUp())
+        return; /* VBoxGlobal is cleaning up, abort immediately. */
     m_mediums = mediums;
 
     /* Notify listener: */
@@ -163,8 +173,7 @@ void UIMediumEnumerator::enumerateMediums()
     emit sigMediumEnumerationStarted();
 
     /* Start enumeration for all the new mediums: */
-    QList<QString> mediumIDs = m_mediums.keys();
-    foreach (QString strMediumID, mediumIDs)
+    foreach (const QString &strMediumID, m_mediums.keys())
         createMediumEnumerationTask(m_mediums[strMediumID]);
 }
 
@@ -177,7 +186,7 @@ void UIMediumEnumerator::sltHandleMachineUpdate(QString strMachineID)
     foreach (const QString &strMediumID, mediumIDs())
     {
         const UIMedium &uimedium = m_mediums[strMediumID];
-        const QList<QString> &machineIDs = uimedium.machineIds();
+        const QList<QString> &machineIDs = uimedium.curStateMachineIds();
         if (machineIDs.contains(strMachineID))
             oldUsage << strMediumID;
     }
@@ -189,8 +198,7 @@ void UIMediumEnumerator::sltHandleMachineUpdate(QString strMachineID)
     CMachine machine = vboxGlobal().virtualBox().FindMachine(strMachineID);
     if (!machine.isNull())
     {
-        CMediumAttachmentVector attachments = machine.GetMediumAttachments();
-        foreach (const CMediumAttachment &attachment, attachments)
+        foreach (const CMediumAttachment &attachment, machine.GetMediumAttachments())
         {
             CMedium cmedium = attachment.GetMedium();
             if (cmedium.isNull())
@@ -228,7 +236,7 @@ void UIMediumEnumerator::sltHandleMachineUpdate(QString strMachineID)
             continue;
         }
         /* Enumerate UIMedium if CMedium still exists: */
-        createMediumEnumerationTask(m_mediums[strExcludedMediumID]);
+        createMediumEnumerationTask(uimedium);
     }
 
     /* For each of included items: */
@@ -307,6 +315,10 @@ void UIMediumEnumerator::addMediumsToMap(const CMediumVector &inputMediums, UIMe
      * Get existing one from the previous map if any. */
     foreach (CMedium medium, inputMediums)
     {
+        /* If VBoxGlobal is cleaning up, abort immediately: */
+        if (vboxGlobal().isCleaningUp())
+            break;
+
         /* Prepare uimedium on the basis of current medium: */
         QString strMediumID = medium.GetId();
         UIMedium uimedium = m_mediums.contains(strMediumID) ? m_mediums[strMediumID] :
@@ -323,6 +335,10 @@ void UIMediumEnumerator::addHardDisksToMap(const CMediumVector &inputMediums, UI
      * Get existing one from the previous map if any. */
     foreach (CMedium medium, inputMediums)
     {
+        /* If VBoxGlobal is cleaning up, abort immediately: */
+        if (vboxGlobal().isCleaningUp())
+            break;
+
         /* Prepare uimedium on the basis of current medium: */
         QString strMediumID = medium.GetId();
         UIMedium uimedium = m_mediums.contains(strMediumID) ? m_mediums[strMediumID] :
@@ -334,16 +350,6 @@ void UIMediumEnumerator::addHardDisksToMap(const CMediumVector &inputMediums, UI
         /* Insert medium children into map too: */
         addHardDisksToMap(medium.GetChildren(), outputMediums);
     }
-}
-
-void UITaskMediumEnumeration::run()
-{
-    /* Get medium: */
-    UIMedium medium = m_data.value<UIMedium>();
-    /* Enumerate it: */
-    medium.blockAndQueryState();
-    /* Put medium back: */
-    m_data = QVariant::fromValue(medium);
 }
 
 

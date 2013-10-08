@@ -1,4 +1,4 @@
-/* $Id: GuestCtrlImpl.cpp 48342 2013-09-06 07:22:36Z vboxsync $ */
+/* $Id: GuestCtrlImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation: Guest
  */

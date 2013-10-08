@@ -1,4 +1,4 @@
-/* $Id: Helper.cpp 40947 2012-04-16 18:04:08Z vboxsync $ */
+/* $Id: Helper.cpp $ */
 /** @file
  * VBoxGINA - Windows Logon DLL for VirtualBox, Helper Functions.
  */

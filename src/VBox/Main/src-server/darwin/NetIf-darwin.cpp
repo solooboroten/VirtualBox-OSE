@@ -1,4 +1,4 @@
-/* $Id: NetIf-darwin.cpp 48016 2013-08-23 09:22:14Z vboxsync $ */
+/* $Id: NetIf-darwin.cpp $ */
 /** @file
  * Main - NetIfList, Darwin implementation.
  */

@@ -1,4 +1,4 @@
-/** $Id: VDScript.cpp 44964 2013-03-08 21:06:06Z vboxsync $ */
+/** $Id: VDScript.cpp $ */
 /** @file
  *
  * VBox HDD container test utility - scripting engine.

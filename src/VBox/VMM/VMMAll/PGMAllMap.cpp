@@ -1,4 +1,4 @@
-/* $Id: PGMAllMap.cpp 45786 2013-04-26 22:35:59Z vboxsync $ */
+/* $Id: PGMAllMap.cpp $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */

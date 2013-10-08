@@ -1,4 +1,4 @@
-/* $Id: tstRTAvl.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstRTAvl.cpp $ */
 /** @file
  * IPRT Testcase - AVL trees.
  */

@@ -1,4 +1,4 @@
-﻿/* $Id: ntBldSymDb.cpp 45633 2013-04-19 08:56:59Z vboxsync $ */
+﻿/* $Id: ntBldSymDb.cpp $ */
 /** @file
  * IPRT - RTDirCreateUniqueNumbered, generic implementation.
  */
@@ -1137,7 +1137,7 @@ int main(int argc, char **argv)
                 break;
 
             case 'V':
-                RTPrintf("$Revision: 45633 $");
+                RTPrintf("$Revision: 85141 $");
                 break;
 
             case 'h':

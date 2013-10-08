@@ -1,4 +1,4 @@
-/* $Id: tstVBInsTstR3.cpp 46728 2013-06-21 16:58:04Z vboxsync $ */
+/* $Id: tstVBInsTstR3.cpp $ */
 /** @file
  * Instruction Test Environment - IPRT ring-3 driver.
  */

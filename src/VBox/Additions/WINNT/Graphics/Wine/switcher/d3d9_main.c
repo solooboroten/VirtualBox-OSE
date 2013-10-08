@@ -1,4 +1,4 @@
-/* $Id: d3d9_main.c 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: d3d9_main.c $ */
 
 /** @file
  * VBox D3D8 dll switcher

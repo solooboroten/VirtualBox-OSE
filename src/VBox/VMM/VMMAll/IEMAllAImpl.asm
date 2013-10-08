@@ -1,4 +1,4 @@
-; $Id: IEMAllAImpl.asm 48127 2013-08-28 14:48:16Z vboxsync $
+; $Id: IEMAllAImpl.asm $
 ;; @file
 ; IEM - Instruction Implementation in Assembly.
 ;

@@ -1,4 +1,4 @@
-/* $Id: UIGDetailsElement.cpp 45050 2013-03-15 13:21:33Z vboxsync $ */
+/* $Id: UIGDetailsElement.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

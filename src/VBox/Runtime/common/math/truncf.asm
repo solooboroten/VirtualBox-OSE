@@ -1,4 +1,4 @@
-; $Id: truncf.asm 46548 2013-06-14 09:42:21Z vboxsync $
+; $Id: truncf.asm $
 ;; @file
 ; IPRT - No-CRT truncf - AMD64 & X86.
 ;

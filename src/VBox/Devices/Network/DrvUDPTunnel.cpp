@@ -1,4 +1,4 @@
-/* $Id: DrvUDPTunnel.cpp 45061 2013-03-18 14:09:03Z vboxsync $ */
+/* $Id: DrvUDPTunnel.cpp $ */
 /** @file
  * DrvUDPTunnel - UDP tunnel network transport driver
  *

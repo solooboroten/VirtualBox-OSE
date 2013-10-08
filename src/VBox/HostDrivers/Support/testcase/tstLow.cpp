@@ -1,4 +1,4 @@
-/* $Id: tstLow.cpp 44528 2013-02-04 14:27:54Z vboxsync $  */
+/* $Id: tstLow.cpp $  */
 /** @file
  * SUP Testcase - Low (<4GB) Memory Allocate interface (ring 3).
  */

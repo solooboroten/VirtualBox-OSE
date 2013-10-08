@@ -1,4 +1,4 @@
-/* $Id: time-r0drv-nt.cpp 46231 2013-05-23 11:23:15Z vboxsync $ */
+/* $Id: time-r0drv-nt.cpp $ */
 /** @file
  * IPRT - Time, Ring-0 Driver, Nt.
  */

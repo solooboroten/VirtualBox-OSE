@@ -1,4 +1,4 @@
-/* $Id: tstDisasm-1.cpp 41886 2012-06-22 13:24:38Z vboxsync $ */
+/* $Id: tstDisasm-1.cpp $ */
 /** @file
  * VBox disassembler - Test application
  */

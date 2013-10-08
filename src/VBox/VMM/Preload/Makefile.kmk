@@ -1,5 +1,5 @@
 
-# $Id: Makefile.kmk 41477 2012-05-29 11:43:27Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the headless frontend.
 #

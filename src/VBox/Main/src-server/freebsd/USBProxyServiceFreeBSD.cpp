@@ -1,4 +1,4 @@
-/* $Id: USBProxyServiceFreeBSD.cpp 47117 2013-07-12 12:48:17Z vboxsync $ */
+/* $Id: USBProxyServiceFreeBSD.cpp $ */
 /** @file
  * VirtualBox USB Proxy Service, FreeBSD Specialization.
  */

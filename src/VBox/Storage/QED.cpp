@@ -1,4 +1,4 @@
-/* $Id: QED.cpp 46613 2013-06-18 10:27:13Z vboxsync $ */
+/* $Id: QED.cpp $ */
 /** @file
  * QED - QED Disk image.
  */
@@ -2024,6 +2024,22 @@ static unsigned qedGetVersion(void *pBackendData)
         return 0;
 }
 
+/** @copydoc VBOXHDDBACKEND::pfnGetSectorSize */
+static uint32_t qedGetSectorSize(void *pBackendData)
+{
+    LogFlowFunc(("pBackendData=%#p\n", pBackendData));
+    PQEDIMAGE pImage = (PQEDIMAGE)pBackendData;
+    uint32_t cb = 0;
+
+    AssertPtr(pImage);
+
+    if (pImage && pImage->pStorage)
+        cb = 512;
+
+    LogFlowFunc(("returns %u\n", cb));
+    return cb;
+}
+
 /** @copydoc VBOXHDDBACKEND::pfnGetSize */
 static uint64_t qedGetSize(void *pBackendData)
 {
@@ -2509,7 +2525,7 @@ static int qedSetParentFilename(void *pBackendData, const char *pszParentFilenam
 
                     Assert((offData & UINT32_MAX) == offData);
                     pImage->offBackingFilename = (uint32_t)offData;
-                    pImage->cbBackingFilename  = strlen(pszParentFilename);
+                    pImage->cbBackingFilename  = (uint32_t)strlen(pszParentFilename);
                     rc = vdIfIoIntFileSetSize(pImage->pIfIo, pImage->pStorage,
                                               offData + pImage->cbCluster);
                 }
@@ -2615,6 +2631,8 @@ VBOXHDDBACKEND g_QedBackend =
     NULL,
     /* pfnGetVersion */
     qedGetVersion,
+    /* pfnGetSectorSize */
+    qedGetSectorSize,
     /* pfnGetSize */
     qedGetSize,
     /* pfnGetFileSize */

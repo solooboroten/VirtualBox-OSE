@@ -1,4 +1,4 @@
-/* $Id: NetIf-freebsd.cpp 48016 2013-08-23 09:22:14Z vboxsync $ */
+/* $Id: NetIf-freebsd.cpp $ */
 /** @file
  * Main - NetIfList, FreeBSD implementation.
  */

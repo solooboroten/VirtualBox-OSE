@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: tstInstallInit.sh 45255 2013-03-30 20:15:31Z vboxsync $
+# $Id: tstInstallInit.sh $
 ## @file
 # VirtualBox init file creator unit test.
 #

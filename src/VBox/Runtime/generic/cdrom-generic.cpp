@@ -1,4 +1,4 @@
-/* $Id: cdrom-generic.cpp 45110 2013-03-20 18:17:29Z vboxsync $ */
+/* $Id: cdrom-generic.cpp $ */
 /** @file
  * IPRT - CD/DVD/BD-ROM Drive, Generic.
  */

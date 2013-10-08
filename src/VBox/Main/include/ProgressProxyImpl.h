@@ -1,4 +1,4 @@
-/* $Id: ProgressProxyImpl.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: ProgressProxyImpl.h $ */
 /** @file
  * IProgress implementation for Machine::openRemoteSession in VBoxSVC.
  */

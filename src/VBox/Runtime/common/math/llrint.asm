@@ -1,4 +1,4 @@
-; $Id: llrint.asm 44528 2013-02-04 14:27:54Z vboxsync $
+; $Id: llrint.asm $
 ;; @file
 ; IPRT - No-CRT llrint - AMD64 & X86.
 ;

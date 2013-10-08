@@ -1,4 +1,4 @@
-/* $Id: ClientWatcher.h 48431 2013-09-11 14:08:36Z vboxsync $ */
+/* $Id: ClientWatcher.h $ */
 
 /** @file
  *

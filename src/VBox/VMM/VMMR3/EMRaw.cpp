@@ -1,4 +1,4 @@
-/* $Id: EMRaw.cpp 47823 2013-08-17 11:36:08Z vboxsync $ */
+/* $Id: EMRaw.cpp $ */
 /** @file
  * EM - Execution Monitor / Manager - software virtualization
  */

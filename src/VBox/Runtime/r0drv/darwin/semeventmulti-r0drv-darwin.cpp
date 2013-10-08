@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-r0drv-darwin.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: semeventmulti-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - Multiple Release Event Semaphores, Ring-0 Driver, Darwin.
  */

@@ -1,4 +1,4 @@
-/* $Id: ISCSI.cpp 45486 2013-04-11 14:52:10Z vboxsync $ */
+/* $Id: ISCSI.cpp $ */
 /** @file
  * iSCSI initiator driver, VD backend.
  */
@@ -2682,7 +2682,7 @@ static int iscsiPDUTxPrepare(PISCSIIMAGE pImage, PISCSICMD pIScsiCmd)
     paReqBHS[2] = RT_H2N_U32(pImage->LUN >> 32);
     paReqBHS[3] = RT_H2N_U32(pImage->LUN & 0xffffffff);
     paReqBHS[4] = pIScsiCmd->Itt;
-    paReqBHS[5] = RT_H2N_U32(cbData);
+    paReqBHS[5] = RT_H2N_U32((uint32_t)cbData); Assert((uint32_t)cbData == cbData);
     paReqBHS[6] = RT_H2N_U32(pImage->CmdSN);
     paReqBHS[7] = RT_H2N_U32(pImage->ExpStatSN);
     memcpy(paReqBHS + 8, pScsiReq->abCDB, pScsiReq->cbCDB);
@@ -4242,7 +4242,7 @@ static int iscsiOpenImage(PISCSIIMAGE pImage, unsigned uOpenFlags)
                     pImage->cVolume++;
                     pImage->cbSector = RT_BE2H_U32(*(uint32_t *)&data12[8]);
                     pImage->cbSize = pImage->cVolume * pImage->cbSector;
-                    if (pImage->cVolume == 0 || pImage->cbSector != 512 || pImage->cbSize < pImage->cVolume)
+                    if (pImage->cVolume == 0 || pImage->cbSize < pImage->cVolume)
                     {
                         rc = vdIfError(pImage->pIfError, VERR_VD_ISCSI_INVALID_TYPE,
                                        RT_SRC_POS, N_("iSCSI: target address %s, target name %s, SCSI LUN %lld reports media sector count=%llu sector size=%u"),
@@ -4325,10 +4325,10 @@ return the status of target and will clear any unit attention condition that it 
                         pImage->cVolume++;
                         pImage->cbSector = (data8[4] << 24) | (data8[5] << 16) | (data8[6] << 8) | data8[7];
                         pImage->cbSize = pImage->cVolume * pImage->cbSector;
-                        if (pImage->cVolume == 0 || pImage->cbSector != 512)
+                        if (pImage->cVolume == 0)
                         {
                             rc = vdIfError(pImage->pIfError, VERR_VD_ISCSI_INVALID_TYPE,
-                                           RT_SRC_POS, N_("iSCSI: fallback capacity detectio for target address %s, target name %s, SCSI LUN %lld reports media sector count=%llu sector size=%u"),
+                                           RT_SRC_POS, N_("iSCSI: fallback capacity detection for target address %s, target name %s, SCSI LUN %lld reports media sector count=%llu sector size=%u"),
                                            pImage->pszTargetAddress, pImage->pszTargetName,
                                            pImage->LUN, pImage->cVolume, pImage->cbSector);
                         }
@@ -4908,6 +4908,20 @@ static unsigned iscsiGetVersion(void *pBackendData)
     return 0;
 }
 
+/** @copydoc VBOXHDDBACKEND::pfnGetSectorSize */
+static uint32_t iscsiGetSectorSize(void *pBackendData)
+{
+    LogFlowFunc(("pBackendData=%#p\n", pBackendData));
+    PISCSIIMAGE pImage = (PISCSIIMAGE)pBackendData;
+
+    Assert(pImage);
+
+    if (pImage)
+        return pImage->cbSector;
+    else
+        return 0;
+}
+
 /** @copydoc VBOXHDDBACKEND::pfnGetSize */
 static uint64_t iscsiGetSize(void *pBackendData)
 {
@@ -5410,6 +5424,8 @@ VBOXHDDBACKEND g_ISCSIBackend =
     NULL,
     /* pfnGetVersion */
     iscsiGetVersion,
+    /* pfnGetSectorSize */
+    iscsiGetSectorSize,
     /* pfnGetSize */
     iscsiGetSize,
     /* pfnGetFileSize */

@@ -1,4 +1,4 @@
-/* $Id: thread-r0drv-darwin.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: thread-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - Threads, Ring-0 Driver, Darwin.
  */

@@ -1,4 +1,4 @@
-/* $Id: RTSystemShutdown-generic.cpp 39721 2012-01-07 21:36:46Z vboxsync $ */
+/* $Id: RTSystemShutdown-generic.cpp $ */
 /** @file
  * IPRT - RTSystemShutdown, generic stub.
  */

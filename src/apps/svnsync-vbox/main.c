@@ -1,4 +1,4 @@
-/* $Id: main.c 48253 2013-09-03 19:33:08Z vboxsync $ */
+/* $Id: main.c $ */
 /** @file
  * svnsync tool. Modified by Oracle.
  */

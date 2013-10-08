@@ -1,4 +1,4 @@
-/* $Id: IEMAllCImplStrInstr.cpp.h 48158 2013-08-29 13:42:37Z vboxsync $ */
+/* $Id: IEMAllCImplStrInstr.cpp.h $ */
 /** @file
  * IEM - String Instruction Implementation Code Template.
  */

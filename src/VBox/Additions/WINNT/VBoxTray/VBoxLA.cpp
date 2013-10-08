@@ -1,4 +1,4 @@
-/* $Id: VBoxLA.cpp 46625 2013-06-18 13:28:52Z vboxsync $ */
+/* $Id: VBoxLA.cpp $ */
 /** @file
  * VBoxLA - VBox Location Awareness notifications.
  */

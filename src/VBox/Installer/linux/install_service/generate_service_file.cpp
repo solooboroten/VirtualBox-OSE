@@ -1,4 +1,4 @@
-/* $Id: generate_service_file.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: generate_service_file.cpp $ */
 /** @file
  * Read a service file template from standard input and output a service file
  * to standard output generated from the template based on arguments passed to

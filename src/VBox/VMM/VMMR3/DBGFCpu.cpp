@@ -1,4 +1,4 @@
-/* $Id: DBGFCpu.cpp 46219 2013-05-22 14:21:20Z vboxsync $ */
+/* $Id: DBGFCpu.cpp $ */
 /** @file
  * DBGF - Debugger Facility, CPU State Accessors.
  */

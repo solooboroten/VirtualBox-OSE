@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestApplication.h 43407 2012-09-22 14:19:26Z vboxsync $ */
+/* $Id: VBoxGuestApplication.h $ */
 /** @file
  * VBoxGuestApplication, Haiku Guest Additions, header.
  */

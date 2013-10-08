@@ -1,4 +1,4 @@
-/* $Id: VBoxDispDriverDDraw.cpp 39606 2011-12-14 11:23:58Z vboxsync $ */
+/* $Id: VBoxDispDriverDDraw.cpp $ */
 
 /** @file
  * VBox XPDM Display driver interface functions related to DirectDraw

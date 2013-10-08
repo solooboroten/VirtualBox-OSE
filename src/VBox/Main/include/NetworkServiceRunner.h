@@ -1,4 +1,4 @@
-/* $Id: NetworkServiceRunner.h 48107 2013-08-27 22:15:13Z vboxsync $ */
+/* $Id: NetworkServiceRunner.h $ */
 /** @file
  * VirtualBox Main - interface for VBox DHCP server.
  */

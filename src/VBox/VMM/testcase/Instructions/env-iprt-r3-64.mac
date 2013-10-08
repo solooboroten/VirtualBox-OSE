@@ -1,4 +1,4 @@
-; $Id: env-iprt-r3-64.mac 46543 2013-06-13 18:22:11Z vboxsync $
+; $Id: env-iprt-r3-64.mac $
 ;; @file
 ; Instruction Test Environment - IPRT, Ring-3, 64-Bit.
 ;

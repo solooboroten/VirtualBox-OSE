@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestDeskbarView.cpp 46593 2013-06-17 14:32:51Z vboxsync $ */
+/* $Id: VBoxGuestDeskbarView.cpp $ */
 /** @file
  * VBoxGuestDeskbarView, Haiku Guest Additions, implementation.
  */

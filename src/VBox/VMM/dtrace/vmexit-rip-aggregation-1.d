@@ -1,4 +1,4 @@
-/* $Id: vmexit-rip-aggregation-1.d 41274 2012-05-14 09:06:05Z vboxsync $ */
+/* $Id: vmexit-rip-aggregation-1.d $ */
 /** @file
  * DTracing VBox - vmexit rip aggregation test \#1.
  */

@@ -1,4 +1,4 @@
-/* $Id: RTPathSplit.cpp 45394 2013-04-07 19:03:00Z vboxsync $ */
+/* $Id: RTPathSplit.cpp $ */
 /** @file
  * IPRT - RTPathSplit
  */
@@ -130,5 +130,4 @@ RTDECL(int) RTPathSplit(const char *pszPath, PRTPATHSPLIT pSplit, size_t cbSplit
 
     return rc;
 }
-
 

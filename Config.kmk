@@ -1,4 +1,4 @@
-# $Id: Config.kmk 48619 2013-09-20 17:17:20Z vboxsync $
+# $Id: Config.kmk $
 ## @file
 # The global build configuration file for VBox.
 #
@@ -218,7 +218,7 @@ VBOX_BUILD_PUBLISHER =
 # Note! The BETA[n],ALPHA[n],RC[n] indicators should be inserted before the
 #       publisher so that RTStrVersionCompare have a chance of comparing
 #       prerelease from different publishers correctly.
-VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)_BETA3$(VBOX_BUILD_PUBLISHER)
+VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)_RC1$(VBOX_BUILD_PUBLISHER)
 
 # Force the additions.sh script to get an exact additions build when we're doing the release.
 ifeq ($(int-mod $(VBOX_VERSION_BUILD),2),0)
@@ -393,7 +393,7 @@ VBOX_WITH_INIP = 1
 VBOX_WITH_NEW_LWIP = 1
 # Enables lwip as a core of NAT service
 VBOX_WITH_LWIP_NAT = 1
-# Enables compilation of NAT service 
+# Enables compilation of NAT service
 VBOX_WITH_NAT_SERVICE = 1
 # Enable the E1000 feature.
 VBOX_WITH_E1000 = 1
@@ -508,7 +508,9 @@ VBOX_WITH_VBOXDRV = 1
 VBOX_WITH_MAIN = 1
 # Whether to also ship 32-bit main API on 64-bit systems.
 if1of ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH), solaris.amd64 win.amd64)
- VBOX_WITH_32_ON_64_MAIN_API = 1
+ if !defined(VBOX_ONLY_TESTSUITE) && !defined(VBOX_ONLY_ADDITIONS) && !defined(VBOX_ONLY_DOCS)
+  VBOX_WITH_32_ON_64_MAIN_API = 1
+ endif
 endif
 # The recompiler.
 VBOX_WITH_REM = 1
@@ -1033,7 +1035,6 @@ ifdef VBOX_OSE
  VBOX_WITH_DOCS_TRANSLATIONS=1
  VBOX_WITH_TESTSUITE=
  VBOX_WITH_INTEL_PXE=
- VBOX_WITH_DEVMAPPER=
  # Disable for OSE, requires snv_159+.
  VBOX_WITH_NETFLT_CROSSBOW=
  ifn1of ($(KBUILD_TARGET), darwin linux solaris win)
@@ -2623,13 +2624,12 @@ ifdef VBOX_SIGNING_MODE
   endif
 
   VBOX_CODESIGN ?= codesign
-  ## Sign an application bundle, framework or kernel extension.
-  # @param 1  The bundle to sign.
-  # @param 2  Identifier, optional.
+
+  # The above version with complicated requirements is what Xcode 5.0.1GM suggest for kexts.
   VBOX_SIGN_BUNDLE_FN = $(VBOX_CODESIGN) \
 	--verbose=9 \
 	--force \
-       --file-list - \
+	--file-list - \
 	$(VBOX_CERTIFICATE_SUBJECT_NAME_ARGS) \
 	$(1) $(if $(2),--identifier "$(2)",)
 
@@ -2835,10 +2835,6 @@ SDK_VBOX_VPX       = .
 SDK_VBOX_VPX_DEFAULT_INCS := $(PATH_ROOT)/src/libs/libvpx
 SDK_VBOX_VPX_INCS ?= $(SDK_VBOX_VPX_DEFAULT_INCS)
 SDK_VBOX_VPX_LIBS ?= $(PATH_STAGE_LIB)/VBox-libvpx$(VBOX_SUFF_LIB)
-
-SDK_VBOX_BOOST       = .
-SDK_VBOX_BOOST_DEFS ?= BOOST_DISABLE_ASSERTS
-SDK_VBOX_BOOST_INCS ?= $(PATH_ROOT)/src/libs/boost-1.37.0
 
 #
 # Special SDK for the problematic NTDLL.LIB.
@@ -3755,7 +3751,7 @@ endif
 #
 TEMPLATE_VBOXR3STATIC                  = VBox Static Ring 3 EXE
 TEMPLATE_VBOXR3STATIC_EXTENDS          = VBOXR3EXE
-TEMPLATE_VBOXR3STATIC_DEFS             = IN_RT_STATIC $(TEMPLATE_VBOXR3EXE_DEFS)
+TEMPLATE_VBOXR3STATIC_DEFS             = IN_RT_STATIC IN_RT_R3 $(TEMPLATE_VBOXR3EXE_DEFS)
 ifeq ($(KBUILD_TARGET),win)
  TEMPLATE_VBOXR3STATIC_CFLAGS          = $(filter-out -MD$(VBOX_VCC_CRT_TYPE), $(TEMPLATE_VBOXR3EXE_CFLAGS)) -MT$(VBOX_VCC_CRT_TYPE)
  TEMPLATE_VBOXR3STATIC_CXXFLAGS        = $(filter-out -MD$(VBOX_VCC_CRT_TYPE), $(TEMPLATE_VBOXR3EXE_CFLAGS)) -MT$(VBOX_VCC_CRT_TYPE)
@@ -3785,10 +3781,13 @@ endif
 
 #
 # Temporary: Renaming the template and warnings will be errors (soon).
+# Unlike VBOXR3STATIC, this is strict wrt warnings and includes IPRT.
 #
 TEMPLATE_VBoxR3Static               = New name for VBOXR3STATIC
 TEMPLATE_VBoxR3Static_EXTENDS       = VBOXR3STATIC
 TEMPLATE_VBoxR3Static_EXTENDS_BY    = appending
+TEMPLATE_VBoxR3Static_SDKS         += VBOX_OPENSSL
+TEMPLATE_VBoxR3Static_SDKS.win     += VBOX_NTDLL
 ifeq ($(KBUILD_TARGET),win)
  TEMPLATE_VBoxR3Static_CFLAGS      += $(VBOX_VCC_WERR)
  TEMPLATE_VBoxR3Static_CXXFLAGS    += $(VBOX_VCC_WERR)
@@ -3797,6 +3796,34 @@ else
  TEMPLATE_VBoxR3Static_CFLAGS      += $(VBOX_GCC_WERR)
  TEMPLATE_VBoxR3Static_CXXFLAGS    += $(VBOX_GCC_WERR)
 endif
+TEMPLATE_VBoxR3Static_LIBS         += \
+ 	$(VBOX_LIB_RUNTIME_STATIC)
+ifndef SDK_VBOX_OPENSSL_LIBS
+ TEMPLATE_VBoxR3Static_LIBS        += \
+ 	$(PATH_STAGE_LIB)/VBox-libcrypto$(VBOX_SUFF_LIB) \
+ 	$(PATH_STAGE_LIB)/VBox-libssl$(VBOX_SUFF_LIB)
+endif
+ifndef SDK_VBOX_LIBXML2_LIBS
+ TEMPLATE_VBoxR3Static_LIBS        += \
+ 	$(PATH_STAGE_LIB)/VBox-libxml2-static$(VBOX_SUFF_LIB)
+endif
+if1of ($(KBUILD_TARGET),os2 win)
+ TEMPLATE_VBoxR3Static_LIBS        += \
+ 	$(PATH_STAGE_LIB)/VBox-liblzf-static$(VBOX_SUFF_LIB) \
+ 	$(PATH_STAGE_LIB)/VBox-zlib-static$(VBOX_SUFF_LIB)
+else
+ TEMPLATE_VBoxR3Static_LIBS        += \
+ 	$(PATH_STAGE_LIB)/VBox-liblzf$(VBOX_SUFF_LIB) \
+ 	$(SDK_VBOX_ZLIB_LIBS)
+ ifeq ($(KBUILD_TARGET),linux)
+  TEMPLATE_VBoxR3Static_LIBS       += crypt
+ else if1of ($(KBUILD_TARGET),darwin freebsd)
+  TEMPLATE_VBoxR3Static_LIBS       += iconv
+ else ifeq ($(KBUILD_TARGET),solaris)
+  TEMPLATE_VBoxR3Static_LIBS       += kstat
+ endif
+endif
+
 
 #
 # Same as VBOXR3EXE but without C++ exceptions.
@@ -3893,9 +3920,13 @@ TEMPLATE_VBOXR3OSX105_LDFLAGS.darwin     = $(VBOX_DARWIN_DEF_SDK_10_5_LDFLAGS) \
 # This is the VBOXR3EXE template only with a different install dir.
 #
 TEMPLATE_VBOXR3AUTOTST  = VBox Ring 3 Testcase Exe
-TEMPLATE_VBOXR3AUTOTST_EXTENDS = $(if-expr "$(KBUILD_TARGET)" == "win",VBoxR3Static,VBOXR3EXE)
+ifeq ($(KBUILD_TARGET),win)
+ TEMPLATE_VBOXR3AUTOTST_EXTENDS = VBoxR3Static
+ TEMPLATE_VBOXR3AUTOTST_LIBS    = $(NO_SUCH_VARIABLE)
+else
+ TEMPLATE_VBOXR3AUTOTST_EXTENDS = VBOXR3EXE
+endif
 TEMPLATE_VBOXR3AUTOTST_INST    = $(INST_TESTCASE)
-TEMPLATE_VBOXR3AUTOTST_LIBS    = $(TEMPLATE_$(TEMPLATE_VBOXR3AUTOTST_EXTENDS)_LIBS)
 if "$(KBUILD_TARGET)" == "win" && defined(VBOX_SIGNING_MODE)
  TEMPLATE_VBOXR3AUTOTST_POST_CMDS = $(NO_SUCH_VARIABLE)
 endif
@@ -5550,7 +5581,7 @@ endif
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 48619 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 89687 $  )
  VBOX_SVN_DEP          := $(firstword $(wildcard $(PATH_ROOT)/.svn/wc.db $(abspath $(PATH_ROOT)/../.svn/wc.db) $(abspath $(PATH_ROOT)/../../.svn/wc.db) $(PATH_ROOT)/.svn/entries))
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

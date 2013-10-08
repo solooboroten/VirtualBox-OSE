@@ -1,5 +1,5 @@
 
-/* $Id: GuestSessionImpl.cpp 48342 2013-09-06 07:22:36Z vboxsync $ */
+/* $Id: GuestSessionImpl.cpp $ */
 /** @file
  * VirtualBox Main - Guest session handling.
  */

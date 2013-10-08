@@ -1,4 +1,4 @@
-/* $Id: fakedri_drv.c 46768 2013-06-25 07:25:37Z vboxsync $ */
+/* $Id: fakedri_drv.c $ */
 
 /** @file
  * VBox OpenGL DRI driver functions

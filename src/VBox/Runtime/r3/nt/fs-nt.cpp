@@ -1,4 +1,4 @@
-/* $Id: fs-nt.cpp 47535 2013-08-05 01:54:25Z vboxsync $ */
+/* $Id: fs-nt.cpp $ */
 /** @file
  * IPRT - File System, Native NT.
  */

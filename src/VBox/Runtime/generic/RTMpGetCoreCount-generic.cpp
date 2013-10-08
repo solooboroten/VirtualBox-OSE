@@ -1,4 +1,4 @@
-/* $Id: RTMpGetCoreCount-generic.cpp 46639 2013-06-18 17:33:09Z vboxsync $ */
+/* $Id: RTMpGetCoreCount-generic.cpp $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpGetCoreCount.
  */

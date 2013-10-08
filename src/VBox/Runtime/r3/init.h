@@ -1,4 +1,4 @@
-/* $Id: init.h 47596 2013-08-07 15:15:09Z vboxsync $ */
+/* $Id: init.h $ */
 /** @file
  * IPRT - Ring-3 initialization.
  */

@@ -1,4 +1,4 @@
-/* $Id: dbgmodldr.cpp 46266 2013-05-25 19:51:19Z vboxsync $ */
+/* $Id: dbgmodldr.cpp $ */
 /** @file
  * IPRT - Debug Module Image Interpretation by RTLdr.
  */

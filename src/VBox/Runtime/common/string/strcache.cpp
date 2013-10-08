@@ -1,4 +1,4 @@
-/* $Id: strcache.cpp 46212 2013-05-22 11:04:30Z vboxsync $ */
+/* $Id: strcache.cpp $ */
 /** @file
  * IPRT - String Cache.
  */

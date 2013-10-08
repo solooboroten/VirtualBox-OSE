@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 46478 2013-06-10 16:31:35Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for Java bindings
 #

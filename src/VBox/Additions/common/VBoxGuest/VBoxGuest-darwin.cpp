@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-darwin.cpp 48034 2013-08-23 16:03:04Z vboxsync $ */
+/* $Id: VBoxGuest-darwin.cpp $ */
 /** @file
  * VBoxGuest - Darwin Specifics.
  */

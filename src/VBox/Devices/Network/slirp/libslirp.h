@@ -1,4 +1,4 @@
-/* $Id: libslirp.h 48150 2013-08-29 12:41:05Z vboxsync $ */
+/* $Id: libslirp.h $ */
 /** @file
  * NAT - slirp interface.
  */

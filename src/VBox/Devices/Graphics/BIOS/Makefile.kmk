@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 46952 2013-07-03 20:45:26Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the New VGA BIOS ROM.
 #

@@ -1,4 +1,4 @@
-/* $Id: tstPage.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstPage.cpp $ */
 /** @file
  * SUP Testcase - Page allocation interface (ring 3).
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxManageHelp.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
+/* $Id: VBoxManageHelp.cpp $ */
 /** @file
  * VBoxManage - help and other message output.
  */
@@ -128,7 +128,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
 #endif
                      "                            hostinfo|hostcpuids|hddbackends|hdds|dvds|floppies|\n"
                      "                            usbhost|usbfilters|systemproperties|extpacks|\n"
-                     "                            groups\n"
+                     "                            groups|webcams\n"
                      "\n", SEP);
 
     if (u64Cmd & USAGE_SHOWVMINFO)
@@ -480,7 +480,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            plugcpu <id> |\n"
                      "                            unplugcpu <id> |\n"
                      "                            cpuexecutioncap <1-100>\n"
-                     "                            webcam attach [path [settings]] | detach [path] | list]\n"
+                     "                            webcam <attach [path [settings]]> | <detach [path]> | <list>\n"
                      "\n", SEP);
     }
 

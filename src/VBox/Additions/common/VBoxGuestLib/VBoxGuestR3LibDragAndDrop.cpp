@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibDragAndDrop.cpp 42261 2012-07-20 13:27:47Z vboxsync $ */
+/* $Id: VBoxGuestR3LibDragAndDrop.cpp $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Drag & Drop.
  */

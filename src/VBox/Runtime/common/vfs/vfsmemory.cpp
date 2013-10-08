@@ -1,4 +1,4 @@
-/* $Id: vfsmemory.cpp 40292 2012-02-29 11:29:35Z vboxsync $ */
+/* $Id: vfsmemory.cpp $ */
 /** @file
  * IPRT - Virtual File System, Memory Backed VFS.
  */

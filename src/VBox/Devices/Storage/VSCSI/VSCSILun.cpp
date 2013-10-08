@@ -1,4 +1,4 @@
-/* $Id: VSCSILun.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: VSCSILun.cpp $ */
 /** @file
  * Virtual SCSI driver: LUN handling
  */
@@ -119,7 +119,7 @@ VBOXDDU_DECL(int) VSCSILunDestroy(VSCSILUN hVScsiLun)
  * Notify virtual SCSI LUN of media being mounted.
  *
  * @returns VBox status code.
- * @param   hVScsiLun               The virtual SCSI LUN 
+ * @param   hVScsiLun               The virtual SCSI LUN
  *                                  mounting the medium.
  */
 VBOXDDU_DECL(int) VSCSILunMountNotify(VSCSILUN hVScsiLun)
@@ -141,7 +141,7 @@ VBOXDDU_DECL(int) VSCSILunMountNotify(VSCSILUN hVScsiLun)
  * Notify virtual SCSI LUN of media being unmounted.
  *
  * @returns VBox status code.
- * @param   hVScsiLun               The virtual SCSI LUN 
+ * @param   hVScsiLun               The virtual SCSI LUN
  *                                  mounting the medium.
  */
 VBOXDDU_DECL(int) VSCSILunUnmountNotify(VSCSILUN hVScsiLun)

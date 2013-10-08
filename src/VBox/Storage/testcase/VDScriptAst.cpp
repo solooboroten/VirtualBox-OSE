@@ -1,4 +1,4 @@
-/** $Id: VDScriptAst.cpp 44941 2013-03-06 22:13:17Z vboxsync $ */
+/** $Id: VDScriptAst.cpp $ */
 /** @file
  *
  * VBox HDD container test utility - scripting engine AST node related functions.

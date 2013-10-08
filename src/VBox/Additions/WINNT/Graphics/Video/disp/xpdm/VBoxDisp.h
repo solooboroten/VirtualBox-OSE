@@ -1,4 +1,4 @@
-/* $Id: VBoxDisp.h 46896 2013-07-02 08:16:43Z vboxsync $ */
+/* $Id: VBoxDisp.h $ */
 
 /** @file
  * VBox XPDM Display driver

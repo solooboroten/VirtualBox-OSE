@@ -1,4 +1,4 @@
-; $Id: TRPMRCHandlersA.asm 47690 2013-08-13 12:53:48Z vboxsync $
+; $Id: TRPMRCHandlersA.asm $
 ;; @file
 ; TRPM - Raw-mode Context Trap Handlers
 ;

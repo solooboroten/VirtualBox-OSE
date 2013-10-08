@@ -1,4 +1,4 @@
-; $Id: env-bs2-r0-64-big.mac 47047 2013-07-08 17:54:36Z vboxsync $
+; $Id: env-bs2-r0-64-big.mac $
 ;; @file
 ; Instruction Test Environment - Big Boot Sector Type 2, Ring-0, 64-Bit.
 ;

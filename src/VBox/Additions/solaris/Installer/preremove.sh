@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: preremove.sh 47318 2013-07-22 16:41:22Z vboxsync $
+# $Id: preremove.sh $
 ## @file
 # VirtualBox preremove script for Solaris Guest Additions.
 #

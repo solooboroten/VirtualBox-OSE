@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 48225 2013-09-02 11:14:11Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the VBox C Binding.
 #

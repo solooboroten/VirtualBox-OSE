@@ -1,4 +1,4 @@
-/* $Id: USBProxyService.cpp 41528 2012-05-31 16:48:33Z vboxsync $ */
+/* $Id: USBProxyService.cpp $ */
 /** @file
  * VirtualBox USB Proxy Service (base) class.
  */

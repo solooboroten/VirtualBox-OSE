@@ -1,4 +1,4 @@
-/* $Id: VBoxStubBld.h 45319 2013-04-03 17:59:47Z vboxsync $ */
+/* $Id: VBoxStubBld.h $ */
 /** @file
  * VBoxStubBld - VirtualBox's Windows installer stub builder.
  */

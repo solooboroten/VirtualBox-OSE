@@ -1,4 +1,4 @@
-/* $Id: EventImpl.cpp 48295 2013-09-05 09:41:48Z vboxsync $ */
+/* $Id: EventImpl.cpp $ */
 /** @file
  * VirtualBox COM Event class implementation
  */

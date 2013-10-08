@@ -1,4 +1,4 @@
-/* $Id: UIKeyboardHandlerFullscreen.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: UIKeyboardHandlerFullscreen.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-; $Id: VBoxRTImp.def 48484 2013-09-16 08:05:04Z vboxsync $
+; $Id: VBoxRTImp.def $
 ;; @file
 ; VirtualBox Runtime DLL - Stable Interface Definition file.
 

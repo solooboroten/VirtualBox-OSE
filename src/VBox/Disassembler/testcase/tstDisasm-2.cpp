@@ -1,4 +1,4 @@
-/* $Id: tstDisasm-2.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: tstDisasm-2.cpp $ */
 /** @file
  * Testcase - Generic Disassembler Tool.
  */
@@ -570,7 +570,7 @@ int main(int argc, char **argv)
                 break;
 
             case 'V':
-                RTPrintf("$Revision: $\n");
+                RTPrintf("$Revision: 89645 $\n");
                 return 0;
 
             default:

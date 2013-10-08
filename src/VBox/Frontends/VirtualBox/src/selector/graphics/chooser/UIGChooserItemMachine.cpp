@@ -1,4 +1,4 @@
-/* $Id: UIGChooserItemMachine.cpp 47160 2013-07-15 13:50:13Z vboxsync $ */
+/* $Id: UIGChooserItemMachine.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

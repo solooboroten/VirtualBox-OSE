@@ -1,4 +1,4 @@
-/* $Id: TokenImpl.h 48431 2013-09-11 14:08:36Z vboxsync $ */
+/* $Id: TokenImpl.h $ */
 
 /** @file
  *
@@ -51,8 +51,8 @@ private:
     struct Data
     {
         Data()
-	{
-	}
+        {
+        }
 
         ComObjPtr<SessionMachine> pSessionMachine;
     };

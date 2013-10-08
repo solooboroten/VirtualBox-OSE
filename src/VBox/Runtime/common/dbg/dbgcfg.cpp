@@ -1,4 +1,4 @@
-/* $Id: dbgcfg.cpp 46161 2013-05-19 13:31:13Z vboxsync $ */
+/* $Id: dbgcfg.cpp $ */
 /** @file
  * IPRT - Debugging Configuration.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxDisplay.cpp 43406 2012-09-22 14:11:49Z vboxsync $ */
+/* $Id: VBoxDisplay.cpp $ */
 /** @file
  * VBoxDisplayService, Haiku Guest Additions, implementation.
  */

@@ -1,4 +1,4 @@
-/* $Revision: 45016 $ */
+/* $Revision: 84251 $ */
 /** @file
  * VBoxGuestR0LibSharedFolders - Ring 0 Shared Folders calls.
  */

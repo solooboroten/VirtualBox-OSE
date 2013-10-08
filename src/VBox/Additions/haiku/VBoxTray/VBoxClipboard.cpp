@@ -1,4 +1,4 @@
-/* $Id: VBoxClipboard.cpp 43406 2012-09-22 14:11:49Z vboxsync $ */
+/* $Id: VBoxClipboard.cpp $ */
 /** @file
  * VBoxClipboard; Haiku Guest Additions, implementation.
  */

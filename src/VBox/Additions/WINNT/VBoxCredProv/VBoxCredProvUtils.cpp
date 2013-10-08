@@ -1,4 +1,4 @@
-/* $Id: VBoxCredProvUtils.cpp 40435 2012-03-12 18:01:39Z vboxsync $ */
+/* $Id: VBoxCredProvUtils.cpp $ */
 /** @file
  * VBoxCredProvUtils - Misc. utility functions for VBoxCredProv.
  */

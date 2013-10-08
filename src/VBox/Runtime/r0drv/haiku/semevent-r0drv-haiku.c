@@ -1,4 +1,4 @@
-/* $Id: semevent-r0drv-haiku.c 43403 2012-09-22 11:48:24Z vboxsync $ */
+/* $Id: semevent-r0drv-haiku.c $ */
 /** @file
  * IPRT - Single Release Event Semaphores, Ring-0 Driver, Haiku.
  */

@@ -1,4 +1,4 @@
-/* $Id: EMR3Dbg.cpp 46424 2013-06-06 22:12:05Z vboxsync $ */
+/* $Id: EMR3Dbg.cpp $ */
 /** @file
  * EM - Execution Monitor / Manager, Debugger Related Bits.
  */

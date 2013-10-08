@@ -1,4 +1,4 @@
-/* $Id: MMHyper.cpp 45618 2013-04-18 18:41:07Z vboxsync $ */
+/* $Id: MMHyper.cpp $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area.
  */

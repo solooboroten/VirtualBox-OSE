@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
+/* $Id: MachineImpl.cpp $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -4500,6 +4500,7 @@ STDMETHODIMP Machine::AttachDevice(IN_BSTR aControllerName,
                           false /* fTempEject */,
                           false /* fNonRotational */,
                           false /* fDiscard */,
+                          false /* fHotPluggable */,
                           Utf8Str::Empty);
     if (FAILED(rc)) return rc;
 
@@ -4827,6 +4828,58 @@ STDMETHODIMP Machine::SetAutoDiscardForDevice(IN_BSTR aControllerName, LONG aCon
                         tr("Setting the discard medium flag rejected as the device attached to device slot %d on port %d of controller '%ls' is not a hard disk"),
                         aDevice, aControllerPort, aControllerName);
     pAttach->updateDiscard(!!aDiscard);
+
+    return S_OK;
+}
+
+STDMETHODIMP Machine::SetHotPluggableForDevice(IN_BSTR aControllerName, LONG aControllerPort,
+                                               LONG aDevice, BOOL aHotPluggable)
+{
+    CheckComArgStrNotEmptyOrNull(aControllerName);
+
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d aHotPluggable=%d\n",
+                     aControllerName, aControllerPort, aDevice, aHotPluggable));
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    HRESULT rc = checkStateDependency(MutableStateDep);
+    if (FAILED(rc)) return rc;
+
+    AssertReturn(mData->mMachineState != MachineState_Saved, E_FAIL);
+
+    if (Global::IsOnlineOrTransient(mData->mMachineState))
+        return setError(VBOX_E_INVALID_VM_STATE,
+                        tr("Invalid machine state: %s"),
+                        Global::stringifyMachineState(mData->mMachineState));
+
+    MediumAttachment *pAttach = findAttachment(mMediaData->mAttachments,
+                                               aControllerName,
+                                               aControllerPort,
+                                               aDevice);
+    if (!pAttach)
+        return setError(VBOX_E_OBJECT_NOT_FOUND,
+                        tr("No storage device attached to device slot %d on port %d of controller '%ls'"),
+                        aDevice, aControllerPort, aControllerName);
+
+    /** @todo remove this blocker and add the missing code to support this
+     * flag properly in all code areas, with proper support checks below. */
+    return setError(VBOX_E_NOT_SUPPORTED,
+                    tr("Controller '%ls' does not support changing the hot-pluggable device flag"),
+                    aControllerName);
+
+    setModified(IsModified_Storage);
+    mMediaData.backup();
+
+    AutoWriteLock attLock(pAttach COMMA_LOCKVAL_SRC_POS);
+
+    if (pAttach->getType() == DeviceType_Floppy)
+        return setError(E_INVALIDARG,
+                        tr("Setting the hot-pluggable device flag rejected as the device attached to device slot %d on port %d of controller '%ls' is a floppy drive"),
+                        aDevice, aControllerPort, aControllerName);
+    pAttach->updateHotPluggable(!!aHotPluggable);
 
     return S_OK;
 }
@@ -9715,6 +9768,8 @@ HRESULT Machine::loadStorageDevices(StorageController *aStorageController,
                                dev.fTempEject,
                                dev.fNonRotational,
                                dev.fDiscard,
+        /// @todo load setting once the hot-pluggable flag works
+                               false /*dev.fHotPluggable*/,
                                pBwGroup.isNull() ? Utf8Str::Empty : pBwGroup->getName());
         if (FAILED(rc)) break;
 
@@ -10817,13 +10872,15 @@ HRESULT Machine::saveStorageDevices(ComObjPtr<StorageController> aStorageControl
         dev.deviceType = pAttach->getType();
         dev.lPort = pAttach->getPort();
         dev.lDevice = pAttach->getDevice();
+        dev.fPassThrough = pAttach->getPassthrough();
+        /// @todo save setting once the hot-pluggable flag works
+        dev.fHotPluggable = false /* pAttach->getHotPluggable()*/;
         if (pMedium)
         {
             if (pMedium->isHostDrive())
                 dev.strHostDriveSrc = pMedium->getLocationFull();
             else
                 dev.uuid = pMedium->getId();
-            dev.fPassThrough = pAttach->getPassthrough();
             dev.fTempEject = pAttach->getTempEject();
             dev.fNonRotational = pAttach->getNonRotational();
             dev.fDiscard = pAttach->getDiscard();
@@ -11160,6 +11217,7 @@ HRESULT Machine::createImplicitDiffs(IProgress *aProgress,
                                   false /* aTempEject */,
                                   pAtt->getNonRotational(),
                                   pAtt->getDiscard(),
+                                  pAtt->getHotPluggable(),
                                   pAtt->getBandwidthGroup());
             if (FAILED(rc)) throw rc;
 
@@ -12768,6 +12826,28 @@ HRESULT SessionMachine::init(Machine *aMachine)
     {
         unconst(mNetworkAdapters[slot]).createObject();
         mNetworkAdapters[slot]->init(this, aMachine->mNetworkAdapters[slot]);
+
+        NetworkAttachmentType_T type;
+        HRESULT hrc;
+        hrc = mNetworkAdapters[slot]->COMGETTER(AttachmentType)(&type);
+        if (   SUCCEEDED(hrc)
+            && type == NetworkAttachmentType_NATNetwork)
+        {
+            Bstr name;
+            hrc = mNetworkAdapters[slot]->COMGETTER(NATNetwork)(name.asOutParam());
+            if (SUCCEEDED(hrc))
+            {
+                LogRel(("VM '%s' starts using NAT network '%ls'\n",
+                        mUserData->s.strName.c_str(), name.raw()));
+                aMachine->lockHandle()->unlockWrite();
+                mParent->natNetworkRefInc(name.raw());
+#ifdef RT_LOCK_STRICT
+                aMachine->lockHandle()->lockWrite(RT_SRC_POS);
+#else
+                aMachine->lockHandle()->lockWrite();
+#endif
+            }
+        }
     }
 
     /* create another bandwidth control object that will be mutable */
@@ -12967,6 +13047,28 @@ void SessionMachine::uninit(Uninit::Reason aReason)
             ++it;
         }
         mData->mSession.mRemoteControls.clear();
+    }
+
+    for (ULONG slot = 0; slot < mNetworkAdapters.size(); slot++)
+    {
+        NetworkAttachmentType_T type;
+        HRESULT hrc;
+
+        hrc = mNetworkAdapters[slot]->COMGETTER(AttachmentType)(&type);
+        if (   SUCCEEDED(hrc)
+            && type == NetworkAttachmentType_NATNetwork)
+        {
+            Bstr name;
+            hrc = mNetworkAdapters[slot]->COMGETTER(NATNetwork)(name.asOutParam());
+            if (SUCCEEDED(hrc))
+            {
+                multilock.release();
+                LogRel(("VM '%s' stops using NAT network '%ls'\n",
+                        mUserData->s.strName.c_str(), name.raw()));
+                mParent->natNetworkRefDec(name.raw());
+                multilock.acquire();
+            }
+        }
     }
 
     /*

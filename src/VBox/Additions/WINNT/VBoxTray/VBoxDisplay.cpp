@@ -1,4 +1,4 @@
-/* $Id: VBoxDisplay.cpp 48070 2013-08-26 18:13:22Z vboxsync $ */
+/* $Id: VBoxDisplay.cpp $ */
 /** @file
  * VBoxSeamless - Display notifications.
  */

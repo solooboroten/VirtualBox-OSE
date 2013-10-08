@@ -1,4 +1,4 @@
-/* $Id: tstVDShareable.vd 44943 2013-03-06 23:07:00Z vboxsync $ */
+/* $Id: tstVDShareable.vd $ */
 /**
  * Storage: Testcase for shareable disks.
  */

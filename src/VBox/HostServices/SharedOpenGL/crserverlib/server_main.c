@@ -27,6 +27,7 @@
 #endif
 #include <iprt/assert.h>
 #include <VBox/err.h>
+#include <VBox/log.h>
 
 #ifdef VBOXCR_LOGFPS
 #include <iprt/timer.h>
@@ -330,23 +331,12 @@ crServerInit(int argc, char *argv[])
     }
 #endif
 
-    cr_server.bUseMultipleContexts = (crGetenv( "CR_SERVER_ENABLE_MULTIPLE_CONTEXTS" ) != NULL);
+//    cr_server.bUseMultipleContexts = (crGetenv( "CR_SERVER_ENABLE_MULTIPLE_CONTEXTS" ) != NULL);
 
     if (cr_server.bUseMultipleContexts)
     {
         crInfo("Info: using multiple contexts!");
         crDebug("Debug: using multiple contexts!");
-    }
-
-    env = crGetenv("CR_SERVER_CAPS");
-    if (env && env[0] != '\0')
-    {
-        cr_server.u32Caps = crServerVBoxParseNumerics(env, 0);
-        cr_server.u32Caps &= ~(CR_VBOX_CAP_TEX_PRESENT | CR_VBOX_CAP_NO_DWM_SUPPORT);
-    }
-    else
-    {
-        cr_server.u32Caps = CR_VBOX_CAP_TEX_PRESENT;
     }
 
     cr_server.firstCallCreateContext = GL_TRUE;
@@ -441,23 +431,12 @@ GLboolean crVBoxServerInit(void)
     }
 #endif
 
-    cr_server.bUseMultipleContexts = (crGetenv( "CR_SERVER_ENABLE_MULTIPLE_CONTEXTS" ) != NULL);
+//    cr_server.bUseMultipleContexts = (crGetenv( "CR_SERVER_ENABLE_MULTIPLE_CONTEXTS" ) != NULL);
 
     if (cr_server.bUseMultipleContexts)
     {
         crInfo("Info: using multiple contexts!");
         crDebug("Debug: using multiple contexts!");
-    }
-
-    env = crGetenv("CR_SERVER_CAPS");
-    if (env && env[0] != '\0')
-    {
-        cr_server.u32Caps = crServerVBoxParseNumerics(env, 0);
-        cr_server.u32Caps &= ~(CR_VBOX_CAP_TEX_PRESENT | CR_VBOX_CAP_NO_DWM_SUPPORT);
-    }
-    else
-    {
-        cr_server.u32Caps = CR_VBOX_CAP_TEX_PRESENT;
     }
 
     crNetInit(crServerRecv, crServerClose);
@@ -2758,6 +2737,8 @@ DECLEXPORT(int32_t) crVBoxServerUnmapScreen(int sIndex)
 
     crHashtableWalk(cr_server.muralTable, crVBoxServerCheckMuralCB, NULL);
 
+/*    crVBoxServerNotifyEvent(sIndex, VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA, NULL); */
+
     return VINF_SUCCESS;
 }
 
@@ -2827,10 +2808,13 @@ DECLEXPORT(int32_t) crVBoxServerMapScreen(int sIndex, int32_t x, int32_t y, uint
             CrDpReparent(pDisplay, &SCREEN(sIndex));
     }
 
+    crVBoxServerNotifyEvent(sIndex, VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA,
+            cr_server.aWinVisibilityInfos[sIndex].cVisibleWindows ? (void*)1 : NULL);
+
     return VINF_SUCCESS;
 }
 
-static int crVBoxServerUpdateMuralRootVisibleRegion(CRMuralInfo *pMI)
+int crVBoxServerUpdateMuralRootVisibleRegion(CRMuralInfo *pMI)
 {
     GLboolean fForcePresent;
 
@@ -2847,7 +2831,7 @@ static int crVBoxServerUpdateMuralRootVisibleRegion(CRMuralInfo *pMI)
             CrVrScrCompositorInit(&pMI->RootVrCompositor);
         }
 
-        rc = crServerMuralSynchRootVr(pMI);
+        rc = crServerMuralSynchRootVr(pMI, NULL);
         if (!RT_SUCCESS(rc))
         {
             crWarning("crServerMuralSynchRootVr failed, rc %d", rc);
@@ -2883,6 +2867,7 @@ static void crVBoxServerSetRootVisibleRegionCB(unsigned long key, void *data1, v
 DECLEXPORT(int32_t) crVBoxServerSetRootVisibleRegion(GLint cRects, const RTRECT *pRects)
 {
     int32_t rc = VINF_SUCCESS;
+    int i;
 
     /* non-zero rects pointer indicate rects are present and switched on
      * i.e. cRects==0 and pRects!=NULL means root visible regioning is ON and there are no visible regions,
@@ -2910,6 +2895,15 @@ DECLEXPORT(int32_t) crVBoxServerSetRootVisibleRegion(GLint cRects, const RTRECT 
     }
 
     crHashtableWalk(cr_server.muralTable, crVBoxServerSetRootVisibleRegionCB, NULL);
+
+    for (i = 0; i < cr_server.screenCount; ++i)
+    {
+        PCR_DISPLAY pDisplay = crServerDisplayGetInitialized((uint32_t)i);
+        if (!pDisplay)
+            continue;
+
+        CrDpRootUpdate(pDisplay);
+    }
 
     return VINF_SUCCESS;
 }
@@ -3111,7 +3105,7 @@ int32_t crVBoxServerCrHgsmiCmd(struct VBOXVDMACMD_CHROMIUM_CMD *pCmd, uint32_t c
     {
         case SHCRGL_GUEST_FN_WRITE:
         {
-            crDebug(("svcCall: SHCRGL_GUEST_FN_WRITE\n"));
+            Log(("svcCall: SHCRGL_GUEST_FN_WRITE\n"));
 
             /* @todo: Verify  */
             if (cParams == 1)
@@ -3165,7 +3159,7 @@ int32_t crVBoxServerCrHgsmiCmd(struct VBOXVDMACMD_CHROMIUM_CMD *pCmd, uint32_t c
 
         case SHCRGL_GUEST_FN_INJECT:
         {
-            crDebug(("svcCall: SHCRGL_GUEST_FN_INJECT\n"));
+            Log(("svcCall: SHCRGL_GUEST_FN_INJECT\n"));
 
             /* @todo: Verify  */
             if (cParams == 1)
@@ -3217,7 +3211,7 @@ int32_t crVBoxServerCrHgsmiCmd(struct VBOXVDMACMD_CHROMIUM_CMD *pCmd, uint32_t c
 
         case SHCRGL_GUEST_FN_READ:
         {
-            crDebug(("svcCall: SHCRGL_GUEST_FN_READ\n"));
+            Log(("svcCall: SHCRGL_GUEST_FN_READ\n"));
 
             /* @todo: Verify  */
             if (cParams == 1)
@@ -3271,7 +3265,7 @@ int32_t crVBoxServerCrHgsmiCmd(struct VBOXVDMACMD_CHROMIUM_CMD *pCmd, uint32_t c
 
         case SHCRGL_GUEST_FN_WRITE_READ:
         {
-            crDebug(("svcCall: SHCRGL_GUEST_FN_WRITE_READ\n"));
+            Log(("svcCall: SHCRGL_GUEST_FN_WRITE_READ\n"));
 
             /* @todo: Verify  */
             if (cParams == 2)

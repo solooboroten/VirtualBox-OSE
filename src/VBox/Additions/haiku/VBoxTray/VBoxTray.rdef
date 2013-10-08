@@ -1,4 +1,4 @@
-/* $Id: VBoxTray.rdef 43371 2012-09-20 13:42:10Z vboxsync $ */
+/* $Id: VBoxTray.rdef $ */
 /** @file
  * VBoxApp - Resource definition file containing version info and icon, Haiku Guest Additions.
  */

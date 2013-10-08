@@ -1,4 +1,4 @@
-/* $Id: HMAll.cpp 47619 2013-08-08 19:06:45Z vboxsync $ */
+/* $Id: HMAll.cpp $ */
 /** @file
  * HM - All contexts.
  */

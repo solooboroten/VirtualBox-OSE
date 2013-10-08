@@ -1,4 +1,4 @@
-/* $Id: RTProcessQueryUsernameA-generic.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: RTProcessQueryUsernameA-generic.cpp $ */
 /** @file
  * IPRT - RTSystemQueryOSInfo, generic stub.
  */

@@ -1,4 +1,4 @@
-/* $Id: UINetworkCustomer.cpp 41153 2012-05-03 22:23:07Z vboxsync $ */
+/* $Id: UINetworkCustomer.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

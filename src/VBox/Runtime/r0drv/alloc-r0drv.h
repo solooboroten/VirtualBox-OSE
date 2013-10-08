@@ -1,4 +1,4 @@
-/* $Id: alloc-r0drv.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: alloc-r0drv.h $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver.
  */

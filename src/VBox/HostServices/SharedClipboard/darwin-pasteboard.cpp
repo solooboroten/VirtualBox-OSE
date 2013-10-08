@@ -1,4 +1,4 @@
-/* $Id: darwin-pasteboard.cpp 43123 2012-08-30 19:12:33Z vboxsync $ */
+/* $Id: darwin-pasteboard.cpp $ */
 /** @file
  * Shared Clipboard: Mac OS X host implementation.
  */
@@ -173,14 +173,23 @@ int readFromPasteboard(PasteboardRef pPasteboard, uint32_t fFormat, void *pv, ui
             if (!(err = PasteboardCopyItemFlavorData(pPasteboard, itemID, kUTTypeUTF16PlainText, &outData)))
             {
                 Log(("Clipboard content is utf-16\n"));
-                rc = RTUtf16DupEx(&pwszTmp, (PRTUTF16)CFDataGetBytePtr(outData), 0);
+
+                PRTUTF16 pwszString = (PRTUTF16)CFDataGetBytePtr(outData);
+                if (pwszString)
+                    rc = RTUtf16DupEx(&pwszTmp, pwszString, 0);
+                else
+                    rc = VERR_INVALID_PARAMETER;
             }
             /* Second try is utf-8 */
             else
                 if (!(err = PasteboardCopyItemFlavorData(pPasteboard, itemID, kUTTypeUTF8PlainText, &outData)))
                 {
                     Log(("readFromPasteboard: clipboard content is utf-8\n"));
-                    rc = RTStrToUtf16((const char*)CFDataGetBytePtr(outData), &pwszTmp);
+                    const char *pszString = (const char *)CFDataGetBytePtr(outData);
+                    if (pszString)
+                        rc = RTStrToUtf16(pszString, &pwszTmp);
+                    else
+                        rc = VERR_INVALID_PARAMETER;
                 }
             if (pwszTmp)
             {

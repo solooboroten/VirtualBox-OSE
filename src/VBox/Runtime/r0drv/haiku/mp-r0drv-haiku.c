@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-haiku.c 43373 2012-09-20 15:04:11Z vboxsync $ */
+/* $Id: mp-r0drv-haiku.c $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Haiku.
  */

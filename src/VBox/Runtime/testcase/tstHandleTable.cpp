@@ -1,4 +1,4 @@
-/* $Id: tstHandleTable.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: tstHandleTable.cpp $ */
 /** @file
  * IPRT Testcase - Handle Tables.
  */
@@ -487,7 +487,7 @@ int main(int argc, char **argv)
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: $\n");
+                RTPrintf("$Revision: 89632 $\n");
                 return 0;
 
             default:

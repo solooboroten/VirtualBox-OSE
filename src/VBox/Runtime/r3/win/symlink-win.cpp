@@ -1,4 +1,4 @@
-/* $Id: symlink-win.cpp 47596 2013-08-07 15:15:09Z vboxsync $ */
+/* $Id: symlink-win.cpp $ */
 /** @file
  * IPRT - Symbolic Links, Windows.
  */

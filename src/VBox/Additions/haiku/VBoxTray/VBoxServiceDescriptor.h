@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceDescriptor.h 43407 2012-09-22 14:19:26Z vboxsync $ */
+/* $Id: VBoxServiceDescriptor.h $ */
 /** @file
  * VBoxGuestServiceDescriptor, Haiku Guest Additions, header.
  */

@@ -1,4 +1,4 @@
-/* $Id: SystemPropertiesImpl.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
+/* $Id: SystemPropertiesImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation
  */

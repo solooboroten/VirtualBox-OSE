@@ -1,4 +1,4 @@
-; $Id: ASMAtomicReadU64.asm 44528 2013-02-04 14:27:54Z vboxsync $
+; $Id: ASMAtomicReadU64.asm $
 ;; @file
 ; IPRT - ASMAtomicReadU64().
 ;

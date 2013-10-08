@@ -1,4 +1,4 @@
-/* $Id: VideoRec.cpp 46667 2013-06-19 15:30:23Z vboxsync $ */
+/* $Id: VideoRec.cpp $ */
 /** @file
  * Encodes the screen content in VPX format.
  */

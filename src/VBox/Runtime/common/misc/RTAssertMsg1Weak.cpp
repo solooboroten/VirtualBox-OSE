@@ -1,4 +1,4 @@
-/* $Id: RTAssertMsg1Weak.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: RTAssertMsg1Weak.cpp $ */
 /** @file
  * IPRT - RTAssertMsg1Weak.
  */

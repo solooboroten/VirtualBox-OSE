@@ -1,4 +1,4 @@
-; $Id: tstAsm.mac 46950 2013-07-03 19:22:51Z vboxsync $
+; $Id: tstAsm.mac $
 ;; @file
 ; Disassembly testcase - Common header for the xREG macros.
 ;

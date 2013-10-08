@@ -1,4 +1,4 @@
-/* $Id: Wrapper.h 47650 2013-08-09 14:27:21Z vboxsync $ */
+/* $Id: Wrapper.h $ */
 
 /** @file
  *

@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl2.cpp 48538 2013-09-19 15:17:43Z vboxsync $ */
+/* $Id: ConsoleImpl2.cpp $ */
 /** @file
  * VBox Console COM Class implementation - VM Configuration Bits.
  *
@@ -119,10 +119,19 @@
 #ifdef VBOX_WITH_EXTPACK
 # include "ExtPackManagerImpl.h"
 #endif
+#if defined(RT_OS_DARWIN)
+# include "IOKit/IOKitLib.h"
+#endif
+
+
+/*******************************************************************************
+*   Internal Functions                                                         *
+*******************************************************************************/
+static Utf8Str *GetExtraDataBoth(IVirtualBox *pVirtualBox, IMachine *pMachine, const char *pszName, Utf8Str *pStrValue);
+
+
 
 #if defined(RT_OS_DARWIN)
-
-# include "IOKit/IOKitLib.h"
 
 static int DarwinSmcKey(char *pabKey, uint32_t cbKey)
 {
@@ -247,20 +256,18 @@ static int findEfiRom(IVirtualBox* vbox, FirmwareType_T aFirmwareType, Utf8Str *
     return VINF_SUCCESS;
 }
 
-static int getSmcDeviceKey(IMachine *pMachine, BSTR *aKey, bool *pfGetKeyFromRealSMC)
+/**
+ * @throws HRESULT on extra data retrival error.
+ */
+static int getSmcDeviceKey(IVirtualBox *pVirtualBox, IMachine *pMachine, Utf8Str *pStrKey, bool *pfGetKeyFromRealSMC)
 {
     *pfGetKeyFromRealSMC = false;
 
     /*
      * The extra data takes precedence (if non-zero).
      */
-    HRESULT hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/SmcDeviceKey").raw(),
-                                         aKey);
-    if (FAILED(hrc))
-        return Global::vboxStatusCodeFromCOM(hrc);
-    if (   SUCCEEDED(hrc)
-        && *aKey
-        && **aKey)
+    GetExtraDataBoth(pVirtualBox, pMachine, "VBoxInternal2/SmcDeviceKey", pStrKey);
+    if (pStrKey->isNotEmpty())
         return VINF_SUCCESS;
 
 #ifdef RT_OS_DARWIN
@@ -271,7 +278,8 @@ static int getSmcDeviceKey(IMachine *pMachine, BSTR *aKey, bool *pfGetKeyFromRea
     int rc = DarwinSmcKey(abKeyBuf, sizeof(abKeyBuf));
     if (SUCCEEDED(rc))
     {
-        Bstr(abKeyBuf).detachTo(aKey);
+        *pStrKey = abKeyBuf;
+        *pfGetKeyFromRealSMC = true;
         return rc;
     }
     LogRel(("Warning: DarwinSmcKey failed with rc=%Rrc!\n", rc));
@@ -464,6 +472,40 @@ static void RemoveConfigValue(PCFGMNODE pNode,
     if (RT_FAILURE(vrc))
         throw ConfigError("CFGMR3RemoveValue", vrc, pcszName);
 }
+
+/**
+ * Gets an extra data value, consulting both machine and global extra data.
+ *
+ * @throws  HRESULT on failure
+ * @returns pStrValue for the callers convenience.
+ * @param   pVirtualBox     Pointer to the IVirtualBox interface.
+ * @param   pMachine        Pointer to the IMachine interface.
+ * @param   pszName         The value to get.
+ * @param   pStrValue       Where to return it's value (empty string if not
+ *                          found).
+ */
+static Utf8Str *GetExtraDataBoth(IVirtualBox *pVirtualBox, IMachine *pMachine, const char *pszName, Utf8Str *pStrValue)
+{
+    pStrValue->setNull();
+
+    Bstr bstrName(pszName);
+    Bstr bstrValue;
+    HRESULT hrc = pMachine->GetExtraData(bstrName.raw(), bstrValue.asOutParam());
+    if (FAILED(hrc))
+        throw hrc;
+    if (bstrValue.isEmpty())
+    {
+        hrc = pVirtualBox->GetExtraData(bstrName.raw(), bstrValue.asOutParam());
+        if (FAILED(hrc))
+            throw hrc;
+    }
+
+    if (bstrValue.isNotEmpty())
+        *pStrValue = bstrValue;
+    return pStrValue;
+}
+
+
 /** Helper that finds out the next SATA port used
  */
 static LONG GetNextUsedSataPort(LONG aSataPortUsed[30], LONG lBaseVal, uint32_t u32Size)
@@ -710,6 +752,7 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
 
     int             rc;
     HRESULT         hrc;
+    Utf8Str         strTmp;
     Bstr            bstr;
 
 #define H()         AssertMsgReturn(!FAILED(hrc), ("hrc=%Rhrc\n", hrc), VERR_GENERAL_FAILURE)
@@ -766,7 +809,7 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
 
     Bstr osTypeId;
     hrc = pMachine->COMGETTER(OSTypeId)(osTypeId.asOutParam());                             H();
-    LogRel(("OS type: '%s'\n", Utf8Str(osTypeId).c_str()));
+    LogRel(("Guest OS type: '%s'\n", Utf8Str(osTypeId).c_str()));
 
     BOOL fIOAPIC;
     hrc = biosSettings->COMGETTER(IOAPICEnabled)(&fIOAPIC);                                 H();
@@ -880,7 +923,33 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
         }
 
         if (fOsXGuest)
+        {
             InsertConfigInteger(pCPUM, "EnableHVP", 1);
+
+            /* Fake the CPU family/model so the guest works.  This is partly
+               because older mac releases really doesn't work on newer cpus,
+               and partly because mac os x expects more from systems with newer
+               cpus (MSRs, power features, whatever). */
+            uint32_t uMaxIntelFamilyModelStep = UINT32_MAX;
+            if (   osTypeId == "MacOS"
+                || osTypeId == "MacOS_64")
+                uMaxIntelFamilyModelStep = RT_MAKE_U32_FROM_U8(1, 23, 6, 7); /* Penryn / X5482. */
+            else if (   osTypeId == "MacOS106"
+                     || osTypeId == "MacOS106_64")
+                uMaxIntelFamilyModelStep = RT_MAKE_U32_FROM_U8(1, 23, 6, 7); /* Penryn / X5482 */
+            else if (   osTypeId == "MacOS107"
+                     || osTypeId == "MacOS107_64")
+                uMaxIntelFamilyModelStep = RT_MAKE_U32_FROM_U8(1, 23, 6, 7); /* Penryn / X5482 */ /** @todo figure out what is required here. */
+            else if (   osTypeId == "MacOS108"
+                     || osTypeId == "MacOS108_64")
+                uMaxIntelFamilyModelStep = RT_MAKE_U32_FROM_U8(1, 23, 6, 7); /* Penryn / X5482 */ /** @todo figure out what is required here. */
+            else if (   osTypeId == "MacOS109"
+                     || osTypeId == "MacOS109_64")
+                uMaxIntelFamilyModelStep = RT_MAKE_U32_FROM_U8(1, 23, 6, 7); /* Penryn / X5482 */ /** @todo figure out what is required here. */
+            if (uMaxIntelFamilyModelStep != UINT32_MAX)
+                InsertConfigInteger(pCPUM, "MaxIntelFamilyModelStep", uMaxIntelFamilyModelStep);
+        }
+
 
         /* Synthetic CPU */
         BOOL fSyntheticCpu = false;
@@ -935,24 +1004,24 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
         if (fHMForced)
         {
             if (cbRam + cbRamHole > _4G)
-                LogRel(("fHMForced=TRUE - Lots of RAM\n"));
+                LogRel(("fHMForced=true - Lots of RAM\n"));
             if (cCpus > 1)
-                LogRel(("fHMForced=TRUE - SMP\n"));
+                LogRel(("fHMForced=true - SMP\n"));
             if (fIsGuest64Bit)
-                LogRel(("fHMForced=TRUE - 64-bit guest\n"));
+                LogRel(("fHMForced=true - 64-bit guest\n"));
 # ifdef RT_OS_DARWIN
-            LogRel(("fHMForced=TRUE - Darwin host\n"));
+            LogRel(("fHMForced=true - Darwin host\n"));
 # endif
         }
 #else  /* !VBOX_WITH_RAW_MODE */
         fHMEnabled = fHMForced = TRUE;
-        LogRel(("fHMForced=TRUE - No raw-mode support in this build!\n"));
+        LogRel(("fHMForced=true - No raw-mode support in this build!\n"));
 #endif /* !VBOX_WITH_RAW_MODE */
         if (!fHMForced) /* No need to query if already forced above. */
         {
             hrc = pMachine->GetHWVirtExProperty(HWVirtExPropertyType_Force, &fHMForced); H();
             if (fHMForced)
-                LogRel(("fHMForced=TRUE - HWVirtExPropertyType_Force\n"));
+                LogRel(("fHMForced=true - HWVirtExPropertyType_Force\n"));
         }
         InsertConfigInteger(pRoot, "HMEnabled", fHMEnabled);
 
@@ -1229,11 +1298,11 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
             InsertConfigNode(pInst,    "Config", &pCfg);
 
             bool fGetKeyFromRealSMC;
-            Bstr bstrKey;
-            rc = getSmcDeviceKey(pMachine, bstrKey.asOutParam(), &fGetKeyFromRealSMC);
+            Utf8Str strKey;
+            rc = getSmcDeviceKey(virtualBox, pMachine, &strKey, &fGetKeyFromRealSMC);
             AssertRCReturn(rc, rc);
 
-            InsertConfigString(pCfg,   "DeviceKey", bstrKey);
+            InsertConfigString(pCfg,   "DeviceKey", strKey);
             InsertConfigInteger(pCfg,  "GetKeyFromRealSMC", fGetKeyFromRealSMC);
         }
 
@@ -1446,29 +1515,29 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
             AssertRCReturn(rc, rc);
 
             /* Get boot args */
-            Bstr bootArgs;
-            hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiBootArgs").raw(), bootArgs.asOutParam()); H();
+            Utf8Str bootArgs;
+            GetExtraDataBoth(virtualBox, pMachine, "VBoxInternal2/EfiBootArgs", &bootArgs);
 
             /* Get device props */
-            Bstr deviceProps;
-            hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiDeviceProps").raw(), deviceProps.asOutParam()); H();
+            Utf8Str deviceProps;
+            GetExtraDataBoth(virtualBox, pMachine, "VBoxInternal2/EfiDeviceProps", &deviceProps);
 
             /* Get GOP mode settings */
             uint32_t u32GopMode = UINT32_MAX;
-            hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiGopMode").raw(), bstr.asOutParam()); H();
-            if (!bstr.isEmpty())
-                u32GopMode = Utf8Str(bstr).toUInt32();
+            GetExtraDataBoth(virtualBox, pMachine, "VBoxInternal2/EfiGopMode", &strTmp);
+            if (!strTmp.isEmpty())
+                u32GopMode = strTmp.toUInt32();
 
             /* UGA mode settings */
             uint32_t u32UgaHorisontal = 0;
-            hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiUgaHorizontalResolution").raw(), bstr.asOutParam()); H();
-            if (!bstr.isEmpty())
-                u32UgaHorisontal = Utf8Str(bstr).toUInt32();
+            GetExtraDataBoth(virtualBox, pMachine, "VBoxInternal2/EfiUgaHorizontalResolution", &strTmp);
+            if (!strTmp.isEmpty())
+                u32UgaHorisontal = strTmp.toUInt32();
 
             uint32_t u32UgaVertical = 0;
-            hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiUgaVerticalResolution").raw(), bstr.asOutParam()); H();
-            if (!bstr.isEmpty())
-                u32UgaVertical = Utf8Str(bstr).toUInt32();
+            GetExtraDataBoth(virtualBox, pMachine, "VBoxInternal2/EfiUgaVerticalResolution", &strTmp);
+            if (!strTmp.isEmpty())
+                u32UgaVertical = strTmp.toUInt32();
 
             /*
              * EFI subtree.
@@ -2672,15 +2741,15 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
         hrc = biosSettings->COMGETTER(ACPIEnabled)(&fACPI);                                 H();
         if (fACPI)
         {
-            BOOL fCpuHotPlug = false;
-            BOOL fShowCpu = fOsXGuest;
             /* Always show the CPU leafs when we have multiple VCPUs or when the IO-APIC is enabled.
              * The Windows SMP kernel needs a CPU leaf or else its idle loop will burn cpu cycles; the
              * intelppm driver refuses to register an idle state handler.
-             */
-            if ((cCpus > 1) || fIOAPIC)
+             * Always show CPU leafs for OS X guests. */
+            BOOL fShowCpu = fOsXGuest;
+            if (cCpus > 1 || fIOAPIC)
                 fShowCpu = true;
 
+            BOOL fCpuHotPlug;
             hrc = pMachine->COMGETTER(CPUHotPlugEnabled)(&fCpuHotPlug);                     H();
 
             InsertConfigNode(pDevices, "acpi", &pDev);
@@ -2797,6 +2866,10 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
     {
         // InsertConfig threw something:
         return x.m_vrc;
+    }
+    catch (HRESULT hrcXcpt)
+    {
+        AssertMsgFailedReturn(("hrc=%Rhrc\n", hrcXcpt), VERR_GENERAL_FAILURE);
     }
 
 #ifdef VBOX_WITH_EXTPACK

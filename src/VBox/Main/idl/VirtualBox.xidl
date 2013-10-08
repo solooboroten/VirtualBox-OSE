@@ -1431,10 +1431,10 @@
       </desc>
     </attribute>
     <attribute name="localMappings" type="wstring" readonly="yes" safearray="yes">
-      <desc>Array of mappings (address,offset),e.g. ("127.0.1.1=4") maps 127.0.1.1 to networkid + 4. 
+      <desc>Array of mappings (address,offset),e.g. ("127.0.1.1=4") maps 127.0.1.1 to networkid + 4.
       </desc>
     </attribute>
-    
+
     <method name="addLocalMapping">
       <desc>
       </desc>
@@ -1446,7 +1446,7 @@
       <desc>Offset in ipv6 network from network id for address mapped into loopback6 interface of the host.
       </desc>
     </attribute>
-    
+
     <attribute name="portForwardRules6" type="wstring" readonly="yes" safearray="yes">
       <desc>Array of NAT port-forwarding rules in string representation, in the
       following format: "name:protocolid:[host ip]:host port:[guest ip]:guest port".
@@ -3934,6 +3934,16 @@
         PXE trace information to the release log.
       </desc>
     </attribute>
+
+    <attribute name="nonVolatileStorageFile" type="wstring" readonly="yes">
+      <desc>
+        The location of the file storing the non-volatile memory content when
+        the VM is powered off.  The file does not always exist.
+
+        This feature will be realized after VirtualBox v4.3.0.
+      </desc>
+    </attribute>
+
   </interface>
 
   <interface
@@ -4121,7 +4131,7 @@
 
   <interface
     name="IMachine" extends="$unknown"
-    uuid="7108c7c7-2c0a-47ee-9c69-022fe2a466bf"
+    uuid="480cf695-2d8d-4256-9c7c-cce4184fa048"
     wsmap="managed"
     >
     <desc>
@@ -5563,6 +5573,46 @@
       </param>
     </method>
 
+    <method name="setHotPluggableForDevice">
+      <desc>
+        Sets a flag in the device information which indicates that the attached
+        device is hot pluggable or not. This may or may not be supported by a
+        particular controller and/or drive, and is silently ignored in the
+        latter case. Changing the setting while the VM is running is forbidden.
+        The device must already exist; see <link to="IMachine::attachDevice"/>
+        for how to attach a new device.
+
+        The @a controllerPort and @a device parameters specify the device slot and
+        have have the same meaning as with <link to="IMachine::attachDevice" />.
+
+        <result name="E_INVALIDARG">
+          SATA device, SATA port, IDE port or IDE slot out of range.
+        </result>
+        <result name="VBOX_E_INVALID_OBJECT_STATE">
+          Attempt to modify an unregistered virtual machine.
+        </result>
+        <result name="VBOX_E_INVALID_VM_STATE">
+          Invalid machine state.
+        </result>
+        <result name="VBOX_E_NOT_SUPPORTED">
+          Controller doesn't support hot plugging.
+        </result>
+      </desc>
+
+      <param name="name" type="wstring" dir="in">
+        <desc>Name of the storage controller.</desc>
+      </param>
+      <param name="controllerPort" type="long" dir="in">
+        <desc>Storage controller port.</desc>
+      </param>
+      <param name="device" type="long" dir="in">
+        <desc>Device slot in the given port.</desc>
+      </param>
+      <param name="hotPluggable" type="boolean" dir="in">
+        <desc>New value for the hot-pluggable device flag.</desc>
+      </param>
+    </method>
+
     <method name="setBandwidthGroupForDevice">
       <desc>
         Sets the bandwidth group of an existing storage device.
@@ -5628,56 +5678,56 @@
 
 
     <method name="unmountMedium">
-          <desc>
-            Unmounts any currently mounted medium (<link to="IMedium" />,
-            identified by the given UUID @a id) to the given storage controller
-            (<link to="IStorageController" />, identified by @a name),
-            at the indicated port and device. The device must already exist;
+      <desc>
+        Unmounts any currently mounted medium (<link to="IMedium" />,
+        identified by the given UUID @a id) to the given storage controller
+        (<link to="IStorageController" />, identified by @a name),
+        at the indicated port and device. The device must already exist;
 
-            This method is intended only for managing removable media, where the
-            device is fixed but media is changeable at runtime (such as DVDs
-            and floppies). It cannot be used for fixed media such as hard disks.
+        This method is intended only for managing removable media, where the
+        device is fixed but media is changeable at runtime (such as DVDs
+        and floppies). It cannot be used for fixed media such as hard disks.
 
-            The @a controllerPort and @a device parameters specify the device slot
-            and have have the same meaning as with
-            <link to="IMachine::attachDevice" />.
+        The @a controllerPort and @a device parameters specify the device slot
+        and have have the same meaning as with
+        <link to="IMachine::attachDevice" />.
 
-            The specified device slot must have a medium mounted, which will be
-            unmounted. If there is no mounted medium it will do nothing.
-            See <link to="IMedium"/> for more detailed information about
-            attaching/unmounting media.
+        The specified device slot must have a medium mounted, which will be
+        unmounted. If there is no mounted medium it will do nothing.
+        See <link to="IMedium"/> for more detailed information about
+        attaching/unmounting media.
 
-            <result name="E_INVALIDARG">
-            SATA device, SATA port, IDE port or IDE slot out of range.
-            </result>
-            <result name="VBOX_E_INVALID_OBJECT_STATE">
-            Attempt to unmount medium that is not removable - not DVD or floppy.
-            </result>
-            <result name="VBOX_E_INVALID_VM_STATE">
-            Invalid machine state.
-            </result>
-            <result name="VBOX_E_OBJECT_IN_USE">
-            Medium already attached to this or another virtual machine.
-            </result>
-            <result name="VBOX_E_OBJECT_NOT_FOUND">
-            Medium not attached to specified port, device, controller.
-            </result>
+        <result name="E_INVALIDARG">
+          SATA device, SATA port, IDE port or IDE slot out of range.
+        </result>
+        <result name="VBOX_E_INVALID_OBJECT_STATE">
+          Attempt to unmount medium that is not removable - not DVD or floppy.
+        </result>
+        <result name="VBOX_E_INVALID_VM_STATE">
+          Invalid machine state.
+        </result>
+        <result name="VBOX_E_OBJECT_IN_USE">
+          Medium already attached to this or another virtual machine.
+        </result>
+        <result name="VBOX_E_OBJECT_NOT_FOUND">
+          Medium not attached to specified port, device, controller.
+        </result>
+      </desc>
 
-            </desc>
-              <param name="name" type="wstring" dir="in">
-              <desc>Name of the storage controller to unmount the medium from.</desc>
-              </param>
-              <param name="controllerPort" type="long" dir="in">
-              <desc>Port to unmount the medium from.</desc>
-              </param>
-              <param name="device" type="long" dir="in">
-              <desc>Device slot in the given port to unmount the medium from.</desc>
-              </param>
-              <param name="force" type="boolean" dir="in">
-              <desc>Allows to force unmount of a medium which is locked by
-              the device slot in the given port medium is attached to.</desc>
-              </param>
-          </method>
+      <param name="name" type="wstring" dir="in">
+        <desc>Name of the storage controller to unmount the medium from.</desc>
+      </param>
+      <param name="controllerPort" type="long" dir="in">
+        <desc>Port to unmount the medium from.</desc>
+      </param>
+      <param name="device" type="long" dir="in">
+        <desc>Device slot in the given port to unmount the medium from.</desc>
+      </param>
+      <param name="force" type="boolean" dir="in">
+        <desc>Allows to force unmount of a medium which is locked by
+        the device slot in the given port medium is attached to.</desc>
+      </param>
+    </method>
 
     <method name="mountMedium">
       <desc>
@@ -6308,7 +6358,7 @@
         when there are no pending unsaved settings.
 
         <note>
-          Setting this property to @c null or to an empty string is forbidden. 
+          Setting this property to @c null or to an empty string is forbidden.
           When setting this property, the specified path must be absolute.
           The specified path may not exist, it will be created when necessary.
         </note>
@@ -8416,6 +8466,10 @@
 
     <attribute name="processorCoreCount" type="unsigned long" readonly="yes">
       <desc>Number of physical processor cores installed in the host system.</desc>
+    </attribute>
+
+    <attribute name="processorOnlineCoreCount" type="unsigned long" readonly="yes">
+      <desc>Number of physical processor cores online in the host system.</desc>
     </attribute>
 
     <method name="getProcessorSpeed">
@@ -10737,7 +10791,9 @@
           <ul>
             <li><tt>"ca"</tt>: Creates a new file, always. Overwrites an existing file.</li>
             <li><tt>"ce"</tt>: Creates a new file if it does not exist. Fail if exist.</li>
-            <li><tt>"oc"</tt>: Opens and existing file or create it if it does not exist.</li>
+            <li><tt>"oa"</tt>: Opens an existing file and places the file pointer at the
+              end of the file, if opened with write access. Create the file if it does not exist.</li>
+            <li><tt>"oc"</tt>: Opens an existing file or create it if it does not exist.</li>
             <li><tt>"oe"</tt>: Opens an existing file or fail if it does not exist.</li>
             <li><tt>"ot"</tt>: Opens and truncate an existing file or fail if it does not exist.</li>
           </ul>
@@ -10785,7 +10841,9 @@
           <ul>
             <li><tt>"ca"</tt>: Creates a new file, always. Overwrites an existing file.</li>
             <li><tt>"ce"</tt>: Creates a new file if it does not exist. Fail if exist.</li>
-            <li><tt>"oc"</tt>: Opens and existing file or create it if it does not exist.</li>
+            <li><tt>"oa"</tt>: Opens an existing file and places the file pointer at the
+              end of the file, if opened with write access. Create the file if it does not exist.</li>
+            <li><tt>"oc"</tt>: Opens an existing file or create it if it does not exist.</li>
             <li><tt>"oe"</tt>: Opens an existing file or fail if it does not exist.</li>
             <li><tt>"ot"</tt>: Opens and truncate an existing file or fail if it does not exist.</li>
           </ul>
@@ -10793,7 +10851,7 @@
       </param>
       <param name="sharingMode" type="wstring" dir="in">
         <desc>The file sharing mode on the guest. This parameter
-          is not implemented yet.</desc>
+          is not implemented yet. Pass an empty string here.</desc>
       </param>
       <param name="creationMode" type="unsigned long" dir="in">
         <desc>The mode to create the file with. Must be a three-digit octal number which
@@ -12845,7 +12903,7 @@
 
   <interface
     name="IMediumAttachment" extends="$unknown"
-    uuid="5ee464d6-0613-4331-b154-7ce12170ef9f"
+    uuid="4b252567-5d4e-4db8-b3c8-569ec1c9236c"
     wsmap="struct"
     >
     <desc>
@@ -13073,6 +13131,10 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
     <attribute name="discard" type="boolean" readonly="yes">
       <desc>Whether the associated medium supports discarding unused blocks.</desc>
+    </attribute>
+
+    <attribute name="hotPluggable" type="boolean" readonly="yes">
+      <desc>Whether this attachment is hot pluggable or not.</desc>
     </attribute>
 
     <attribute name="bandwidthGroup" type="IBandwidthGroup" readonly="yes">
@@ -19577,7 +19639,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
   -->
   <enum
     name="VBoxEventType"
-    uuid="e40cbdc9-ef63-4407-9b7b-2d1201a39bd1"
+    uuid="5248e377-e578-47d7-b07b-84b1db6db8a8"
     >
 
     <desc>
@@ -19951,8 +20013,14 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         See <link to="IGuestMouseEvent">IGuestMouseEvent</link>.
       </desc>
     </const>
+    <const name="OnHostNameResolutionConfigurationChange" value="94">
+      <desc>
+        See <link to="IHostNameResolutionConfigurationChangeEvent">IHostNameResolutionConfigurationChangeEvent</link>.
+      </desc>
+    </const>
+    <!-- OnHostNameResolutionConfigurationChange -->
     <!-- Last event marker -->
-    <const name="Last" value="94">
+    <const name="Last" value="95">
       <desc>
         Must be last event, used for iterations and structures relying on numerical event values.
       </desc>
@@ -21887,6 +21955,13 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     <attribute name="hostPort" type="long" readonly="yes"/>
     <attribute name="guestIp" type="wstring" readonly="yes"/>
     <attribute name="guestPort" type="long" readonly="yes"/>
+  </interface>
+
+  <interface
+    name="IHostNameResolutionConfigurationChangeEvent" extends="IEvent"
+    uuid="f9b9e1cf-cb63-47a1-84fb-02c4894b89a9"
+    wsmap="managed" autogen="VBoxEvent" id="OnHostNameResolutionConfigurationChange"
+    >
   </interface>
 
   <module name="VBoxSVC" context="LocalServer">

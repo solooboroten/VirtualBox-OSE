@@ -1,4 +1,4 @@
-/* $Id: TMAllCpu.cpp 44933 2013-03-06 15:08:46Z vboxsync $ */
+/* $Id: TMAllCpu.cpp $ */
 /** @file
  * TM - Timeout Manager, CPU Time, All Contexts.
  */

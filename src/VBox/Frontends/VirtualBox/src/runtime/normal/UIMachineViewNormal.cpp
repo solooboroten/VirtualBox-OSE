@@ -1,4 +1,4 @@
-/* $Id: UIMachineViewNormal.cpp 46361 2013-06-03 13:34:22Z vboxsync $ */
+/* $Id: UIMachineViewNormal.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -79,14 +79,9 @@ bool UIMachineViewNormal::eventFilter(QObject *pWatched, QEvent *pEvent)
         {
             case QEvent::Resize:
             {
-                /* We call this on every resize as:
-                 *   * Window frame geometry can change on resize.
-                 *   * On X11 we set information here which becomes available
-                 *     asynchronously at an unknown time after window
-                 *     creation.  As long as the information is not available
-                 *     we make a best guess.
-                 */
+                /* Recalculate max guest size: */
                 setMaxGuestSize();
+                /* And resize guest to current window size: */
                 if (pEvent->spontaneous() && m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
                     QTimer::singleShot(300, this, SLOT(sltPerformGuestResize()));
                 break;
@@ -247,6 +242,13 @@ QRect UIMachineViewNormal::workingArea() const
 
 QSize UIMachineViewNormal::calculateMaxGuestSize() const
 {
+    /* 1) The calculation below is not reliable on some (X11) platforms until we
+     *    have been visible for a fraction of a second, so do the best we can
+     *    otherwise.
+     * 2) We also get called early before "machineWindow" has been fully
+     *    initialised, at which time we can't perform the calculation. */
+    if (!isVisible())
+        return workingArea().size() * 0.95;
     /* The area taken up by the machine window on the desktop, including window
      * frame, title, menu bar and status bar. */
     QSize windowSize = machineWindow()->frameGeometry().size();
@@ -259,7 +261,7 @@ QSize UIMachineViewNormal::calculateMaxGuestSize() const
     /* To work out how big the guest display can get without the window going
      * over the maximum size we calculated above, we work out how much space
      * the other parts of the window (frame, menu bar, status bar and so on)
-     * take up and subtract that space from the maximum window size. The 
+     * take up and subtract that space from the maximum window size. The
      * central widget shouldn't be bigger than the window, but we bound it for
      * sanity (or insanity) reasons. */
     return maximumSize - (windowSize - centralWidgetSize.boundedTo(windowSize));

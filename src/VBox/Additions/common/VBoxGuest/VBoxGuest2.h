@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest2.h 41722 2012-06-14 19:49:31Z vboxsync $ */
+/* $Id: VBoxGuest2.h $ */
 /** @file
  * VBoxGuest - Guest Additions Driver, bits shared with the windows code.
  */

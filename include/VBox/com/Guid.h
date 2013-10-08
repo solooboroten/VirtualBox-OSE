@@ -1,4 +1,4 @@
-/* $Id: Guid.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: Guid.h $ */
 /** @file
  * MS COM / XPCOM Abstraction Layer - Guid class declaration.
  */
@@ -193,7 +193,7 @@ public:
             ::RTUuidClear(&mUuid);
             mGuidState = INVALID_GUID;
         }
-        else 
+        else
         {
             if (isEmpty())
             mGuidState = ZERO_GUID;

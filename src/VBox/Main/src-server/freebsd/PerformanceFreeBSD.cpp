@@ -1,4 +1,4 @@
-/* $Id: PerformanceFreeBSD.cpp 48010 2013-08-23 07:41:13Z vboxsync $ */
+/* $Id: PerformanceFreeBSD.cpp $ */
 /** @file
  * VirtualBox Performance Collector, FreeBSD Specialization.
  */

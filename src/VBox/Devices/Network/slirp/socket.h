@@ -1,4 +1,4 @@
-/* $Id: socket.h 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: socket.h $ */
 /** @file
  * NAT - socket handling (declarations/defines).
  */

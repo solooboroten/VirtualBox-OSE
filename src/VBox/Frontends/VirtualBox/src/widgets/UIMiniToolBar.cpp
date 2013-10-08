@@ -1,4 +1,4 @@
-/* $Id: UIMiniToolBar.cpp 48534 2013-09-19 14:40:56Z vboxsync $ */
+/* $Id: UIMiniToolBar.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-/* $Id: Debug.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: Debug.cpp $ */
 /** @file
  * VBox storage devices: debug helpers
  */

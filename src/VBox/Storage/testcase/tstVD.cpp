@@ -1,4 +1,4 @@
-/* $Id: tstVD.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: tstVD.cpp $ */
 /** @file
  * Simple VBox HDD container test utility.
  */

@@ -1,4 +1,4 @@
-/* $Id: DBGFCoreWrite.cpp 48445 2013-09-12 10:52:46Z vboxsync $ */
+/* $Id: DBGFCoreWrite.cpp $ */
 /** @file
  * DBGF - Debugger Facility, Guest Core Dump.
  */

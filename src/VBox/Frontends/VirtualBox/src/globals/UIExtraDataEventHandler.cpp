@@ -1,4 +1,4 @@
-/* $Id: UIExtraDataEventHandler.cpp 45374 2013-04-05 14:22:14Z vboxsync $ */
+/* $Id: UIExtraDataEventHandler.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

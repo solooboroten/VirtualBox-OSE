@@ -1,4 +1,4 @@
-; $Id: EMRCA.asm 44528 2013-02-04 14:27:54Z vboxsync $
+; $Id: EMRCA.asm $
 ;; @file
 ; EM Assembly Routines.
 ;

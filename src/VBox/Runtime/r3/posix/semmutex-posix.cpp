@@ -1,4 +1,4 @@
-/* $Id: semmutex-posix.cpp 43560 2012-10-08 08:12:25Z vboxsync $ */
+/* $Id: semmutex-posix.cpp $ */
 /** @file
  * IPRT - Mutex Semaphore, POSIX.
  */

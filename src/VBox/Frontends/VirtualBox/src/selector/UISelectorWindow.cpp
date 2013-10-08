@@ -1,4 +1,4 @@
-/* $Id: UISelectorWindow.cpp 48577 2013-09-20 10:10:18Z vboxsync $ */
+/* $Id: UISelectorWindow.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -977,15 +977,24 @@ bool UISelectorWindow::event(QEvent *pEvent)
          * that it doesn't provide this geometry in its public APIs. */
         case QEvent::Resize:
         {
-            QResizeEvent *pResizeEvent = (QResizeEvent*) pEvent;
-            if ((windowState() & (Qt::WindowMaximized | Qt::WindowMinimized | Qt::WindowFullScreen)) == 0)
+            if (isVisible() && (windowState() & (Qt::WindowMaximized | Qt::WindowMinimized | Qt::WindowFullScreen)) == 0)
+            {
+                QResizeEvent *pResizeEvent = static_cast<QResizeEvent*>(pEvent);
                 m_normalGeo.setSize(pResizeEvent->size());
+            }
             break;
         }
         case QEvent::Move:
         {
-            if ((windowState() & (Qt::WindowMaximized | Qt::WindowMinimized | Qt::WindowFullScreen)) == 0)
+            if (isVisible() && (windowState() & (Qt::WindowMaximized | Qt::WindowMinimized | Qt::WindowFullScreen)) == 0)
+            {
+#ifdef Q_WS_MAC
+                QMoveEvent *pMoveEvent = static_cast<QMoveEvent*>(pEvent);
+                m_normalGeo.moveTo(pMoveEvent->pos());
+#else /* Q_WS_MAC */
                 m_normalGeo.moveTo(geometry().x(), geometry().y());
+#endif /* !Q_WS_MAC */
+            }
             break;
         }
         case QEvent::WindowDeactivate:
@@ -1494,7 +1503,9 @@ void UISelectorWindow::loadSettings()
 
     /* Restore window position: */
     {
+        /* Loading geometry: */
         QString strWinPos = vbox.GetExtraData(GUI_LastSelectorWindowPosition);
+        LogRelFlow(("UISelectorWindow: Loading geometry settings: {%s}\n", strWinPos.toAscii().constData()));
 
         bool ok = false, max = false;
         int x = 0, y = 0, w = 0, h = 0;
@@ -1515,23 +1526,29 @@ void UISelectorWindow::loadSettings()
             && (y > 0) && (y < ar.bottom()) /* check vertical bounds */
             && (x + w > ar.left()) && (x < ar.right()) /* & horizontal bounds */)
         {
+            /* Apply loaded geometry: */
             m_normalGeo.moveTo(x, y);
             m_normalGeo.setSize(QSize(w, h).expandedTo(minimumSizeHint()).boundedTo(ar.size()));
-#if defined(Q_WS_MAC) && (QT_VERSION >= 0x040700)
+#ifdef Q_WS_MAC
             move(m_normalGeo.topLeft());
             resize(m_normalGeo.size());
-            m_normalGeo = normalGeometry();
-#else /* defined(Q_WS_MAC) && (QT_VERSION >= 0x040700) */
+#else /* Q_WS_MAC */
             setGeometry(m_normalGeo);
-#endif /* !(defined(Q_WS_MAC) && (QT_VERSION >= 0x040700)) */
+#endif /* !Q_WS_MAC */
+            LogRelFlow(("UISelectorWindow: Geometry set to: %dx%d @ %dx%d.\n",
+                        m_normalGeo.x(), m_normalGeo.y(), m_normalGeo.width(), m_normalGeo.height()));
             if (max) /* maximize if needed */
                 showMaximized();
         }
         else
         {
+            /* Apply default geometry: */
             m_normalGeo.setSize(QSize(770, 550).expandedTo(minimumSizeHint()).boundedTo(ar.size()));
             m_normalGeo.moveCenter(ar.center());
             setGeometry(m_normalGeo);
+            LogRelFlow(("UISelectorWindow: Geometry set to default because something was wrong: "
+                        "(loaded correctly = '%s', x = %d, y = %d, w = %d, h = %d)!\n",
+                        ok ? "true" : "false", x, y, w, h));
         }
     }
 
@@ -1564,12 +1581,9 @@ void UISelectorWindow::saveSettings()
 
     /* Save window position: */
     {
-#if defined(Q_WS_MAC) && (QT_VERSION >= 0x040700)
-        QRect frameGeo = frameGeometry();
-        QRect save(frameGeo.x(), frameGeo.y(), m_normalGeo.width(), m_normalGeo.height());
-#else /* defined(Q_WS_MAC) && (QT_VERSION >= 0x040700) */
         QRect save(m_normalGeo);
-#endif /* !(defined(Q_WS_MAC) && (QT_VERSION >= 0x040700)) */
+        LogRelFlow(("UISelectorWindow: Saving geometry as %dx%d @ %dx%d.\n",
+                    save.x(), save.y(), save.width(), save.height()));
         QString strWinPos = QString("%1,%2,%3,%4").arg(save.x()).arg(save.y()).arg(save.width()).arg(save.height());
 #ifdef Q_WS_MAC
         UIWindowMenuManager::destroy();

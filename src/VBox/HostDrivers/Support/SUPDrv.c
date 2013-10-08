@@ -1,4 +1,4 @@
-/* $Id: SUPDrv.c 48328 2013-09-05 22:20:18Z vboxsync $ */
+/* $Id: SUPDrv.c $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Common code.
  */

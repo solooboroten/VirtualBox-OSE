@@ -1,4 +1,4 @@
-; $Id: VBoxHlp.asm 44529 2013-02-04 15:54:15Z vboxsync $
+; $Id: VBoxHlp.asm $
 ;; @file
 ;
 ; VBox frontends: Qt GUI ("VirtualBox"):

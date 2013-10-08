@@ -1,4 +1,4 @@
-/* $Id: RTPathIsSame-generic.cpp 46254 2013-05-24 10:21:44Z vboxsync $ */
+/* $Id: RTPathIsSame-generic.cpp $ */
 /** @file
  * IPRT - Assertions, generic RTPathIsSame.
  */
@@ -90,7 +90,4 @@ RTDECL(int) RTPathIsSame(const char *pszPath1, const char *pszPath2)
     return false;
 }
 RT_EXPORT_SYMBOL(RTPathIsSame);
-
-
-
 

@@ -1,4 +1,4 @@
-; $Id: VBoxMP.def 36867 2011-04-28 07:27:03Z vboxsync $
+; $Id: VBoxMP.def $
 ; @file
 ;
 ; VBox Windows Guest Additions XPDM Miniport Video Driver

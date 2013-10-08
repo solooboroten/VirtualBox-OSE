@@ -1,4 +1,4 @@
-/* $Id: PerformanceWin.cpp 46593 2013-06-17 14:32:51Z vboxsync $ */
+/* $Id: PerformanceWin.cpp $ */
 
 /** @file
  *

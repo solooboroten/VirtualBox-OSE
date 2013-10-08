@@ -1,4 +1,4 @@
-/* $Id: RTPathParsedReassemble.cpp 46049 2013-05-14 07:56:54Z vboxsync $ */
+/* $Id: RTPathParsedReassemble.cpp $ */
 /** @file
  * IPRT - RTPathParsedReassemble.
  */

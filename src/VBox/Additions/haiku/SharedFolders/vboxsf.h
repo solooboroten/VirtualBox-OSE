@@ -1,4 +1,4 @@
-/* $Id: vboxsf.h 43404 2012-09-22 12:09:45Z vboxsync $ */
+/* $Id: vboxsf.h $ */
 /** @file
  * Shared folders - Haiku Guest Additions, header.
  */

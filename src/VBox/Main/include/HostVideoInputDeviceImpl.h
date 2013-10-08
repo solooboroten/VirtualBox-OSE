@@ -1,4 +1,4 @@
-/* $Id: HostVideoInputDeviceImpl.h 48607 2013-09-20 15:47:37Z vboxsync $ */
+/* $Id: HostVideoInputDeviceImpl.h $ */
 
 /** @file
  *
@@ -55,8 +55,8 @@ private:
     struct Data
     {
         Data()
-	{
-	}
+        {
+        }
 
         com::Utf8Str name;
         com::Utf8Str path;

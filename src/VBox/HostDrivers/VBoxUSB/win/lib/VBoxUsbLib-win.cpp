@@ -1,4 +1,4 @@
-/* $Id: VBoxUsbLib-win.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: VBoxUsbLib-win.cpp $ */
 /** @file
  * VBox USB ring-3 Driver Interface library, Windows.
  */

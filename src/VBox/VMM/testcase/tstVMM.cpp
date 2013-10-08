@@ -1,4 +1,4 @@
-/* $Id: tstVMM.cpp 46915 2013-07-02 17:21:32Z vboxsync $ */
+/* $Id: tstVMM.cpp $ */
 /** @file
  * VMM Testcase.
  */
@@ -241,7 +241,7 @@ int main(int argc, char **argv)
                 return 1;
 
             case 'V':
-                RTPrintf("$Revision: 46915 $\n");
+                RTPrintf("$Revision: 86910 $\n");
                 return 0;
 
             default:

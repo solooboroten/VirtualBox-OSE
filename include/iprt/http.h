@@ -1,4 +1,4 @@
-/* $Id: http.h 46070 2013-05-14 15:21:57Z vboxsync $ */
+/* $Id: http.h $ */
 /** @file
  * IPRT - Simple HTTP Communication API.
  */

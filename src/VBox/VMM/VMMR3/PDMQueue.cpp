@@ -1,4 +1,4 @@
-/* $Id: PDMQueue.cpp 46493 2013-06-11 13:34:40Z vboxsync $ */
+/* $Id: PDMQueue.cpp $ */
 /** @file
  * PDM Queue - Transport data and tasks to EMT and R3.
  */

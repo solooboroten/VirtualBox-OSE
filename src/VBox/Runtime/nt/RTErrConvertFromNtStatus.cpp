@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromNtStatus.cpp 47535 2013-08-05 01:54:25Z vboxsync $ */
+/* $Id: RTErrConvertFromNtStatus.cpp $ */
 /** @file
  * IPRT - Convert NT status codes to iprt status codes.
  */

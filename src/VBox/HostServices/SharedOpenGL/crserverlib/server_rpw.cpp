@@ -1,4 +1,4 @@
-/* $Id: server_rpw.cpp 46343 2013-05-31 13:27:10Z vboxsync $ */
+/* $Id: server_rpw.cpp $ */
 
 /** @file
  * VBox crOpenGL: Read Pixels worker

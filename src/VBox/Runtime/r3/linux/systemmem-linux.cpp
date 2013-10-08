@@ -1,4 +1,4 @@
-/* $Id: systemmem-linux.cpp 46324 2013-05-30 12:03:16Z vboxsync $ */
+/* $Id: systemmem-linux.cpp $ */
 /** @file
  * IPRT - RTSystemQueryTotalRam, Linux ring-3.
  */

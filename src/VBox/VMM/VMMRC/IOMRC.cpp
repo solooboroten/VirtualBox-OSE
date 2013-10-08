@@ -1,4 +1,4 @@
-/* $Id: IOMRC.cpp 45305 2013-04-03 11:15:02Z vboxsync $ */
+/* $Id: IOMRC.cpp $ */
 /** @file
  * IOM - Input / Output Monitor - Raw-Mode Context.
  */

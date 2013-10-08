@@ -1,4 +1,4 @@
-/* $Id: UIUpdateDefs.cpp 41143 2012-05-03 16:00:11Z vboxsync $ */
+/* $Id: UIUpdateDefs.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

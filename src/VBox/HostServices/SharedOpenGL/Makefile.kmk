@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 46343 2013-05-31 13:27:10Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the Shared OpenGL Host Service.
 #

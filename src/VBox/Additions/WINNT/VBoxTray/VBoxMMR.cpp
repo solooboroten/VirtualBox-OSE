@@ -1,4 +1,4 @@
-/* $Id: VBoxMMR.cpp 47231 2013-07-18 11:57:16Z vboxsync $ */
+/* $Id: VBoxMMR.cpp $ */
 /** @file
  * VBoxMMR - Multimedia Redirection
  */

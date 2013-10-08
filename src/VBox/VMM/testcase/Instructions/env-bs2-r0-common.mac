@@ -1,4 +1,4 @@
-; $Id: env-bs2-r0-common.mac 47132 2013-07-14 00:06:54Z vboxsync $
+; $Id: env-bs2-r0-common.mac $
 ;; @file
 ; Instruction Test Environment - Boot Sector Type 2, Ring-0.
 ;

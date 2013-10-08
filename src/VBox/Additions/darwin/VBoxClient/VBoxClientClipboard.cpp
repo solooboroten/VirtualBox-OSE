@@ -1,4 +1,4 @@
-/** $Id: VBoxClientClipboard.cpp 48251 2013-09-03 19:21:11Z vboxsync $ */
+/** $Id: VBoxClientClipboard.cpp $ */
 /** @file
  * VBoxClient - Shared Slipboard Dispatcher, Darwin.
  */

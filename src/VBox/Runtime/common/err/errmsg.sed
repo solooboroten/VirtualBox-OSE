@@ -1,4 +1,4 @@
-# $Id: errmsg.sed 47443 2013-07-28 16:58:01Z vboxsync $
+# $Id: errmsg.sed $
 ## @file
 # IPRT - SED script for converting */err.h.
 #

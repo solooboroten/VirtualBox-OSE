@@ -1,4 +1,4 @@
-/* $Id: UIGlobalSettingsLanguage.cpp 47137 2013-07-14 17:27:50Z vboxsync $ */
+/* $Id: UIGlobalSettingsLanguage.cpp $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

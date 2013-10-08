@@ -112,12 +112,17 @@ def_uninstall()
 
     . ./deffiles
     found=0
+    for i in "/opt/$PACKAGE-"*; do
+        test -e "$i" && found=1
+    done
     for i in $DEFAULT_FILE_NAMES; do
-        test "$found" = 0 -a -e "$i" && found=1
+        test "$found" = 0 && test -e "$i" && found=1
     done
     test "$found" = 0 &&
-        for i in $DEFAULT_VERSIONED_FILE_NAMES-*; do
-            test "$found" = 0 -a -e "$i" && found=1
+        for i in $DEFAULT_VERSIONED_FILE_NAMES; do
+            for j in $i-*; do
+                test "$found" = 0 && test -e "$j" && found=1
+            done
         done
     test "$found" = 0 && return 0
     if ! test "$1" = "force" ; then
@@ -309,7 +314,7 @@ if [ -d installer ]; then
           info "Error: Failed to copy installer module \"$CUR_FILE\""
           if ! test "$FORCE_UPGRADE" = "force"; then
               exit 1
-          fi        
+          fi
       fi
   done
 fi
@@ -357,7 +362,7 @@ do
         info "Error: Failed to install module \"$CUR_MODULE\""
         if ! test "$FORCE_UPGRADE" = "force"; then
             exit 1
-        fi        
+        fi
     fi
 done
 

@@ -1,4 +1,4 @@
-/* $Id: UIDownloader.cpp 43707 2012-10-22 16:41:04Z vboxsync $ */
+/* $Id: UIDownloader.cpp $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

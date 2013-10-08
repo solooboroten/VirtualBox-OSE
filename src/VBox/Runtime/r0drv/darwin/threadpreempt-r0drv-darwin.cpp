@@ -1,4 +1,4 @@
-/* $Id: threadpreempt-r0drv-darwin.cpp 47639 2013-08-09 13:20:39Z vboxsync $ */
+/* $Id: threadpreempt-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - Thread Preemption, Ring-0 Driver, Darwin.
  */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 48444 2013-09-12 09:54:33Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the vboxvideo DRM module (linux kernel OpenGL module).
 #

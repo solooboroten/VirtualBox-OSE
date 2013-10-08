@@ -1,4 +1,4 @@
-/* $Id: floppyt.c 48072 2013-08-26 19:49:08Z vboxsync $ */
+/* $Id: floppyt.c $ */
 /** @file
  * Floppy drive tables.
  */

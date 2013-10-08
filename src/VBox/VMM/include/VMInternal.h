@@ -1,4 +1,4 @@
-/* $Id: VMInternal.h 48528 2013-09-18 20:39:01Z vboxsync $ */
+/* $Id: VMInternal.h $ */
 /** @file
  * VM - Internal header file.
  */

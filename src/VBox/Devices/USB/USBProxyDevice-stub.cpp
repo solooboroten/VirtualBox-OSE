@@ -1,4 +1,4 @@
-/* $Id: USBProxyDevice-stub.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: USBProxyDevice-stub.cpp $ */
 /** @file
  * USB device proxy - Stub.
  */

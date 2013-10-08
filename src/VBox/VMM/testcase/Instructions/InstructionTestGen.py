@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# $Id: InstructionTestGen.py 48346 2013-09-06 09:50:19Z vboxsync $
+# $Id: InstructionTestGen.py $
 
 """
 Instruction Test Generator.
@@ -20,7 +20,7 @@ Foundation, in version 2 as it comes in the "COPYING" file of the
 VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 """
-__version__ = "$Revision: 48346 $";
+__version__ = "$Revision: 88774 $";
 
 
 # pylint: disable=C0103,R0913
@@ -1575,7 +1575,7 @@ class InstructionTestGen(object): # pylint: disable=R0902
         Writes the file header.
         Raises exception on trouble.
         """
-        self.write('; $Id: InstructionTestGen.py 48346 2013-09-06 09:50:19Z vboxsync $\n'
+        self.write('; $Id: InstructionTestGen.py $\n'
                    ';; @file %s\n'
                    '; Autogenerate by %s %s. DO NOT EDIT\n'
                    ';\n'

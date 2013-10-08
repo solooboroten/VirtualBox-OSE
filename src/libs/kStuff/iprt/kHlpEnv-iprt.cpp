@@ -1,4 +1,4 @@
-/* $Id: kHlpEnv-iprt.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: kHlpEnv-iprt.cpp $ */
 /** @file
  * kHlpEnv - Environment Manipulation, IPRT based implementation.
  */

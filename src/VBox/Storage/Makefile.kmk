@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 47345 2013-07-23 15:29:30Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the Storage library.
 #

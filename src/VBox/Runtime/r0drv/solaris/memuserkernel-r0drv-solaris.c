@@ -1,4 +1,4 @@
-/* $Id: memuserkernel-r0drv-solaris.c 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: memuserkernel-r0drv-solaris.c $ */
 /** @file
  * IPRT - User & Kernel Memory, Ring-0 Driver, Solaris.
  */

@@ -1,4 +1,4 @@
-/* $Id: EmulatedUSBImpl.h 48406 2013-09-10 12:53:50Z vboxsync $ */
+/* $Id: EmulatedUSBImpl.h $ */
 
 /** @file
  *
@@ -41,7 +41,16 @@ public:
     HRESULT init(ComObjPtr<Console> pConsole);
     void uninit();
 
+    /* Public method for internal use. */
+    static DECLCALLBACK(int) eusbCallback(void *pv, const char *pszId, uint32_t iEvent,
+                                          const void *pvData, uint32_t cbData);
+
 private:
+
+    static DECLCALLBACK(int) eusbCallbackEMT(EmulatedUSB *pThis, char *pszId, uint32_t iEvent,
+                                             void *pvData, uint32_t cbData);
+
+    HRESULT webcamPathFromId(com::Utf8Str *pPath, const char *pszId);
 
     // wrapped IEmulatedUSB properties
     virtual HRESULT getWebcams(std::vector<com::Utf8Str> &aWebcams);
@@ -55,8 +64,8 @@ private:
     struct Data
     {
         Data()
-	{
-	}
+        {
+        }
 
         ComObjPtr<Console> pConsole;
         WebcamsMap webcams;

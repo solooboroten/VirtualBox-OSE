@@ -1,4 +1,4 @@
-/* $Id: VBoxSCSI.h 44597 2013-02-08 11:06:22Z vboxsync $ */
+/* $Id: VBoxSCSI.h $ */
 /** @file
  * VBox storage devices - Simple SCSI interface for BIOS access.
  */

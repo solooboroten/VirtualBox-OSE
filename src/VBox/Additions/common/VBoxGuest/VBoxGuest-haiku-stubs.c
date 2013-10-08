@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-haiku-stubs.c 43411 2012-09-22 18:42:16Z vboxsync $ */
+/* $Id: VBoxGuest-haiku-stubs.c $ */
 /** @file
  * VBoxGuest kernel module, Haiku Guest Additions, stubs.
  */

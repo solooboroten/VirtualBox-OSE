@@ -1,4 +1,4 @@
-/* $Revision: 48225 $ */
+/* $Revision: 88618 $ */
 /** @file tstXPCOMCEvent.c
  * Demonstrator program to illustrate use of C bindings of Main API,
  * and in particular how to handle active event listeners (event delivery

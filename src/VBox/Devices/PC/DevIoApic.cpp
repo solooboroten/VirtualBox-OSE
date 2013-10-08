@@ -1,4 +1,4 @@
-/* $Id: DevIoApic.cpp 45025 2013-03-13 16:45:15Z vboxsync $ */
+/* $Id: DevIoApic.cpp $ */
 /** @file
  * I/O Advanced Programmable Interrupt Controller (IO-APIC) Device.
  */

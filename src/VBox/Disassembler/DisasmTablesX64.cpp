@@ -1,4 +1,4 @@
-/* $Id: DisasmTablesX64.cpp 46949 2013-07-03 19:22:34Z vboxsync $ */
+/* $Id: DisasmTablesX64.cpp $ */
 /** @file
  * VBox disassembler - Tables for AMD64 (64-bit mode).
  */

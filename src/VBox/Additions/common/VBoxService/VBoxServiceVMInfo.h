@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceVMInfo.h 47973 2013-08-21 14:25:52Z vboxsync $ */
+/* $Id: VBoxServiceVMInfo.h $ */
 /** @file
  * VBoxServiceVMInfo.h - Internal VM info definitions.
  */

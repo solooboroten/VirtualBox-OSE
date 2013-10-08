@@ -1,4 +1,4 @@
-/* $Id: VBoxDispCm.cpp 45403 2013-04-08 13:00:36Z vboxsync $ */
+/* $Id: VBoxDispCm.cpp $ */
 
 /** @file
  * VBoxVideo Display D3D User mode dll

@@ -1,4 +1,4 @@
-/* $Id: aiomgr.cpp 46246 2013-05-23 19:15:44Z vboxsync $ */
+/* $Id: aiomgr.cpp $ */
 /** @file
  * IPRT - Async I/O manager.
  */

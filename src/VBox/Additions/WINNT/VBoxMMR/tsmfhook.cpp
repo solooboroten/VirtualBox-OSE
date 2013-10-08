@@ -1,4 +1,4 @@
-/* $Id: tsmfhook.cpp 46593 2013-06-17 14:32:51Z vboxsync $ */
+/* $Id: tsmfhook.cpp $ */
 /** @file
  * VBoxMMR - Multimedia Redirection
  */

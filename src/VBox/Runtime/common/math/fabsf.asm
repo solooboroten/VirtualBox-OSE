@@ -1,4 +1,4 @@
-; $Id: fabsf.asm 46548 2013-06-14 09:42:21Z vboxsync $
+; $Id: fabsf.asm $
 ;; @file
 ; IPRT - No-CRT fabsf - AMD64 & X86.
 ;

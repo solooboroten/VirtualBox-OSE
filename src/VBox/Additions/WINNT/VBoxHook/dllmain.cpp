@@ -1,4 +1,4 @@
-/* $Id: dllmain.cpp 46182 2013-05-21 00:04:48Z vboxsync $ */
+/* $Id: dllmain.cpp $ */
 /** @file
  * VBoxHook -- Global windows hook dll
  */

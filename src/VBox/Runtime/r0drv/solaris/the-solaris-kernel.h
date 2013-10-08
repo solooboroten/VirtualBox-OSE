@@ -1,4 +1,4 @@
-/* $Id: the-solaris-kernel.h 47302 2013-07-22 14:18:41Z vboxsync $ */
+/* $Id: the-solaris-kernel.h $ */
 /** @file
  * IPRT - Include all necessary headers for the Solaris kernel.
  */

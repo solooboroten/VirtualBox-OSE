@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-win.cpp 44528 2013-02-04 14:27:54Z vboxsync $ */
+/* $Id: rtProcInitExePath-win.cpp $ */
 /** @file
  * IPRT - rtProcInitName, Windows.
  */

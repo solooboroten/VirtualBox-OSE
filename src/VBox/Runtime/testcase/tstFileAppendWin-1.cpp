@@ -1,4 +1,4 @@
-/* $Id: tstFileAppendWin-1.cpp 44529 2013-02-04 15:54:15Z vboxsync $ */
+/* $Id: tstFileAppendWin-1.cpp $ */
 /** @file
  * IPRT Testcase - Exploration of File Appending on Windows.
  */
