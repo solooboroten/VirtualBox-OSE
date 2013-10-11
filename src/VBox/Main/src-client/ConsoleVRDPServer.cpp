@@ -1042,19 +1042,6 @@ DECLCALLBACK(bool) ConsoleVRDPServer::VRDPCallbackFramebufferQuery(void *pvCallb
     LONG xOrigin = 0;
     LONG yOrigin = 0;
 
-#ifdef VBOX_DEBUG_VRDP_HANG
-    LogRel(("machine state %d\n", server->mConsole->getMachineState()));
-    if (!(   server->mConsole->getMachineState() == MachineState_Running
-          || server->mConsole->getMachineState() == MachineState_Teleporting
-          || server->mConsole->getMachineState() == MachineState_LiveSnapshotting)
-       )
-    {
-        /* Hack to avoid a possible hang in pfb->Lock later. */
-        LogRel(("VM is not running.\n"));
-        return false;
-    }
-#endif
-
     server->mConsole->getDisplay()->GetFramebuffer(uScreenId, &pfb, &xOrigin, &yOrigin);
 
     if (pfb)
@@ -1337,6 +1324,8 @@ ConsoleVRDPServer::ConsoleVRDPServer(Console *console)
     mhServer = 0;
     mServerInterfaceVersion = 0;
 
+    mcInResize = 0;
+
     m_fGuestWantsAbsolute = false;
     m_mousex = 0;
     m_mousey = 0;
@@ -1416,10 +1405,6 @@ ConsoleVRDPServer::~ConsoleVRDPServer()
 int ConsoleVRDPServer::Launch(void)
 {
     LogFlowThisFunc(("\n"));
-
-#ifdef VBOX_DEBUG_VRDP_HANG
-    LogRel(("Launching VRDP server\n"));
-#endif
 
     IVRDEServer *server = mConsole->getVRDEServer();
     AssertReturn(server, VERR_INTERNAL_ERROR_2);
@@ -1635,10 +1620,6 @@ int ConsoleVRDPServer::Launch(void)
             }
         }
     }
-
-#ifdef VBOX_DEBUG_VRDP_HANG
-    LogRel(("Launching VRDP server %p %Rrc\n", mhServer, vrc));
-#endif
 
     return vrc;
 }
@@ -2053,9 +2034,6 @@ int ConsoleVRDPServer::SCardRequest(void *pvUser, uint32_t u32Function, const vo
 
 void ConsoleVRDPServer::EnableConnections(void)
 {
-#ifdef VBOX_DEBUG_VRDP_HANG
-    LogRel(("EnableConnections %p\n", mhServer));
-#endif
     if (mpEntryPoints && mhServer)
     {
         mpEntryPoints->VRDEEnableConnections(mhServer, true);
@@ -2093,9 +2071,6 @@ void ConsoleVRDPServer::Stop(void)
 {
     Assert(VALID_PTR(this)); /** @todo r=bird: there are(/was) some odd cases where this buster was invalid on
                               * linux. Just remove this when it's 100% sure that problem has been fixed. */
-#ifdef VBOX_DEBUG_VRDP_HANG
-    LogRel(("Stopping VRDP server %p\n", mhServer));
-#endif
 
     if (mhServer)
     {
@@ -2103,6 +2078,23 @@ void ConsoleVRDPServer::Stop(void)
 
         /* Reset the handle to avoid further calls to the server. */
         mhServer = 0;
+
+        /* Workaround for VM process hangs on termination.
+         *
+         * Make sure that the server is not currently processing a resize.
+         * mhServer 0 will not allow to enter the server again.
+         * Wait until any current resize returns from the server.
+         */
+        if (mcInResize)
+        {
+            LogRel(("VRDP: waiting for resize %d\n", mcInResize));
+
+            int i = 0;
+            while (mcInResize && ++i < 100)
+            {
+                RTThreadSleep(10);
+            }
+        }
 
         if (mpEntryPoints && hServer)
         {
@@ -2123,9 +2115,6 @@ void ConsoleVRDPServer::Stop(void)
         RTLdrClose(mAuthLibrary);
         mAuthLibrary = 0;
     }
-#ifdef VBOX_DEBUG_VRDP_HANG
-    LogRel(("Stopped VRDP server\n"));
-#endif
 }
 
 /* Worker thread for Remote USB. The thread polls the clients for
@@ -2839,11 +2828,13 @@ void ConsoleVRDPServer::SendUpdate(unsigned uScreenId, void *pvUpdate, uint32_t 
     }
 }
 
-void ConsoleVRDPServer::SendResize(void) const
+void ConsoleVRDPServer::SendResize(void)
 {
     if (mpEntryPoints && mhServer)
     {
+        ++mcInResize;
         mpEntryPoints->VRDEResize(mhServer);
+        --mcInResize;
     }
 }
 

@@ -5113,8 +5113,7 @@ HRESULT Machine::getGuestPropertyFromService(IN_BSTR aName,
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
     Utf8Str strName(aName);
-    HWData::GuestPropertyMap::const_iterator it =
-        mHWData->mGuestProperties.find(strName);
+    HWData::GuestPropertyMap::const_iterator it = mHWData->mGuestProperties.find(strName);
 
     if (it != mHWData->mGuestProperties.end())
     {
@@ -5205,8 +5204,6 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
     HRESULT rc = S_OK;
-    HWData::GuestProperty property;
-    property.mFlags = NILFLAG;
 
     rc = checkStateDependency(MutableStateDep);
     if (FAILED(rc)) return rc;
@@ -5216,28 +5213,28 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
         Utf8Str utf8Name(aName);
         Utf8Str utf8Flags(aFlags);
         uint32_t fFlags = NILFLAG;
-        if (   (aFlags != NULL)
-            && RT_FAILURE(validateFlags(utf8Flags.c_str(), &fFlags))
-           )
+        if (   aFlags != NULL
+            && RT_FAILURE(validateFlags(utf8Flags.c_str(), &fFlags)))
             return setError(E_INVALIDARG,
                             tr("Invalid guest property flag values: '%ls'"),
                             aFlags);
 
-        HWData::GuestPropertyMap::iterator it =
-            mHWData->mGuestProperties.find(utf8Name);
-
+        bool fDelete = !RT_VALID_PTR(aValue) || *(aValue) == '\0';
+        HWData::GuestPropertyMap::iterator it = mHWData->mGuestProperties.find(utf8Name);
         if (it == mHWData->mGuestProperties.end())
         {
-            setModified(IsModified_MachineData);
-            mHWData.backup();
+            if (!fDelete)
+            {
+                setModified(IsModified_MachineData);
+                mHWData.backup();
 
-            RTTIMESPEC time;
-            HWData::GuestProperty prop;
-            prop.strValue = aValue;
-            prop.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
-            prop.mFlags = fFlags;
-
-            mHWData->mGuestProperties[Utf8Str(aName)] = prop;
+                RTTIMESPEC time;
+                HWData::GuestProperty prop;
+                prop.strValue   = aValue;
+                prop.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
+                prop.mFlags     = fFlags;
+                mHWData->mGuestProperties[Utf8Str(aName)] = prop;
+            }
         }
         else
         {
@@ -5257,18 +5254,15 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
                 it = mHWData->mGuestProperties.find(utf8Name);
                 Assert(it != mHWData->mGuestProperties.end());
 
-                if (RT_VALID_PTR(aValue) && *(aValue) != '\0')
+                if (!fDelete)
                 {
                     RTTIMESPEC time;
-                    it->second.strValue = aValue;
+                    it->second.strValue   = aValue;
                     it->second.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
-                    if (aFlags != NULL)
-                        it->second.mFlags = fFlags;
+                    it->second.mFlags     = fFlags;
                 }
                 else
-                {
                     mHWData->mGuestProperties.erase(it);
-                }
             }
         }
 
@@ -11816,7 +11810,8 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
                                                LONG64 aTimestamp,
                                                IN_BSTR aFlags)
 {
-    LogFlowThisFunc(("\n"));
+    LogFlow(("aName=%ls, aValue=%ls, aTimestamp=%RI64, aFlags=%ls\n",
+             aName, aValue, aTimestamp, aFlags));
 
 #ifdef VBOX_WITH_GUEST_PROPS
     using namespace guestProp;
@@ -11830,13 +11825,14 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
         /*
          * Convert input up front.
          */
-        Utf8Str     utf8Name(aName);
-        uint32_t    fFlags = NILFLAG;
+        Utf8Str  utf8Name(aName);
+        uint32_t fFlags = NILFLAG;
         if (aFlags)
         {
             Utf8Str utf8Flags(aFlags);
             int vrc = validateFlags(utf8Flags.c_str(), &fFlags);
-            AssertRCReturn(vrc, E_INVALIDARG);
+            if (RT_FAILURE(vrc))
+                return E_INVALIDARG;
         }
 
         /*
@@ -11846,6 +11842,11 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
         if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
         AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+        LogFlow(("notificationPatterns=%s, machineState=%s\n",
+                  mHWData->mGuestPropertyNotificationPatterns.isEmpty()
+                  ? "<None>" : mHWData->mGuestPropertyNotificationPatterns.c_str(),
+                  Global::stringifyMachineState(mData->mMachineState)));
 
         switch (mData->mMachineState)
         {
@@ -11871,18 +11872,29 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
         setModified(IsModified_MachineData);
         mHWData.backup();
 
+        bool fDelete = !RT_VALID_PTR(aValue) || *(aValue) == '\0';
         HWData::GuestPropertyMap::iterator it = mHWData->mGuestProperties.find(utf8Name);
         if (it != mHWData->mGuestProperties.end())
         {
-            if (RT_VALID_PTR(aValue) && *(aValue) != '\0')
+            if (!fDelete)
             {
                 it->second.strValue   = aValue;
-                it->second.mFlags     = fFlags;
                 it->second.mTimestamp = aTimestamp;
+                it->second.mFlags     = fFlags;
             }
             else
                 mHWData->mGuestProperties.erase(it);
 
+            mData->mGuestPropertiesModified = TRUE;
+        }
+        else if (!fDelete)
+        {
+            HWData::GuestProperty prop;
+            prop.strValue   = aValue;
+            prop.mTimestamp = aTimestamp;
+            prop.mFlags     = fFlags;
+
+            mHWData->mGuestProperties[utf8Name] = prop;
             mData->mGuestPropertiesModified = TRUE;
         }
 

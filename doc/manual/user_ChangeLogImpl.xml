@@ -1,6 +1,101 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.1.28 (2013-10-11)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: properly handle NMIs on Linux hosts with X2APIC
+          enabled</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed a crash on shut-down</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: prevent crashes under certain conditions on X11 hosts</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed a rare crash on the guest screen resize</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed lost writes if iSCSI is used with snapshots and ansyc I/O
+          (bug #11479)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang when creating a snapshot using Parallels
+          disk images (bug #9617)</para>
+      </listitem>
+
+      <listitem>
+        <para>USB: fixed hang during isochronous transfer with certain
+          devices (4.1 regression; Windows hosts only; bug #11839)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Properties: don't create a guest property for non-running
+          VMs if the property does not exist and is about to be removed
+          (bug #11765)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/Properties: don't forget to make new guest properties
+          persistent after the VM was terminated (bug #11719)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/OVF: don't crash during import if the client forgot to call
+          <emphasis>Appliance::interpret()</emphasis> (bug #10845)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxSVC: don't crash on systems with many VLAN interfaces</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X installer: keep previously instlled Extension Packs on
+          VirtualBox upgrade</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: Linux 3.12 compile fix (bug #12083)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: Linux 3.11 fixes (bugs #11946, 12001)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows hosts: fixed an issue with USB2 devices being inaccessible
+          when plugged into USB3 ports</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed compilation against Linux 3.2.0 Ubuntu
+          kernels (4.1.26 regression as a result of the Debian kernel build fix)</para>
+      </listitem>
+
+       <listitem>
+         <para>Linux Additions: fixed udev detection in the init script
+           with Linux 3.x kernels</para>
+       </listitem>
+
+      <listitem>
+        <para>X11 Additions: support X.Org Server 1.14 (bug #11609)</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.1.26 (2013-04-12)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -228,9 +323,9 @@
         <para>Windows Additions: fixed auto-logon installation for
           Windows 8</para>
       </listitem>
-      
+
       <listitem>
-        <para>Windows Additions: fixed Guest Additions startup on Windows 2000 
+        <para>Windows Additions: fixed Guest Additions startup on Windows 2000
           guests</para>
       </listitem>
 

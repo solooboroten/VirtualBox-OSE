@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2012 Oracle Corporation
+ * Copyright (C) 2012-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -20,6 +20,7 @@
 *******************************************************************************/
 #include <windows.h>
 #include <initguid.h>
+#include <new> /* For bad_alloc. */
 
 #include <iprt/buildconfig.h>
 #include <iprt/initterm.h>
@@ -140,15 +141,19 @@ HRESULT VBoxCredentialProviderCreate(REFCLSID classID, REFIID interfaceID,
     HRESULT hr;
     if (classID == CLSID_VBoxCredProvider)
     {
-        VBoxCredProvFactory* pFactory = new VBoxCredProvFactory();
-        if (pFactory)
+        try
         {
+        VBoxCredProvFactory* pFactory = new VBoxCredProvFactory();
+            AssertPtr(pFactory);
             hr = pFactory->QueryInterface(interfaceID,
                                           ppvInterface);
             pFactory->Release();
         }
-        else
+        catch (std::bad_alloc &ex)
+        {
+            NOREF(ex);
             hr = E_OUTOFMEMORY;
+    }
     }
     else
         hr = CLASS_E_CLASSNOTAVAILABLE;

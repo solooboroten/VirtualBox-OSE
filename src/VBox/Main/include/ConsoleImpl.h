@@ -225,9 +225,6 @@ public:
 #ifdef VBOX_WITH_USB_CARDREADER
     UsbCardReader *getUsbCardReader() { return mUsbCardReader; }
 #endif
-#ifdef VBOX_DEBUG_VRDP_HANG
-    MachineState_T getMachineState() { return mMachineState; }
-#endif
 
     int VRDPClientLogon(uint32_t u32ClientId, const char *pszUser, const char *pszPassword, const char *pszDomain);
     void VRDPClientStatusChange(uint32_t u32ClientId, const char *pszStatus);

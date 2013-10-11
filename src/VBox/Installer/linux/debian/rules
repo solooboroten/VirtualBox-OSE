@@ -370,7 +370,7 @@ endif
 ifeq ($(DEBUG),)
 	mv $(current)/debian/$(verpkg)/usr/lib/debug $(current)/debian/$(verpkg)-dbg/usr/lib
 endif
-	dh_pycentral
+	$(if $(filter _Debian_lenny _Ubuntu_hardy _Ubuntu_karmic _Ubuntu_lucid,$(debrel)),dh_pycentral,dh_python2)
 	dh_compress -X.pdf -X.chm -X LICENSE -X.py
 	dh_fixperms
 	dh_makeshlibs

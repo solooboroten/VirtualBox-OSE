@@ -2831,7 +2831,8 @@ void Appliance::importMachines(ImportStack &stack,
     size_t i = 0;
     for (it = reader.m_llVirtualSystems.begin(),
          it1 = m->virtualSystemDescriptions.begin();
-         it != reader.m_llVirtualSystems.end();
+         it != reader.m_llVirtualSystems.end(),
+         it1 != m->virtualSystemDescriptions.end();
          ++it, ++it1, ++i)
     {
         const ovf::VirtualSystem &vsysThis = *it;
