@@ -1,10 +1,10 @@
-/* $Id: RTStrCopyEx.cpp $ */
+/* $Id: init.h $ */
 /** @file
- * IPRT - RTStrCopyEx.
+ * IPRT - Ring-3 initialization.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,30 +25,33 @@
  */
 
 
-/*******************************************************************************
-*   Header Files                                                               *
-*******************************************************************************/
-#include <iprt/string.h>
-#include "internal/iprt.h"
+#ifndef ___r3_init_h
+#define ___r3_init_h
 
+#include <iprt/types.h>
 
-RTDECL(int) RTStrCopyEx(char *pszDst, size_t cbDst, const char *pszSrc, size_t cchMaxSrc)
+DECLHIDDEN(int)  rtR3InitNativeFirst(uint32_t fFlags);
+DECLHIDDEN(int)  rtR3InitNativeFinal(uint32_t fFlags);
+
+#ifdef RT_OS_WINDOWS
+/*
+ * Windows specific stuff.
+ */
+typedef enum RTR3WINLDRPROT
 {
-    const char *pszSrcEol = RTStrEnd(pszSrc, cchMaxSrc);
-    size_t      cchSrc    = pszSrcEol ? (size_t)(pszSrcEol - pszSrc) : cchMaxSrc;
-    if (RT_LIKELY(cchSrc < cbDst))
-    {
-        memcpy(pszDst, pszSrc, cchSrc);
-        pszDst[cchSrc] = '\0';
-        return VINF_SUCCESS;
-    }
+    RTR3WINLDRPROT_INVALID = 0,
+    RTR3WINLDRPROT_NONE,
+    RTR3WINLDRPROT_NO_CWD,
+    RTR3WINLDRPROT_SAFE
+} RTR3WINLDRPROT;
 
-    if (cbDst != 0)
-    {
-        memcpy(pszDst, pszSrc, cbDst - 1);
-        pszDst[cbDst - 1] = '\0';
-    }
-    return VERR_BUFFER_OVERFLOW;
-}
-RT_EXPORT_SYMBOL(RTStrCopyEx);
+extern DECLHIDDEN(RTR3WINLDRPROT)  g_enmWinLdrProt;
+# ifdef _WINDEF_
+extern DECLHIDDEN(HMODULE)         g_hModKernel32;
+extern DECLHIDDEN(HMODULE)         g_hModNtDll;
+# endif
+
+#endif /* RT_OS_WINDOWS */
+
+#endif
 

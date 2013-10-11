@@ -30,6 +30,7 @@
 #include <sddl.h>
 
 #include <iprt/buildconfig.h>
+#include <iprt/ldr.h>
 
 /* global variables */
 HANDLE                gVBoxDriver;
@@ -233,7 +234,7 @@ void WINAPI VBoxServiceStart(void)
 
     VBOXSERVICEENV svcEnv;
 
-    DWORD status = NO_ERROR;
+    DWORD dwErr = NO_ERROR;
 
     /* open VBox guest driver */
     gVBoxDriver = CreateFile(VBOXGUEST_DEVICE_NAME,
@@ -246,12 +247,12 @@ void WINAPI VBoxServiceStart(void)
     if (gVBoxDriver == INVALID_HANDLE_VALUE)
     {
         LogRel(("VBoxTray: Could not open VirtualBox Guest Additions driver! Please install / start it first! rc = %d\n", GetLastError()));
-        status = ERROR_GEN_FAILURE;
+        dwErr = ERROR_GEN_FAILURE;
     }
 
-    Log(("VBoxTray: Driver Handle = %p, Status = %p\n", gVBoxDriver, status));
+    Log(("VBoxTray: Driver Handle = %p, Status = %p\n", gVBoxDriver, dwErr));
 
-    if (status == NO_ERROR)
+    if (dwErr == NO_ERROR)
     {
         /* create a custom window class */
         WNDCLASS windowClass = {0};
@@ -261,12 +262,12 @@ void WINAPI VBoxServiceStart(void)
         windowClass.hCursor       = LoadCursor(NULL, IDC_ARROW);
         windowClass.lpszClassName = "VirtualBoxTool";
         if (!RegisterClass(&windowClass))
-            status = GetLastError();
+            dwErr = GetLastError();
     }
 
-    Log(("VBoxTray: Class st %p\n", status));
+    Log(("VBoxTray: Class st %p\n", dwErr));
 
-    if (status == NO_ERROR)
+    if (dwErr == NO_ERROR)
     {
         /* create our window */
         gToolWindow = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST,
@@ -274,12 +275,12 @@ void WINAPI VBoxServiceStart(void)
                                      WS_POPUPWINDOW,
                                      -200, -200, 100, 100, NULL, NULL, gInstance, NULL);
         if (!gToolWindow)
-            status = GetLastError();
+            dwErr = GetLastError();
         else
             VBoxServiceReloadCursor();
     }
 
-    Log(("VBoxTray: Window Handle = %p, Status = %p\n", gToolWindow, status));
+    Log(("VBoxTray: Window Handle = %p, Status = %p\n", gToolWindow, dwErr));
 
     OSVERSIONINFO           info;
     DWORD                   dwMajorVersion = 5; /* default XP */
@@ -290,7 +291,7 @@ void WINAPI VBoxServiceStart(void)
         dwMajorVersion = info.dwMajorVersion;
     }
 
-    if (status == NO_ERROR)
+    if (dwErr == NO_ERROR)
     {
         gStopSem = CreateEvent(NULL, TRUE, FALSE, NULL);
         if (gStopSem == NULL)
@@ -302,48 +303,54 @@ void WINAPI VBoxServiceStart(void)
         /* We need to setup a security descriptor to allow other processes modify access to the seamless notification event semaphore */
         SECURITY_ATTRIBUTES     SecAttr;
         char                    secDesc[SECURITY_DESCRIPTOR_MIN_LENGTH];
-        BOOL                    ret;
+        BOOL                    fRC;
 
         SecAttr.nLength              = sizeof(SecAttr);
         SecAttr.bInheritHandle       = FALSE;
         SecAttr.lpSecurityDescriptor = &secDesc;
         InitializeSecurityDescriptor(SecAttr.lpSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
-        ret = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
-        if (!ret)
+        fRC = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
+        if (!fRC)
             Log(("VBoxTray: SetSecurityDescriptorDacl failed with %d\n", GetLastError()));
 
         /* For Vista and up we need to change the integrity of the security descriptor too */
         if (dwMajorVersion >= 6)
         {
-            HMODULE hModule;
-
             BOOL (WINAPI * pfnConvertStringSecurityDescriptorToSecurityDescriptorA)(LPCSTR StringSecurityDescriptor, DWORD StringSDRevision, PSECURITY_DESCRIPTOR  *SecurityDescriptor, PULONG  SecurityDescriptorSize);
-
-            hModule = LoadLibrary("ADVAPI32.DLL");
-            if (hModule)
+            *(void **)&pfnConvertStringSecurityDescriptorToSecurityDescriptorA =
+                RTLdrGetSystemSymbol("ADVAPI32.DLL", "ConvertStringSecurityDescriptorToSecurityDescriptorA");
+            Log(("VBoxTray: pfnConvertStringSecurityDescriptorToSecurityDescriptorA = %x\n", pfnConvertStringSecurityDescriptorToSecurityDescriptorA));
+            if (pfnConvertStringSecurityDescriptorToSecurityDescriptorA)
             {
                 PSECURITY_DESCRIPTOR    pSD;
                 PACL                    pSacl          = NULL;
                 BOOL                    fSaclPresent   = FALSE;
                 BOOL                    fSaclDefaulted = FALSE;
 
-                *(uintptr_t *)&pfnConvertStringSecurityDescriptorToSecurityDescriptorA = (uintptr_t)GetProcAddress(hModule, "ConvertStringSecurityDescriptorToSecurityDescriptorA");
-
-                Log(("VBoxTray: pfnConvertStringSecurityDescriptorToSecurityDescriptorA = %x\n", pfnConvertStringSecurityDescriptorToSecurityDescriptorA));
-                if (pfnConvertStringSecurityDescriptorToSecurityDescriptorA)
+                fRC = pfnConvertStringSecurityDescriptorToSecurityDescriptorA("S:(ML;;NW;;;LW)", /* this means "low integrity" */
+                                                                              SDDL_REVISION_1, &pSD, NULL);
+                if (!fRC)
                 {
-                    ret = pfnConvertStringSecurityDescriptorToSecurityDescriptorA("S:(ML;;NW;;;LW)", /* this means "low integrity" */
-                                                                                  SDDL_REVISION_1, &pSD, NULL);
-                    if (!ret)
-                        Log(("VBoxTray: ConvertStringSecurityDescriptorToSecurityDescriptorA failed with %d\n", GetLastError()));
-
-                    ret = GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSacl, &fSaclDefaulted);
-                    if (!ret)
-                        Log(("VBoxTray: GetSecurityDescriptorSacl failed with %d\n", GetLastError()));
-
-                    ret = SetSecurityDescriptorSacl(SecAttr.lpSecurityDescriptor, TRUE, pSacl, FALSE);
-                    if (!ret)
-                        Log(("VBoxTray: SetSecurityDescriptorSacl failed with %d\n", GetLastError()));
+                    dwErr = GetLastError();
+                    Log(("VBoxTray: ConvertStringSecurityDescriptorToSecurityDescriptorA failed with last error = %08X\n", dwErr));
+                }
+                else
+                {
+                    fRC = GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSacl, &fSaclDefaulted);
+                    if (!fRC)
+                    {
+                        dwErr = GetLastError();
+                        Log(("VBoxTray: GetSecurityDescriptorSacl failed with last error = %08X\n", dwErr));
+                    }
+                    else
+                    {
+                        fRC = SetSecurityDescriptorSacl(SecAttr.lpSecurityDescriptor, TRUE, pSacl, FALSE);
+                        if (!fRC)
+                        {
+                            dwErr = GetLastError();
+                            Log(("VBoxTray: SetSecurityDescriptorSacl failed with last error = %08X\n", dwErr));
+                        }
+                    }
                 }
             }
         }
@@ -366,24 +373,24 @@ void WINAPI VBoxServiceStart(void)
     svcEnv.hDriver    = gVBoxDriver;
 
     /* initializes disp-if to default (XPDM) mode */
-    status = VBoxDispIfInit(&svcEnv.dispIf);
+    dwErr = VBoxDispIfInit(&svcEnv.dispIf);
 #ifdef VBOXWDDM
     /* for now the display mode will be adjusted to WDDM mode if needed
      * on display service initialization when it detects the display driver type */
 #endif
 
-    if (status == NO_ERROR)
+    if (dwErr == NO_ERROR)
     {
         int rc = vboxStartServices (&svcEnv, vboxServiceTable);
 
         if (RT_FAILURE (rc))
         {
-            status = ERROR_GEN_FAILURE;
+            dwErr = ERROR_GEN_FAILURE;
         }
     }
 
     /* terminate service if something went wrong */
-    if (status != NO_ERROR)
+    if (dwErr != NO_ERROR)
     {
         vboxStopServices (&svcEnv, vboxServiceTable);
         return;

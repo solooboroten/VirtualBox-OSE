@@ -1839,8 +1839,6 @@ VBOXNETCFGWIN_DECL(HRESULT) VBoxNetCfgWinEnumNetDevices(LPWSTR pPnPId, VBOXNETCF
 */
 
 
-#define NETSHELL_LIBRARY _T("netshell.dll")
-
 /**
  *  Use the IShellFolder API to rename the connection.
  */
@@ -1888,6 +1886,24 @@ static HRESULT rename_shellfolder (PCWSTR wGuid, PCWSTR wNewName)
     return hr;
 }
 
+/**
+ * Loads a system DLL.
+ *
+ * @returns Module handle or NULL
+ * @param   pszName             The DLL name.
+ */
+static HMODULE loadSystemDll(const char *pszName)
+{
+    char   szPath[MAX_PATH];
+    UINT   cchPath = GetSystemDirectoryA(szPath, sizeof(szPath));
+    size_t cbName  = strlen(pszName) + 1;
+    if (cchPath + 1 + cbName > sizeof(szPath))
+        return NULL;
+    szPath[cchPath] = '\\';
+    memcpy(&szPath[cchPath + 1], pszName, cbName);
+    return LoadLibraryA(szPath);
+}
+
 VBOXNETCFGWIN_DECL(HRESULT) VBoxNetCfgWinRenameConnection (LPWSTR pGuid, PCWSTR NewName)
 {
     typedef HRESULT (WINAPI *lpHrRenameConnection) (const GUID *, PCWSTR);
@@ -1920,7 +1936,7 @@ VBOXNETCFGWIN_DECL(HRESULT) VBoxNetCfgWinRenameConnection (LPWSTR pGuid, PCWSTR 
         status = CLSIDFromString ((LPOLESTR) pGuid, &clsid);
         if (FAILED(status))
             return E_FAIL;
-        hNetShell = LoadLibrary (NETSHELL_LIBRARY);
+        hNetShell = loadSystemDll ("netshell.dll");
         if (hNetShell == NULL)
             return E_FAIL;
         RenameConnectionFunc =

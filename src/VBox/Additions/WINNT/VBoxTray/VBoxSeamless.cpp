@@ -23,12 +23,13 @@
 #include <VBox/VMMDev.h>
 #include <iprt/assert.h>
 #include "helpers.h"
+#include <iprt/ldr.h>
 
 typedef struct _VBOXSEAMLESSCONTEXT
 {
     const VBOXSERVICEENV *pEnv;
 
-    HMODULE    hModule;
+    RTLDRMOD hModHook;
 
     BOOL    (* pfnVBoxInstallHook)(HMODULE hDll);
     BOOL    (* pfnVBoxRemoveHook)();
@@ -55,6 +56,7 @@ int VBoxSeamlessInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStar
 
     *pfStartThread = false;
     gCtx.pEnv = pEnv;
+    gCtx.hModHook = NIL_RTLDRMOD;
 
     OSVERSIONINFO OSinfo;
     OSinfo.dwOSVersionInfoSize = sizeof (OSinfo);
@@ -69,11 +71,11 @@ int VBoxSeamlessInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStar
     }
 
     /* Will fail if SetWinEventHook is not present (version < NT4 SP6 apparently) */
-    gCtx.hModule = LoadLibrary(VBOXHOOK_DLL_NAME);
-    if (gCtx.hModule)
+    int rc = RTLdrLoadAppPriv(VBOXHOOK_DLL_NAME, &gCtx.hModHook);
+    if (RT_SUCCESS(rc))
     {
-        *(uintptr_t *)&gCtx.pfnVBoxInstallHook = (uintptr_t)GetProcAddress(gCtx.hModule, "VBoxInstallHook");
-        *(uintptr_t *)&gCtx.pfnVBoxRemoveHook  = (uintptr_t)GetProcAddress(gCtx.hModule, "VBoxRemoveHook");
+        *(PFNRT *)&gCtx.pfnVBoxInstallHook = RTLdrGetFunction(gCtx.hModHook, "VBoxInstallHook");
+        *(PFNRT *)&gCtx.pfnVBoxRemoveHook  = RTLdrGetFunction(gCtx.hModHook, "VBoxRemoveHook");
 
         /* inform the host that we support the seamless window mode */
         VMMDevReqGuestCapabilities vmmreqGuestCaps = {0};
@@ -83,10 +85,7 @@ int VBoxSeamlessInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStar
         DWORD cbReturned;
         if (!DeviceIoControl(pEnv->hDriver, VBOXGUEST_IOCTL_VMMREQUEST(sizeof(vmmreqGuestCaps)), &vmmreqGuestCaps, sizeof(vmmreqGuestCaps),
                              &vmmreqGuestCaps, sizeof(vmmreqGuestCaps), &cbReturned, NULL))
-        {
-            Log(("VBoxSeamlessInit: VMMDevReq_ReportGuestCapabilities: error doing IOCTL, last error: %d\n", GetLastError()));
-            return VERR_INVALID_PARAMETER;
-        }
+            Log(("VBoxTray: VBoxSeamlessInit: LoadLibrary of \"%s\" failed with rc=%Rrc\n", VBOXHOOK_DLL_NAME, rc));
 
         *pfStartThread = true;
         *ppInstance = &gCtx;
@@ -119,9 +118,11 @@ void VBoxSeamlessDestroy(const VBOXSERVICEENV *pEnv, void *pInstance)
 
     if (gCtx.pfnVBoxRemoveHook)
         gCtx.pfnVBoxRemoveHook();
-    if (gCtx.hModule)
-        FreeLibrary(gCtx.hModule);
-    gCtx.hModule = 0;
+    if (gCtx.hModHook != NIL_RTLDRMOD)
+    {
+        RTLdrClose(gCtx.hModHook);
+        gCtx.hModHook = NIL_RTLDRMOD;
+    }
     return;
 }
 
@@ -132,7 +133,9 @@ void VBoxSeamlessInstallHook()
         /* Check current visible region state */
         VBoxSeamlessCheckWindows();
 
-        gCtx.pfnVBoxInstallHook(gCtx.hModule);
+        HMODULE hMod = (HMODULE)RTLdrGetNativeHandle(gCtx.hModHook);
+        Assert(hMod != (HMODULE)~(uintptr_t)0);
+        gCtx.pfnVBoxInstallHook(hMod);
     }
 }
 

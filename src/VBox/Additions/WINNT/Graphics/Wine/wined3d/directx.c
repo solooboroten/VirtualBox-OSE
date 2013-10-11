@@ -5059,6 +5059,24 @@ static void fillGLAttribFuncs(const struct wined3d_gl_info *gl_info)
     }
 }
 
+/**
+ * Loads a system DLL.
+ *
+ * @returns Module handle or NULL
+ * @param   pszName             The DLL name.
+ */
+static HMODULE loadSystemDll(const char *pszName)
+{
+    char   szPath[MAX_PATH];
+    UINT   cchPath = GetSystemDirectoryA(szPath, sizeof(szPath));
+    size_t cbName  = strlen(pszName) + 1;
+    if (cchPath + 1 + cbName > sizeof(szPath))
+        return NULL;
+    szPath[cchPath] = '\\';
+    memcpy(&szPath[cchPath + 1], pszName, cbName);
+    return LoadLibraryA(szPath);
+}
+
 static BOOL InitAdapters(IWineD3DImpl *This)
 {
     static HMODULE mod_gl;
@@ -5076,9 +5094,9 @@ static BOOL InitAdapters(IWineD3DImpl *This)
 #define USE_GL_FUNC(pfn) pfn = (void*)GetProcAddress(mod_gl, #pfn);
 #ifdef VBOXWDDM
         BOOL (APIENTRY *pDrvValidateVersion)(DWORD) DECLSPEC_HIDDEN;
-        mod_gl = LoadLibraryA("VBoxOGL.dll");
+        mod_gl = loadSystemDll("VBoxOGL.dll");
 #else
-        mod_gl = LoadLibraryA("opengl32.dll");
+        mod_gl = loadSystemDll("opengl32.dll");
 #endif
         if(!mod_gl) {
             ERR("Can't load opengl32.dll!\n");

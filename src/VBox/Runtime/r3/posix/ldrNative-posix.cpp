@@ -40,7 +40,7 @@
 #include "internal/ldr.h"
 
 
-int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle)
+int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, uint32_t fFlags)
 {
     /*
      * Do we need to add an extension?
@@ -101,12 +101,20 @@ DECLCALLBACK(int) rtldrNativeGetSymbol(PRTLDRMODINTERNAL pMod, const char *pszSy
 DECLCALLBACK(int) rtldrNativeClose(PRTLDRMODINTERNAL pMod)
 {
     PRTLDRMODNATIVE pModNative = (PRTLDRMODNATIVE)pMod;
-    if (!dlclose((void *)pModNative->hNative))
+    if (   (pModNative->fFlags & RTLDRLOAD_FLAGS_NO_UNLOAD)
+        || !dlclose((void *)pModNative->hNative))
     {
         pModNative->hNative = (uintptr_t)0;
         return VINF_SUCCESS;
     }
     Log(("rtldrNativeFree: dlclose(%p) failed: %s\n", pModNative->hNative, dlerror()));
     return VERR_GENERAL_FAILURE;
+}
+
+
+int rtldrNativeLoadSystem(const char *pszFilename, const char *pszExt, uint32_t fFlags, PRTLDRMOD phLdrMod)
+{
+    /** @todo implement this in some sensible fashion. */
+    return VERR_NOT_SUPPORTED;
 }
 

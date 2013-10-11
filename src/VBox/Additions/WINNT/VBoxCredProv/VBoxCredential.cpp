@@ -819,7 +819,7 @@ HRESULT VBoxCredential::ReportResult(NTSTATUS ntsStatus,
 
     /* Try to lookup a text message for error code. */
     LPVOID lpMessageBuffer = NULL;
-    HMODULE hNtDLL = LoadLibrary(L"NTDLL.DLL");
+    HMODULE hNtDLL = GetModuleHandleW(L"NTDLL.DLL");
     if (hNtDLL)
     {
         FormatMessage(  FORMAT_MESSAGE_ALLOCATE_BUFFER

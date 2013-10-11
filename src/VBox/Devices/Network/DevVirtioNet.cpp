@@ -63,7 +63,7 @@ RT_C_DECLS_END
 
 
 #define VNET_TX_DELAY           150   /* 150 microseconds */
-#define VNET_MAX_FRAME_SIZE     65536  // TODO: Is it the right limit?
+#define VNET_MAX_FRAME_SIZE     65535 /* IntNet cannot handle more */
 #define VNET_MAC_FILTER_LEN     32
 #define VNET_MAX_VID            (1 << 12)
 
