@@ -784,7 +784,7 @@ static int VMXR0InjectEvent(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, uint32_t intIn
             {
                 uint32_t intInfo2;
 
-                intInfo2  = (iGate == X86_XCPT_GP) ? (uint32_t)X86_XCPT_DF : iGate;
+                intInfo2  = (iGate == X86_XCPT_GP) ? (uint32_t)X86_XCPT_DF : (uint32_t)X86_XCPT_GP;
                 intInfo2 |= (1 << VMX_EXIT_INTERRUPTION_INFO_VALID_SHIFT);
                 intInfo2 |= VMX_EXIT_INTERRUPTION_INFO_ERROR_CODE_VALID;
                 intInfo2 |= (VMX_EXIT_INTERRUPTION_INFO_TYPE_HWEXCPT << VMX_EXIT_INTERRUPTION_INFO_TYPE_SHIFT);

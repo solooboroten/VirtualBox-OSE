@@ -48,10 +48,6 @@ VBOXCRHGSMI_DECL(int) VBoxCrHgsmiInit(PVBOXCRHGSMI_CALLBACKS pCallbacks)
     if (!g_hVBoxCrHgsmiProvider)
     {
         g_hVBoxCrHgsmiProvider = GetModuleHandle(L"VBoxDispD3D");
-        if (g_hVBoxCrHgsmiProvider)
-        {
-            g_hVBoxCrHgsmiProvider = LoadLibrary(L"VBoxDispD3D");
-        }
 
         if (g_hVBoxCrHgsmiProvider)
         {

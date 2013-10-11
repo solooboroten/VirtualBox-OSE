@@ -32,6 +32,8 @@ Xcalloc
 Xfree
 Xrealloc
 _GLOBAL_OFFSET_TABLE_
+_ITM_registerTMCloneTable
+_ITM_deregisterTMCloneTable
 _Jv_RegisterClasses
 ___errno
 __cxa_finalize

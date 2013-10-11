@@ -636,12 +636,12 @@ public:
 
     CInterface (const CInterface &that) : B (that), mIface (that.mIface)
     {
-        addref (mIface);
+        this->addref (mIface);
     }
 
-    CInterface (I *aIface) : mIface (aIface) { addref (mIface); }
+    CInterface (I *aIface) : mIface (aIface) { this->addref (mIface); }
 
-    virtual ~CInterface() { release (mIface); }
+    virtual ~CInterface() { this->release (mIface); }
 
     // utility methods
 
@@ -680,13 +680,13 @@ public:
     void attach (OI *aIface)
     {
         /* be aware of self assignment */
-        addref (aIface);
-        release (mIface);
+        this->addref (aIface);
+        this->release (mIface);
         if (aIface)
         {
             mIface = NULL;
             B::mRC = aIface->QueryInterface (COM_IIDOF (I), (void **) &mIface);
-            release (aIface);
+            this->release (aIface);
         }
         else
         {
@@ -699,14 +699,14 @@ public:
     void attach (I *aIface)
     {
         /* be aware of self assignment */
-        addref (aIface);
-        release (mIface);
+        this->addref (aIface);
+        this->release (mIface);
         mIface = aIface;
         B::mRC = S_OK;
     };
 
     /** Detaches from the underlying interface pointer. */
-    void detach() { release (mIface); mIface = NULL; }
+    void detach() { this->release (mIface); mIface = NULL; }
 
     /** Returns @c true if not attached to any interface pointer. */
     bool isNull() const { return mIface == NULL; }

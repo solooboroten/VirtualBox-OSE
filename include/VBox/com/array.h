@@ -660,7 +660,7 @@ public:
         for (typename C <T, A>::const_iterator it = aCntr.begin();
              it != aCntr.end(); ++ it, ++ i)
 #if defined (VBOX_WITH_XPCOM)
-            Copy (*it, m.arr [i]);
+            SafeArray::Copy(*it, m.arr[i]);
 #else
             Copy (*it, m.raw [i]);
 #endif
@@ -766,7 +766,7 @@ public:
             return false;
 
 #if defined (VBOX_WITH_XPCOM)
-        Copy (aElement, m.arr [m.size]);
+        SafeArray::Copy(aElement, m.arr[m.size]);
         ++ m.size;
 #else
         Copy (aElement, m.raw [size() - 1]);
@@ -801,7 +801,7 @@ public:
             return NULL;
 
 #if defined (VBOX_WITH_XPCOM)
-        Init (m.arr [m.size]);
+        SafeArray::Init(m.arr[m.size]);
         ++ m.size;
         return &m.arr [m.size - 1];
 #else
@@ -832,7 +832,7 @@ public:
         {
             /* initialize the new elements */
             for (size_t i = m.size; i < aNewSize; ++ i)
-                Init (m.arr [i]);
+                SafeArray::Init(m.arr[i]);
         }
 
         m.size = aNewSize;
@@ -1085,7 +1085,7 @@ protected:
                     /* Truncation takes place, uninit exceeding elements and
                      * shrink the size. */
                     for (size_t i = aNewSize; i < m.size; ++ i)
-                        Uninit (m.arr [i]);
+                        this->Uninit(m.arr[i]);
 
                     m.size = aNewSize;
                 }
@@ -1104,7 +1104,7 @@ protected:
                 /* Truncation takes place, uninit exceeding elements and
                  * shrink the size. */
                 for (size_t i = aNewSize; i < m.size; ++ i)
-                    Uninit (m.arr [i]);
+                    this->Uninit(m.arr[i]);
 
                 m.size = aNewSize;
             }
@@ -1159,7 +1159,7 @@ protected:
                 if (!isWeak)
                 {
                     for (size_t i = 0; i < size; ++ i)
-                        Uninit (arr [i]);
+                        SafeArray::Uninit(arr[i]);
 
                     nsMemory::Free ((void *) arr);
                 }
@@ -1599,7 +1599,7 @@ public:
         for (typename List::const_iterator it = aCntr.begin();
              it != aCntr.end(); ++ it, ++ i)
 #if defined (VBOX_WITH_XPCOM)
-            Copy (*it, Base::m.arr [i]);
+            SafeIfaceArray::Copy(*it, Base::m.arr[i]);
 #else
             Copy (*it, Base::m.raw [i]);
 #endif
@@ -1631,7 +1631,7 @@ public:
         for (typename Map::const_iterator it = aMap.begin();
              it != aMap.end(); ++ it, ++ i)
 #if defined (VBOX_WITH_XPCOM)
-            Copy (it->second, Base::m.arr [i]);
+            SafeIfaceArray::Copy(it->second, Base::m.arr[i]);
 #else
             Copy (it->second, Base::m.raw [i]);
 #endif
@@ -1663,7 +1663,7 @@ public:
         for (typename Map::const_iterator it = aMap.begin();
              it != aMap.end(); ++ it, ++ i)
 #if defined (VBOX_WITH_XPCOM)
-            Copy (it->second, Base::m.arr [i]);
+            SafeIfaceArray::Copy(it->second, Base::m.arr[i]);
 #else
             Copy (it->second, Base::m.raw [i]);
 #endif
@@ -1672,7 +1672,7 @@ public:
     void setElement(size_t iIdx, I* obj)
     {
 #if defined (VBOX_WITH_XPCOM)
-        Copy (obj, Base::m.arr [iIdx]);
+        SafeIfaceArray::Copy(obj, Base::m.arr[iIdx]);
 #else
         Copy (obj, Base::m.raw [iIdx]);
 #endif

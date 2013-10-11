@@ -37,6 +37,7 @@
 #include <sddl.h>
 
 #include <iprt/buildconfig.h>
+#include <iprt/ldr.h>
 
 
 /*******************************************************************************
@@ -412,48 +413,54 @@ void WINAPI VBoxServiceStart(void)
         /* We need to setup a security descriptor to allow other processes modify access to the seamless notification event semaphore */
         SECURITY_ATTRIBUTES     SecAttr;
         char                    secDesc[SECURITY_DESCRIPTOR_MIN_LENGTH];
-        BOOL                    ret;
+        BOOL                    fRC;
 
         SecAttr.nLength              = sizeof(SecAttr);
         SecAttr.bInheritHandle       = FALSE;
         SecAttr.lpSecurityDescriptor = &secDesc;
         InitializeSecurityDescriptor(SecAttr.lpSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
-        ret = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
-        if (!ret)
+        fRC = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
+        if (!fRC)
             Log(("VBoxTray: SetSecurityDescriptorDacl failed with error = %08X\n", GetLastError()));
 
         /* For Vista and up we need to change the integrity of the security descriptor too */
         if (gMajorVersion >= 6)
         {
-            HMODULE hModule;
-
             BOOL (WINAPI * pfnConvertStringSecurityDescriptorToSecurityDescriptorA)(LPCSTR StringSecurityDescriptor, DWORD StringSDRevision, PSECURITY_DESCRIPTOR  *SecurityDescriptor, PULONG  SecurityDescriptorSize);
-
-            hModule = LoadLibrary("ADVAPI32.DLL");
-            if (hModule)
+            *(void **)&pfnConvertStringSecurityDescriptorToSecurityDescriptorA =
+                RTLdrGetSystemSymbol("ADVAPI32.DLL", "ConvertStringSecurityDescriptorToSecurityDescriptorA");
+            Log(("VBoxTray: pfnConvertStringSecurityDescriptorToSecurityDescriptorA = %x\n", pfnConvertStringSecurityDescriptorToSecurityDescriptorA));
+            if (pfnConvertStringSecurityDescriptorToSecurityDescriptorA)
             {
                 PSECURITY_DESCRIPTOR    pSD;
                 PACL                    pSacl          = NULL;
                 BOOL                    fSaclPresent   = FALSE;
                 BOOL                    fSaclDefaulted = FALSE;
 
-                *(uintptr_t *)&pfnConvertStringSecurityDescriptorToSecurityDescriptorA = (uintptr_t)GetProcAddress(hModule, "ConvertStringSecurityDescriptorToSecurityDescriptorA");
-
-                Log(("VBoxTray: pfnConvertStringSecurityDescriptorToSecurityDescriptorA = %x\n", pfnConvertStringSecurityDescriptorToSecurityDescriptorA));
-                if (pfnConvertStringSecurityDescriptorToSecurityDescriptorA)
+                fRC = pfnConvertStringSecurityDescriptorToSecurityDescriptorA("S:(ML;;NW;;;LW)", /* this means "low integrity" */
+                                                                              SDDL_REVISION_1, &pSD, NULL);
+                if (!fRC)
                 {
-                    ret = pfnConvertStringSecurityDescriptorToSecurityDescriptorA("S:(ML;;NW;;;LW)", /* this means "low integrity" */
-                                                                                  SDDL_REVISION_1, &pSD, NULL);
-                    if (!ret)
-                        Log(("VBoxTray: ConvertStringSecurityDescriptorToSecurityDescriptorA failed with error = %08X\n", GetLastError()));
-
-                    ret = GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSacl, &fSaclDefaulted);
-                    if (!ret)
-                        Log(("VBoxTray: GetSecurityDescriptorSacl failed with error = %08X\n", GetLastError()));
-
-                    ret = SetSecurityDescriptorSacl(SecAttr.lpSecurityDescriptor, TRUE, pSacl, FALSE);
-                    if (!ret)
-                        Log(("VBoxTray: SetSecurityDescriptorSacl failed with error = %08X\n", GetLastError()));
+                    dwErr = GetLastError();
+                    Log(("VBoxTray: ConvertStringSecurityDescriptorToSecurityDescriptorA failed with last error = %08X\n", dwErr));
+                }
+                else
+                {
+                    fRC = GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSacl, &fSaclDefaulted);
+                    if (!fRC)
+                    {
+                        dwErr = GetLastError();
+                        Log(("VBoxTray: GetSecurityDescriptorSacl failed with last error = %08X\n", dwErr));
+                    }
+                    else
+                    {
+                        fRC = SetSecurityDescriptorSacl(SecAttr.lpSecurityDescriptor, TRUE, pSacl, FALSE);
+                        if (!fRC)
+                        {
+                            dwErr = GetLastError();
+                            Log(("VBoxTray: SetSecurityDescriptorSacl failed with last error = %08X\n", dwErr));
+                        }
+                    }
                 }
             }
         }

@@ -590,7 +590,7 @@ void UIMachineSettingsNetwork::populateComboboxes()
         mCbAttachmentType->itemText (4), Qt::ToolTipRole);
 #ifdef VBOX_WITH_VDE
     RTLDRMOD hLdrDummy;
-    if (RT_SUCCESS(RTLdrLoad(VBOX_LIB_VDE_PLUG_NAME, &hLdrDummy)))
+    if (RT_SUCCESS(RTLdrLoadSystem(VBOX_LIB_VDE_PLUG_NAME, true /*fNoUnload*/, &hLdrDummy)))
     {
         mCbAttachmentType->insertItem (5,
             vboxGlobal().toString (KNetworkAttachmentType_VDE));

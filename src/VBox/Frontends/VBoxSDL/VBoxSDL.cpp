@@ -698,6 +698,10 @@ static CComModule _Module;
 extern "C"
 DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 {
+#ifdef Q_WS_X11
+    if (!XInitThreads())
+        return 1;
+#endif
 #ifdef VBOXSDL_WITH_X11
     /*
      * Lock keys on SDL behave different from normal keys: A KeyPress event is generated
@@ -789,7 +793,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     char *hdaFile   = NULL;
     char *cdromFile = NULL;
     char *fdaFile   = NULL;
-    const char *portVRDP = NULL;
+    const char *pszPortVRDP = NULL;
     bool fDiscardState = false;
 #ifdef VBOX_SECURELABEL
     BOOL fSecureLabel = false;
@@ -1134,14 +1138,14 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                  || !strcmp(argv[curArg], "-vrdp"))
         {
             // start with the standard VRDP port
-            portVRDP = "0";
+            pszPortVRDP = "0";
 
             // is there another argument
             if (argc > (curArg + 1))
             {
                 curArg++;
-                portVRDP = argv[curArg];
-                LogFlow(("Using non standard VRDP port %s\n", portVRDP));
+                pszPortVRDP = argv[curArg];
+                LogFlow(("Using non standard VRDP port %s\n", pszPortVRDP));
             }
         }
         else if (   !strcmp(argv[curArg], "--discardstate")
@@ -1774,7 +1778,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             goto leave;
         }
         /* load the SDL_ttf library and get the required imports */
-        vrc = RTLdrLoad(LIBSDL_TTF_NAME, &gLibrarySDL_ttf);
+        vrc = RTLdrLoadSystem(LIBSDL_TTF_NAME, true /*fNoUnload*/, &gLibrarySDL_ttf);
         if (RT_SUCCESS(vrc))
             vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Init", (void**)&pTTF_Init);
         if (RT_SUCCESS(vrc))
@@ -1873,16 +1877,16 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         pConsoleListener->getWrapped()->ignorePowerOffEvents(true);
     }
 
-    if (portVRDP)
+    if (pszPortVRDP)
     {
         rc = gpMachine->COMGETTER(VRDEServer)(gpVRDEServer.asOutParam());
         AssertMsg((rc == S_OK) && gpVRDEServer, ("Could not get VRDP Server! rc = 0x%x\n", rc));
         if (gpVRDEServer)
         {
             // has a non standard VRDP port been requested?
-            if (portVRDP > 0)
+            if (strcmp(pszPortVRDP, "0"))
             {
-                rc = gpVRDEServer->SetVRDEProperty(Bstr("TCP/Ports").raw(), Bstr(portVRDP).raw());
+                rc = gpVRDEServer->SetVRDEProperty(Bstr("TCP/Ports").raw(), Bstr(pszPortVRDP).raw());
                 if (rc != S_OK)
                 {
                     RTPrintf("Error: could not set VRDP port! rc = 0x%x\n", rc);
@@ -2874,6 +2878,10 @@ leave:
  */
 int main(int argc, char **argv)
 {
+#ifdef Q_WS_X11
+    if (!XInitThreads())
+        return 1;
+#endif
     /*
      * Before we do *anything*, we initialize the runtime.
      */

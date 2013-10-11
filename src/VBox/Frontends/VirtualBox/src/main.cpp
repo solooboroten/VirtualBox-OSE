@@ -44,6 +44,7 @@
 
 #ifdef Q_WS_X11
 # include <X11/Xlib.h>
+# include <dlfcn.h>
 #endif
 
 #include <iprt/buildconfig.h>
@@ -283,6 +284,21 @@ static void showHelp()
     /** @todo Show this as a dialog on windows. */
 }
 
+#ifdef Q_WS_X11 
+/** This is a workaround for a bug on old libX11 versions, fixed in commit 
+ *      941f02ede63baa46f93ed8abccebe76fb29c0789 and released in version 1.1. */ 
+Status VBoxXInitThreads(void) 
+{ 
+    void *pvProcess = dlopen(NULL, RTLD_GLOBAL | RTLD_LAZY); 
+    Status rc = 1; 
+    if (pvProcess && dlsym(pvProcess, "xcb_connect")) 
+        rc = XInitThreads(); 
+    if (pvProcess) 
+        dlclose(pvProcess); 
+    return rc; 
+} 
+#endif 
+
 extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 {
     LogFlowFuncEnter();
@@ -301,6 +317,11 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
      * for some unknown reason), see also src/VBox/Main/glue/initterm.cpp. */
     /// @todo find a proper solution that satisfies both OLE and VBox
     HRESULT hrc = COMBase::InitializeCOM();
+#endif
+
+#ifdef Q_WS_X11
+    if (!VBoxXInitThreads())
+        return 1;
 #endif
 
     for (int i=0; i<argc; i++)
@@ -574,6 +595,10 @@ int main (int argc, char **argv, char **envp)
      * are really about to start a VM. Don't do this if we are only starting
      * the selector window. */
     bool fInitSUPLib = false;
+#ifdef Q_WS_X11
+    if (!VBoxXInitThreads())
+        return 1;
+#endif
     for (int i = 1; i < argc; i++)
     {
         /* NOTE: the check here must match the corresponding check for the

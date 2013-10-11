@@ -942,10 +942,11 @@ static DECLCALLBACK(int) stubSyncThreadProc(RTTHREAD ThreadSelf, void *pvUser)
 #ifdef WINDOWS
     PeekMessage(&msg, NULL, WM_USER, WM_USER, PM_NOREMOVE);
 # ifdef VBOX_WITH_WDDM
-    hVBoxD3D = GetModuleHandle("VBoxDispD3D");
-    if (hVBoxD3D)
+    hVBoxD3D = NULL;
+    if (!GetModuleHandleEx(0, "VBoxDispD3D", &hVBoxD3D))
     {
-        hVBoxD3D = LoadLibrary("VBoxDispD3D");
+        crDebug("GetModuleHandleEx failed err %d", GetLastError());
+        hVBoxD3D = NULL;
     }
 
     if (hVBoxD3D)
@@ -1127,15 +1128,6 @@ stubInit(void)
         {
             crNetFreeConnection(ns.conn);
         }
-#if 0 && defined(CR_NEWWINTRACK)
-        {
-            Status st = XInitThreads();
-            if (st==0)
-            {
-                crWarning("XInitThreads returned %i", (int)st);
-            }
-        }
-#endif
     }
 #endif
 

@@ -80,7 +80,7 @@ fnSetupDiOpenDeviceInfo g_pfnSetupDiOpenDeviceInfo = NULL;
 typedef BOOL (WINAPI *fnSetupDiEnumDeviceInfo) (HDEVINFO DeviceInfoSet, DWORD MemberIndex, PSP_DEVINFO_DATA DeviceInfoData);
 fnSetupDiEnumDeviceInfo g_pfnSetupDiEnumDeviceInfo = NULL;
 
-/***/
+/* */
 
 typedef HDEVINFO (WINAPI *fnSetupDiCreateDeviceInfoList) (LPGUID ClassGuid, HWND hwndParent);
 fnSetupDiCreateDeviceInfoList g_pfnSetupDiCreateDeviceInfoList = NULL;
@@ -97,7 +97,7 @@ fnSetupDiDestroyDeviceInfoList g_pfnSetupDiDestroyDeviceInfoList = NULL;
 typedef BOOL (WINAPI *fnSetupDiGetDeviceInfoListDetail) (HDEVINFO DeviceInfoSet, PSP_DEVINFO_LIST_DETAIL_DATA DeviceInfoSetDetailData);
 fnSetupDiGetDeviceInfoListDetail g_pfnSetupDiGetDeviceInfoListDetail = NULL;
 
-/***/
+/* */
 
 typedef BOOL (WINAPI *fnSetupDiSetDeviceRegistryProperty) (HDEVINFO DeviceInfoSet, PSP_DEVINFO_DATA DeviceInfoData, DWORD Property, CONST BYTE *PropertyBuffer, DWORD PropertyBufferSize);
 fnSetupDiSetDeviceRegistryProperty g_pfnSetupDiSetDeviceRegistryProperty = NULL;
@@ -106,7 +106,7 @@ typedef BOOL (WINAPI *fnSetupDiGetDeviceRegistryProperty) (HDEVINFO DeviceInfoSe
                                                            DWORD PropertyBufferSize, PDWORD RequiredSize);
 fnSetupDiGetDeviceRegistryProperty g_pfnSetupDiGetDeviceRegistryProperty = NULL;
 
-/***/
+/* */
 
 typedef BOOL (WINAPI *fnSetupDiCallClassInstaller) (DI_FUNCTION InstallFunction, HDEVINFO DeviceInfoSet, PSP_DEVINFO_DATA DeviceInfoData);
 fnSetupDiCallClassInstaller g_pfnSetupDiCallClassInstaller = NULL;
@@ -158,6 +158,24 @@ fnUpdateDriverForPlugAndPlayDevices g_pfnUpdateDriverForPlugAndPlayDevices = NUL
     _tprintf (_T("API call ##a_Func loaded: %p\n"), g_pfn##a_Func);  \
 }
 
+/**
+ * Loads a system DLL.
+ *
+ * @returns Module handle or NULL
+ * @param   pszName             The DLL name.
+ */
+static HMODULE loadSystemDll(const char *pszName)
+{
+    char   szPath[MAX_PATH];
+    UINT   cchPath = GetSystemDirectoryA(szPath, sizeof(szPath));
+    size_t cbName  = strlen(pszName) + 1;
+    if (cchPath + 1 + cbName > sizeof(szPath))
+        return NULL;
+    szPath[cchPath] = '\\';
+    memcpy(&szPath[cchPath + 1], pszName, cbName);
+    return LoadLibraryA(szPath);
+}
+
 int LoadAPICalls ()
 {
     int rc = ERROR_SUCCESS;
@@ -172,7 +190,7 @@ int LoadAPICalls ()
     /* Use unicode calls where available. */
     if (OSinfo.dwMajorVersion >= 5) /* APIs available only on W2K and up! */
     {
-        g_hSetupAPI = LoadLibrary(_T("SetupAPI"));
+        g_hSetupAPI = loadSystemDll("SetupAPI");
         if (NULL == g_hSetupAPI)
         {
             _tprintf(_T("ERROR: SetupAPI.dll not found! Return code: %d\n"), GetLastError());
@@ -206,7 +224,7 @@ int LoadAPICalls ()
 
         if (rc == ERROR_SUCCESS)
         {
-            g_hNewDev = LoadLibrary(_T("NewDev"));
+            g_hNewDev = loadSystemDll("NewDev");
             if (NULL != g_hNewDev)
             {
                 g_pfnUpdateDriverForPlugAndPlayDevices = (fnUpdateDriverForPlugAndPlayDevices)GetProcAddress(g_hNewDev, "UpdateDriverForPlugAndPlayDevicesW");
@@ -220,7 +238,7 @@ int LoadAPICalls ()
 
         if (rc == ERROR_SUCCESS)
         {
-            g_hCfgMgr = LoadLibrary(_T("CfgMgr32"));
+            g_hCfgMgr = loadSystemDll("CfgMgr32");
             if (NULL != g_hCfgMgr)
             {
                 g_pfnCM_Get_Device_ID_Ex = (fnCM_Get_Device_ID_Ex)GetProcAddress(g_hCfgMgr, "CM_Get_Device_ID_ExW");

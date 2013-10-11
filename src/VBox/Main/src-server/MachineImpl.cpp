@@ -4846,21 +4846,17 @@ HRESULT Machine::getGuestPropertyFromService(IN_BSTR aName,
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
     Utf8Str strName(aName);
-    HWData::GuestPropertyList::const_iterator it;
+    HWData::GuestPropertyMap::const_iterator it = mHWData->mGuestProperties.find(strName);
 
-    for (it = mHWData->mGuestProperties.begin();
-         it != mHWData->mGuestProperties.end(); ++it)
+    if (it != mHWData->mGuestProperties.end())
     {
-        if (it->strName == strName)
-        {
-            char szFlags[MAX_FLAGS_LEN + 1];
-            it->strValue.cloneTo(aValue);
-            *aTimestamp = it->mTimestamp;
-            writeFlags(it->mFlags, szFlags);
-            Bstr(szFlags).cloneTo(aFlags);
-            break;
-        }
+        char szFlags[MAX_FLAGS_LEN + 1];
+        it->second.strValue.cloneTo(aValue);
+        *aTimestamp = it->second.mTimestamp;
+        writeFlags(it->second.mFlags, szFlags);
+        Bstr(szFlags).cloneTo(aFlags);
     }
+
     return S_OK;
 }
 
@@ -4941,9 +4937,6 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
     HRESULT rc = S_OK;
-    HWData::GuestProperty property;
-    property.mFlags = NILFLAG;
-    bool found = false;
 
     rc = checkStateDependency(MutableStateDep);
     if (FAILED(rc)) return rc;
@@ -4953,64 +4946,59 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
         Utf8Str utf8Name(aName);
         Utf8Str utf8Flags(aFlags);
         uint32_t fFlags = NILFLAG;
-        if (    (aFlags != NULL)
-             && RT_FAILURE(validateFlags(utf8Flags.c_str(), &fFlags))
-           )
+        if (   aFlags != NULL
+            && RT_FAILURE(validateFlags(utf8Flags.c_str(), &fFlags)))
             return setError(E_INVALIDARG,
-                            tr("Invalid flag values: '%ls'"),
+                            tr("Invalid guest property flag values: '%ls'"),
                             aFlags);
 
-        /** @todo r=bird: see efficiency rant in PushGuestProperty. (Yeah, I
-         *                know, this is simple and do an OK job atm.) */
-        HWData::GuestPropertyList::iterator it;
-        for (it = mHWData->mGuestProperties.begin();
-             it != mHWData->mGuestProperties.end(); ++it)
-            if (it->strName == utf8Name)
+        bool fDelete = !RT_VALID_PTR(aValue) || *(aValue) == '\0';
+        HWData::GuestPropertyMap::iterator it = mHWData->mGuestProperties.find(utf8Name);
+        if (it == mHWData->mGuestProperties.end())
+        {
+            if (!fDelete)
             {
-                property = *it;
-                if (it->mFlags & (RDONLYHOST))
-                    rc = setError(E_ACCESSDENIED,
-                                  tr("The property '%ls' cannot be changed by the host"),
-                                  aName);
-                else
-                {
-                    setModified(IsModified_MachineData);
-                    mHWData.backup();           // @todo r=dj backup in a loop?!?
+                setModified(IsModified_MachineData);
+                mHWData.backup();
 
-                    /* The backup() operation invalidates our iterator, so
-                    * get a new one. */
-                    for (it = mHWData->mGuestProperties.begin();
-                         it->strName != utf8Name;
-                         ++it)
-                        ;
-                    mHWData->mGuestProperties.erase(it);
-                }
-                found = true;
-                break;
-            }
-        if (found && SUCCEEDED(rc))
-        {
-            if (*aValue)
-            {
                 RTTIMESPEC time;
-                property.strValue = aValue;
-                property.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
-                if (aFlags != NULL)
-                    property.mFlags = fFlags;
-                mHWData->mGuestProperties.push_back(property);
+                HWData::GuestProperty prop;
+                prop.strValue   = aValue;
+                prop.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
+                prop.mFlags     = fFlags;
+                mHWData->mGuestProperties[Utf8Str(aName)] = prop;
             }
         }
-        else if (SUCCEEDED(rc) && *aValue)
+        else
         {
-            RTTIMESPEC time;
-            setModified(IsModified_MachineData);
-            mHWData.backup();
-            property.strName = aName;
-            property.strValue = aValue;
-            property.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
-            property.mFlags = fFlags;
-            mHWData->mGuestProperties.push_back(property);
+            if (it->second.mFlags & (RDONLYHOST))
+            {
+                rc = setError(E_ACCESSDENIED,
+                              tr("The property '%ls' cannot be changed by the host"),
+                              aName);
+            }
+            else
+            {
+                setModified(IsModified_MachineData);
+                mHWData.backup();
+
+                /* The backupEx() operation invalidates our iterator,
+                 * so get a new one. */
+                it = mHWData->mGuestProperties.find(utf8Name);
+                Assert(it != mHWData->mGuestProperties.end());
+
+                if (!fDelete)
+                {
+                    RTTIMESPEC time;
+                    it->second.strValue   = aValue;
+                    it->second.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
+                    it->second.mFlags     = fFlags;
+                }
+                else
+                    mHWData->mGuestProperties.erase(it);
+            }
         }
+
         if (   SUCCEEDED(rc)
             && (   mHWData->mGuestPropertyNotificationPatterns.isEmpty()
                 || RTStrSimplePatternMultiMatch(mHWData->mGuestPropertyNotificationPatterns.c_str(),
@@ -5021,8 +5009,8 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
                )
            )
         {
-            /** @todo r=bird: Why aren't we leaving the lock here?  The
-             *                same code in PushGuestProperty does... */
+            alock.release();
+
             mParent->onGuestPropertyChange(mData->mUuid, aName,
                                            aValue ? aValue : Bstr("").raw(),
                                            aFlags ? aFlags : Bstr("").raw());
@@ -5119,42 +5107,50 @@ HRESULT Machine::enumerateGuestPropertiesInService
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
     Utf8Str strPatterns(aPatterns);
 
+    HWData::GuestPropertyMap propMap;
+
     /*
      * Look for matching patterns and build up a list.
      */
-    HWData::GuestPropertyList propList;
-    for (HWData::GuestPropertyList::iterator it = mHWData->mGuestProperties.begin();
-         it != mHWData->mGuestProperties.end();
-         ++it)
+    HWData::GuestPropertyMap::const_iterator it = mHWData->mGuestProperties.begin();
+    while (it != mHWData->mGuestProperties.end())
+    {
         if (   strPatterns.isEmpty()
             || RTStrSimplePatternMultiMatch(strPatterns.c_str(),
                                             RTSTR_MAX,
-                                            it->strName.c_str(),
+                                            it->first.c_str(),
                                             RTSTR_MAX,
                                             NULL)
            )
-            propList.push_back(*it);
+        {
+            propMap.insert(*it);
+        }
+
+        it++;
+    }
+
+    alock.release();
 
     /*
      * And build up the arrays for returning the property information.
      */
-    size_t cEntries = propList.size();
+    size_t cEntries = propMap.size();
     SafeArray<BSTR> names(cEntries);
     SafeArray<BSTR> values(cEntries);
     SafeArray<LONG64> timestamps(cEntries);
     SafeArray<BSTR> flags(cEntries);
     size_t iProp = 0;
-    for (HWData::GuestPropertyList::iterator it = propList.begin();
-         it != propList.end();
-         ++it)
+
+    it = propMap.begin();
+    while (it != propMap.end())
     {
          char szFlags[MAX_FLAGS_LEN + 1];
-         it->strName.cloneTo(&names[iProp]);
-         it->strValue.cloneTo(&values[iProp]);
-         timestamps[iProp] = it->mTimestamp;
-         writeFlags(it->mFlags, szFlags);
-         Bstr(szFlags).cloneTo(&flags[iProp]);
-         ++iProp;
+         it->first.cloneTo(&names[iProp]);
+         it->second.strValue.cloneTo(&values[iProp]);
+         timestamps[iProp] = it->second.mTimestamp;
+         writeFlags(it->second.mFlags, szFlags);
+         Bstr(szFlags).cloneTo(&flags[iProp++]);
+         it++;
     }
     names.detachTo(ComSafeArrayOutArg(aNames));
     values.detachTo(ComSafeArrayOutArg(aValues));
@@ -7505,8 +7501,8 @@ HRESULT Machine::loadHardware(const settings::Hardware &data)
             const settings::GuestProperty &prop = *it;
             uint32_t fFlags = guestProp::NILFLAG;
             guestProp::validateFlags(prop.strFlags.c_str(), &fFlags);
-            HWData::GuestProperty property = { prop.strName, prop.strValue, prop.timestamp, fFlags };
-            mHWData->mGuestProperties.push_back(property);
+            HWData::GuestProperty property = { prop.strValue, (LONG64) prop.timestamp, fFlags };
+            mHWData->mGuestProperties[prop.strName] = property;
         }
 
         mHWData->mGuestPropertyNotificationPatterns = data.strNotificationPatterns;
@@ -8594,11 +8590,11 @@ HRESULT Machine::saveHardware(settings::Hardware &data)
         // guest properties
         data.llGuestProperties.clear();
 #ifdef VBOX_WITH_GUEST_PROPS
-        for (HWData::GuestPropertyList::const_iterator it = mHWData->mGuestProperties.begin();
+        for (HWData::GuestPropertyMap::const_iterator it = mHWData->mGuestProperties.begin();
              it != mHWData->mGuestProperties.end();
              ++it)
         {
-            HWData::GuestProperty property = *it;
+            HWData::GuestProperty property = it->second;
 
             /* Remove transient guest properties at shutdown unless we
              * are saving state */
@@ -8609,7 +8605,7 @@ HRESULT Machine::saveHardware(settings::Hardware &data)
                     || property.mFlags & guestProp::TRANSRESET))
                 continue;
             settings::GuestProperty prop;
-            prop.strName = property.strName;
+            prop.strName = it->first;
             prop.strValue = property.strValue;
             prop.timestamp = property.mTimestamp;
             char szFlags[guestProp::MAX_FLAGS_LEN + 1];
@@ -11177,18 +11173,18 @@ STDMETHODIMP SessionMachine::PullGuestProperties(ComSafeArrayOut(BSTR, aNames),
     com::SafeArray<LONG64> timestamps(cEntries);
     com::SafeArray<BSTR> flags(cEntries);
     unsigned i = 0;
-    for (HWData::GuestPropertyList::iterator it = mHWData->mGuestProperties.begin();
+    for (HWData::GuestPropertyMap::iterator it = mHWData->mGuestProperties.begin();
          it != mHWData->mGuestProperties.end();
          ++it)
     {
         char szFlags[MAX_FLAGS_LEN + 1];
-        it->strName.cloneTo(&names[i]);
-        it->strValue.cloneTo(&values[i]);
-        timestamps[i] = it->mTimestamp;
+        it->first.cloneTo(&names[i]);
+        it->second.strValue.cloneTo(&values[i]);
+        timestamps[i] = it->second.mTimestamp;
         /* If it is NULL, keep it NULL. */
-        if (it->mFlags)
+        if (it->second.mFlags)
         {
-            writeFlags(it->mFlags, szFlags);
+            writeFlags(it->second.mFlags, szFlags);
             Bstr(szFlags).cloneTo(&flags[i]);
         }
         else
@@ -11224,8 +11220,8 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
         /*
          * Convert input up front.
          */
-        Utf8Str     utf8Name(aName);
-        uint32_t    fFlags = NILFLAG;
+        Utf8Str  utf8Name(aName);
+        uint32_t fFlags = NILFLAG;
         if (aFlags)
         {
             Utf8Str utf8Flags(aFlags);
@@ -11265,29 +11261,29 @@ STDMETHODIMP SessionMachine::PushGuestProperty(IN_BSTR aName,
         setModified(IsModified_MachineData);
         mHWData.backup();
 
-        /** @todo r=bird: The careful memory handling doesn't work out here because
-         *  the catch block won't undo any damage we've done.  So, if push_back throws
-         *  bad_alloc then you've lost the value.
-         *
-         *  Another thing. Doing a linear search here isn't extremely efficient, esp.
-         *  since values that changes actually bubbles to the end of the list.  Using
-         *  something that has an efficient lookup and can tolerate a bit of updates
-         *  would be nice.  RTStrSpace is one suggestion (it's not perfect).  Some
-         *  combination of RTStrCache (for sharing names and getting uniqueness into
-         *  the bargain) and hash/tree is another. */
-        for (HWData::GuestPropertyList::iterator iter = mHWData->mGuestProperties.begin();
-             iter != mHWData->mGuestProperties.end();
-             ++iter)
-            if (utf8Name == iter->strName)
-            {
-                mHWData->mGuestProperties.erase(iter);
-                mData->mGuestPropertiesModified = TRUE;
-                break;
-            }
-        if (aValue != NULL)
+        bool fDelete = !RT_VALID_PTR(aValue) || *(aValue) == '\0';
+        HWData::GuestPropertyMap::iterator it = mHWData->mGuestProperties.find(utf8Name);
+        if (it != mHWData->mGuestProperties.end())
         {
-            HWData::GuestProperty property = { aName, aValue, aTimestamp, fFlags };
-            mHWData->mGuestProperties.push_back(property);
+            if (!fDelete)
+            {
+                it->second.strValue   = aValue;
+                it->second.mTimestamp = aTimestamp;
+                it->second.mFlags     = fFlags;
+            }
+            else
+                mHWData->mGuestProperties.erase(it);
+
+            mData->mGuestPropertiesModified = TRUE;
+        }
+        else if (!fDelete)
+        {
+            HWData::GuestProperty prop;
+            prop.strValue   = aValue;
+            prop.mTimestamp = aTimestamp;
+            prop.mFlags     = fFlags;
+
+            mHWData->mGuestProperties[utf8Name] = prop;
             mData->mGuestPropertiesModified = TRUE;
         }
 
@@ -12144,13 +12140,13 @@ HRESULT SessionMachine::setMachineState(MachineState_T aMachineState)
         /* Make sure any transient guest properties get removed from the
          * property store on shutdown. */
 
-        HWData::GuestPropertyList::iterator it;
+        HWData::GuestPropertyMap::const_iterator it;
         BOOL fNeedsSaving = mData->mGuestPropertiesModified;
         if (!fNeedsSaving)
             for (it = mHWData->mGuestProperties.begin();
                  it != mHWData->mGuestProperties.end(); ++it)
-                if (   (it->mFlags & guestProp::TRANSIENT)
-                    || (it->mFlags & guestProp::TRANSRESET))
+                if (   (it->second.mFlags & guestProp::TRANSIENT)
+                    || (it->second.mFlags & guestProp::TRANSRESET))
                 {
                     fNeedsSaving = true;
                     break;

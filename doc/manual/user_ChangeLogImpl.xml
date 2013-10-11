@@ -1,6 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.0.20 (2013-10-11)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>GUI: prevent crashes under certain conditions on X11 hosts</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed a rare crash on the guest screen resize</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed data corruption after resizing a VDI image under
+          certain circumstances (bug #11344)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed crash when connecting to certain QNAP iSCSI
+          targets</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed lost writes if iSCSI is used with snapshots and ansyc I/O
+          (bug #11479)</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fixed hang when creating a snapshot using Parallels
+          disk images (bug #9617)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxSVC: don't crash on systems with many VLAN interfaces</para>
+      </listitem>
+
+      <listitem>
+        <para>Main/OVF: don't crash during import if the client forgot to call
+          <emphasis>Appliance::interpret()</emphasis> (bug #10845)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: don't crash during <emphasis>screenshotpng</emphasis>
+          if there is no display (bug #11363)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts: work around gcc bug 55940 which might lead to wrong
+          kernel module code if gcc 4.7 is used to compile the 32-bit Linux
+          host kernel (bug #11035)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts: made "]" key work again on Japanese keyboards.</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux hosts / guests: Linux 3.11 fixes (bug #11946, #12001)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris / Mac OS X hosts: VM CPU load metrics now report 100%
+          when all cores are fully utilized (used to be a single core)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: Linux 3.8 / 3.9 compile fixes (bug #11036)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: RHEL/OEL/CentOS 6.4 compile fix (bug #11586)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: Debian Linux kernel 3.2.0-4 (3.2.39) compile
+          fix (bug #11634)</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.0.18 (2012-12-18)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or

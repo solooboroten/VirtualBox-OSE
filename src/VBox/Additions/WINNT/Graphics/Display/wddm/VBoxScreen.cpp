@@ -335,6 +335,24 @@ static HRESULT vboxScreenMonWndDestroy(HWND hWnd)
     return HRESULT_FROM_WIN32(winErr);
 }
 
+/**
+ * Loads a system DLL.
+ *
+ * @returns Module handle or NULL
+ * @param   pszName             The DLL name.
+ */
+static HMODULE loadSystemDll(const char *pszName)
+{
+    char   szPath[MAX_PATH];
+    UINT   cchPath = GetSystemDirectoryA(szPath, sizeof(szPath));
+    size_t cbName  = strlen(pszName) + 1;
+    if (cchPath + 1 + cbName > sizeof(szPath))
+        return NULL;
+    szPath[cchPath] = '\\';
+    memcpy(&szPath[cchPath + 1], pszName, cbName);
+    return LoadLibraryA(szPath);
+}
+
 //HRESULT vboxScreenMonInit(PVBOXSCREENMON pMon)
 HRESULT vboxScreenMonInit()
 {
@@ -345,7 +363,7 @@ HRESULT vboxScreenMonInit()
 
     pMon->LoData.ScreenLayout.EscapeHdr.escapeCode = VBOXESC_SCREENLAYOUT;
 
-    pMon->hGdi32 = LoadLibraryW(L"gdi32.dll");
+    pMon->hGdi32 = loadSystemDll("gdi32.dll");
     if (pMon->hGdi32 != NULL)
     {
         bool bSupported = true;

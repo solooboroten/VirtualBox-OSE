@@ -32,6 +32,7 @@
 #ifdef __cplusplus      /** @todo remove when spitting. */
 # include <iprt/cpp/autores.h>
 #endif
+#include <iprt/string.h> /* for memset */
 
 
 #ifdef IN_RC
