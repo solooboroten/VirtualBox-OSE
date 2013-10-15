@@ -25,6 +25,7 @@
 #include <VBox/com/ErrorInfo.h>
 #include <VBox/com/errorprint.h>
 #include <VBox/com/VirtualBox.h>
+#include <VBox/com/NativeEventQueue.h>
 
 #include <iprt/net.h>
 #include <iprt/initterm.h>
@@ -96,7 +97,7 @@ extern "C"
 #include "lwip/sockets.h"
 #include "netif/etharp.h"
 
-#include "proxytest.h"
+#include "proxy.h"
 #include "pxremap.h"
 #include "portfwd.h"
 }
@@ -119,11 +120,43 @@ typedef std::vector<NATSEVICEPORTFORWARDRULE> VECNATSERVICEPF;
 typedef VECNATSERVICEPF::iterator ITERATORNATSERVICEPF;
 typedef VECNATSERVICEPF::const_iterator CITERATORNATSERVICEPF;
 
-class PortForwardListener;
+
+class VBoxNetLwipNAT;
+
+
+class NATNetworkListener
+{
+public:
+    NATNetworkListener():m_pNAT(NULL){}
+
+    HRESULT init(VBoxNetLwipNAT *pNAT)
+    {
+        AssertPtrReturn(pNAT, E_INVALIDARG);
+
+        m_pNAT = pNAT;
+        return S_OK;
+    }
+
+    HRESULT init()
+    {
+        m_pNAT = NULL;
+        return S_OK;
+    }
+
+    void uninit() { m_pNAT = NULL; }
+
+    STDMETHOD(HandleEvent)(VBoxEventType_T aEventType, IEvent *pEvent);
+
+private:
+    VBoxNetLwipNAT *m_pNAT;
+};
+typedef ListenerImpl<NATNetworkListener, VBoxNetLwipNAT *> NATNetworkListenerImpl;
+VBOX_LISTENER_DECLARE(NATNetworkListenerImpl)
+
 
 class VBoxNetLwipNAT: public VBoxNetBaseService
 {
-    friend class PortForwardListener;
+    friend class NATNetworkListener;
   public:
     VBoxNetLwipNAT();
     virtual ~VBoxNetLwipNAT();
@@ -152,6 +185,7 @@ class VBoxNetLwipNAT: public VBoxNetBaseService
 
     /* Our NAT network descriptor in Main */
     ComPtr<INATNetwork> net;
+    ComPtr<NATNetworkListenerImpl> m_listener;
     STDMETHOD(HandleEvent)(VBoxEventType_T aEventType, IEvent *pEvent);
 
     RTSEMEVENT hSemSVC;
@@ -174,48 +208,16 @@ class VBoxNetLwipNAT: public VBoxNetBaseService
 };
 
 
-class PortForwardListener
-{
-public:
-    PortForwardListener():m_pNAT(NULL){}
-
-    HRESULT init(VBoxNetLwipNAT *pNAT)
-    {
-        AssertPtrReturn(pNAT, E_INVALIDARG);
-
-        m_pNAT = pNAT;
-        return S_OK;
-    }
-
-    HRESULT init()
-    {
-        m_pNAT = NULL;
-        return S_OK;
-    }
-
-    void uninit() { m_pNAT = NULL; }
-
-    STDMETHOD(HandleEvent)(VBoxEventType_T aEventType, IEvent *pEvent)
-    {
-        if (m_pNAT)
-            return m_pNAT->HandleEvent(aEventType, pEvent);
-        else
-            return E_FAIL;
-    }
-
-private:
-    VBoxNetLwipNAT *m_pNAT;
-};
-
-
-typedef ListenerImpl<PortForwardListener, VBoxNetLwipNAT *> PortForwardListenerImpl;
-
-
-VBOX_LISTENER_DECLARE(PortForwardListenerImpl)
-
-
-
 static VBoxNetLwipNAT *g_pLwipNat;
+
+STDMETHODIMP NATNetworkListener::HandleEvent(VBoxEventType_T aEventType, IEvent *pEvent)
+{
+    if (m_pNAT)
+        return m_pNAT->HandleEvent(aEventType, pEvent);
+    else
+        return E_FAIL;
+}
+
 
 
 STDMETHODIMP VBoxNetLwipNAT::HandleEvent(VBoxEventType_T aEventType,
@@ -224,6 +226,32 @@ STDMETHODIMP VBoxNetLwipNAT::HandleEvent(VBoxEventType_T aEventType,
     HRESULT hrc = S_OK;
     switch (aEventType)
     {
+        case VBoxEventType_OnNATNetworkSetting:
+        {
+            ComPtr<INATNetworkSettingEvent> evSettings(pEvent);
+            // XXX: only handle IPv6 default route for now
+
+            if (!m_ProxyOptions.ipv6_enabled)
+            {
+                break;
+            }
+
+            BOOL fIPv6DefaultRoute = FALSE;
+            hrc = evSettings->COMGETTER(AdvertiseDefaultIPv6RouteEnabled)(&fIPv6DefaultRoute);
+            AssertReturn(SUCCEEDED(hrc), hrc);
+
+            if (m_ProxyOptions.ipv6_defroute == fIPv6DefaultRoute)
+            {
+                break;
+            }
+
+            // XXX: TODO: should prod rtadvd for immediate unsolicited
+            // advertisement with new router lifetime
+            m_ProxyOptions.ipv6_defroute = fIPv6DefaultRoute;
+
+            break;
+        }
+        
         case VBoxEventType_OnNATNetworkPortForward:
         {
             com::Bstr name, strHostAddr, strGuestAddr;
@@ -296,9 +324,9 @@ STDMETHODIMP VBoxNetLwipNAT::HandleEvent(VBoxEventType_T aEventType,
             /* XXX: limits should be checked */
             r.Pfr.u16PfrHostPort = (uint16_t)lHostPort;
 
-            RTStrPrintf(r.Pfr.aszPfrHostAddr, RT_ELEMENTS(r.Pfr.aszPfrGuestAddr),
+            RTStrPrintf(r.Pfr.aszPfrGuestAddr, RT_ELEMENTS(r.Pfr.aszPfrGuestAddr),
                       "%s",
-                      com::Utf8Str(strHostAddr).c_str());
+                      com::Utf8Str(strGuestAddr).c_str());
 
             /* XXX: limits should be checked */
             r.Pfr.u16PfrGuestPort = (uint16_t)lGuestPort;
@@ -354,7 +382,7 @@ STDMETHODIMP VBoxNetLwipNAT::HandleEvent(VBoxEventType_T aEventType,
 void VBoxNetLwipNAT::onLwipTcpIpInit(void* arg)
 {
     AssertPtrReturnVoid(arg);
-    VBoxNetLwipNAT *pThis = (VBoxNetLwipNAT *)arg;
+    VBoxNetLwipNAT *pNat = static_cast<VBoxNetLwipNAT *>(arg);
 
     HRESULT hrc = com::Initialize();
     Assert(!FAILED(hrc));
@@ -388,42 +416,43 @@ void VBoxNetLwipNAT::onLwipTcpIpInit(void* arg)
     netif_set_up(pNetif);
     netif_set_link_up(pNetif);
 
-    /*
-     * XXX: lwIP currently only ever calls mld6_joingroup() in
-     * nd6_tmr() for fresh tentative addresses, which is a wrong place
-     * to do it - but I'm not keen on fixing this properly for now
-     * (with correct handling of interface up and down transitions,
-     * etc).  So stick it here as a kludge.
-     */
-    for (int i = 0; i <= 1; ++i) {
-        ip6_addr_t *paddr = netif_ip6_addr(pNetif, i);
+    if (pNat->m_ProxyOptions.ipv6_enabled) {
+        /*
+         * XXX: lwIP currently only ever calls mld6_joingroup() in
+         * nd6_tmr() for fresh tentative addresses, which is a wrong place
+         * to do it - but I'm not keen on fixing this properly for now
+         * (with correct handling of interface up and down transitions,
+         * etc).  So stick it here as a kludge.
+         */
+        for (int i = 0; i <= 1; ++i) {
+            ip6_addr_t *paddr = netif_ip6_addr(pNetif, i);
 
-        ip6_addr_t solicited_node_multicast_address;
-        ip6_addr_set_solicitednode(&solicited_node_multicast_address,
-                                   paddr->addr[3]);
-        mld6_joingroup(paddr, &solicited_node_multicast_address);
-    }
+            ip6_addr_t solicited_node_multicast_address;
+            ip6_addr_set_solicitednode(&solicited_node_multicast_address,
+                                       paddr->addr[3]);
+            mld6_joingroup(paddr, &solicited_node_multicast_address);
+        }
 
-    /*
-     * XXX: We must join the solicited-node multicast for the
-     * addresses we do IPv6 NA-proxy for.  We map IPv6 loopback to
-     * proxy address + 1.  We only need the low 24 bits, and those are
-     * fixed.
-     */
-    {
-        ip6_addr_t solicited_node_multicast_address;
+        /*
+         * XXX: We must join the solicited-node multicast for the
+         * addresses we do IPv6 NA-proxy for.  We map IPv6 loopback to
+         * proxy address + 1.  We only need the low 24 bits, and those are
+         * fixed.
+         */
+        {
+            ip6_addr_t solicited_node_multicast_address;
 
-        ip6_addr_set_solicitednode(&solicited_node_multicast_address,
-                                   /* last 24 bits of the address */
-                                   PP_HTONL(0x00000002));
-        mld6_netif_joingroup(pNetif,  &solicited_node_multicast_address);
+            ip6_addr_set_solicitednode(&solicited_node_multicast_address,
+                                       /* last 24 bits of the address */
+                                       PP_HTONL(0x00000002));
+            mld6_netif_joingroup(pNetif,  &solicited_node_multicast_address);
+        }
     }
 
     proxy_init(&g_pLwipNat->m_LwipNetIf, &g_pLwipNat->m_ProxyOptions);
 
     natServiceProcessRegisteredPf(g_pLwipNat->m_vecPortForwardRule4);
     natServiceProcessRegisteredPf(g_pLwipNat->m_vecPortForwardRule6);
-
 }
 
 
@@ -469,31 +498,34 @@ err_t VBoxNetLwipNAT::netifInit(netif *pNetif)
 
     pNetif->linkoutput = netifLinkoutput; /* ether-level-pipe */
     pNetif->output = lwip_etharp_output; /* ip-pipe */
-    pNetif->output_ip6 = ethip6_output;
 
-    /* IPv6 link-local address in slot 0 */
-    netif_create_ip6_linklocal_address(pNetif, /* :from_mac_48bit */ 1);
-    netif_ip6_addr_set_state(pNetif, 0, IP6_ADDR_PREFERRED); // skip DAD
+    if (pNat->m_ProxyOptions.ipv6_enabled) {
+        pNetif->output_ip6 = ethip6_output;
 
-    /*
-     * RFC 4193 Locally Assigned Global ID (ULA) in slot 1
-     * [fd17:625c:f037:XXXX::1] where XXXX, 16 bit Subnet ID, are two
-     * bytes from the middle of the IPv4 address, e.g. :dead: for
-     * 10.222.173.1
-     */
-    u8_t nethi = ip4_addr2(&pNetif->ip_addr);
-    u8_t netlo = ip4_addr3(&pNetif->ip_addr);
+        /* IPv6 link-local address in slot 0 */
+        netif_create_ip6_linklocal_address(pNetif, /* :from_mac_48bit */ 1);
+        netif_ip6_addr_set_state(pNetif, 0, IP6_ADDR_PREFERRED); // skip DAD
 
-    ip6_addr_t *paddr = netif_ip6_addr(pNetif, 1);
-    IP6_ADDR(paddr, 0,   0xFD, 0x17,   0x62, 0x5C);
-    IP6_ADDR(paddr, 1,   0xF0, 0x37,  nethi, netlo);
-    IP6_ADDR(paddr, 2,   0x00, 0x00,   0x00, 0x00);
-    IP6_ADDR(paddr, 3,   0x00, 0x00,   0x00, 0x01);
-    netif_ip6_addr_set_state(pNetif, 1, IP6_ADDR_PREFERRED);
+        /*
+         * RFC 4193 Locally Assigned Global ID (ULA) in slot 1
+         * [fd17:625c:f037:XXXX::1] where XXXX, 16 bit Subnet ID, are two
+         * bytes from the middle of the IPv4 address, e.g. :dead: for
+         * 10.222.173.1
+         */
+        u8_t nethi = ip4_addr2(&pNetif->ip_addr);
+        u8_t netlo = ip4_addr3(&pNetif->ip_addr);
+
+        ip6_addr_t *paddr = netif_ip6_addr(pNetif, 1);
+        IP6_ADDR(paddr, 0,   0xFD, 0x17,   0x62, 0x5C);
+        IP6_ADDR(paddr, 1,   0xF0, 0x37,  nethi, netlo);
+        IP6_ADDR(paddr, 2,   0x00, 0x00,   0x00, 0x00);
+        IP6_ADDR(paddr, 3,   0x00, 0x00,   0x00, 0x01);
+        netif_ip6_addr_set_state(pNetif, 1, IP6_ADDR_PREFERRED);
 
 #if LWIP_IPV6_SEND_ROUTER_SOLICIT
-    pNetif->rs_count = 0;
+        pNetif->rs_count = 0;
 #endif
+    }
 
     LogFlowFunc(("LEAVE: %d\n", rcLwip));
     return rcLwip;
@@ -717,6 +749,8 @@ VBoxNetLwipNAT::VBoxNetLwipNAT()
 {
     LogFlowFuncEnter();
 
+    m_ProxyOptions.ipv6_enabled = 0;
+    m_ProxyOptions.ipv6_defroute = 0;
     m_ProxyOptions.tftp_root = NULL;
     m_ProxyOptions.src4 = NULL;
     m_ProxyOptions.src6 = NULL;
@@ -846,6 +880,21 @@ int VBoxNetLwipNAT::init()
     hrc = virtualbox->FindNATNetworkByName(com::Bstr(m_Network.c_str()).raw(),
                                                   net.asOutParam());
     AssertComRCReturn(hrc, VERR_NOT_FOUND);
+
+    BOOL fIPv6Enabled = FALSE;
+    hrc = net->COMGETTER(IPv6Enabled)(&fIPv6Enabled);
+    AssertComRCReturn(hrc, VERR_NOT_FOUND);
+
+    BOOL fIPv6DefaultRoute = FALSE;
+    if (fIPv6Enabled)
+    {
+        hrc = net->COMGETTER(AdvertiseDefaultIPv6RouteEnabled)(&fIPv6DefaultRoute);
+        AssertComRCReturn(hrc, VERR_NOT_FOUND);
+    }
+
+    m_ProxyOptions.ipv6_enabled = fIPv6Enabled;
+    m_ProxyOptions.ipv6_defroute = fIPv6DefaultRoute;
+
 #if !defined(RT_OS_WINDOWS)
     /* XXX: Temporaly disabled this code on Windows for further debugging */
     ComPtr<IEventSource> pES;
@@ -853,19 +902,21 @@ int VBoxNetLwipNAT::init()
     hrc = net->COMGETTER(EventSource)(pES.asOutParam());
     AssertComRC(hrc);
 
-    ComObjPtr<PortForwardListenerImpl> listener;
+    ComObjPtr<NATNetworkListenerImpl> listener;
     hrc = listener.createObject();
     AssertComRCReturn(hrc, VERR_INTERNAL_ERROR);
 
-    hrc = listener->init(new PortForwardListener(), this);
+    hrc = listener->init(new NATNetworkListener(), this);
     AssertComRCReturn(hrc, VERR_INTERNAL_ERROR);
 
     com::SafeArray<VBoxEventType_T> events;
-
     events.push_back(VBoxEventType_OnNATNetworkPortForward);
+    events.push_back(VBoxEventType_OnNATNetworkSetting);
 
     hrc = pES->RegisterListener(listener, ComSafeArrayAsInParam(events), true);
     AssertComRCReturn(hrc, VERR_INTERNAL_ERROR);
+
+    m_listener = listener;
 #endif
 
     com::Bstr bstrSourceIp4Key = com::BstrFmt("NAT/%s/SourceIp4",m_Network.c_str());
@@ -1029,15 +1080,18 @@ int VBoxNetLwipNAT::parseOpt(int rc, const RTGETOPTUNION& Val)
 
 int VBoxNetLwipNAT::run()
 {
-
+    /* EventQueue processing from VBoxHeadless.cpp */
+    com::NativeEventQueue         *gEventQ = NULL;
+    gEventQ = com::NativeEventQueue::getMainEventQueue();
     while(true)
     {
-        RTSemEventWait(g_pLwipNat->hSemSVC, RT_INDEFINITE_WAIT);
+        /* XXX:todo: graceful termination */
+        gEventQ->processEventQueue(0);
+        gEventQ->processEventQueue(500);
     }
 
     vboxLwipCoreFinalize(VBoxNetLwipNAT::onLwipTcpIpFini, this);
 
-    /* @todo: clean up of port-forward rules */
     m_vecPortForwardRule4.clear();
     m_vecPortForwardRule6.clear();
 

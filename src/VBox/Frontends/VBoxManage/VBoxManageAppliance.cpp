@@ -795,6 +795,7 @@ static const RTGETOPTDEF g_aExportOptions[]
         { "--ovf10",              '1', RTGETOPT_REQ_NOTHING },
         { "--ovf20",              '2', RTGETOPT_REQ_NOTHING },
         { "--manifest",           'm', RTGETOPT_REQ_NOTHING },
+        { "--iso",                'I', RTGETOPT_REQ_NOTHING },
         { "--vsys",               's', RTGETOPT_REQ_UINT32 },
         { "--product",            'p', RTGETOPT_REQ_STRING },
         { "--producturl",         'P', RTGETOPT_REQ_STRING },
@@ -813,6 +814,7 @@ int handleExportAppliance(HandlerArg *a)
     Utf8Str strOutputFile;
     Utf8Str strOvfFormat("ovf-1.0"); // the default export version
     bool fManifest = false; // the default
+    bool fExportISOImages = false; // the default
     std::list< ComPtr<IMachine> > llMachines;
 
     uint32_t ulCurVsys = (uint32_t)-1;
@@ -850,6 +852,10 @@ int handleExportAppliance(HandlerArg *a)
 
                 case '2':   // --ovf20
                      strOvfFormat = "ovf-2.0";
+                     break;
+
+                case 'I':   // --iso
+                     fExportISOImages = true;
                      break;
 
                 case 'm':   // --manifest
@@ -1050,9 +1056,16 @@ int handleExportAppliance(HandlerArg *a)
         if (FAILED(rc))
             break;
 
+        com::SafeArray<ExportOptions_T> options;
+        if (fManifest)
+            options.push_back(ExportOptions_CreateManifest);
+
+        if (fExportISOImages)
+            options.push_back(ExportOptions_ExportDVDImages);
+
         ComPtr<IProgress> progress;
         CHECK_ERROR_BREAK(pAppliance, Write(Bstr(strOvfFormat).raw(),
-                                            fManifest,
+                                            ComSafeArrayAsInParam(options),
                                             Bstr(pszAbsFilePath).raw(),
                                             progress.asOutParam()));
         RTStrFree(pszAbsFilePath);

@@ -47,8 +47,6 @@ VBox-libxml2_SOURCES        = \
 	HTMLtree.c \
 	legacy.c \
 	list.c \
-	nanoftp.c \
-	nanohttp.c \
 	parser.c \
 	parserInternals.c \
 	pattern.c \
@@ -75,7 +73,6 @@ VBox-libxml2_SOURCES        = \
 	xpointer.c \
 	xmlstring.c
 
-# xmlmodule.c - not compiling this.
 
 # For linking:
 # VBox-libxml2_LDFLAGS.win    = /VERSION:$(LIBXML_MAJOR_VERSION).$(LIBXML_MINOR_VERSION)

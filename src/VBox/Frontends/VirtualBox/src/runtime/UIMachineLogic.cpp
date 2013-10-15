@@ -489,7 +489,7 @@ void UIMachineLogic::sltKeyboardLedsChanged()
      * [bool] uisession() -> isNumLock(), isCapsLock(), isScrollLock() can be used for that. */
     LogRelFlow(("UIMachineLogic::sltKeyboardLedsChanged: Updating host LED lock states (NOT IMPLEMENTED).\n"));
 #ifdef Q_WS_MAC
-    DarwinHidDevicesBroadcastLeds(uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
+    DarwinHidDevicesBroadcastLeds(m_pHostLedsState, uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
 #endif
 }
 
@@ -536,18 +536,20 @@ void UIMachineLogic::sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong,
         pMachineWindow->handleScreenCountChange();
 }
 
-void UIMachineLogic::sltHostScreenCountChanged(int /*cHostScreenCount*/)
+void UIMachineLogic::sltHostScreenCountChanged()
 {
     /* Deliver event to all machine-windows: */
     foreach (UIMachineWindow *pMachineWindow, machineWindows())
         pMachineWindow->handleScreenCountChange();
 }
 
-void UIMachineLogic::sltHostScreenResized(int /*iHostScreenNumber*/)
+void UIMachineLogic::sltHostScreenGeometryChanged()
 {
+    LogRelFlow(("UIMachineLogic: Host-screen geometry changed.\n"));
+
     /* Deliver event to all machine-windows: */
     foreach (UIMachineWindow *pMachineWindow, machineWindows())
-        pMachineWindow->handleScreenResize();
+        pMachineWindow->handleScreenGeometryChange();
 }
 
 UIMachineLogic::UIMachineLogic(QObject *pParent, UISession *pSession, UIVisualStateType visualStateType)
@@ -717,15 +719,11 @@ void UIMachineLogic::prepareSessionConnections()
     connect(uisession(), SIGNAL(sigGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)),
             this, SLOT(sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)));
 
-    /* Host-screen-change updater: */
-    connect(uisession(), SIGNAL(sigHostScreenCountChanged(int)),
-            this, SLOT(sltHostScreenCountChanged(int)));
-
-    /* Host-screen-resize updaters: */
-    connect(uisession(), SIGNAL(sigHostScreenFullGeometryResized(int)),
-            this, SLOT(sltHostScreenResized(int)));
-    connect(uisession(), SIGNAL(sigHostScreenAvailableGeometryResized(int)),
-            this, SLOT(sltHostScreenResized(int)));
+    /* Host-screen-change updaters: */
+    connect(uisession(), SIGNAL(sigHostScreenCountChanged()),
+            this, SLOT(sltHostScreenCountChanged()));
+    connect(uisession(), SIGNAL(sigHostScreenGeometryChanged()),
+            this, SLOT(sltHostScreenGeometryChanged()));
 }
 
 void UIMachineLogic::prepareActionGroups()
@@ -2211,7 +2209,7 @@ void UIMachineLogic::sltSwitchKeyboardLedsToGuestLeds()
 #ifdef Q_WS_MAC
     if (m_pHostLedsState == NULL)
         m_pHostLedsState = DarwinHidDevicesKeepLedsState();
-    DarwinHidDevicesBroadcastLeds(uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
+    DarwinHidDevicesBroadcastLeds(m_pHostLedsState, uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
 #endif /* Q_WS_MAC */
 }
 

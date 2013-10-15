@@ -21,6 +21,9 @@
 #include <QApplication>
 #include <QDesktopWidget>
 #include <QWidget>
+#ifdef Q_WS_MAC
+# include <QTimer>
+#endif /* Q_WS_MAC */
 
 /* GUI includes: */
 #include "VBoxGlobal.h"
@@ -40,6 +43,9 @@
 #ifdef VBOX_WITH_VIDEOHWACCEL
 # include "VBoxFBOverlay.h"
 #endif /* VBOX_WITH_VIDEOHWACCEL */
+#ifdef Q_WS_MAC
+# include "VBoxUtils-darwin.h"
+#endif /* Q_WS_MAC */
 
 #ifdef Q_WS_X11
 # include <QX11Info>
@@ -71,6 +77,51 @@
 #include "CUSBDeviceFilters.h"
 #include "CSnapshot.h"
 #include "CMedium.h"
+
+#ifdef Q_WS_MAC
+/**
+ * MacOS X: Application Services: Core Graphics: Display reconfiguration callback.
+ *
+ * Notifies about @a display configuration change.
+ * Corresponding change described by CoreGraphics @a flags.
+ * Calls for corresponding UISession slots through @a pHandlerObject to handle this callback.
+ *
+ * @note Last argument (@a pHandlerObject) must always be valid pointer to UISession object.
+ * @note Calls for UISession::sltHandleHostScreenCountChange() if display count was changed.
+ * @note Calls for UISession::sltHandleHostScreenGeometryChange() if display mode was changed.
+ */
+void cgDisplayReconfigurationCallback(CGDirectDisplayID display, CGDisplayChangeSummaryFlags flags, void *pHandlerObject)
+{
+    /* Handle 'display-add' case: */
+    if (flags & kCGDisplayAddFlag)
+    {
+        LogRelFlow(("UISession::cgDisplayReconfigurationCallback: Display added.\n"));
+
+        /* Ask receiver to handle our callback, can't believe I'm using r_c here... */
+        UISession *pReceiver = reinterpret_cast<UISession*>(pHandlerObject);
+        QTimer::singleShot(0, pReceiver, SLOT(sltHandleHostScreenCountChange()));
+    }
+    /* Handle 'display-remove' case: */
+    else if (flags & kCGDisplayRemoveFlag)
+    {
+        LogRelFlow(("UISession::cgDisplayReconfigurationCallback: Display removed.\n"));
+
+        /* Ask receiver to handle our callback, can't believe I'm using r_c here... */
+        UISession *pReceiver = reinterpret_cast<UISession*>(pHandlerObject);
+        QTimer::singleShot(0, pReceiver, SLOT(sltHandleHostScreenCountChange()));
+    }
+    /* Handle 'mode-set' case: */
+    else if (flags & kCGDisplaySetModeFlag)
+    {
+        LogRelFlow(("UISession::cgDisplayReconfigurationCallback: Display mode changed.\n"));
+
+        /* Ask receiver to handle our callback, can't believe I'm using r_c here... */
+        UISession *pReceiver = reinterpret_cast<UISession*>(pHandlerObject);
+        QTimer::singleShot(0, pReceiver, SLOT(sltHandleHostScreenGeometryChange()));
+    }
+    Q_UNUSED(display);
+}
+#endif /* Q_WS_MAC */
 
 UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     : QObject(pMachine)
@@ -786,6 +837,22 @@ void UISession::sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, 
     emit sigGuestMonitorChange(changeType, uScreenId, screenGeo);
 }
 
+void UISession::sltHandleHostScreenCountChange()
+{
+    LogRelFlow(("UISession: Host-screen count changed.\n"));
+
+    /* Notify current machine-logic: */
+    emit sigHostScreenCountChanged();
+}
+
+void UISession::sltHandleHostScreenGeometryChange()
+{
+    LogRelFlow(("UISession: Host-screen geometry changed.\n"));
+
+    /* Notify current machine-logic: */
+    emit sigHostScreenGeometryChanged();
+}
+
 void UISession::sltAdditionsChange()
 {
     /* Get our guest: */
@@ -874,13 +941,18 @@ void UISession::prepareConnections()
 {
     connect(this, SIGNAL(sigCloseRuntimeUI()), this, SLOT(sltCloseRuntimeUI()));
 
+    /* Install Qt display reconfiguration callbacks: */
     connect(QApplication::desktop(), SIGNAL(screenCountChanged(int)),
-            this, SIGNAL(sigHostScreenCountChanged(int)));
-
+            this, SLOT(sltHandleHostScreenCountChange()));
     connect(QApplication::desktop(), SIGNAL(resized(int)),
-            this, SIGNAL(sigHostScreenFullGeometryResized(int)));
+            this, SLOT(sltHandleHostScreenGeometryChange()));
     connect(QApplication::desktop(), SIGNAL(workAreaResized(int)),
-            this, SIGNAL(sigHostScreenAvailableGeometryResized(int)));
+            this, SLOT(sltHandleHostScreenGeometryChange()));
+
+#ifdef Q_WS_MAC
+    /* Install display reconfiguration callback: */
+    CGDisplayRegisterReconfigurationCallback(cgDisplayReconfigurationCallback, this);
+#endif /* Q_WS_MAC */
 }
 
 void UISession::prepareScreens()
@@ -1014,6 +1086,14 @@ void UISession::cleanupConsoleEventHandlers()
 {
     /* Destroy console event-handler: */
     UIConsoleEventHandler::destroy();
+}
+
+void UISession::cleanupConnections()
+{
+#ifdef Q_WS_MAC
+    /* Remove display reconfiguration callback: */
+    CGDisplayRemoveReconfigurationCallback(cgDisplayReconfigurationCallback, this);
+#endif /* Q_WS_MAC */
 }
 
 void UISession::updateSessionSettings()

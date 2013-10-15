@@ -926,22 +926,25 @@ static void hmR0SvmFlushTaggedTlb(PVMCPU pVCpu)
 
         pVCpu->hm.s.fForceTLBFlush = false;
     }
+    /** @todo We never set VMCPU_FF_TLB_SHOOTDOWN anywhere so this path should
+     *        not be executed. See hmQueueInvlPage() where it is commented
+     *        out. Support individual entry flushing someday. */
+#if 0
     else
     {
-        /** @todo We never set VMCPU_FF_TLB_SHOOTDOWN anywhere so this path should
-         *        not be executed. See hmQueueInvlPage() where it is commented
-         *        out. Support individual entry flushing someday. */
         if (VMCPU_FF_IS_PENDING(pVCpu, VMCPU_FF_TLB_SHOOTDOWN))
         {
             /* Deal with pending TLB shootdown actions which were queued when we were not executing code. */
             STAM_COUNTER_INC(&pVCpu->hm.s.StatTlbShootdown);
             for (uint32_t i = 0; i < pVCpu->hm.s.TlbShootdown.cPages; i++)
                 SVMR0InvlpgA(pVCpu->hm.s.TlbShootdown.aPages[i], pVmcb->ctrl.TLBCtrl.n.u32ASID);
+
+            pVCpu->hm.s.TlbShootdown.cPages = 0;
+            VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_TLB_SHOOTDOWN);
         }
     }
+#endif
 
-    pVCpu->hm.s.TlbShootdown.cPages = 0;
-    VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_TLB_SHOOTDOWN);
 
     /* Update VMCB with the ASID. */
     if (pVmcb->ctrl.TLBCtrl.n.u32ASID != pVCpu->hm.s.uCurrentAsid)
@@ -1665,6 +1668,7 @@ VMMR0DECL(int) SVMR0Enter(PVM pVM, PVMCPU pVCpu, PHMGLOBALCPUINFO pCpu)
  * @param   enmEvent        The thread-context event.
  * @param   pVCpu           Pointer to the VMCPU.
  * @param   fGlobalInit     Whether global VT-x/AMD-V init. is used.
+ * @thread  EMT(pVCpu)
  */
 VMMR0DECL(void) SVMR0ThreadCtxCallback(RTTHREADCTXEVENT enmEvent, PVMCPU pVCpu, bool fGlobalInit)
 {
@@ -2228,7 +2232,7 @@ DECLINLINE(void) hmR0SvmSetPendingEvent(PVMCPU pVCpu, PSVMEVENT pEvent, RTGCUINT
     Assert(!pVCpu->hm.s.Event.fPending);
     Assert(pEvent->n.u1Valid);
 
-    pVCpu->hm.s.Event.u64IntrInfo       = pEvent->u;
+    pVCpu->hm.s.Event.u64IntInfo        = pEvent->u;
     pVCpu->hm.s.Event.fPending          = true;
     pVCpu->hm.s.Event.GCPtrFaultAddress = GCPtrFaultAddress;
 
@@ -2342,7 +2346,7 @@ static void hmR0SvmPendingEventToTrpmTrap(PVMCPU pVCpu)
     Assert(TRPMQueryTrap(pVCpu, NULL /* pu8TrapNo */, NULL /* pEnmType */) == VERR_TRPM_NO_ACTIVE_TRAP);
 
     SVMEVENT Event;
-    Event.u = pVCpu->hm.s.Event.u64IntrInfo;
+    Event.u = pVCpu->hm.s.Event.u64IntInfo;
 
     uint8_t uVector     = Event.n.u8Vector;
     uint8_t uVectorType = Event.n.u3Type;
@@ -2536,7 +2540,7 @@ static void hmR0SvmInjectPendingEvent(PVMCPU pVCpu, PCPUMCTX pCtx)
     if (pVCpu->hm.s.Event.fPending)                                /* First, inject any pending HM events. */
     {
         SVMEVENT Event;
-        Event.u = pVCpu->hm.s.Event.u64IntrInfo;
+        Event.u = pVCpu->hm.s.Event.u64IntInfo;
         Assert(Event.n.u1Valid);
 #ifdef VBOX_STRICT
         if (Event.n.u3Type == SVM_EVENT_EXTERNAL_IRQ)
@@ -3764,14 +3768,14 @@ static int hmR0SvmCheckExitDueToEventDelivery(PVMCPU pVCpu, PCPUMCTX pCtx, PSVMT
                              || uIdtVector == X86_XCPT_PF))
                 {
                     enmReflect = SVMREFLECTXCPT_DF;
-                    Log4(("IDT: Pending vectoring #DF %#RX64 uIdtVector=%#x uExitVector=%#x\n", pVCpu->hm.s.Event.u64IntrInfo,
+                    Log4(("IDT: Pending vectoring #DF %#RX64 uIdtVector=%#x uExitVector=%#x\n", pVCpu->hm.s.Event.u64IntInfo,
                           uIdtVector, uExitVector));
                 }
                 else if (uIdtVector == X86_XCPT_DF)
                 {
                     enmReflect = SVMREFLECTXCPT_TF;
-                    Log4(("IDT: Pending vectoring triple-fault %#RX64 uIdtVector=%#x uExitVector=%#x\n", pVCpu->hm.s.Event.u64IntrInfo,
-                          uIdtVector, uExitVector));
+                    Log4(("IDT: Pending vectoring triple-fault %#RX64 uIdtVector=%#x uExitVector=%#x\n",
+                          pVCpu->hm.s.Event.u64IntInfo, uIdtVector, uExitVector));
                 }
                 else
                     enmReflect = SVMREFLECTXCPT_XCPT;
@@ -4653,12 +4657,12 @@ HMSVM_EXIT_DECL hmR0SvmExitTaskSwitch(PVMCPU pVCpu, PCPUMCTX pCtx, PSVMTRANSIENT
         && pVCpu->hm.s.Event.fPending)
     {
         /*
-         * AMD-V does not provide us with the original exception but we have it in u64IntrInfo since we
+         * AMD-V does not provide us with the original exception but we have it in u64IntInfo since we
          * injected the event during VM-entry. Software interrupts and exceptions will be regenerated
          * when the recompiler restarts the instruction.
          */
         SVMEVENT Event;
-        Event.u = pVCpu->hm.s.Event.u64IntrInfo;
+        Event.u = pVCpu->hm.s.Event.u64IntInfo;
         if (   Event.n.u3Type == SVM_EVENT_EXCEPTION
             || Event.n.u3Type == SVM_EVENT_SOFTWARE_INT)
         {
@@ -4829,8 +4833,7 @@ HMSVM_EXIT_DECL hmR0SvmExitXcptNM(PVMCPU pVCpu, PCPUMCTX pCtx, PSVMTRANSIENT pSv
 #ifndef HMSVM_ALWAYS_TRAP_ALL_XCPTS
         Assert(!pSvmTransient->fWasGuestFPUStateActive);
 #endif
-        /* Lazy FPU loading; load the guest-FPU state transparently and continue execution of the guest. */
-        rc = CPUMR0LoadGuestFPU(pVCpu->CTX_SUFF(pVM), pVCpu, pCtx);
+        rc = CPUMR0Trap07Handler(pVCpu->CTX_SUFF(pVM), pVCpu, pCtx);
         Assert(rc == VINF_EM_RAW_GUEST_TRAP || (rc == VINF_SUCCESS && CPUMIsGuestFPUStateActive(pVCpu)));
     }
 
@@ -4839,6 +4842,7 @@ HMSVM_EXIT_DECL hmR0SvmExitXcptNM(PVMCPU pVCpu, PCPUMCTX pCtx, PSVMTRANSIENT pSv
 
     if (rc == VINF_SUCCESS)
     {
+        /* Guest FPU state was activated, we'll want to change CR0 FPU intercepts before the next VM-reentry. */
         VMCPU_HMCF_SET(pVCpu, HM_CHANGED_GUEST_CR0);
         STAM_COUNTER_INC(&pVCpu->hm.s.StatExitShadowNM);
     }

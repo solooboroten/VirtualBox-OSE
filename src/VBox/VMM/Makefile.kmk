@@ -437,7 +437,6 @@ if defined(VBOX_WITH_RAW_MODE) && !defined(VBOX_ONLY_EXTPACKS)
  	VMMRZ/PGMRZDynMap.cpp \
  	VMMRZ/VMMRZ.cpp \
  	VMMAll/CPUMAllRegs.cpp \
- 	VMMAll/CPUMAllA.asm \
  	VMMAll/DBGFAll.cpp \
 	VMMAll/IEMAll.cpp \
 	VMMAll/IEMAllAImpl.asm \
@@ -539,7 +538,6 @@ ifndef VBOX_ONLY_EXTPACKS
  	VMMR0/VMMR0.cpp \
  	VMMRZ/DBGFRZ.cpp \
  	VMMRZ/VMMRZ.cpp \
- 	VMMAll/CPUMAllA.asm \
  	VMMAll/CPUMAllRegs.cpp \
  	VMMAll/CPUMStack.cpp \
  	VMMAll/DBGFAll.cpp \

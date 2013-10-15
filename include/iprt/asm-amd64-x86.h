@@ -378,6 +378,47 @@ DECLINLINE(RTSEL) ASMGetLDTR(void)
 
 
 /**
+ * Get the access rights for the segment selector.
+ *
+ * @returns The access rights on success or ~0U on failure.
+ * @param   uSel        The selector value.
+ *
+ * @remarks Using ~0U for failure is chosen because valid access rights always
+ *          have bits 0:7 as 0 (on both Intel & AMD).
+ */
+#if RT_INLINE_ASM_EXTERNAL
+DECLASM(uint32_t) ASMGetSegAttr(uint32_t uSel);
+#else
+DECLINLINE(uint32_t) ASMGetSegAttr(uint32_t uSel)
+{
+    uint32_t uAttr;
+    /* LAR only accesses 16-bit of the source operand, but eax for the
+       destination operand is required for getting the full 32-bit access rights. */
+# if RT_INLINE_ASM_GNU_STYLE
+    __asm__ __volatile__("lar %1, %%eax\n\t"
+                         "jz done%=\n\t"
+                         "movl $0xffffffff, %%eax\n\t"
+                         "done%=:\n\t"
+                         "movl %%eax, %0\n\t"
+                         : "=r" (uAttr)
+                         : "r" (uSel)
+                         : "cc", "%eax");
+# else
+    __asm
+    {
+        lar     eax, [uSel]
+        jz      done
+        mov     eax, 0ffffffffh
+        done:
+        mov     [uAttr], eax
+    }
+# endif
+    return uAttr;
+}
+#endif
+
+
+/**
  * Get the [RE]FLAGS register.
  * @returns [RE]FLAGS.
  */

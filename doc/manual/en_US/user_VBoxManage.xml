@@ -582,6 +582,14 @@ Statistics update:  disabled
           </listitem>
 
           <listitem>
+            <para><computeroutput>--triplefaultreset on|off</computeroutput>:
+            This setting allows to reset the guest instead of triggering a
+            Guru Meditation. Some guests raise a triple fault to reset the
+            CPU so sometimes this is desired behavior. Works only for non-SMP
+            guests.</para>
+          </listitem>
+
+          <listitem>
             <para><computeroutput>--nestedpaging on|off</computeroutput>: If
             hardware virtualization is enabled, this additional setting
             enables or disables the use of the nested paging feature in the
@@ -1986,7 +1994,7 @@ Virtual system 0:
                             [--add &lt;ide/sata/scsi/floppy&gt;]
                             [--controller &lt;LsiLogic|LSILogicSAS|BusLogic|
                                           IntelAhci|PIIX3|PIIX4|ICH6|I82078&gt;]
-                            [--sataportcount &lt;1-30&gt;]
+                            [--portcount &lt;1-30&gt;]
                             [--hostiocache on|off]
                             [--bootable on|off]
                             [--remove]</screen>
@@ -2027,7 +2035,7 @@ Virtual system 0:
         </glossentry>
 
         <glossentry>
-          <glossterm><computeroutput>--sataportcount</computeroutput></glossterm>
+          <glossterm><computeroutput>--portcount</computeroutput></glossterm>
 
           <glossdef>
             <para>This determines how many ports the SATA controller should

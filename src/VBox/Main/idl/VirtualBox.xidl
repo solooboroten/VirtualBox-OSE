@@ -920,7 +920,7 @@
 
   <enum
     name="CPUPropertyType"
-    uuid="24d356a6-2f45-4abd-b977-1cbe9c4701f5"
+    uuid="52bc41f4-a279-45da-88ab-3a1d86fb73eb"
     >
     <desc>
       Virtual CPU property type. This enumeration represents possible values of the
@@ -946,6 +946,12 @@
       <desc>
         This setting determines whether VirtualBox will advertise long mode
         (i.e. 64-bit guest support) and let the guest enter it.
+      </desc>
+    </const>
+    <const name="TripleFaultReset"     value="4">
+      <desc>
+        This setting determines whether a triple fault within a guest will trigger an internal
+        error condition and stop the VM (default) or reset the virtual CPU and continue execution.
       </desc>
     </const>
   </enum>
@@ -2796,6 +2802,26 @@
 
   </enum>
 
+  <enum
+    name="ExportOptions"
+    uuid="8f45eb08-fd34-41ee-af95-a880bdee5554"
+    >
+
+    <desc>
+    Export options, used with <link to="IAppliance::write" />.
+    </desc>
+
+    <const name="CreateManifest"    value="1">
+      <desc>Write the optional manifest file (.mf) which is used for integrity
+      checks prior import.</desc>
+    </const>
+    <const name="ExportDVDImages"   value="2">
+      <desc>Export DVD images. Default is not to export them as it is rarely
+      needed for typical VMs.</desc>
+    </const>
+
+  </enum>
+
 
   <!--
   // IAppliance
@@ -3038,11 +3064,8 @@
             and "ovf-2.0"; future versions of VirtualBox may support additional formats.
         </desc>
       </param>
-      <param name="manifest" type="boolean" dir="in">
-        <desc>
-            Indicate if the optional manifest file (.mf) should be written. The manifest file
-            is used for integrity checks prior import.
-        </desc>
+      <param name="options" type="ExportOptions" dir="in" safearray="yes">
+        <desc>Options for the exporting operation.</desc>
       </param>
       <param name="path" type="wstring" dir="in">
           <desc>

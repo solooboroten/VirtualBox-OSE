@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.3.0 Release Candidate 1 (2013-10-08)</title>
+    <title>Version 4.3.0 (2013-10-15)</title>
 
     <para>This is a major update. The following major new features
       were added:</para>
@@ -38,6 +38,11 @@
       </listitem>
 
       <listitem>
+        <para>Added experimental support for webcam passthrough
+          complementing USB passthrough (see <xref linkend="webcam-passthrough" />)</para>
+      </listitem>
+
+      <listitem>
         <para>Added SCSI CD-ROM emulation, including boot support</para>
       </listitem>
 
@@ -51,7 +56,8 @@
       </listitem>
 
       <listitem>
-        <para>Guest Control: implemented IGuestFile support</para>
+        <para>Guest Control: implemented <computeroutput>IGuestFile</computeroutput>
+          support</para>
       </listitem>
 
       <listitem>
@@ -82,11 +88,21 @@
       </listitem>
 
       <listitem>
+        <para>VMM: allow to activate VT-x while in SMX mode and provide more
+          information if that is not possible</para>
+      </listitem>
+
+      <listitem>
         <para>GUI: update check uses https</para>
       </listitem>
 
       <listitem>
         <para>GUI: numerous minor internal cleanups and bug fixes</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: HID LEDs synchronization when switching between guest window(s)
+          and host (Mac OS X hosts only)</para>
       </listitem>
 
       <listitem>
@@ -203,6 +219,12 @@
       </listitem>
 
       <listitem>
+        <para>VBoxManage: added <computeroutput>modifyvm --triplefaultreset</computeroutput>
+          to make the VM reset on triple fault instead of triggering a Guru Meditation
+          (see <xref linkend="vboxmanage-modifyvm"/>)</para>
+      </listitem>
+
+      <listitem>
         <para>3D support: several fixes</para>
       </listitem>
 
@@ -226,7 +248,16 @@
 
       <listitem>
         <para>Shared Clipboard/X11: support for BMP-format images, contributed
-           by François Revol</para>
+          by François Revol</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X hosts: limited support for Mac OS X 10.9 (Mavericks)</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X hosts: use a launchd script instead of the deprecated
+          StartupItem mechanism (bug #8940)</para>
       </listitem>
 
       <listitem>
@@ -255,13 +286,13 @@
       </listitem>
 
       <listitem>
-        <para>Linux Additions: fixed udev detection in the init script
-          with Linux 3.x kernels</para>
+        <para>Windows Additions: ability to track guest user idle times through
+          the newly introduced event <emphasis>IGuestUserStateChangedEvent</emphasis></para>
       </listitem>
 
       <listitem>
-        <para>Windows guests: ability to track guest user idle times through
-          the newly introduced event <emphasis>IGuestUserStateChangedEvent</emphasis></para>
+        <para>Linux Additions: fixed udev detection in the init script
+          with Linux 3.x kernels</para>
       </listitem>
 
     </itemizedlist>

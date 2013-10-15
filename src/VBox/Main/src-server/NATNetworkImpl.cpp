@@ -234,7 +234,7 @@ HRESULT NATNetwork::saveSettings(settings::NATNetwork &data)
     data.llPortForwardRules6.clear();
     for (NATRuleMap::iterator it = m->mapName2PortForwardRule6.begin();
          it != m->mapName2PortForwardRule6.end(); ++it)
-        data.llPortForwardRules4.push_back(it->second);
+        data.llPortForwardRules6.push_back(it->second);
 
     data.u32HostLoopback6Offset = m->u32LoopbackIp6;
 
@@ -659,7 +659,6 @@ STDMETHODIMP NATNetwork::AddPortForwardRule(BOOL aIsIpv6,
                                             IN_BSTR aGuestIp,
                                             USHORT aGuestPort)
 {
-    int rc = S_OK;
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
@@ -708,6 +707,15 @@ STDMETHODIMP NATNetwork::AddPortForwardRule(BOOL aIsIpv6,
     mapRules.insert(std::make_pair(name, r));
 
     alock.release();
+
+#ifdef NAT_XML_SERIALIZATION
+    {
+        AutoWriteLock vboxLock(mVirtualBox COMMA_LOCKVAL_SRC_POS);
+        HRESULT rc = mVirtualBox->saveSettings();
+        ComAssertComRCRetRC(rc);
+    }
+#endif
+
     mVirtualBox->onNATNetworkPortForward(mName.raw(), TRUE, aIsIpv6,
                                          aPortForwardRuleName, aProto,
                                          aHostIp, aHostPort,
@@ -718,12 +726,7 @@ STDMETHODIMP NATNetwork::AddPortForwardRule(BOOL aIsIpv6,
                                    aIsIpv6, aPortForwardRuleName, aProto,
                                    aHostIp, aHostPort,
                                    aGuestIp, aGuestPort);
-
-#ifdef NAT_XML_SERIALIZATION
-    AutoWriteLock vboxLock(mVirtualBox COMMA_LOCKVAL_SRC_POS);
-    rc = mVirtualBox->saveSettings();
-#endif
-    return rc;
+    return S_OK;
 }
 
 STDMETHODIMP NATNetwork::RemovePortForwardRule(BOOL aIsIpv6, IN_BSTR aPortForwardRuleName)
@@ -748,6 +751,14 @@ STDMETHODIMP NATNetwork::RemovePortForwardRule(BOOL aIsIpv6, IN_BSTR aPortForwar
 
     alock.release();
 
+#ifdef NAT_XML_SERIALIZATION
+    {
+        AutoWriteLock vboxLock(mVirtualBox COMMA_LOCKVAL_SRC_POS);
+        HRESULT rc = mVirtualBox->saveSettings();
+        ComAssertComRCRetRC(rc);
+    }
+#endif
+
     mVirtualBox->onNATNetworkPortForward(mName.raw(), FALSE, aIsIpv6,
                                          aPortForwardRuleName, proto,
                                          Bstr(strHostIP).raw(), u16HostPort,
@@ -758,13 +769,7 @@ STDMETHODIMP NATNetwork::RemovePortForwardRule(BOOL aIsIpv6, IN_BSTR aPortForwar
                                    aIsIpv6, aPortForwardRuleName, proto,
                                    Bstr(strHostIP).raw(), u16HostPort,
                                    Bstr(strGuestIP).raw(), u16GuestPort);
-    HRESULT rc = S_OK;
-#ifdef NAT_XML_SERIALIZATION
-    AutoWriteLock vboxLock(mVirtualBox COMMA_LOCKVAL_SRC_POS);
-    rc = mVirtualBox->saveSettings();
-#endif
-
-    return rc;
+    return S_OK;
 }
 
 
