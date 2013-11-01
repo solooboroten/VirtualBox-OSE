@@ -1,8 +1,6 @@
 /* $Id: UIFrameBuffer.cpp $ */
 /** @file
- *
- * VBox frontends: Qt GUI ("VirtualBox"):
- * UIFrameBuffer class and subclasses implementation
+ * VBox Qt GUI - UIFrameBuffer class implementation.
  */
 
 /*
@@ -45,32 +43,71 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI (UIFrameBuffer, IFramebuffer)
 UIFrameBuffer::UIFrameBuffer(UIMachineView *pMachineView)
     : m_pMachineView(pMachineView)
     , m_width(0), m_height(0)
-    , m_fIsScheduledToDelete(false)
+    , m_fIsMarkedAsUnused(false)
+    , m_fIsAutoEnabled(false)
 #ifdef Q_OS_WIN
     , m_iRefCnt(0)
 #endif /* Q_OS_WIN */
 {
     /* Assign mahine-view: */
-    AssertMsg(m_pMachineView, ("UIMachineView must not be null\n"));
+    AssertMsg(m_pMachineView, ("UIMachineView must not be NULL\n"));
     m_WinId = (m_pMachineView && m_pMachineView->viewport()) ? (LONG64)m_pMachineView->viewport()->winId() : 0;
-
-    /* Connect handlers: */
-    if (m_pMachineView)
-        prepareConnections();
 
     /* Initialize critical-section: */
     int rc = RTCritSectInit(&m_critSect);
     AssertRC(rc);
+
+    /* Connect handlers: */
+    if (m_pMachineView)
+        prepareConnections();
 }
 
 UIFrameBuffer::~UIFrameBuffer()
 {
-    /* Deinitialize critical-section: */
-    RTCritSectDelete(&m_critSect);
-
     /* Disconnect handlers: */
     if (m_pMachineView)
         cleanupConnections();
+
+    /* Deinitialize critical-section: */
+    RTCritSectDelete(&m_critSect);
+}
+
+/**
+ * Sets the framebuffer <b>unused</b> status.
+ * @param fIsMarkAsUnused determines whether framebuffer should ignore EMT events or not.
+ * @note  Call to this (and any EMT callback) method is synchronized between calling threads (from GUI side).
+ */
+void UIFrameBuffer::setMarkAsUnused(bool fIsMarkAsUnused)
+{
+    lock();
+    m_fIsMarkedAsUnused = fIsMarkAsUnused;
+    unlock();
+}
+
+/**
+ * Returns the framebuffer <b>auto-enabled</b> status.
+ * @returns @c true if guest-screen corresponding to this framebuffer was automatically enabled by
+            the auto-mount guest-screen auto-pilot, @c false otherwise.
+ * @note    <i>Auto-enabled</i> status means the framebuffer was automatically enabled by the multi-screen layout
+ *          and so have potentially incorrect guest size hint posted into guest event queue. Machine-view will try to
+ *          automatically adjust guest-screen size as soon as possible.
+ */
+bool UIFrameBuffer::isAutoEnabled() const
+{
+    return m_fIsAutoEnabled;
+}
+
+/**
+ * Sets the framebuffer <b>auto-enabled</b> status.
+ * @param fIsAutoEnabled determines whether guest-screen corresponding to this framebuffer
+ *        was automatically enabled by the auto-mount guest-screen auto-pilot.
+ * @note  <i>Auto-enabled</i> status means the framebuffer was automatically enabled by the multi-screen layout
+ *        and so have potentially incorrect guest size hint posted into guest event queue. Machine-view will try to
+ *        automatically adjust guest-screen size as soon as possible.
+ */
+void UIFrameBuffer::setAutoEnabled(bool fIsAutoEnabled)
+{
+    m_fIsAutoEnabled = fIsAutoEnabled;
 }
 
 STDMETHODIMP UIFrameBuffer::COMGETTER(Address) (BYTE **ppAddress)
@@ -166,10 +203,23 @@ STDMETHODIMP UIFrameBuffer::Unlock()
     return S_OK;
 }
 
+/**
+ * EMT callback: Requests a size and pixel format change.
+ * @param uScreenId     Guest screen number. Must be used in the corresponding call to CDisplay::ResizeCompleted if this call is made.
+ * @param uPixelFormat  Pixel format of the memory buffer pointed to by @a pVRAM.
+ * @param pVRAM         Pointer to the virtual video card's VRAM (may be <i>null</i>).
+ * @param uBitsPerPixel Color depth, bits per pixel.
+ * @param uBytesPerLine Size of one scan line, in bytes.
+ * @param uWidth        Width of the guest display, in pixels.
+ * @param uHeight       Height of the guest display, in pixels.
+ * @param pfFinished    Can the VM start using the new frame buffer immediately after this method returns or it should wait for CDisplay::ResizeCompleted.
+ * @note  Any EMT callback is subsequent. No any other EMT callback can be called until this one processed.
+ * @note  Calls to this and #setMarkAsUnused method are synchronized between calling threads (from GUI side).
+ */
 STDMETHODIMP UIFrameBuffer::RequestResize(ULONG uScreenId, ULONG uPixelFormat,
                                           BYTE *pVRAM, ULONG uBitsPerPixel, ULONG uBytesPerLine,
                                           ULONG uWidth, ULONG uHeight,
-                                          BOOL *pbFinished)
+                                          BOOL *pfFinished)
 {
     LogRelFlow(("UIFrameBuffer::RequestResize: "
                 "Screen=%lu, Format=%lu, "
@@ -179,99 +229,144 @@ STDMETHODIMP UIFrameBuffer::RequestResize(ULONG uScreenId, ULONG uPixelFormat,
                 (unsigned long)uBitsPerPixel, (unsigned long)uBytesPerLine,
                 (unsigned long)uWidth, (unsigned long)uHeight));
 
-    /* Make sure frame-buffer is not yet scheduled for removal: */
-    if (m_fIsScheduledToDelete)
-        return E_FAIL;
+    /* Make sure result pointer is valid: */
+    if (!pfFinished)
+    {
+        LogRelFlow(("UIFrameBuffer::RequestResize: Invalid pfFinished pointer!\n"));
 
-    /* Currently screen ID is not used: */
-    Q_UNUSED(uScreenId);
+        return E_POINTER;
+    }
 
-    /* Mark request as not-yet-finished: */
-    *pbFinished = FALSE;
-
-    /* See comment in setView(): */
+    /* Lock access to frame-buffer: */
     lock();
 
-    /* Widget resize is NOT thread safe and never will be,
-     * We have to notify the machine-view with the async signal to perform resize operation. */
-    if (m_pMachineView)
-        emit sigRequestResize(uPixelFormat, pVRAM, uBitsPerPixel, uBytesPerLine, uWidth, uHeight);
-    else
+    /* Make sure frame-buffer is used: */
+    if (m_fIsMarkedAsUnused)
+    {
+        LogRelFlow(("UIFrameBuffer::RequestResize: Ignored!\n"));
+
         /* Mark request as finished.
          * It is required to report to the VM thread that we finished resizing and rely on the
-         * synchronisation when the new view is attached. */
-        *pbFinished = TRUE;
+         * later synchronisation when the new view is attached. */
+        *pfFinished = TRUE;
 
-    /* Unlock thread finally: */
+        /* Unlock access to frame-buffer: */
+        unlock();
+
+        /* Ignore RequestResize: */
+        return E_FAIL;
+    }
+
+    /* Mark request as not-yet-finished: */
+    *pfFinished = FALSE;
+
+    /* Widget resize is NOT thread-safe and *probably* never will be,
+     * We have to notify machine-view with the async-signal to perform resize operation. */
+    LogRelFlow(("UIFrameBuffer::RequestResize: Sending to async-handler...\n"));
+    emit sigRequestResize(uPixelFormat, pVRAM, uBitsPerPixel, uBytesPerLine, uWidth, uHeight);
+
+    /* Unlock access to frame-buffer: */
     unlock();
 
     /* Confirm RequestResize: */
     return S_OK;
 }
 
+/**
+ * EMT callback: Informs about an update.
+ * @param uX      Horizontal origin of the update rectangle, in pixels.
+ * @param uY      Vertical origin of the update rectangle, in pixels.
+ * @param uWidth  Width of the update rectangle, in pixels.
+ * @param uHeight Height of the update rectangle, in pixels.
+ * @note  Any EMT callback is subsequent. No any other EMT callback can be called until this one processed.
+ * @note  Calls to this and #setMarkAsUnused method are synchronized between calling threads (from GUI side).
+ */
 STDMETHODIMP UIFrameBuffer::NotifyUpdate(ULONG uX, ULONG uY, ULONG uWidth, ULONG uHeight)
 {
-    LogRelFlow(("UIFrameBuffer::NotifyUpdate: Origin=%lux%lu, Size=%lux%lu\n",
-                (unsigned long)uX, (unsigned long)uY,
-                (unsigned long)uWidth, (unsigned long)uHeight));
+    LogRel2(("UIFrameBuffer::NotifyUpdate: Origin=%lux%lu, Size=%lux%lu\n",
+             (unsigned long)uX, (unsigned long)uY,
+             (unsigned long)uWidth, (unsigned long)uHeight));
 
-    /* Make sure frame-buffer is not yet scheduled for removal: */
-    if (m_fIsScheduledToDelete)
-        return E_FAIL;
-
-    /* See comment in setView(): */
+    /* Lock access to frame-buffer: */
     lock();
 
-    /* QWidget::update() is NOT thread safe and seems never will be,
-     * So we have to notify the machine-view with the async signal to perform update operation. */
-    if (m_pMachineView)
-        emit sigNotifyUpdate(uX, uY, uWidth, uHeight);
+    /* Make sure frame-buffer is used: */
+    if (m_fIsMarkedAsUnused)
+    {
+        LogRel2(("UIFrameBuffer::NotifyUpdate: Ignored!\n"));
 
-    /* Unlock thread finally: */
+        /* Unlock access to frame-buffer: */
+        unlock();
+
+        /* Ignore NotifyUpdate: */
+        return E_FAIL;
+    }
+
+    /* Widget update is NOT thread-safe and *seems* never will be,
+     * We have to notify machine-view with the async-signal to perform update operation. */
+    LogRel2(("UIFrameBuffer::NotifyUpdate: Sending to async-handler...\n"));
+    emit sigNotifyUpdate(uX, uY, uWidth, uHeight);
+
+    /* Unlock access to frame-buffer: */
     unlock();
 
     /* Confirm NotifyUpdate: */
     return S_OK;
 }
 
-STDMETHODIMP UIFrameBuffer::VideoModeSupported(ULONG uWidth, ULONG uHeight, ULONG uBPP, BOOL *pbSupported)
+/**
+ * EMT callback: Returns whether the framebuffer implementation is willing to support a given video mode.
+ * @param uWidth      Width of the guest display, in pixels.
+ * @param uHeight     Height of the guest display, in pixels.
+ * @param uBPP        Color depth, bits per pixel.
+ * @param pfSupported Is framebuffer able/willing to render the video mode or not.
+ * @note  Any EMT callback is subsequent. No any other EMT callback can be called until this one processed.
+ * @note  Calls to this and #setMarkAsUnused method are synchronized between calling threads (from GUI side).
+ */
+STDMETHODIMP UIFrameBuffer::VideoModeSupported(ULONG uWidth, ULONG uHeight, ULONG uBPP, BOOL *pfSupported)
 {
-    LogRelFlow(("UIFrameBuffer::VideoModeSupported: Mode: BPP=%lu, Size=%lux%lu\n",
-                (unsigned long)uBPP, (unsigned long)uWidth, (unsigned long)uHeight));
+    LogRel2(("UIFrameBuffer::IsVideoModeSupported: Mode: BPP=%lu, Size=%lux%lu\n",
+             (unsigned long)uBPP, (unsigned long)uWidth, (unsigned long)uHeight));
 
-    /* Make sure frame-buffer is not yet scheduled for removal: */
-    if (m_fIsScheduledToDelete)
-        return E_FAIL;
+    /* Make sure result pointer is valid: */
+    if (!pfSupported)
+    {
+        LogRel2(("UIFrameBuffer::IsVideoModeSupported: Invalid pfSupported pointer!\n"));
 
-    if (!pbSupported)
         return E_POINTER;
-    *pbSupported = TRUE;
+    }
 
-    /* Currently BPP is not used: */
-    Q_UNUSED(uBPP);
-
-    /* See comment in setView(): */
+    /* Lock access to frame-buffer: */
     lock();
 
-    QSize screenSize;
-    if (m_pMachineView)
-        screenSize = m_pMachineView->maxGuestSize();
+    /* Make sure frame-buffer is used: */
+    if (m_fIsMarkedAsUnused)
+    {
+        LogRel2(("UIFrameBuffer::IsVideoModeSupported: Ignored!\n"));
 
-    /* Unlock thread finally: */
-    unlock();
+        /* Unlock access to frame-buffer: */
+        unlock();
 
+        /* Ignore VideoModeSupported: */
+        return E_FAIL;
+    }
+
+    /* Determine if supported: */
+    *pfSupported = TRUE;
+    QSize screenSize = m_pMachineView->maxGuestSize();
     if (   (screenSize.width() != 0)
         && (uWidth > (ULONG)screenSize.width())
         && (uWidth > (ULONG)width()))
-        *pbSupported = FALSE;
-
+        *pfSupported = FALSE;
     if (   (screenSize.height() != 0)
         && (uHeight > (ULONG)screenSize.height())
         && (uHeight > (ULONG)height()))
-        *pbSupported = FALSE;
+        *pfSupported = FALSE;
 
-    LogRelFlow(("UIFrameBuffer::VideoModeSupported: Verdict: Supported=%s\n",
-                *pbSupported ? "TRUE" : "FALSE"));
+    LogRel2(("UIFrameBuffer::IsVideoModeSupported: %s\n", *pfSupported ? "TRUE" : "FALSE"));
+
+    /* Unlock access to frame-buffer: */
+    unlock();
 
     /* Confirm VideoModeSupported: */
     return S_OK;
@@ -290,21 +385,44 @@ STDMETHODIMP UIFrameBuffer::GetVisibleRegion(BYTE *pRectangles, ULONG uCount, UL
     return S_OK;
 }
 
+/**
+ * EMT callback: Suggests a new visible region to this framebuffer.
+ * @param pRectangles Pointer to the RTRECT array.
+ * @param uCount      Number of RTRECT elements in the rectangles array.
+ * @note  Any EMT callback is subsequent. No any other EMT callback can be called until this one processed.
+ * @note  Calls to this and #setMarkAsUnused method are synchronized between calling threads (from GUI side).
+ */
 STDMETHODIMP UIFrameBuffer::SetVisibleRegion(BYTE *pRectangles, ULONG uCount)
 {
-    LogRelFlow(("UIFrameBuffer::SetVisibleRegion: Rectangle count=%lu\n", (unsigned long)uCount));
-
-    /* Make sure frame-buffer is not yet scheduled for removal: */
-    if (m_fIsScheduledToDelete)
-        return E_FAIL;
+    LogRel2(("UIFrameBuffer::SetVisibleRegion: Rectangle count=%lu\n",
+             (unsigned long)uCount));
 
     /* Make sure rectangles were passed: */
-    PRTRECT rects = (PRTRECT)pRectangles;
-    if (!rects)
+    if (!pRectangles)
+    {
+        LogRel2(("UIFrameBuffer::SetVisibleRegion: Invalid pRectangles pointer!\n"));
+
         return E_POINTER;
+    }
+
+    /* Lock access to frame-buffer: */
+    lock();
+
+    /* Make sure frame-buffer is used: */
+    if (m_fIsMarkedAsUnused)
+    {
+        LogRel2(("UIFrameBuffer::SetVisibleRegion: Ignored!\n"));
+
+        /* Unlock access to frame-buffer: */
+        unlock();
+
+        /* Ignore SetVisibleRegion: */
+        return E_FAIL;
+    }
 
     /* Compose region: */
     QRegion region;
+    PRTRECT rects = (PRTRECT)pRectangles;
     for (ULONG ind = 0; ind < uCount; ++ind)
     {
         /* Get current rectangle: */
@@ -319,16 +437,13 @@ STDMETHODIMP UIFrameBuffer::SetVisibleRegion(BYTE *pRectangles, ULONG uCount)
         ++rects;
     }
 
-    /* See comment in setView(): */
-    lock();
-
     /* We are directly updating synchronous visible-region: */
     m_syncVisibleRegion = region;
-    /* And send async signal to update asynchronous one: */
-    if (m_pMachineView)
-        emit sigSetVisibleRegion(region);
+    /* And send async-signal to update asynchronous one: */
+    LogRel2(("UIFrameBuffer::SetVisibleRegion: Sending to async-handler...\n"));
+    emit sigSetVisibleRegion(region);
 
-    /* Unlock thread finally: */
+    /* Unlock access to frame-buffer: */
     unlock();
 
     /* Confirm SetVisibleRegion: */
@@ -341,23 +456,59 @@ STDMETHODIMP UIFrameBuffer::ProcessVHWACommand(BYTE *pCommand)
     return E_NOTIMPL;
 }
 
+/**
+ * EMT callback: Notifies framebuffer about 3D backend event.
+ * @param uType Event type. Currently only VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA is supported.
+ * @param pData Event-specific data, depends on the supplied event type.
+ * @note  Any EMT callback is subsequent. No any other EMT callback can be called until this one processed.
+ * @note  Calls to this and #setMarkAsUnused method are synchronized between calling threads (from GUI side).
+ */
 STDMETHODIMP UIFrameBuffer::Notify3DEvent(ULONG uType, BYTE *pData)
 {
+    LogRel2(("UIFrameBuffer::Notify3DEvent\n"));
+
+    /* Lock access to frame-buffer: */
+    lock();
+
+    /* Make sure frame-buffer is used: */
+    if (m_fIsMarkedAsUnused)
+    {
+        LogRel2(("UIFrameBuffer::Notify3DEvent: Ignored!\n"));
+
+        /* Unlock access to frame-buffer: */
+        unlock();
+
+        /* Ignore Notify3DEvent: */
+        return E_FAIL;
+    }
+
     switch (uType)
     {
         case VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA:
         {
-            /* Notify GUI about 3D overlay visibility change: */
+            /* Notify machine-view with the async-signal
+             * about 3D overlay visibility change: */
             BOOL fVisible = !!pData;
-            LogRelFlow(("UIFrameBuffer::Notify3DEvent: "
-                        "VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA=%s\n",
-                        fVisible ? "TRUE" : "FALSE"));
+            LogRel2(("UIFrameBuffer::Notify3DEvent: Sending to async-handler: "
+                     "(VBOX3D_NOTIFY_EVENT_TYPE_VISIBLE_3DDATA = %s)\n",
+                     fVisible ? "TRUE" : "FALSE"));
             emit sigNotifyAbout3DOverlayVisibilityChange(fVisible);
+
+            /* Unlock access to frame-buffer: */
+            unlock();
+
+            /* Confirm Notify3DEvent: */
             return S_OK;
         }
         default:
-            return E_INVALIDARG;
+            break;
     }
+
+    /* Unlock access to frame-buffer: */
+    unlock();
+
+    /* Ignore Notify3DEvent: */
+    return E_INVALIDARG;
 }
 
 void UIFrameBuffer::applyVisibleRegion(const QRegion &region)
@@ -391,12 +542,6 @@ void UIFrameBuffer::doProcessVHWACommand(QEvent *pEvent)
 
 void UIFrameBuffer::setView(UIMachineView * pView)
 {
-    /* We are not supposed to use locking for things which are done
-     * on the GUI thread.  Unfortunately I am not clever enough to
-     * understand the original author's wise synchronisation logic
-     * so I will do it anyway. */
-    lock();
-
     /* Disconnect handlers: */
     if (m_pMachineView)
         cleanupConnections();
@@ -408,9 +553,6 @@ void UIFrameBuffer::setView(UIMachineView * pView)
     /* Connect handlers: */
     if (m_pMachineView)
         prepareConnections();
-
-    /* Unlock thread finally: */
-    unlock();
 }
 
 void UIFrameBuffer::prepareConnections()

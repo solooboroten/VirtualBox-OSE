@@ -220,8 +220,8 @@
         <translation>ایجاد یک ضبط وضعیت ماشین مجازی</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation>نمایش پنجره اطلاعات جلسه</translation>
+        <source>Show Session Information Window</source>
+        <translation type="unfinished">نمایش پنجره اطلاعات جلسه</translation>
     </message>
     <message>
         <source>&amp;Pause</source>
@@ -292,12 +292,12 @@
         <translation>ایجاد یا ویرایش پوشه های اشتراکی</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation>نصب افزون&amp;ه مهمان...</translation>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished">نصب افزون&amp;ه مهمان...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
-        <translation>بارگیری ایمیج نصب افزونه مهمان</translation>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished">بارگیری ایمیج نصب افزونه مهمان</translation>
     </message>
     <message>
         <source>De&amp;bug</source>
@@ -749,6 +749,16 @@
     <message>
         <source>Popup Menu</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <comment>new</comment>
+        <translation type="obsolete">نصب افزون&amp;ه مهمان...</translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <comment>new</comment>
+        <translation type="obsolete">بارگیری ایمیج نصب افزونه مهمان</translation>
     </message>
 </context>
 <context>
@@ -3593,7 +3603,7 @@
     </message>
     <message>
         <source>Dialog</source>
-        <translation>پنجره</translation>
+        <translation type="obsolete">پنجره</translation>
     </message>
     <message>
         <source>Folder Path:</source>
@@ -3630,6 +3640,10 @@
     <message>
         <source>If checked, this shared folder will be permanent.</source>
         <translation>اگر انتخاب شده باشد،این پوشه اشتراکی دائمی خواهد بود.</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -4866,9 +4880,9 @@
         <translation type="obsolete">دانلود</translation>
     </message>
     <message>
-        <source>Mount</source>
+        <source>Insert</source>
         <comment>additions</comment>
-        <translation>بارگیری</translation>
+        <translation type="unfinished">بارگیری</translation>
     </message>
     <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
@@ -5350,8 +5364,8 @@
         <translation>&lt;p&gt;توجه کنید که واحد ذخیره ساز این رسانه حذف نخواهد شد و امکان استفاده آن در زمان دیگری هم هست.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;افزونه مهمان ویرچوال باکس در ماشین مجازی دردسترس ظاهر نشده است، و پوشه اشتراکی بدون آن قابل استفاده نیست. برای استفاده از پوشه اشتراکی در داخل ماشین مجازی، لطفا افزونه مهمان را نصب کنید اگر آنها نصب نشده است. یا اگر بدرستی کار نمیکند مجددا نصب کنید، گزینه &lt;b&gt;نصب افزونه مهمان&lt;/b&gt; را از منوی &lt;b&gt;دستگاه&lt;/b&gt; انتخاب کنید. اگر آنها نصب شده اند اما ماشین هنوز بطورکامل شروع نشده است سپس پوشه اشتراکی یک بار در آن دردسترس است.&lt;/p&gt;</translation>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
+        <translation type="unfinished">&lt;p&gt;افزونه مهمان ویرچوال باکس در ماشین مجازی دردسترس ظاهر نشده است، و پوشه اشتراکی بدون آن قابل استفاده نیست. برای استفاده از پوشه اشتراکی در داخل ماشین مجازی، لطفا افزونه مهمان را نصب کنید اگر آنها نصب نشده است. یا اگر بدرستی کار نمیکند مجددا نصب کنید، گزینه &lt;b&gt;نصب افزونه مهمان&lt;/b&gt; را از منوی &lt;b&gt;دستگاه&lt;/b&gt; انتخاب کنید. اگر آنها نصب شده اند اما ماشین هنوز بطورکامل شروع نشده است سپس پوشه اشتراکی یک بار در آن دردسترس است.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
@@ -5852,6 +5866,16 @@
     <message>
         <source>Do not show this message again</source>
         <translation type="unfinished">این پیام را دیگر نشان نده</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
+        <comment>new</comment>
+        <translation type="obsolete">&lt;p&gt;افزونه مهمان ویرچوال باکس در ماشین مجازی دردسترس ظاهر نشده است، و پوشه اشتراکی بدون آن قابل استفاده نیست. برای استفاده از پوشه اشتراکی در داخل ماشین مجازی، لطفا افزونه مهمان را نصب کنید اگر آنها نصب نشده است. یا اگر بدرستی کار نمیکند مجددا نصب کنید، گزینه &lt;b&gt;نصب افزونه مهمان&lt;/b&gt; را از منوی &lt;b&gt;دستگاه&lt;/b&gt; انتخاب کنید. اگر آنها نصب شده اند اما ماشین هنوز بطورکامل شروع نشده است سپس پوشه اشتراکی یک بار در آن دردسترس است.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions-new</comment>
+        <translation type="obsolete">بارگیری</translation>
     </message>
 </context>
 <context>
@@ -7138,8 +7162,8 @@
         <translation>&lt;ریست به پیش فرض&gt;</translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation>مقدار مسیر پیش فرض واقعی بعداز پذیرفتن تغییرات و بازکردن دوباره این پنجره نمایش داده میشود.</translation>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <translation type="unfinished">مقدار مسیر پیش فرض واقعی بعداز پذیرفتن تغییرات و بازکردن دوباره این پنجره نمایش داده میشود.</translation>
     </message>
     <message>
         <source>&lt;not selected&gt;</source>
@@ -7184,6 +7208,11 @@
     <message>
         <source>Please type the file path here.</source>
         <translation>لطفا مسیر فایل را اینجا وارد کنید.</translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <comment>new</comment>
+        <translation type="obsolete">مقدار مسیر پیش فرض واقعی بعداز پذیرفتن تغییرات و بازکردن دوباره این پنجره نمایش داده میشود.</translation>
     </message>
 </context>
 <context>
@@ -8532,6 +8561,11 @@
     <message>
         <source>Unrestricted Execution</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>USB</source>
+        <comment>StorageControllerType</comment>
+        <translation type="obsolete">یو اِس بی</translation>
     </message>
 </context>
 <context>

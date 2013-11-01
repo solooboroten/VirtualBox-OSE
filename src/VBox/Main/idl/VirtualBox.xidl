@@ -10580,10 +10580,6 @@
     <method name="directoryRemove">
       <desc>
         Removes a guest directory if not empty.
-
-        <result name="E_NOTIMPL">
-          The method is not implemented yet.
-        </result>
       </desc>
       <param name="path" type="wstring" dir="in">
         <desc>Full path of directory to remove.</desc>
@@ -10593,10 +10589,6 @@
     <method name="directoryRemoveRecursive">
       <desc>
         Removes a guest directory recursively.
-
-        <result name="E_NOTIMPL">
-          The method is not implemented yet.
-        </result>
       </desc>
       <param name="path" type="wstring" dir="in">
         <desc>Full path of directory to remove recursively.</desc>
@@ -10605,17 +10597,14 @@
         <desc>Remove flags; see <link to="DirectoryRemoveRecFlag"/> for more information.</desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
-        <desc>Progress object to track the operation completion.</desc>
+        <desc>Progress object to track the operation completion. This is not implemented
+          yet and therefore this method call will block until deletion is completed.</desc>
       </param>
     </method>
 
     <method name="directoryRename">
       <desc>
         Renames a directory on the guest.
-
-        <result name="E_NOTIMPL">
-          The method is not implemented yet.
-        </result>
       </desc>
       <param name="source" type="wstring" dir="in">
         <desc>Source directory to rename.</desc>
@@ -10929,10 +10918,6 @@
     <method name="fileRename">
       <desc>
         Renames a file on the guest.
-
-        <result name="E_NOTIMPL">
-          The method is not implemented yet.
-        </result>
       </desc>
       <param name="source" type="wstring" dir="in">
         <desc>Source file to rename.</desc>
@@ -12215,7 +12200,11 @@
 
     <method name="createSession">
       <desc>
-        Creates a new guest session for controlling the guest.
+        Creates a new guest session for controlling the guest. The new session
+        will be started asynchronously, meaning on return of this function it is
+        not guaranteed that the guest session is in a started and/or usable state.
+        To wait for successful startup, use the <link to="IGuestSession::waitFor"/>
+        call.
 
         A guest session represents one impersonated user account on the guest, so
         every operation will use the same credentials specified when creating

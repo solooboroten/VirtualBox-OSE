@@ -206,7 +206,7 @@ VBOX_VERSION_MINOR = 3
 # This is the current build number. It should be increased every time we publish a
 # new build. The define is available in every source file. Only even build numbers
 # will be published, odd numbers are set during development.
-VBOX_VERSION_BUILD = 0
+VBOX_VERSION_BUILD = 2
 # The raw version string. This *must not* contain any other information/fields than
 # major, minor and build revision (as it is now) -- also will be used for host/guest version
 # comparison.
@@ -337,6 +337,8 @@ VBOX_WITH_DOCS_PACKING = 1
 ifn1of ($(KBUILD_TARGET), linux)
  VBOX_WITH_DOCS_CHM = 1
 endif
+# Include translations
+VBOX_WITH_DOCS_TRANSLATIONS = 1
 # Don't bother with documentation, overrides VBOX_WITH_DOCS.
 # This is not used by makefiles, only Config.kmk, see below.
 #VBOX_WITHOUT_DOCS = 1
@@ -463,6 +465,9 @@ ifdef VBOX_WITH_EHCI
 endif
 ifdef VBOX_WITH_PCI_PASSTHROUGH
  VBOX_WITH_PCI_PASSTHROUGH_IMPL = 1
+endif
+ifndef VBOX_WITHOUT_HOSTWEBCAM
+ VBOX_WITH_USB_VIDEO_IMPL = 1
 endif
 # Enable the hal/sysfs USB code on Linux.
 ifeq ($(KBUILD_TARGET),linux)
@@ -1018,6 +1023,7 @@ endif
 ifdef VBOX_OSE
  VBOX_WITH_VRDP=
  VBOX_WITH_EHCI_IMPL=
+ VBOX_WITH_USB_VIDEO_IMPL=
  VBOX_WITH_EXTPACK_PUEL=
  VBOX_WITH_EXTPACK_PUEL_BUILD=
  VBOX_WITH_PCI_PASSTHROUGH_IMPL=
@@ -5581,7 +5587,7 @@ endif
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 89960 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 90405 $  )
  VBOX_SVN_DEP          := $(firstword $(wildcard $(PATH_ROOT)/.svn/wc.db $(abspath $(PATH_ROOT)/../.svn/wc.db) $(abspath $(PATH_ROOT)/../../.svn/wc.db) $(PATH_ROOT)/.svn/entries))
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

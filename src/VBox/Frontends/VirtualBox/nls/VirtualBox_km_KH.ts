@@ -275,8 +275,8 @@
         <translation type="obsolete">ប្រអប់​ព័ត៌មាន​សម័យ</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation>បង្ហាញ​ប្រអប់​ព័ត៌មាន​សម័យ</translation>
+        <source>Show Session Information Window</source>
+        <translation type="unfinished">បង្ហាញ​ប្រអប់​ព័ត៌មាន​សម័យ</translation>
     </message>
     <message>
         <source>&amp;Pause</source>
@@ -359,12 +359,12 @@
         <translation type="obsolete">បើក ឬ​បិទ​ការ​តភ្ជាប់​ផ្ទៃតុ​ពី​ចម្ងាយ (RDP) ទៅ​កាន់​ម៉ាស៊ីន​នេះ</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation>ដំឡើង​ការ​បន្ថែម​ភ្ញៀវ...</translation>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished">ដំឡើង​ការ​បន្ថែម​ភ្ញៀវ...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
-        <translation>ម៉ោន​រូបភាព​ដំឡើង​បន្ថែម​ភ្ញៀវ</translation>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished">ម៉ោន​រូបភាព​ដំឡើង​បន្ថែម​ភ្ញៀវ</translation>
     </message>
     <message>
         <source>De&amp;bug</source>
@@ -807,6 +807,16 @@
     <message>
         <source>Popup Menu</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <comment>new</comment>
+        <translation type="obsolete">ដំឡើង​ការ​បន្ថែម​ភ្ញៀវ...</translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <comment>new</comment>
+        <translation type="obsolete">ម៉ោន​រូបភាព​ដំឡើង​បន្ថែម​ភ្ញៀវ</translation>
     </message>
 </context>
 <context>
@@ -4576,7 +4586,7 @@ network adapter name</comment>
     </message>
     <message>
         <source>Dialog</source>
-        <translation>ប្រអប់</translation>
+        <translation type="obsolete">ប្រអប់</translation>
     </message>
     <message>
         <source>Folder Path:</source>
@@ -4612,6 +4622,10 @@ network adapter name</comment>
     </message>
     <message>
         <source>If checked, this shared folder will be permanent.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5809,15 +5823,15 @@ network adapter name</comment>
         <translation type="obsolete">&lt;p&gt;មិនអាច​ផ្ទុក​ឯកសារ​ភាសា &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; បានទេ ។ &lt;p&gt;ភាសា​នឹង​ត្រូវ​បានកំណត់​ទៅ​ជា​ភាសា​អង់គ្លេស​ជា​បណ្ដោះអាសន្ន ។ សូម​ចូល​ទៅ​ប្រអប់ &lt;b&gt;ចំណូល​ចិត្ត&lt;/b&gt; ដែល​អ្នក​អាច​បើក​ពី​ម៉ឺនុយ​ &lt;b&gt;ឯកសារ&lt;/b&gt; នៃ​បង្អួច VirtualBox មេ ហើយ​ជ្រើស​ភាសា​មួយ​ក្នុងចំណោម​ភាសា​ដែល​មាន​ស្រាប់​នៅ​លើ​ទំព័រ &lt;b&gt;ភាសា&lt;/b&gt; ។&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;ផ្នែក​បន្ថែម​ភាសា​ភ្ញៀវ​របស់ VirtualBox បាន​ដំឡើង​នៅ​ក្នុង​ប្រព័ន្ធ​ប្រតិបត្តិការ​របស់​ម៉ាស៊ីន​ភ្ញៀវ​ចាស់​ពេក ៖ កំណែ​ដែល​បាន​ដំឡើង​គឺ %1 កំណែ​ដែល​រំពឹង​ទុកគឺ %2 ។ លក្ខណៈពិសេស​មួយ​ចំនួន​ត្រូវការ​ផ្នែកបន្ថែម​របស់​ម៉ាស៊ីន​ភ្ញៀវ (ការ​រួម​បញ្ចូល​កណ្ដុរ បង្ហាញ​ការ​ផ្លាស់ប្ដូរ​ទំហំ​ដោយ​ស្វ័យ​ប្រវត្តិ​របស់​ម៉ាស៊ីន​ភ្ញៀវ) នឹង​បញ្ឈប់​ដំណើរការ​យ៉ាង​ត្រឹមត្រូវ ។&lt;/p&gt;&lt;p&gt;សូម​ធ្វើ​ឲ្យ​ផ្នែក​បន្ថែម​របស់ម៉ាស៊ីន​ភ្ញៀវ​ទាន់សម័យ​ទៅ​កំណែ​បច្ចុប្បន្ន​ ដោយ​ជ្រើស &lt;b&gt;ដំឡើង​ផ្នែក​បន្ថែម​ម៉ាស៊ីន​ភ្ញៀវ&lt;/b&gt; ពី​ម៉ឺនុយ &lt;b&gt;ឧបករណ៍&lt;/b&gt; ។&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;ផ្នែក​បន្ថែម​របស់ម៉ាស៊ីន​ភ្ញៀវ VirtualBox បានដំឡើង​នៅ​ក្នុង​ប្រព័ន្ធ​ប្រតិបត្តិការ​ម៉ាស៊ីន​ភ្ញៀវ​គឺ​ហួស​សម័យ​ហើយ ៖ កំណែ​ដែលបានដំឡើង​គឺ %1 កំណែ​ដែល​រំពឹង​ទុក​គឺ %2 ។ លក្ខណៈ​ពិសេស​មួយ​ចំនួន​ដែល​ត្រូវការ​ផ្នែក​បន្ថែម​របស់​ម៉ាស៊ីន​ភ្ញៀវ (ការ​រួម​បញ្ចូល​កណ្ដុរ បង្ហាញ​កា​រផ្លាស់ប្ដូរ​ទំហំ​ដោយ​ស្វ័យ​ប្រវត្តិ​របស់ម៉ាស៊ីន​ភ្ញៀវ) មិនអាច​ដំណើរការ​ដូច​ដែល​បាន​រំពឹង​ទុក​ទេ ។&lt;/p&gt;&lt;p&gt;វា​ត្រូ​វបានផ្ដល់​អនុសាសន៍​ឲ្យ​ធ្វើ​ឲ្យ​ផ្នែកបន្ថែម​របស់​ម៉ាស៊ីន​ភ្ញៀវ​ទាន់សម័យ​ទៅ​កណែ​បច្ចុប្បន្ន ដោយ​ជ្រើស​ &lt;b&gt;ដំឡើង​ផ្នែក​បន្ថែម​ម៉ាស៊ីន​ភ្ញៀវ&lt;/b&gt; ពី​ម៉ឺនុយ &lt;b&gt;ឧបករណ៍&lt;/b&gt; ។&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;ផ្នែក​បន្ថែម​ម៉ាស៊ីន​ភ្ញៀវ​របស់ VirtualBox នៅ​ក្នុង​ប្រព័ន្ធ​ប្រតិបត្តិការ​របស់​ម៉ាស៊ីន​ភ្ញៀវ​ថ្មីពេក​សម្រាប់​កំណែ​របស់ VirtualBox ៖ កំណែ​ដែល​បាន​ដំឡើង​គឺ %1 កំណែ​ដែល​រំពឹង​ទុក​គឺ %2 ។&lt;/p&gt;&lt;p&gt;កា​រប្រើកំណែ​ថ្មី​របស់​បន្ថែម​ផ្នែកបន្ថែម​ជាង​កំណែ​ចាស់​របស់ VirtualBox មិន​ត្រូវ​បានគាំទ្រទេ ។ សូម​ដំឡើង​កំណែ​បច្ចុប្បន្ន​របស់​ផ្នែកបន្ថែម​ម៉ាស៊ីន​ភ្ញៀវ ដោយ​ជ្រើស​&lt;b&gt;ដំឡើង​ផ្នែក​បន្ថែម​ម៉ាស៊ីន​ភ្ញៀវ&lt;/b&gt; ពី​ម៉ឺនុយ &lt;b&gt;ឧបករណ៍&lt;/b&gt; ។&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5914,9 +5928,9 @@ network adapter name</comment>
         <translation type="obsolete">ទាញយក</translation>
     </message>
     <message>
-        <source>Mount</source>
+        <source>Insert</source>
         <comment>additions</comment>
-        <translation>ម៉ោន</translation>
+        <translation type="unfinished">ម៉ោន</translation>
     </message>
     <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
@@ -6623,10 +6637,6 @@ medium</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7096,6 +7106,15 @@ medium</comment>
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions-new</comment>
+        <translation type="obsolete">ម៉ោន</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -9029,11 +9048,11 @@ You may wish to translate this more like &quot;Time remaining: %1&quot;</comment
         <translation type="obsolete">បើក​ប្រអប់​ដើម្បី​ប្រតិបត្តិ​លើ​ថត​ដែល​បានចែករំលែក</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
+        <source>&amp;Insert Guest Additions CD image...</source>
         <translation type="obsolete">ដំឡើង​ការ​បន្ថែម​ភ្ញៀវ...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
         <translation type="obsolete">ម៉ោន​រូបភាព​ដំឡើង​បន្ថែម​ភ្ញៀវ</translation>
     </message>
     <message>
@@ -9149,7 +9168,7 @@ You may wish to translate this more like &quot;Time remaining: %1&quot;</comment
         <translation type="obsolete">ប្រអប់​ព័ត៌មាន​សម័យ</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
+        <source>Show Session Information Window</source>
         <translation type="obsolete">បង្ហាញ​ប្រអប់​ព័ត៌មាន​សម័យ</translation>
     </message>
     <message>
@@ -9388,8 +9407,8 @@ Virtualization Stuff LED</comment>
         <translation>&lt;កំណត់​ទៅ​លំនាំដើម​ឡើងវិញ&gt;</translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation>តម្លៃ​ផ្លូវ​លំនាំដើម​ពិតប្រាកដ​នឹង​ត្រូវ​បានបង្ហាញ​បន្ទាប់ពី​ទទួល​ការ​ផ្លាស់ប្ដូរ និង​បើក​ប្រអប់នេះ​ម្ដង​ទៀត ។</translation>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <translation type="unfinished">តម្លៃ​ផ្លូវ​លំនាំដើម​ពិតប្រាកដ​នឹង​ត្រូវ​បានបង្ហាញ​បន្ទាប់ពី​ទទួល​ការ​ផ្លាស់ប្ដូរ និង​បើក​ប្រអប់នេះ​ម្ដង​ទៀត ។</translation>
     </message>
     <message>
         <source>&lt;not selected&gt;</source>
@@ -9434,6 +9453,11 @@ Virtualization Stuff LED</comment>
     <message>
         <source>Please type the file path here.</source>
         <translation>សូម​វាយ​ផ្លូវ​ឯកសារ​ដែល​ចង់​បាន​នៅ​ទីនេះ ។</translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <comment>new</comment>
+        <translation type="obsolete">តម្លៃ​ផ្លូវ​លំនាំដើម​ពិតប្រាកដ​នឹង​ត្រូវ​បានបង្ហាញ​បន្ទាប់ពី​ទទួល​ការ​ផ្លាស់ប្ដូរ និង​បើក​ប្រអប់នេះ​ម្ដង​ទៀត ។</translation>
     </message>
 </context>
 <context>
@@ -11509,6 +11533,11 @@ medium</comment>
     <message>
         <source>You can create or add disk image files in the virtual machine settings.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>USB</source>
+        <comment>StorageControllerType</comment>
+        <translation type="obsolete">USB</translation>
     </message>
 </context>
 <context>

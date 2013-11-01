@@ -1112,6 +1112,7 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
          * The BIOS_SIGN_ID MSR and MSR_IA32_MCP_CAP et al exist on AMD64 as
          * well, at least bulldozer have them.  Windows 7 is querying them.
          * XP has been observed querying MSR_IA32_MC0_CTL.
+         * XP64 has been observed querying MSR_P4_LASTBRANCH_0 (also on AMD).
          */
         case MSR_IA32_BIOS_SIGN_ID:         /* fam/mod >= 6_01 */
         case MSR_IA32_MCG_CAP:              /* fam/mod >= 6_01 */
@@ -1119,6 +1120,10 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
         /*case MSR_IA32_MCG_CTRL:       - indicated as not present in CAP */
         case MSR_IA32_MC0_CTL:
         case MSR_IA32_MC0_STATUS:
+        case MSR_P4_LASTBRANCH_0:
+        case MSR_P4_LASTBRANCH_1:
+        case MSR_P4_LASTBRANCH_2:
+        case MSR_P4_LASTBRANCH_3:
             *puValue = 0;
             break;
 
@@ -1129,10 +1134,6 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
         case MSR_P5_MC_ADDR:
         case MSR_P5_MC_TYPE:
         case MSR_P4_LASTBRANCH_TOS: /** @todo Are these branch regs still here on more recent CPUs? The documentation doesn't mention them for several archs. */
-        case MSR_P4_LASTBRANCH_0:
-        case MSR_P4_LASTBRANCH_1:
-        case MSR_P4_LASTBRANCH_2:
-        case MSR_P4_LASTBRANCH_3:
         case MSR_IA32_PERFEVTSEL0:          /* NetWare 6.5 wants the these four. (Bet on AMD as well.) */
         case MSR_IA32_PERFEVTSEL1:
         case MSR_IA32_PMC0:
@@ -1207,6 +1208,19 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
         case MSR_K8_NB_CFG:             /* (All known values are 0 on reset.) */
         case MSR_K8_HWCR:               /* Very interesting bits here. :) */
         case MSR_K8_VM_CR:              /* Windows 8 */
+        case 0xc0011029:                /* quick fix for FreeBSd 9.1. */
+        case 0xc0010042:                /* quick fix for something. */
+        case 0xc001102a:                /* quick fix for w2k8 + opposition. */
+        case 0xc0011004:                /* quick fix for the opposition. */
+        case 0xc0011005:                /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL0:           /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL1:           /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL2:           /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL3:           /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR0:           /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR1:           /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR2:           /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR3:           /* quick fix for the opposition. */
             *puValue = 0;
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_AMD)
             {
@@ -1288,7 +1302,7 @@ VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
  */
 VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
 {
-    LogFlow(("CPUSetGuestMsr: %#x <- %#llx\n", idMsr, uValue));
+    LogFlow(("CPUMSetGuestMsr: %#x <- %#llx\n", idMsr, uValue));
 
     /*
      * If we don't indicate MSR support in the CPUID feature bits, indicate
@@ -1485,7 +1499,6 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
             /** @todo virtualize DEBUGCTL and relatives */
             break;
 
-
         /*
          * Intel specifics MSRs:
          */
@@ -1534,6 +1547,19 @@ VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
         case MSR_K8_SYSCFG:      /** @todo can be written, but we ignore that for now. */
         case MSR_K8_INT_PENDING: /** @todo can be written, but we ignore that for now. */
         case MSR_K8_NB_CFG:      /** @todo can be written; the apicid swapping might be used and would need saving, but probably unnecessary. */
+        case 0xc0011029:        /* quick fix for FreeBSd 9.1. */
+        case 0xc0010042:        /* quick fix for something. */
+        case 0xc001102a:        /* quick fix for w2k8 + opposition. */
+        case 0xc0011004:        /* quick fix for the opposition. */
+        case 0xc0011005:        /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL0:   /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL1:   /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL2:   /* quick fix for the opposition. */
+        case MSR_K7_EVNTSEL3:   /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR0:   /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR1:   /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR2:   /* quick fix for the opposition. */
+        case MSR_K7_PERFCTR3:   /* quick fix for the opposition. */
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_AMD)
             {
                 Log(("CPUM: MSR %#x is AMD, the virtual CPU isn't an Intel one -> #GP\n", idMsr));

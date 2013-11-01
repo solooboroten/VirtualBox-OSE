@@ -107,6 +107,7 @@
 #include "CParallelPort.h"
 #include "CUSBController.h"
 #include "CHostUSBDevice.h"
+#include "CHostVideoInputDevice.h"
 #include "CMediumFormat.h"
 #include "CSharedFolder.h"
 #include "CConsole.h"
@@ -132,6 +133,10 @@
 #ifdef Q_WS_X11
 #include <iprt/mem.h>
 #endif /* Q_WS_X11 */
+
+#ifdef Q_WS_MAC
+#include <sys/utsname.h>
+#endif /* Q_WS_MAC */
 
 /* External includes: */
 #include <math.h>
@@ -313,6 +318,32 @@ bool VBoxGlobal::isBeta() const
 {
     return mVBox.GetVersion().contains("BETA", Qt::CaseInsensitive);
 }
+
+#ifdef Q_WS_MAC
+/** Returns #MacOSXRelease determined using <i>uname</i> call. */
+MacOSXRelease VBoxGlobal::osRelease()
+{
+    /* Prepare 'utsname' struct: */
+    utsname info;
+    if (uname(&info) != -1)
+    {
+        /* Parse known .release types: */
+            if (QString(info.release).startsWith("13."))
+                return MacOSXRelease_Mavericks;
+        else
+            if (QString(info.release).startsWith("12."))
+                return MacOSXRelease_MountainLion;
+        else
+            if (QString(info.release).startsWith("11."))
+                return MacOSXRelease_Lion;
+        else
+            if (QString(info.release).startsWith("10."))
+                return MacOSXRelease_SnowLeopard;
+    }
+    /* Unknown by default: */
+    return MacOSXRelease_Unknown;
+}
+#endif /* Q_WS_MAC */
 
 /**
  *  Sets the new global settings and saves them to the VirtualBox server.
@@ -1072,6 +1103,22 @@ QString VBoxGlobal::toolTip (const CUSBDeviceFilter &aFilter) const
     }
 
     return tip;
+}
+
+/** Returns the multi-line description of the given CHostVideoInputDevice filter. */
+QString VBoxGlobal::toolTip(const CHostVideoInputDevice &webcam) const
+{
+    QStringList records;
+
+    QString strName = webcam.GetName();
+    if (!strName.isEmpty())
+        records << strName;
+
+    QString strPath = webcam.GetPath();
+    if (!strPath.isEmpty())
+        records << strPath;
+
+    return records.join("<br>");
 }
 
 /**

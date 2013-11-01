@@ -596,7 +596,11 @@ static int hmR0InitAmd(uint32_t u32FeaturesEDX, uint32_t uMaxExtLeaf)
             g_HvmR0.svm.fSupported = true;
         }
         else
+        {
             g_HvmR0.lLastError = rc;
+            if (rc == VERR_SVM_DISABLED || rc == VERR_SVM_IN_USE)
+                rc = VINF_SUCCESS; /* Don't fail if AMD-V is disabled or in use. */
+        }
     }
     else
     {
@@ -798,6 +802,7 @@ VMMR0_INT_DECL(int) HMR0Term(void)
  */
 static DECLCALLBACK(void) hmR0InitIntelCpu(RTCPUID idCpu, void *pvUser1, void *pvUser2)
 {
+    /** @todo Unify code with SUPR0QueryVTCaps(). */
     PHMR0FIRSTRC pFirstRc = (PHMR0FIRSTRC)pvUser1;
     Assert(!RTThreadPreemptIsEnabled(NIL_RTTHREAD));
     Assert(idCpu == (RTCPUID)RTMpCpuIdToSetIndex(idCpu)); /** @todo fix idCpu == index assumption (rainy day) */

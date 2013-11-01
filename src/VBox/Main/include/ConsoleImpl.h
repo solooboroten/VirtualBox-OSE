@@ -35,7 +35,6 @@ class VRDEServerInfo;
 class EmulatedUSB;
 class AudioSniffer;
 class Nvram;
-class EmWebcam;
 #ifdef VBOX_WITH_USB_CARDREADER
 class UsbCardReader;
 #endif
@@ -220,6 +219,7 @@ public:
     HRESULT onUSBDeviceDetach(IN_BSTR aId, IVirtualBoxErrorInfo *aError);
     HRESULT onBandwidthGroupChange(IBandwidthGroup *aBandwidthGroup);
     HRESULT onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOOL aRemove, BOOL aSilent);
+    HRESULT onExtraDataChange(IN_BSTR aMachineId, IN_BSTR aKey, IN_BSTR aVal);
 
     HRESULT getGuestProperty(IN_BSTR aKey, BSTR *aValue, LONG64 *aTimestamp, BSTR *aFlags);
     HRESULT setGuestProperty(IN_BSTR aKey, IN_BSTR aValue, IN_BSTR aFlags);
@@ -241,7 +241,6 @@ public:
 #ifdef VBOX_WITH_USB_CARDREADER
     UsbCardReader *getUsbCardReader() { return mUsbCardReader; }
 #endif
-    EmWebcam *getEmWebcam() { return mEmWebcam; }
 
     int VRDPClientLogon(uint32_t u32ClientId, const char *pszUser, const char *pszPassword, const char *pszDomain);
     void VRDPClientStatusChange(uint32_t u32ClientId, const char *pszStatus);
@@ -304,6 +303,8 @@ public:
     // Mouse interface
     VMMDevMouseInterface *getVMMDevMouseInterface();
     DisplayMouseInterface *getDisplayMouseInterface();
+
+    EmulatedUSB *getEmulatedUSB(void) { return mEmulatedUSB; }
 
 private:
 
@@ -808,7 +809,6 @@ private:
     VMMDev * m_pVMMDev;
     AudioSniffer * const mAudioSniffer;
     Nvram   * const mNvram;
-    EmWebcam * const mEmWebcam;
 #ifdef VBOX_WITH_USB_CARDREADER
     UsbCardReader * const mUsbCardReader;
 #endif

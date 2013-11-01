@@ -363,6 +363,7 @@ RuntimeR3_SOURCES       = \
 	common/misc/uri.cpp \
 	common/net/netaddrstr.cpp \
 	common/net/netaddrstr2.cpp \
+	common/net/macstr.cpp \
 	common/path/rtPathRootSpecLen.cpp \
 	common/path/rtPathVolumeSpecLen.cpp \
 	common/path/RTPathAbsDup.cpp \

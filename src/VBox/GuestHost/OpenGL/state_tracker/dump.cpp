@@ -33,7 +33,8 @@
 
 #ifdef VBOX_WITH_CRDUMPER
 
-static uint32_t g_CrDbgDumpRecTexInfo = 0;
+static uint32_t g_CrDbgDumpRecTexInfo = 1;
+static uint32_t g_CrDbgDumpAlphaData = 1;
 
 /* dump stuff */
 #pragma pack(1)
@@ -462,6 +463,22 @@ void crRecDumpBuffer(CR_RECORDER *pRec, CRContext *ctx, CR_BLITTER_CONTEXT *pCur
     if (RT_SUCCESS(rc))
     {
         crDmpImgF(pRec->pDumper, &Img, "ctx(%d), BUFFER: id(%d) hwid(%d), width(%d), height(%d)", ctx, id, Tex.hwid, width, height);
+
+        if (g_CrDbgDumpAlphaData)
+        {
+            CR_BLITTER_IMG AlphaImg = {0};
+            rc = crRecAlphaImgCreate(&Img, &AlphaImg);
+            if (RT_SUCCESS(rc))
+            {
+                crDmpImgF(pRec->pDumper, &AlphaImg, "Buffer ALPHA Data");
+                crRecAlphaImgDestroy(&AlphaImg);
+            }
+            else
+            {
+                crWarning("crRecAlphaImgCreate failed rc %d", rc);
+            }
+        }
+
         CrBltImgFree(pRec->pBlitter, &Img);
     }
     else
@@ -585,11 +602,34 @@ static DECLCALLBACK(GLuint) crDmpGetHwidProgramCB(void *pvObj)
     return ((CRGLSLProgram*)pvObj)->hwid;
 }
 
+/* Context activation is done by the caller. */
+void crRecDumpLog(CR_RECORDER *pRec, GLint hwid)
+{
+    GLint cbLog = 0;
+    pRec->pDispatch->GetObjectParameterivARB(hwid, GL_OBJECT_INFO_LOG_LENGTH_ARB, &cbLog);
+
+    crDmpStrF(pRec->pDumper, "Log===%d===", hwid);
+
+    if (cbLog > 1)
+    {
+        GLchar *pszLog = (GLchar *) crAlloc(cbLog*sizeof (GLchar));
+
+        pRec->pDispatch->GetInfoLogARB(hwid, cbLog, NULL, pszLog);
+
+        crRecDumpStrByLine(pRec->pDumper, pszLog, cbLog);
+
+        crFree(pszLog);
+    }
+    crDmpStrF(pRec->pDumper, "End Log======");
+}
+
 void crRecDumpShader(CR_RECORDER *pRec, CRContext *ctx, GLint id, GLint hwid)
 {
     GLint length = 0;
     GLint type = 0;
     GLint compileStatus = 0;
+
+#ifndef IN_GUEST
     CRGLSLShader *pShad;
 
     if (!id)
@@ -616,10 +656,22 @@ void crRecDumpShader(CR_RECORDER *pRec, CRContext *ctx, GLint id, GLint hwid)
 
     Assert(pShad->hwid == hwid);
     Assert(pShad->id == id);
+#else
+    if (!id)
+        id = hwid;
+    else if (!hwid)
+        hwid = id;
+
+    Assert(id);
+    Assert(hwid);
+    Assert(hwid == id);
+#endif
 
     pRec->pDispatch->GetObjectParameterivARB(hwid, GL_OBJECT_SUBTYPE_ARB, &type);
     pRec->pDispatch->GetObjectParameterivARB(hwid, GL_OBJECT_COMPILE_STATUS_ARB, &compileStatus);
     crDmpStrF(pRec->pDumper, "SHADER ctx(%d) id(%d) hwid(%d) type(%s) status(%d):", ctx->id, id, hwid, crRecDumpShaderTypeString(type, pRec->pDumper), compileStatus);
+
+    crRecDumpLog(pRec, hwid);
 
     pRec->pDispatch->GetObjectParameterivARB(hwid, GL_OBJECT_SHADER_SOURCE_LENGTH_ARB, &length);
 
@@ -674,6 +726,8 @@ void crRecDumpProgram(CR_RECORDER *pRec, CRContext *ctx, GLint id, GLint hwid)
     pRec->pDispatch->GetObjectParameterivARB(hwid, GL_OBJECT_LINK_STATUS_ARB, &linkStatus);
 
     crDmpStrF(pRec->pDumper, "PROGRAM ctx(%d) id(%d) hwid(%d) status(%d) shaders(%d):", ctx->id, id, hwid, linkStatus, cShaders);
+
+    crRecDumpLog(pRec, hwid);
 
     GLhandleARB *pShaders = (GLhandleARB*)crCalloc(cShaders * sizeof (*pShaders));
     if (!pShaders)
@@ -1231,6 +1285,55 @@ VBOXDUMPDECL(void) crRecRecompileCurrentProgram(CR_RECORDER *pRec, CRContext *ct
     }
 }
 
+int crRecAlphaImgCreate(const CR_BLITTER_IMG *pImg, CR_BLITTER_IMG *pAlphaImg)
+{
+    if (pImg->enmFormat != GL_RGBA
+            && pImg->enmFormat != GL_BGRA)
+    {
+        crWarning("unsupported format 0x%x", pImg->enmFormat);
+        return VERR_NOT_IMPLEMENTED;
+    }
+
+    pAlphaImg->bpp = 32;
+    pAlphaImg->pitch = pImg->width * 4;
+    pAlphaImg->cbData = pAlphaImg->pitch * pImg->height;
+    pAlphaImg->enmFormat = GL_BGRA;
+    pAlphaImg->width = pImg->width;
+    pAlphaImg->height = pImg->height;
+
+    pAlphaImg->pvData = RTMemAlloc(pAlphaImg->cbData);
+    if (!pAlphaImg->pvData)
+    {
+        crWarning("RTMemAlloc failed");
+        return VERR_NO_MEMORY;
+    }
+
+    uint8_t *pu8SrcBuf = (uint8_t*)pImg->pvData;
+    uint8_t *pu8DstBuf = (uint8_t*)pAlphaImg->pvData;
+    for (uint32_t ih = 0; ih < pAlphaImg->height; ++ih)
+    {
+        uint32_t *pu32SrcBuf = (uint32_t*)pu8SrcBuf;
+        uint32_t *pu32DstBuf = (uint32_t*)pu8DstBuf;
+        for (uint32_t iw = 0; iw < pAlphaImg->width; ++iw)
+        {
+            uint8_t alpha = (((*pu32SrcBuf) >> 24) & 0xff);
+            *pu32DstBuf = (0xff << 24) || (alpha << 16) || (alpha << 8) || alpha;
+            ++pu32SrcBuf;
+            ++pu32DstBuf;
+        }
+        pu8SrcBuf += pImg->pitch;
+        pu8DstBuf += pAlphaImg->pitch;
+    }
+
+    return VINF_SUCCESS;
+}
+
+void crRecAlphaImgDestroy(CR_BLITTER_IMG *pImg)
+{
+    RTMemFree(pImg->pvData);
+    pImg->pvData = NULL;
+}
+
 void crRecDumpTextureV(CR_RECORDER *pRec, const VBOXVR_TEXTURE *pTex, CR_BLITTER_CONTEXT *pCurCtx, CR_BLITTER_WINDOW *pCurWin, const char *pszStr, va_list pArgList)
 {
     CR_BLITTER_IMG Img = {0};
@@ -1241,6 +1344,20 @@ void crRecDumpTextureV(CR_RECORDER *pRec, const VBOXVR_TEXTURE *pTex, CR_BLITTER
         if (RT_SUCCESS(rc))
         {
             crDmpImgV(pRec->pDumper, &Img, pszStr, pArgList);
+            if (g_CrDbgDumpAlphaData)
+            {
+                CR_BLITTER_IMG AlphaImg = {0};
+                rc = crRecAlphaImgCreate(&Img, &AlphaImg);
+                if (RT_SUCCESS(rc))
+                {
+                    crDmpImgF(pRec->pDumper, &AlphaImg, "Texture ALPHA Data");
+                    crRecAlphaImgDestroy(&AlphaImg);
+                }
+                else
+                {
+                    crWarning("crRecAlphaImgCreate failed rc %d", rc);
+                }
+            }
             CrBltImgFree(pRec->pBlitter, &Img);
         }
         else
@@ -1505,7 +1622,7 @@ DECLCALLBACK(void) crDmpDumpImgDmlBreak(struct CR_DUMPER * pDumper, CR_BLITTER_I
 
 DECLCALLBACK(void) crDmpDumpStrDbgPrint(struct CR_DUMPER * pDumper, const char*pszStr)
 {
-    OutputDebugStringA(pszStr);
+    crDmpPrint("%s\n", pszStr);
 }
 #endif
 

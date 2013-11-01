@@ -49,7 +49,6 @@
 
 UIFrameBufferQuartz2D::UIFrameBufferQuartz2D(UIMachineView *pMachineView)
     : UIFrameBuffer(pMachineView)
-    , m_pMachineLogic(pMachineView->machineLogic())
     , m_fUsesGuestVRAM(false)
     , m_pDataAddress(NULL)
     , m_pBitmapData(NULL)
@@ -73,14 +72,31 @@ UIFrameBufferQuartz2D::~UIFrameBufferQuartz2D()
 
 STDMETHODIMP UIFrameBufferQuartz2D::SetVisibleRegion(BYTE *pRectangles, ULONG aCount)
 {
-    /* Make sure frame-buffer is not yet scheduled for removal: */
-    if (m_fIsScheduledToDelete)
-        return E_FAIL;
+    LogRel2(("UIFrameBufferQuartz2D::SetVisibleRegion: Rectangle count=%lu\n",
+             (unsigned long)aCount));
 
     /* Make sure rectangles were passed: */
-    PRTRECT rects = (PRTRECT)pRectangles;
-    if (!rects)
+    if (!pRectangles)
+    {
+        LogRel2(("UIFrameBufferQuartz2D::SetVisibleRegion: Invalid pRectangles pointer!\n"));
+
         return E_POINTER;
+    }
+
+    /* Lock access to frame-buffer: */
+    lock();
+
+    /* Make sure frame-buffer is used: */
+    if (m_fIsMarkedAsUnused)
+    {
+        LogRel2(("UIFrameBufferQuartz2D::SetVisibleRegion: Ignored!\n"));
+
+        /* Unlock access to frame-buffer: */
+        unlock();
+
+        /* Ignore SetVisibleRegion: */
+        return E_FAIL;
+    }
 
     /** @todo r=bird: Is this thread safe? If I remember the code flow correctly, the
      * GUI thread could be happily jogging along paintEvent now on another cpu core.
@@ -100,13 +116,19 @@ STDMETHODIMP UIFrameBufferQuartz2D::SetVisibleRegion(BYTE *pRectangles, ULONG aC
         allocated = RT_MAX (128, allocated);
         rgnRcts = (RegionRects *)RTMemAlloc(RT_OFFSETOF(RegionRects, rcts[allocated]));
         if (!rgnRcts)
+        {
+            /* Unlock access to frame-buffer: */
+            unlock();
+
             return E_OUTOFMEMORY;
+        }
         rgnRcts->allocated = allocated;
     }
     rgnRcts->used = 0;
 
     /* Compose region: */
     QRegion reg;
+    PRTRECT rects = (PRTRECT)pRectangles;
     QRect vmScreenRect(0, 0, width(), height());
     for (ULONG ind = 0; ind < aCount; ++ ind)
     {
@@ -143,8 +165,11 @@ STDMETHODIMP UIFrameBufferQuartz2D::SetVisibleRegion(BYTE *pRectangles, ULONG aC
         RTMemFree(pOld);
 
     /* Send async signal to update asynchronous visible-region: */
-    if (m_pMachineView)
-        emit sigSetVisibleRegion(reg);
+    LogRel2(("UIFrameBufferQuartz2D::SetVisibleRegion: Sending to async-handler...\n"));
+    emit sigSetVisibleRegion(reg);
+
+    /* Unlock access to frame-buffer: */
+    unlock();
 
     /* Confirm SetVisibleRegion: */
     return S_OK;
@@ -250,7 +275,7 @@ void UIFrameBufferQuartz2D::paintEvent(QPaintEvent *aEvent)
     CGContextScaleCTM(ctx, 1.0, -1.0);
 
     /* We handle the seamless mode as a special case. */
-    if (m_pMachineLogic->visualStateType() == UIVisualStateType_Seamless)
+    if (m_pMachineView->machineLogic()->visualStateType() == UIVisualStateType_Seamless)
     {
         /* Determine current visible region: */
         RegionRects *pRgnRcts = ASMAtomicXchgPtrT(&mRegion, NULL, RegionRects*);
@@ -345,7 +370,7 @@ void UIFrameBufferQuartz2D::paintEvent(QPaintEvent *aEvent)
             CGImageRelease(subImage);
         }
     }
-    else if (   m_pMachineLogic->visualStateType() == UIVisualStateType_Scale
+    else if (   m_pMachineView->machineLogic()->visualStateType() == UIVisualStateType_Scale
              && m_scaledSize.isValid())
     {
         /* Here we paint if we didn't care about any masks */
@@ -496,16 +521,6 @@ void UIFrameBufferQuartz2D::clean(bool fPreserveRegions)
         mRegionUnused = NULL;
     }
 }
-
-#ifdef VBOX_WITH_VIDEOHWACCEL
-void UIFrameBufferQuartz2D::setView(UIMachineView *pView)
-{
-    if (pView)
-        m_pMachineLogic = pView->machineLogic();
-
-    UIFrameBuffer::setView(pView);
-}
-#endif
 
 #endif /* VBOX_GUI_USE_QUARTZ2D */
 

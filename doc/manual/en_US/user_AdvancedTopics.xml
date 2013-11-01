@@ -864,7 +864,7 @@ VBoxManage controlvm "VM name" unplugcpu 3</screen></para>
 
       <para>VirtualBox 4.3 includes an experimental feature which allows a guest to use
       a host webcam. This complements the general USB passthrough support which was the
-      typical way of using host webcams in ealier versions. The webcam passthrough support
+      typical way of using host webcams in earlier versions. The webcam passthrough support
       can handle non-USB video sources in theory, but this is completely untested.</para>
 
       <note>
@@ -874,8 +874,8 @@ VBoxManage controlvm "VM name" unplugcpu 3</screen></para>
       </note>
 
       <para>The VBoxManage command line tool must be used to enable webcam passthrough.
-      Currently some commands are not supported on all hosts, please see the host-specific
-      sections below for additional details. The following commands are available:
+      Please see the host-specific sections below for additional details.
+      The following commands are available:
         <itemizedlist>
           <listitem><para>Get a list of host webcams (or other video input devices):
             <screen>VBoxManage list webcams</screen>
@@ -887,8 +887,27 @@ host path or identifier</screen>
             video input device. The device order is host-specific.
           </para></listitem>
           <listitem><para>Attach a webcam to a running VM:
-            <screen>VBoxManage controlvm "VM name" webcam attach [host_path|alias]</screen>
-            This will attach a USB webcam device to the guest.
+            <screen>VBoxManage controlvm "VM name" webcam attach [host_path|alias [settings]]</screen>
+            This will attach a USB webcam device to the guest.</para>
+
+            <para>The <computeroutput>settings</computeroutput> parameter is a string
+            <computeroutput>Setting1=Value1;Setting2=Value2</computeroutput>, which allows to
+            configure the emulated webcam device. The following settings are supported:
+            <itemizedlist>
+              <listitem>
+                <computeroutput>MaxFramerate</computeroutput> The highest rate at which video frames
+                are sent to the guest. A higher frame rate requires more CPU power. Therefore sometimes
+                it is useful to set a lower limit. Default is no limit and allow the guest to use all
+                frame rates supported by the host webcam.
+              </listitem>
+              <listitem>
+                <computeroutput>MaxPayloadTransferSize</computeroutput> How many bytes the emulated
+                webcam can send to the guest at a time. Default value is 3060 bytes, which is used by
+                some webcams. Higher values can slightly reduce CPU load, if the guest is able to use
+                larger buffers. However a high <computeroutput>MaxPayloadTransferSize</computeroutput>
+                might be not supported by some guests.
+              </listitem>
+            </itemizedlist>
           </para></listitem>
           <listitem><para>Detach a webcam from a running VM:
             <screen>VBoxManage controlvm "VM name" webcam detach [host_path|alias]</screen>
@@ -905,8 +924,6 @@ host path or identifier</screen>
     <sect2>
       <title>Windows hosts</title>
 
-      <para>All of VBoxManage commands are implemented.</para>
-
       <para>When the webcam device is detached from the host, the emulated webcam device is
       automatically detached from the guest.</para>
     </sect2>
@@ -914,7 +931,7 @@ host path or identifier</screen>
     <sect2>
       <title>Mac OS X hosts</title>
 
-      <para><computeroutput>VBoxManage list webcams</computeroutput> is not yet implemented.</para>
+      <para>OS X version 10.7 or newer is required.</para>
 
       <para>When the webcam device is detached from the host, the emulated webcam device
       remains attached to the guest and must be manually detached using the
@@ -924,15 +941,14 @@ host path or identifier</screen>
     <sect2>
       <title>Linux hosts</title>
 
-      <para><computeroutput>VBoxManage list webcams</computeroutput> is not yet implemented.</para>
-
-      <para>Aliases do not work. The host webcam path such as
-      <computeroutput>/dev/video0</computeroutput> must be used in
-      attach and detach commands.</para>
-
-      <para>When the webcam device is detached from the host, the emulated webcam device remains
-      attached to the guest and must be manually detached using the
+      <para>When the webcam is detached from the host the emulated webcam device is
+      automatically detached from the guest only if the webcam is streaming video.
+      If the emulated webcam is inactive it should be manually detached using the
       <computeroutput>VBoxManage controlvm "VM name" webcam detach ...</computeroutput> command.</para>
+
+      <para>Aliases <computeroutput>.0</computeroutput> and <computeroutput>.1</computeroutput> are mapped
+      to <computeroutput>/dev/video0</computeroutput>, alias <computeroutput>.2</computeroutput> is mapped
+      to <computeroutput>/dev/video1</computeroutput> and so forth.</para>
     </sect2>
   </sect1>
 
@@ -1780,8 +1796,7 @@ VBoxManage setextradata "VM name"
     <para>Here is an example of how to use a VNIC template to configure a VLAN
     for VMs. Create a VirtualBox VNIC template, by executing as root:</para>
 
-    <screen>dladm create-vnic -t -l nge0 -v 23 vboxvnic_template0
-</screen>
+    <screen>dladm create-vnic -t -l nge0 -v 23 vboxvnic_template0</screen>
 
     <para>This will create a temporary VNIC over interface "nge0" with the
     VLAN ID 23. To create VNIC templates that are persistent across host
@@ -1796,8 +1811,7 @@ vboxvnic_template0 vnic 1500 up       --         nge0
 
 $ dladm show-vnic
 LINK         OVER         SPEED  MACADDRESS        MACADDRTYPE         VID
-vboxvnic_template0 nge0   1000   2:8:20:25:12:75   random              23
-</screen></para>
+vboxvnic_template0 nge0   1000   2:8:20:25:12:75   random              23</screen></para>
 
     <para>Once the VNIC template is created, all VMs that need to be part of
     VLAN 23 over the physical interface "nge0" can use the same VNIC template.
@@ -2997,8 +3011,7 @@ alice = {
 
     <para>The expert storage management mode can be enabled per VM executing:</para>
 
-    <screen>VBoxManage setextradata "VM name" "VBoxInternal2/SilentReconfigureWhilePaused" 1
-</screen>
+    <screen>VBoxManage setextradata "VM name" "VBoxInternal2/SilentReconfigureWhilePaused" 1</screen>
 
     <para>Storage attachments can be reconfigured while the VM is paused afterwards using:</para>
     <screen>VBoxManage storageattach ...</screen>

@@ -49,6 +49,7 @@ class UIMachine;
 class CMachine;
 class CMedium;
 class CUSBDevice;
+class CHostVideoInputDevice;
 class QSpinBox;
 class UIMediumEnumerator;
 class UIMedium;
@@ -83,6 +84,10 @@ public:
 
     QString versionString() const { return mVerString; }
     bool isBeta() const;
+
+#ifdef Q_WS_MAC
+    static MacOSXRelease osRelease();
+#endif /* Q_WS_MAC */
 
     CVirtualBox virtualBox() const { return mVBox; }
     CHost host() const { return mHost; }
@@ -231,6 +236,7 @@ public:
     QString details (const CUSBDevice &aDevice) const;
     QString toolTip (const CUSBDevice &aDevice) const;
     QString toolTip (const CUSBDeviceFilter &aFilter) const;
+    QString toolTip(const CHostVideoInputDevice &webcam) const;
 
     QString detailsReport (const CMachine &aMachine, bool aWithLinks);
 

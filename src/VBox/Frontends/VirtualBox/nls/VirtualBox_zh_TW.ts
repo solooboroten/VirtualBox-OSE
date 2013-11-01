@@ -87,10 +87,6 @@
         <source>The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or there is a permission problem with /dev/vboxdrv. Please reinstall the kernel module by executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;as root. If it is available in your distribution, you should install the DKMS package first. This package keeps track of Linux kernel changes and recompiles the vboxdrv kernel module if necessary.</source>
         <translation>未載入 VirtualBox Linux 核心驅動程式 (vboxdrv) 或是 /dev/vboxdrv 的權限問題。 請以 root 執行 &lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos; 來重新安裝核心模組。 如果在您的發行中可以使用，您應先安裝 DKMS 套件。 這個套件保留 Linux 核心變更的追蹤並在需要時重新編譯 vboxdrv 核心模組。</translation>
     </message>
-    <message>
-        <source>Frame Size: %1x%2, Frame Rate: %3fps, Bit Rate: %4kbps</source>
-        <translation type="obsolete">框架大小: %1x%2，畫面播放速率: %3fps，位元率: %4kbps</translation>
-    </message>
 </context>
 <context>
     <name>QIArrowSplitter</name>
@@ -199,8 +195,8 @@
         <translation>取得虛擬機器的快照</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation>顯示工作階段資訊視窗</translation>
+        <source>Show Session Information Window</source>
+        <translation type="unfinished">顯示工作階段資訊視窗</translation>
     </message>
     <message>
         <source>&amp;Pause</source>
@@ -261,14 +257,6 @@
     <message>
         <source>Create or modify shared folders</source>
         <translation>建立或修改共用資料夾</translation>
-    </message>
-    <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation>安裝 Guest Additions(&amp;I)...</translation>
-    </message>
-    <message>
-        <source>Mount the Guest Additions installation image</source>
-        <translation>掛載 Guest Additions 安裝映像</translation>
     </message>
     <message>
         <source>De&amp;bug</source>
@@ -708,12 +696,18 @@
         <source>Popup Menu</source>
         <translation>Popup Menu</translation>
     </message>
-</context>
-<context>
-    <name>UIActonPool</name>
     <message>
-        <source>Popup Menu</source>
-        <translation type="obsolete">Popup Menu</translation>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished">插入 Guest Additions 安裝程式(&amp;I)...</translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation>插入 Guest Additions 磁碟檔案到虛擬磁碟機</translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <comment>new</comment>
+        <translation type="obsolete">插入 Guest Additions 安裝程式(&amp;I)...</translation>
     </message>
 </context>
 <context>
@@ -1228,7 +1222,7 @@
     </message>
     <message>
         <source>Frame Size: %1x%2, Frame Rate: %3fps, Bit Rate: %4kbps</source>
-        <translation>框架大小: %1x%2，畫面播放速率: %3fps，位元率: %4kbps</translation>
+        <translation>框架大小: %1x%2，畫面播放率: %3fps，位元率: %4kbps</translation>
     </message>
 </context>
 <context>
@@ -1291,7 +1285,7 @@
     </message>
     <message>
         <source>Suggest a reasonable maximum screen size to the guest. The guest will only see this suggestion when guest additions are installed.</source>
-        <translation>建議合理的客體最大畫面大小。 Guest Additions 元件安裝時客體才能看到此建議。</translation>
+        <translation>建議合理的客體最大畫面大小。 Guest Additions 安裝時客體才能看到此建議。</translation>
     </message>
     <message>
         <source>None</source>
@@ -1309,7 +1303,7 @@
     </message>
     <message>
         <source>Suggest a maximum screen size to the guest. The guest will only see this suggestion when guest additions are installed.</source>
-        <translation>建議客體最大畫面大小。 Guest Additions 元件安裝時客體才能看到此建議。</translation>
+        <translation>建議客體最大畫面大小。 Guest Additions 安裝時客體才能看到此建議。</translation>
     </message>
 </context>
 <context>
@@ -2903,7 +2897,7 @@
     </message>
     <message>
         <source>Dialog</source>
-        <translation>Dialog</translation>
+        <translation type="obsolete">Dialog</translation>
     </message>
     <message>
         <source>Folder Path:</source>
@@ -2940,6 +2934,10 @@
     <message>
         <source>If checked, this shared folder will be permanent.</source>
         <translation>如果勾選，這個共用資料夾將永久存在。</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -4015,11 +4013,6 @@
         <translation>捨棄</translation>
     </message>
     <message>
-        <source>Mount</source>
-        <comment>additions</comment>
-        <translation>掛載</translation>
-    </message>
-    <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
         <comment>additional message box paragraph</comment>
         <translation>&lt;p&gt;Host 鍵目前定義為 &lt;b&gt;%1&lt;/b&gt;。&lt;/p&gt;</translation>
@@ -4333,10 +4326,6 @@
     <message>
         <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and that it will be possible to use it later again.&lt;/p&gt;</source>
         <translation>&lt;p&gt;請注意，這個媒體的存放單元將不會刪除且可以稍後再次使用。&lt;/p&gt;</translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;VirtualBox Guest Additions 似乎在這部虛擬機器不可使用，因此共用資料夾無法使用。 若要在虛擬機器內使用共用資料夾，如果是未安裝請安裝 Guest Additions ，或如果是未正常動作則重新安裝，從&lt;b&gt;裝置&lt;/b&gt;功能表選取&lt;b&gt;安裝 Guest Additions&lt;/b&gt;。 如果已安裝但機器尚未完全啟動，則共用資料夾將在啟動後可以使用。&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
@@ -4792,6 +4781,20 @@
         <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
         <translation>&lt;p&gt;您確定要移除 NAT 網路 &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt; 嗎?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;如果一個或數個虛擬機器網路卡正在使用此網路，除非選擇不同的網路名稱或以不同的網路卡附加類型來修正其設定，否則這些網路卡將不再能使用。&lt;/p&gt;</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
+        <translation type="unfinished">&lt;p&gt;VirtualBox Guest Additions 似乎在這部虛擬機器不可使用，因此共用資料夾無法使用。 若要在虛擬機器內使用共用資料夾，如果未安裝則請安裝 Guest Additions ，或者如果是未正常動作則請重新安裝，從&lt;b&gt;裝置&lt;/b&gt;功能表選取&lt;b&gt;插入 Guest Additions 安裝程式&lt;/b&gt;。 如果已安裝但機器尚未完全啟動，則共用資料夾將在啟動後可以使用。&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions</comment>
+        <translation>插入</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
+        <comment>new</comment>
+        <translation type="obsolete">&lt;p&gt;VirtualBox Guest Additions 似乎在這部虛擬機器不可使用，因此共用資料夾無法使用。 若要在虛擬機器內使用共用資料夾，如果未安裝則請安裝 Guest Additions ，或者如果是未正常動作則請重新安裝，從&lt;b&gt;裝置&lt;/b&gt;功能表選取&lt;b&gt;插入 Guest Additions 安裝程式&lt;/b&gt;。 如果已安裝但機器尚未完全啟動，則共用資料夾將在啟動後可以使用。&lt;/p&gt;</translation>
+    </message>
 </context>
 <context>
     <name>UIMiniToolBar</name>
@@ -4882,7 +4885,7 @@
     </message>
     <message>
         <source>The network operation failed with the following error: %1.</source>
-        <translation>網路操作失敗，錯誤: %1。</translation>
+        <translation>網路操作失敗，錯誤如下: %1。</translation>
     </message>
 </context>
 <context>
@@ -5986,10 +5989,6 @@
         <translation>&lt;重設為預設值&gt;</translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation>接受變更並重新開啟這個對話方塊後，將顯示實際的預設路徑值。</translation>
-    </message>
-    <message>
         <source>&lt;not selected&gt;</source>
         <translation>&lt;未選取&gt;</translation>
     </message>
@@ -6032,6 +6031,10 @@
     <message>
         <source>Please type the file path here.</source>
         <translation>請在此輸入檔案路徑。</translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <translation>接受變更並重新開啟這個視窗後，將顯示實際的預設路徑值。</translation>
     </message>
 </context>
 <context>
@@ -6911,16 +6914,6 @@
         <translation>PB</translation>
     </message>
     <message>
-        <source>Enabled</source>
-        <comment>nested paging</comment>
-        <translation type="obsolete">啟用</translation>
-    </message>
-    <message>
-        <source>Disabled</source>
-        <comment>nested paging</comment>
-        <translation type="obsolete">停用</translation>
-    </message>
-    <message>
         <source>Nested Paging</source>
         <translation>Nested Paging</translation>
     </message>
@@ -7338,16 +7331,6 @@
         <source>PS/2 and USB Mouse</source>
         <comment>PointingHIDType</comment>
         <translation>PS/2 和 USB 滑鼠</translation>
-    </message>
-    <message>
-        <source>Enabled</source>
-        <comment>unrestricted execution</comment>
-        <translation type="obsolete">啟用</translation>
-    </message>
-    <message>
-        <source>Disabled</source>
-        <comment>unrestricted execution</comment>
-        <translation type="obsolete">停用</translation>
     </message>
     <message>
         <source>Unrestricted Execution</source>

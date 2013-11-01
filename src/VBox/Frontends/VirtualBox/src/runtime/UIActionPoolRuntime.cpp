@@ -162,7 +162,7 @@ protected:
     void retranslateUi()
     {
         setName(QApplication::translate("UIActionPool", "Session I&nformation..."));
-        setStatusTip(QApplication::translate("UIActionPool", "Show Session Information Dialog"));
+        setStatusTip(QApplication::translate("UIActionPool", "Show Session Information Window"));
     }
 };
 
@@ -729,6 +729,27 @@ protected:
     }
 };
 
+class UIActionMenuWebCams : public UIActionMenu
+{
+    Q_OBJECT;
+
+public:
+
+    UIActionMenuWebCams(UIActionPool *pParent)
+        : UIActionMenu(pParent, ":/web_camera_16px.png", ":/web_camera_disabled_16px.png")
+    {
+        qobject_cast<UIMenu*>(menu())->setShowToolTips(true);
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setName(QApplication::translate("UIActionPool", "&Webcams"));
+    }
+};
+
 class UIActionMenuSharedClipboard : public UIActionMenu
 {
     Q_OBJECT;
@@ -980,8 +1001,8 @@ protected:
 
     void retranslateUi()
     {
-        setName(QApplication::translate("UIActionPool", "&Install Guest Additions..."));
-        setStatusTip(QApplication::translate("UIActionPool", "Mount the Guest Additions installation image"));
+        setName(QApplication::translate("UIActionPool", "&Insert Guest Additions CD image..."));
+        setStatusTip(QApplication::translate("UIActionPool", "Insert the Guest Additions disk file into the virtual drive"));
     }
 };
 
@@ -1276,6 +1297,9 @@ void UIActionPoolRuntime::createMenus()
     if (m_pool[UIActionIndexRuntime_Menu_USBDevices])
         delete m_pool[UIActionIndexRuntime_Menu_USBDevices];
     m_pool[UIActionIndexRuntime_Menu_USBDevices] = new UIActionMenuUSBDevices(this);
+    if (m_pool[UIActionIndexRuntime_Menu_WebCams])
+        delete m_pool[UIActionIndexRuntime_Menu_WebCams];
+    m_pool[UIActionIndexRuntime_Menu_WebCams] = new UIActionMenuWebCams(this);
     if (m_pool[UIActionIndexRuntime_Menu_SharedClipboard])
         delete m_pool[UIActionIndexRuntime_Menu_SharedClipboard];
     m_pool[UIActionIndexRuntime_Menu_SharedClipboard] = new UIActionMenuSharedClipboard(this);

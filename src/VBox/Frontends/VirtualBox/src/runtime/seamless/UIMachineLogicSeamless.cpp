@@ -78,6 +78,16 @@ bool UIMachineLogicSeamless::checkAvailability()
     return true;
 }
 
+/** Adjusts guest screen count/size for the machine-logic we have. */
+void UIMachineLogicSeamless::maybeAdjustGuestScreenSize()
+{
+    /* We should rebuild screen-layout: */
+    m_pScreenLayout->rebuild();
+    /* We should update machine-windows sizes: */
+    foreach (UIMachineWindow *pMachineWindow, machineWindows())
+        pMachineWindow->handleScreenGeometryChange();
+}
+
 int UIMachineLogicSeamless::hostScreenForGuestScreen(int iScreenId) const
 {
     return m_pScreenLayout->hostScreenForGuestScreen(iScreenId);

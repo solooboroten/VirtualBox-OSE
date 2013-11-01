@@ -79,6 +79,9 @@ public:
     bool isPreventAutoClose() const { return m_fIsPreventAutoClose; }
     void setPreventAutoClose(bool fIsPreventAutoClose) { m_fIsPreventAutoClose = fIsPreventAutoClose; }
 
+    /* API: Guest screen size stuff: */
+    virtual void maybeAdjustGuestScreenSize();
+
     /* Wrapper to open Machine settings / Network page: */
     void openNetworkAdaptersDialog() { sltOpenNetworkAdaptersDialog(); }
 
@@ -200,7 +203,9 @@ private slots:
     void sltMountStorageMedium();
     void sltMountRecentStorageMedium();
     void sltPrepareUSBMenu();
+    void sltPrepareWebCamMenu();
     void sltAttachUSBDevice();
+    void sltAttachWebCamDevice();
     void sltPrepareSharedClipboardMenu();
     void sltChangeSharedClipboardType(QAction *pAction);
     void sltPrepareDragAndDropMenu();

@@ -2,12 +2,15 @@
 #include <VBox/com/string.h>
 #include <VBox/com/ptr.h>
 
-#include "../HostDnsService.h"
 
 #include <iprt/assert.h>
 #include <iprt/err.h>
 
 #include <Windows.h>
+
+#include <string>
+#include <vector>
+#include "../HostDnsService.h"
 
 static HKEY g_hKeyTcpipParameters;
 
@@ -29,45 +32,22 @@ HostDnsServiceWin::~HostDnsServiceWin()
 }
 
 
-HRESULT HostDnsServiceWin::init(const VirtualBox *aParent)
+HRESULT HostDnsServiceWin::init()
 {
-    HRESULT hrc;
-    hrc = HostDnsService::init(aParent);
+    HRESULT hrc = HostDnsMonitor::init();
     AssertComRCReturn(hrc, hrc);
 
-    hrc = update();
-    AssertComRCReturn(hrc, hrc);
-
-    return S_OK;
+    return updateInfo();
 }
 
 
-HRESULT HostDnsServiceWin::start(void)
-{
-    return S_OK;
-}
-
-
-void HostDnsServiceWin::stop(void)
-{
-}
-
-
-HRESULT HostDnsServiceWin::update()
+HRESULT HostDnsServiceWin::updateInfo()
 {
     HRESULT hrc;
     DWORD regIndex;
     BYTE abDomain[256];
     BYTE abNameServers[256];
     BYTE abSearchList[256];
-
-    m_llNameServers.clear();
-    m_llSearchStrings.clear();
-    m_DomainName.setNull();
-
-    RT_ZERO(abDomain);
-    RT_ZERO(abNameServers);
-    RT_ZERO(abSearchList);
 
     regIndex = 0;
     do {
@@ -114,18 +94,22 @@ HRESULT HostDnsServiceWin::update()
 
     /* OK, now parse and update DNS structures. */
     /* domain name */
-    m_DomainName = com::Utf8Str((char *)abDomain);
+    HostDnsInformation info;
+    info.domain = (char*)abDomain;
+
     /* server list */
-    strList2List(m_llNameServers, (char *)abNameServers);
+    strList2List(info.servers, (char *)abNameServers);
     /* search list */
-    strList2List(m_llSearchStrings, (char *)abNameServers);
+    strList2List(info.searchList, (char *)abSearchList);
+
+    HostDnsMonitor::setInfo(info);
 
     return S_OK;
 }
 
 
 
-void HostDnsServiceWin::strList2List(Utf8StrList& lst, char *strLst)
+void HostDnsServiceWin::strList2List(std::vector<std::string>& lst, char *strLst)
 {
     char *next, *current;
     char address[512];
@@ -145,7 +129,7 @@ void HostDnsServiceWin::strList2List(Utf8StrList& lst, char *strLst)
         else
           strcpy(address, current);
 
-        lst.push_back(com::Utf8Str(address));
+        lst.push_back(std::string(address));
 
         current = next + 1;
     } while(next);

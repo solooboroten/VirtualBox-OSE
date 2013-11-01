@@ -195,10 +195,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&amp;Pause</source>
         <translation type="unfinished"></translation>
     </message>
@@ -256,14 +252,6 @@
     </message>
     <message>
         <source>Create or modify shared folders</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Mount the Guest Additions installation image</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -702,6 +690,18 @@
     </message>
     <message>
         <source>Popup Menu</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show Session Information Window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2891,10 +2891,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Dialog</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Folder Path:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2928,6 +2924,10 @@
     </message>
     <message>
         <source>If checked, this shared folder will be permanent.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4004,11 +4004,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Mount</source>
-        <comment>additions</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
         <comment>additional message box paragraph</comment>
         <translation type="unfinished"></translation>
@@ -4321,10 +4316,6 @@
     </message>
     <message>
         <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and that it will be possible to use it later again.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4779,6 +4770,15 @@
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5975,10 +5975,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;not selected&gt;</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6020,6 +6016,10 @@
     </message>
     <message>
         <source>Please type the file path here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

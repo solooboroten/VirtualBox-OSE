@@ -75,8 +75,9 @@ public:
     /* Public setters: */
     virtual void setGuestAutoresizeEnabled(bool /* fEnabled */) {}
 
-    /* Public members: */
-    virtual void normalizeGeometry(bool /* bAdjustPosition = false */) = 0;
+    /** Adjusts guest screen size to correspond current machine-window size.
+      * @note Reimplemented in sub-classes. Base implementation does nothing. */
+    virtual void maybeAdjustGuestScreenSize() {}
 
     /* Framebuffer aspect ratio: */
     double aspectRatio() const;
@@ -159,7 +160,7 @@ protected:
      * to handle for @a maxGuestSize() to read.  Should be called if anything
      * happens (e.g. a screen hotplug) which might cause the value to change.
      * @sa m_u64MaxGuestSize. */
-    void setMaxGuestSize();
+    void setMaxGuestSize(const QSize &minimumSizeHint = QSize());
     /** Atomically read the maximum guest resolution which we currently wish to
      * handle.  This may safely be called from another thread (called by
      * UIFramebuffer on EMT).

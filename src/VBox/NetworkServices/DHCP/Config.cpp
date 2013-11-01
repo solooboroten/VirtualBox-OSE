@@ -4,16 +4,6 @@
  * XXX: license.
  */
 
-#include <VBox/com/com.h>
-#include <VBox/com/listeners.h>
-#include <VBox/com/string.h>
-#include <VBox/com/Guid.h>
-#include <VBox/com/array.h>
-#include <VBox/com/ErrorInfo.h>
-#include <VBox/com/errorprint.h>
-#include <VBox/com/EventQueue.h>
-#include <VBox/com/VirtualBox.h>
-
 #include <iprt/asm.h>
 #include <iprt/net.h>
 #include <iprt/time.h>
@@ -24,7 +14,12 @@
 #include <VBox/vmm/vmm.h>
 #include <VBox/version.h>
 
+#include <VBox/com/string.h>
+
+#include <iprt/cpp/xml.h>
+
 #include "../NetLib/VBoxNetLib.h"
+#include "../NetLib/shared_ptr.h"
 
 #include <list>
 #include <vector>
@@ -33,6 +28,72 @@
 
 #include "Config.h"
 
+/* types */
+class ClientData
+{
+public:
+    ClientData()
+    {
+        m_address.u = 0;
+        m_network.u = 0;
+        fHasLease = false;
+        fHasClient = false;
+        fBinding = true;
+        u64TimestampBindingStarted = 0;
+        u64TimestampLeasingStarted = 0;
+        u32LeaseExpirationPeriod = 0;
+        u32BindExpirationPeriod = 0;
+        pCfg = NULL;
+
+    }
+    ~ClientData(){}
+    
+    /* client information */
+    RTNETADDRIPV4 m_address;
+    RTNETADDRIPV4 m_network;
+    RTMAC m_mac;
+    
+    bool fHasClient;
+
+    /* Lease part */
+    bool fHasLease; 
+    /** lease isn't commited */
+    bool fBinding;
+
+    /** Timestamp when lease commited. */
+    uint64_t u64TimestampLeasingStarted;
+    /** Period when lease is expired in secs. */
+    uint32_t u32LeaseExpirationPeriod;
+
+    /** timestamp when lease was bound */
+    uint64_t u64TimestampBindingStarted;
+    /* Period when binding is expired in secs. */
+    uint32_t u32BindExpirationPeriod;
+
+    MapOptionId2RawOption options;
+
+    NetworkConfigEntity *pCfg;
+};
+
+
+bool operator== (const Lease& lhs, const Lease& rhs)
+{
+    return (lhs.m.get() == rhs.m.get());
+}
+
+
+bool operator!= (const Lease& lhs, const Lease& rhs)
+{
+    return !(lhs == rhs);
+}
+
+
+bool operator< (const Lease& lhs, const Lease& rhs)
+{
+    return (   (lhs.getAddress() < rhs.getAddress())
+            || (lhs.issued() < rhs.issued()));
+}
+/* consts */
 
 const NullConfigEntity *g_NullConfig = new NullConfigEntity();
 RootConfigEntity *g_RootConfig = new RootConfigEntity(std::string("ROOT"), 1200 /* 20 min. */);
@@ -44,46 +105,39 @@ static NetworkManager *g_NetworkManager = NetworkManager::getNetworkManager();
 
 int BaseConfigEntity::match(Client& client, BaseConfigEntity **cfg)
 {
-        int iMatch = (m_criteria && m_criteria->check(client)? m_MatchLevel: 0);
-        if (m_children.empty())
-        {
-            if (iMatch > 0)
-            {
-                *cfg = this;
-                return iMatch;
-            }
-        }
-        else
+    int iMatch = (m_criteria && m_criteria->check(client)? m_MatchLevel: 0);
+    if (m_children.empty())
+    {
+        if (iMatch > 0)
         {
             *cfg = this;
-            /* XXX: hack */
-            BaseConfigEntity *matching = this;
-            int matchingLevel = m_MatchLevel;
-
-            for (std::vector<BaseConfigEntity *>::iterator it = m_children.begin();
-                 it != m_children.end();
-                 ++it)
-            {
-                iMatch = (*it)->match(client, &matching);
-                if (iMatch > matchingLevel)
-                {
-                    *cfg = matching;
-                    matchingLevel = iMatch;
-                }
-            }
-            return matchingLevel;
+            return iMatch;
         }
-        return iMatch;
+    }
+    else
+    {
+        *cfg = this;
+        /* XXX: hack */
+        BaseConfigEntity *matching = this;
+        int matchingLevel = m_MatchLevel;
+
+        for (std::vector<BaseConfigEntity *>::iterator it = m_children.begin();
+             it != m_children.end();
+             ++it)
+        {
+            iMatch = (*it)->match(client, &matching);
+            if (iMatch > matchingLevel)
+            {
+                *cfg = matching;
+                matchingLevel = iMatch;
+            }
+        }
+        return matchingLevel;
+    }
+    return iMatch;
 }
 
 /* Client */
-
-Client::Client(const RTMAC& mac)
-{
-    m_mac = mac;
-    m_lease = NULL;
-}
-
 /* Configs
     NetworkConfigEntity(std::string name,
                         ConfigEntity* pCfg,
@@ -100,14 +154,150 @@ RootConfigEntity::RootConfigEntity(std::string name, uint32_t expPeriod):
     m_u32ExpirationPeriod = expPeriod;
 }
 
-
 /* Configuration Manager */
+struct ConfigurationManager::Data
+{
+    Data():fFileExists(false){}
+
+    MapLease2Ip4Address  m_allocations;
+    Ipv4AddressContainer m_nameservers;
+    Ipv4AddressContainer m_routers;
+
+    std::string          m_domainName;
+    VecClient            m_clients;
+    std::string          m_leaseStorageFilename;
+    bool                 fFileExists;
+};
+    
 ConfigurationManager *ConfigurationManager::getConfigurationManager()
 {
     if (!g_ConfigurationManager)
+
+
+    {
         g_ConfigurationManager = new ConfigurationManager();
+        g_ConfigurationManager->init();
+    }
 
     return g_ConfigurationManager;
+}
+
+
+const std::string tagXMLLeases = "Leases";
+const std::string tagXMLLeasesAttributeVersion = "version";
+const std::string tagXMLLeasesVersion_1_0 = "1.0";
+const std::string tagXMLLease = "Lease";
+const std::string tagXMLLeaseAttributeMac = "mac";
+const std::string tagXMLLeaseAttributeNetwork = "network";
+const std::string tagXMLLeaseAddress = "Address";
+const std::string tagXMLAddressAttributeValue = "value";
+const std::string tagXMLLeaseTime = "Time";
+const std::string tagXMLTimeAttributeIssued = "issued";
+const std::string tagXMLTimeAttributeExpiration = "expiration";
+const std::string tagXMLLeaseOptions = "Options";
+
+/**
+ * <Leases version="1.0">
+ *   <Lease mac="" network=""/>
+ *    <Address value=""/>
+ *    <Time issued="" expiration=""/>
+ *    <options>
+ *      <option name="" type=""/>
+ *      </option>
+ *    </options>
+ *   </Lease>
+ * </Leases>
+ */
+int ConfigurationManager::loadFromFile(const std::string& leaseStorageFileName)
+{
+    m->m_leaseStorageFilename = leaseStorageFileName;
+    
+    xml::XmlFileParser parser;
+    xml::Document doc;
+
+    try {
+        parser.read(m->m_leaseStorageFilename.c_str(), doc);
+    }
+    catch (...)
+    {
+        return VINF_SUCCESS;
+    }
+
+    /* XML parsing */
+    xml::ElementNode *root = doc.getRootElement();
+
+    if (!root || !root->nameEquals(tagXMLLeases.c_str()))
+    {
+        m->fFileExists = false;
+        return VERR_NOT_FOUND;
+    }
+
+    com::Utf8Str version;
+    if (root)
+        root->getAttributeValue(tagXMLLeasesAttributeVersion.c_str(), version);
+
+    /* XXX: version check */
+    xml::NodesLoop leases(*root);
+
+    bool valueExists;
+    const xml::ElementNode *lease;
+    while ((lease = leases.forAllNodes()))
+    {
+        if (!lease->nameEquals(tagXMLLease.c_str()))
+            continue;
+        
+        ClientData *data = new ClientData();
+        Lease l(data);
+        if (l.fromXML(lease)) 
+        {
+
+            m->m_allocations.insert(MapLease2Ip4AddressPair(l, l.getAddress()));
+
+
+            NetworkConfigEntity *pNetCfg = NULL;
+            Client c(data);
+            int rc = g_RootConfig->match(c, (BaseConfigEntity **)&pNetCfg);
+            Assert(rc >= 0 && pNetCfg);
+
+            l.setConfig(pNetCfg);
+
+            m->m_clients.push_back(c);
+        }
+    }
+
+    return VINF_SUCCESS;
+}
+
+
+int ConfigurationManager::saveToFile()
+{
+    if (m->m_leaseStorageFilename.empty())
+        return VINF_SUCCESS;
+
+    xml::Document doc;
+
+    xml::ElementNode *root = doc.createRootElement(tagXMLLeases.c_str());
+    if (!root)
+        return VERR_INTERNAL_ERROR;
+    
+    root->setAttribute(tagXMLLeasesAttributeVersion.c_str(), tagXMLLeasesVersion_1_0.c_str());
+
+    for(MapLease2Ip4AddressConstIterator it = m->m_allocations.begin();
+        it != m->m_allocations.end(); ++it)
+    {
+        xml::ElementNode *lease = root->createChild(tagXMLLease.c_str());
+        if (!it->first.toXML(lease))
+        {
+            /* XXX: todo logging + error handling */
+        }
+    }
+
+    try {
+        xml::XmlFileWriter writer(doc);
+        writer.write(m->m_leaseStorageFilename.c_str(), true);
+    } catch(...){}
+
+    return VINF_SUCCESS;
 }
 
 
@@ -117,7 +307,7 @@ int ConfigurationManager::extractRequestList(PCRTNETBOOTP pDhcpMsg, size_t cbDhc
 }
 
 
-Client *ConfigurationManager::getClientByDhcpPacket(const RTNETBOOTP *pDhcpMsg, size_t cbDhcpMsg)
+Client ConfigurationManager::getClientByDhcpPacket(const RTNETBOOTP *pDhcpMsg, size_t cbDhcpMsg)
 {
 
     VecClientIterator it;
@@ -125,30 +315,32 @@ Client *ConfigurationManager::getClientByDhcpPacket(const RTNETBOOTP *pDhcpMsg, 
     uint8_t uMsgType = 0;
 
     fDhcpValid = RTNetIPv4IsDHCPValid(NULL, pDhcpMsg, cbDhcpMsg, &uMsgType);
-    AssertReturn(fDhcpValid, NULL);
+    AssertReturn(fDhcpValid, Client::NullClient);
 
     LogFlowFunc(("dhcp:mac:%RTmac\n", &pDhcpMsg->bp_chaddr.Mac));
     /* 1st. client IDs */
-    for ( it = m_clients.begin();
-         it != m_clients.end();
+    for ( it = m->m_clients.begin();
+         it != m->m_clients.end();
          ++it)
     {
-        if (*(*it) == pDhcpMsg->bp_chaddr.Mac)
+        if ((*it) == pDhcpMsg->bp_chaddr.Mac)
         {
-            LogFlowFunc(("client:mac:%RTmac\n",  &(*it)->m_mac));
+            LogFlowFunc(("client:mac:%RTmac\n",  it->getMacAddress()));
             /* check timestamp that request wasn't expired. */
             return (*it);
         }
     }
 
-    if (it == m_clients.end())
+    if (it == m->m_clients.end())
     {
         /* We hasn't got any session for this client */
-        m_clients.push_back(new Client(pDhcpMsg->bp_chaddr.Mac));
-        return m_clients.back();
+        Client c;
+        c.initWithMac(pDhcpMsg->bp_chaddr.Mac);
+        m->m_clients.push_back(c);
+        return m->m_clients.back();
     }
 
-    return NULL;
+    return Client::NullClient;
 }
 
 /**
@@ -223,35 +415,39 @@ ConfigurationManager::findOption(uint8_t uOption, PCRTNETBOOTP pDhcpMsg, size_t 
 /**
  * We bind lease for client till it continue with it on DHCPREQUEST.
  */
-Lease *ConfigurationManager::allocateLease4Client(Client *client, PCRTNETBOOTP pDhcpMsg, size_t cbDhcpMsg)
+Lease ConfigurationManager::allocateLease4Client(const Client& client, PCRTNETBOOTP pDhcpMsg, size_t cbDhcpMsg)
 {
-    /**
-     * Well, session hasn't get the config.
-     */
-    AssertPtrReturn(client, NULL);
-
-    /**
-     * This mean that client has already bound or commited lease.
-     * If we've it happens it means that we received DHCPDISCOVER twice.
-     */
-    if (client->m_lease)
     {
-        if (client->m_lease->isExpired())
-            expireLease4Client(client);
-        else
+        /**
+         * This mean that client has already bound or commited lease.
+         * If we've it happens it means that we received DHCPDISCOVER twice.
+         */
+        const Lease l = client.lease();
+        if (l != Lease::NullLease)
         {
-            AssertReturn(client->m_lease->m_address.u != 0,NULL);
-            return client->m_lease;
+            /* Here we should take lease from the m_allocation which was feed with leases 
+             *  on start
+             */
+            if (l.isExpired())
+            {
+                expireLease4Client(const_cast<Client&>(client));
+                if (!l.isExpired())
+                    return l;
+            }
+            else
+            {
+                AssertReturn(l.getAddress().u != 0, Lease::NullLease);
+                return l;
+            }
         }
     }
 
     RTNETADDRIPV4 hintAddress;
     RawOption opt;
-    Lease *please = NULL;
-
     NetworkConfigEntity *pNetCfg;
 
-    AssertReturn(g_RootConfig->match(*client, (BaseConfigEntity **)&pNetCfg) > 0, NULL);
+    Client cl(client);
+    AssertReturn(g_RootConfig->match(cl, (BaseConfigEntity **)&pNetCfg) > 0, Lease::NullLease);
 
     /* DHCPDISCOVER MAY contain request address */
     hintAddress.u = 0;
@@ -265,15 +461,13 @@ Lease *ConfigurationManager::allocateLease4Client(Client *client, PCRTNETBOOTP p
     }
 
     if (   hintAddress.u
-        && !isAddressTaken(hintAddress, NULL))
+        && !isAddressTaken(hintAddress))
     {
-        please = new Lease();
-        please->pCfg = pNetCfg;
-        please->m_client = client;
-        client->m_lease = please;
-        client->m_lease->m_address = hintAddress;
-        m_allocations[please] = hintAddress;
-        return please;
+        Lease l(cl);
+        l.setConfig(pNetCfg);
+        l.setAddress(hintAddress);
+        m->m_allocations.insert(MapLease2Ip4AddressPair(l, hintAddress));
+        return l;
     }
 
     uint32_t u32 = 0;
@@ -283,64 +477,84 @@ Lease *ConfigurationManager::allocateLease4Client(Client *client, PCRTNETBOOTP p
     {
         RTNETADDRIPV4 address;
         address.u = RT_H2N_U32(u32);
-        if (!isAddressTaken(address, NULL))
+        if (!isAddressTaken(address))
         {
-            please = new Lease();
-            please->pCfg = pNetCfg;
-            please->m_client = client;
-            client->m_lease = please;
-            client->m_lease->m_address = address;
-            m_allocations[please] = client->m_lease->m_address;
-            return please;
+            Lease l(cl);
+            l.setConfig(pNetCfg);
+            l.setAddress(address);
+            m->m_allocations.insert(MapLease2Ip4AddressPair(l, address));
+            return l;
         }
     }
 
-    return NULL;
+    return Lease::NullLease;
 }
 
 
-int ConfigurationManager::commitLease4Client(Client *client)
+int ConfigurationManager::commitLease4Client(Client& client)
 {
-    client->m_lease->u64TimestampBindingStarted = 0;
-    client->m_lease->u32LeaseExpirationPeriod = client->m_lease->pCfg->expirationPeriod();
-    client->m_lease->u64TimestampLeasingStarted = RTTimeMilliTS();
-    client->m_lease->fBinding = false;
-    return VINF_SUCCESS;
-}
+    Lease l = client.lease();
+    AssertReturn(l != Lease::NullLease, VERR_INTERNAL_ERROR);
 
-int ConfigurationManager::expireLease4Client(Client *client)
-{
-    MapLease2Ip4AddressIterator it = m_allocations.find(client->m_lease);
-    AssertReturn(it != m_allocations.end(), VERR_NOT_FOUND);
+    l.bindingPhase(false);
+    const NetworkConfigEntity *pCfg = l.getConfig();
 
-    m_allocations.erase(it);
+    AssertPtr(pCfg);
+    l.setExpiration(pCfg->expirationPeriod());
+    l.phaseStart(RTTimeMilliTS());
 
-    delete client->m_lease;
-    client->m_lease = NULL;
+    saveToFile();
 
     return VINF_SUCCESS;
 }
 
-bool ConfigurationManager::isAddressTaken(const RTNETADDRIPV4& addr, Lease** ppLease)
+
+int ConfigurationManager::expireLease4Client(Client& client)
+{
+    Lease l = client.lease();
+    AssertReturn(l != Lease::NullLease, VERR_INTERNAL_ERROR);
+    
+    if (l.isInBindingPhase())
+    {
+
+        MapLease2Ip4AddressIterator it = m->m_allocations.find(l);
+        AssertReturn(it != m->m_allocations.end(), VERR_NOT_FOUND);
+
+        /*
+         * XXX: perhaps it better to keep this allocation ????
+         */
+        m->m_allocations.erase(it);
+
+        l.expire();
+        return VINF_SUCCESS;
+    }
+    
+    l = Lease(client); /* re-new */
+    return VINF_SUCCESS;
+}
+
+bool ConfigurationManager::isAddressTaken(const RTNETADDRIPV4& addr, Lease& lease)
 {
     MapLease2Ip4AddressIterator it;
 
-    for (it = m_allocations.begin();
-         it != m_allocations.end();
+    for (it = m->m_allocations.begin();
+         it != m->m_allocations.end();
          ++it)
     {
         if (it->second.u == addr.u)
         {
-            if (ppLease)
-                *ppLease = it->first;
+            if (lease != Lease::NullLease)
+                lease = it->first;
 
             return true;
         }
     }
+    lease = Lease::NullLease;
     return false;
 }
 
-NetworkConfigEntity *ConfigurationManager::addNetwork(NetworkConfigEntity *pCfg,
+
+NetworkConfigEntity *ConfigurationManager::addNetwork(NetworkConfigEntity *,
                                     const RTNETADDRIPV4& networkId,
                                     const RTNETADDRIPV4& netmask,
                                     RTNETADDRIPV4& LowerAddress,
@@ -389,26 +603,27 @@ int ConfigurationManager::addToAddressList(uint8_t u8OptId, RTNETADDRIPV4& addre
     switch(u8OptId)
     {
         case RTNET_DHCP_OPT_DNS:
-            m_nameservers.push_back(address);
+            m->m_nameservers.push_back(address);
             break;
         case RTNET_DHCP_OPT_ROUTERS:
-            m_routers.push_back(address);
+            m->m_routers.push_back(address);
             break;
         default:
             Log(("dhcp-opt: list (%d) unsupported\n", u8OptId));
     }
     return VINF_SUCCESS;
 }
+
 
 int ConfigurationManager::flushAddressList(uint8_t u8OptId)
 {
     switch(u8OptId)
     {
         case RTNET_DHCP_OPT_DNS:
-            m_nameservers.clear();
+            m->m_nameservers.clear();
             break;
         case RTNET_DHCP_OPT_ROUTERS:
-            m_routers.clear();
+            m->m_routers.clear();
             break;
         default:
             Log(("dhcp-opt: list (%d) unsupported\n", u8OptId));
@@ -416,27 +631,29 @@ int ConfigurationManager::flushAddressList(uint8_t u8OptId)
     return VINF_SUCCESS;
 }
 
+
 const Ipv4AddressContainer& ConfigurationManager::getAddressList(uint8_t u8OptId)
 {
     switch(u8OptId)
     {
         case RTNET_DHCP_OPT_DNS:
-            return m_nameservers;
+            return m->m_nameservers;
 
         case RTNET_DHCP_OPT_ROUTERS:
-            return m_routers;
+            return m->m_routers;
 
     }
     /* XXX: Grrr !!! */
     return m_empty;
 }
 
+
 int ConfigurationManager::setString(uint8_t u8OptId, const std::string& str)
 {
     switch (u8OptId)
     {
         case RTNET_DHCP_OPT_DOMAIN_NAME:
-            m_domainName = str;
+            m->m_domainName = str;
             break;
         default:
             break;
@@ -445,13 +662,14 @@ int ConfigurationManager::setString(uint8_t u8OptId, const std::string& str)
     return VINF_SUCCESS;
 }
 
+
 const std::string& ConfigurationManager::getString(uint8_t u8OptId)
 {
     switch (u8OptId)
     {
         case RTNET_DHCP_OPT_DOMAIN_NAME:
-            if (m_domainName.length())
-                return m_domainName;
+            if (m->m_domainName.length())
+                return m->m_domainName;
             else
                 return m_noString;
         default:
@@ -460,6 +678,15 @@ const std::string& ConfigurationManager::getString(uint8_t u8OptId)
 
     return m_noString;
 }
+
+
+void ConfigurationManager::init()
+{
+    m = new ConfigurationManager::Data();
+}
+
+
+ConfigurationManager::~ConfigurationManager() { if (m) delete m; }
 
 /**
  * Network manager
@@ -476,16 +703,13 @@ NetworkManager *NetworkManager::getNetworkManager()
 /**
  * Network manager creates DHCPOFFER datagramm
  */
-int NetworkManager::offer4Client(Client *client, uint32_t u32Xid,
+int NetworkManager::offer4Client(const Client& client, uint32_t u32Xid,
                                  uint8_t *pu8ReqList, int cReqList)
 {
-    AssertPtrReturn(client, VERR_INTERNAL_ERROR);
-    AssertPtrReturn(client->m_lease, VERR_INTERNAL_ERROR);
-
+    Lease l(client); /* XXX: oh, it looks badly, but now we have lease */
     prepareReplyPacket4Client(client, u32Xid);
 
-
-    RTNETADDRIPV4 address = client->m_lease->m_address;
+    RTNETADDRIPV4 address = l.getAddress();
     BootPReplyMsg.BootPHeader.bp_yiaddr =  address;
 
     /* Ubuntu ???*/
@@ -499,39 +723,40 @@ int NetworkManager::offer4Client(Client *client, uint32_t u32Xid,
     RawOption opt;
     RT_ZERO(opt);
 
-    /* XXX: can't store options per session */
-    AssertPtr(client);
-
+    std::vector<RawOption> extra(2);
     opt.u8OptId = RTNET_DHCP_OPT_MSG_TYPE;
     opt.au8RawOpt[0] = RTNET_DHCP_MT_OFFER;
     opt.cbRawOpt = 1;
-    client->rawOptions.push_back(opt);
+    extra.push_back(opt);
 
     opt.u8OptId = RTNET_DHCP_OPT_LEASE_TIME;
-    *(uint32_t *)opt.au8RawOpt = RT_H2N_U32(client->m_lease->pCfg->expirationPeriod());
+
+    const NetworkConfigEntity *pCfg = l.getConfig();
+    AssertPtr(pCfg);
+
+    *(uint32_t *)opt.au8RawOpt = RT_H2N_U32(pCfg->expirationPeriod());
     opt.cbRawOpt = sizeof(RTNETADDRIPV4);
-    client->rawOptions.push_back(opt);
+
+    extra.push_back(opt);
 
     processParameterReqList(client, pu8ReqList, cReqList);
 
-    return doReply(client);
+    return doReply(client, extra);
 }
 
 
 /**
  * Network manager creates DHCPACK
  */
-int NetworkManager::ack(Client *client, uint32_t u32Xid,
+int NetworkManager::ack(const Client& client, uint32_t u32Xid,
                         uint8_t *pu8ReqList, int cReqList)
 {
-    AssertPtrReturn(client, VERR_INTERNAL_ERROR);
-    AssertPtrReturn(client->m_lease, VERR_INTERNAL_ERROR);
-
     RTNETADDRIPV4 address;
 
     prepareReplyPacket4Client(client, u32Xid);
-
-    address = client->m_lease->m_address;
+    
+    Lease l = client.lease();
+    address = l.getAddress();
     BootPReplyMsg.BootPHeader.bp_ciaddr =  address;
 
 
@@ -539,8 +764,8 @@ int NetworkManager::ack(Client *client, uint32_t u32Xid,
      * DHCPREQUEST or 0 ...
      * XXX: Using addressHint is not correct way to initialize [cy]iaddress...
      */
-    BootPReplyMsg.BootPHeader.bp_ciaddr = client->m_lease->m_address;
-    BootPReplyMsg.BootPHeader.bp_yiaddr = client->m_lease->m_address;
+    BootPReplyMsg.BootPHeader.bp_ciaddr = address;
+    BootPReplyMsg.BootPHeader.bp_yiaddr = address;
 
     Assert(BootPReplyMsg.BootPHeader.bp_yiaddr.u);
 
@@ -552,34 +777,35 @@ int NetworkManager::ack(Client *client, uint32_t u32Xid,
     RawOption opt;
     RT_ZERO(opt);
 
+    std::vector<RawOption> extra(2);
     opt.u8OptId = RTNET_DHCP_OPT_MSG_TYPE;
     opt.au8RawOpt[0] = RTNET_DHCP_MT_ACK;
     opt.cbRawOpt = 1;
-    client->rawOptions.push_back(opt);
+    extra.push_back(opt);
 
     /*
      * XXX: lease time should be conditional. If on dhcprequest then tim should be provided,
      * else on dhcpinform it mustn't.
      */
     opt.u8OptId = RTNET_DHCP_OPT_LEASE_TIME;
-    *(uint32_t *)opt.au8RawOpt = RT_H2N_U32(client->m_lease->u32LeaseExpirationPeriod);
+    *(uint32_t *)opt.au8RawOpt = RT_H2N_U32(l.getExpiration());
     opt.cbRawOpt = sizeof(RTNETADDRIPV4);
-    client->rawOptions.push_back(opt);
+    extra.push_back(opt);
 
     processParameterReqList(client, pu8ReqList, cReqList);
 
-    return doReply(client);
+    return doReply(client, extra);
 }
 
 
 /**
  * Network manager creates DHCPNAK
  */
-int NetworkManager::nak(Client* client, uint32_t u32Xid)
+int NetworkManager::nak(const Client& client, uint32_t u32Xid)
 {
-    AssertPtrReturn(client, VERR_INTERNAL_ERROR);
 
-    if (!client->m_lease)
+    Lease l = client.lease();
+    if (l == Lease::NullLease)
         return VERR_INTERNAL_ERROR;
 
     prepareReplyPacket4Client(client, u32Xid);
@@ -594,25 +820,22 @@ int NetworkManager::nak(Client* client, uint32_t u32Xid)
      * - server identifier
      */
     RawOption opt;
-    RT_ZERO(opt);
+    std::vector<RawOption> extra;
 
     opt.u8OptId = RTNET_DHCP_OPT_MSG_TYPE;
     opt.au8RawOpt[0] = RTNET_DHCP_MT_NAC;
     opt.cbRawOpt = 1;
-    client->rawOptions.push_back(opt);
+    extra.push_back(opt);
 
-    return doReply(client);
+    return doReply(client, extra);
 }
 
 
 /**
  *
  */
-int NetworkManager::prepareReplyPacket4Client(Client *client, uint32_t u32Xid)
+int NetworkManager::prepareReplyPacket4Client(const Client& client, uint32_t u32Xid)
 {
-    AssertPtrReturn(client, VERR_INTERNAL_ERROR);
-    AssertPtrReturn(client->m_lease, VERR_INTERNAL_ERROR);
-
     memset(&BootPReplyMsg, 0, sizeof(BootPReplyMsg));
 
     BootPReplyMsg.BootPHeader.bp_op     = RTNETBOOTP_OP_REPLY;
@@ -626,9 +849,10 @@ int NetworkManager::prepareReplyPacket4Client(Client *client, uint32_t u32Xid)
     BootPReplyMsg.BootPHeader.bp_ciaddr.u = 0;
     BootPReplyMsg.BootPHeader.bp_giaddr.u = 0;
 
-    BootPReplyMsg.BootPHeader.bp_chaddr.Mac = client->m_mac;
+    BootPReplyMsg.BootPHeader.bp_chaddr.Mac = client.getMacAddress();
 
-    BootPReplyMsg.BootPHeader.bp_yiaddr = client->m_lease->m_address;
+    const Lease l = client.lease();
+    BootPReplyMsg.BootPHeader.bp_yiaddr = l.getAddress();
     BootPReplyMsg.BootPHeader.bp_siaddr.u = 0;
 
 
@@ -642,12 +866,9 @@ int NetworkManager::prepareReplyPacket4Client(Client *client, uint32_t u32Xid)
 }
 
 
-int NetworkManager::doReply(Client *client)
+int NetworkManager::doReply(const Client& client, const std::vector<RawOption>& extra)
 {
     int rc;
-
-    AssertPtrReturn(client, VERR_INTERNAL_ERROR);
-    AssertPtrReturn(client->m_lease, VERR_INTERNAL_ERROR);
 
     /*
       Options....
@@ -658,22 +879,25 @@ int NetworkManager::doReply(Client *client)
 
     Cursor.optIPv4Addr(RTNET_DHCP_OPT_SERVER_ID, m_OurAddress);
 
-    while(!client->rawOptions.empty())
-    {
-        RawOption opt = client->rawOptions.back();
-        if (!Cursor.begin(opt.u8OptId, opt.cbRawOpt))
-            break;
-        Cursor.put(opt.au8RawOpt, opt.cbRawOpt);
+    const Lease l = client.lease(); 
+    const std::map<uint8_t, RawOption>& options = l.options();
 
-        client->rawOptions.pop_back();
+    for(std::vector<RawOption>::const_iterator it = extra.begin(); 
+        it != extra.end(); ++it)
+    {
+        if (!Cursor.begin(it->u8OptId, it->cbRawOpt))
+            break;
+        Cursor.put(it->au8RawOpt, it->cbRawOpt);
+
     }
 
-
-    if (!client->rawOptions.empty())
+    for(std::map<uint8_t, RawOption>::const_iterator it = options.begin(); 
+        it != options.end(); ++it)
     {
-        Log(("Wasn't able to put all options\n"));
-        /* force clean up */
-        client->rawOptions.clear();
+        if (!Cursor.begin(it->second.u8OptId, it->second.cbRawOpt))
+            break;
+        Cursor.put(it->second.au8RawOpt, it->second.cbRawOpt);
+
     }
 
     Cursor.optEnd();
@@ -681,7 +905,8 @@ int NetworkManager::doReply(Client *client)
     /*
      */
 #if 0
-    if (!(pDhcpMsg->bp_flags & RTNET_DHCP_FLAGS_NO_BROADCAST)) /** @todo need to see someone set this flag to check that it's correct. */
+    /** @todo need to see someone set this flag to check that it's correct. */
+    if (!(pDhcpMsg->bp_flags & RTNET_DHCP_FLAGS_NO_BROADCAST))  
     {
         rc = VBoxNetUDPUnicast(m_pSession,
                                m_hIf,
@@ -711,29 +936,32 @@ int NetworkManager::doReply(Client *client)
 }
 
 
-int NetworkManager::processParameterReqList(Client* client, uint8_t *pu8ReqList, int cReqList)
+int NetworkManager::processParameterReqList(const Client& client, uint8_t *pu8ReqList, int cReqList)
 {
     /* request parameter list */
     RawOption opt;
     int idxParam = 0;
 
-    AssertPtrReturn(client, VERR_INTERNAL_ERROR);
-
     uint8_t *pReqList = pu8ReqList;
-
-    const NetworkConfigEntity *pNetCfg = client->m_lease->pCfg;
+    
+    const Lease const_l = client.lease();
+    Lease l = Lease(const_l);
+    
+    const NetworkConfigEntity *pNetCfg = l.getConfig();
 
     for (idxParam = 0; idxParam < cReqList; ++idxParam)
     {
 
+        bool fIgnore = false;
         RT_ZERO(opt);
         opt.u8OptId = pReqList[idxParam];
+
         switch(pReqList[idxParam])
         {
             case RTNET_DHCP_OPT_SUBNET_MASK:
                 ((PRTNETADDRIPV4)opt.au8RawOpt)->u = pNetCfg->netmask().u;
                 opt.cbRawOpt = sizeof(RTNETADDRIPV4);
-                client->rawOptions.push_back(opt);
+
                 break;
 
             case RTNET_DHCP_OPT_ROUTERS:
@@ -752,28 +980,287 @@ int NetworkManager::processParameterReqList(Client* client, uint8_t *pu8ReqList,
                         opt.cbRawOpt += sizeof(RTNETADDRIPV4);
                     }
 
-                    if (!lst.empty())
-                        client->rawOptions.push_back(opt);
+                    if (lst.empty())
+                        fIgnore = true;
                 }
                 break;
             case RTNET_DHCP_OPT_DOMAIN_NAME:
                 {
                     std::string domainName = g_ConfigurationManager->getString(pReqList[idxParam]);
                     if (domainName == g_ConfigurationManager->m_noString)
+                    {
+                        fIgnore = true;
                         break;
+                    }
 
                     char *pszDomainName = (char *)&opt.au8RawOpt[0];
 
                     strcpy(pszDomainName, domainName.c_str());
                     opt.cbRawOpt = domainName.length();
-                    client->rawOptions.push_back(opt);
                 }
                 break;
             default:
                 Log(("opt: %d is ignored\n", pReqList[idxParam]));
+                fIgnore = true;
                 break;
         }
+
+        if (!fIgnore)
+            l.options().insert(std::map<uint8_t, RawOption>::value_type(opt.u8OptId, opt));
+
     }
 
     return VINF_SUCCESS;
 }
+
+/* Utility */
+bool operator== (const RTMAC& lhs, const RTMAC& rhs)
+{
+    return (   lhs.au16[0] == rhs.au16[0]
+            && lhs.au16[1] == rhs.au16[1]
+            && lhs.au16[2] == rhs.au16[2]);
+}
+
+
+/* Client */
+Client::Client()
+{
+    m = SharedPtr<ClientData>();
+}
+
+
+void Client::initWithMac(const RTMAC& mac)
+{
+    m = SharedPtr<ClientData>(new ClientData());
+    m->m_mac = mac;
+}
+
+
+bool Client::operator== (const RTMAC& mac) const
+{
+    return (m.get() && m->m_mac == mac);
+}
+
+
+const RTMAC& Client::getMacAddress() const
+{
+    return m->m_mac;
+}
+
+
+Lease Client::lease()
+{
+    if (!m.get()) return Lease::NullLease;
+
+    if (m->fHasLease)
+        return Lease(*this);
+    else
+        return Lease::NullLease;
+}
+
+
+const Lease Client::lease() const
+{
+    return const_cast<Client *>(this)->lease();
+}
+
+
+Client::Client(ClientData *data):m(SharedPtr<ClientData>(data)){}
+
+/* Lease */
+Lease::Lease()
+{
+    m = SharedPtr<ClientData>();
+}
+
+
+Lease::Lease (const Client& c)
+{
+    m = SharedPtr<ClientData>(c.m);
+    if (   !m->fHasLease
+        || (   isExpired()
+            && !isInBindingPhase()))
+    {
+        m->fHasLease = true;
+        m->fBinding = true;
+        phaseStart(RTTimeMilliTS());
+    }
+}
+
+
+bool Lease::isExpired() const
+{
+    AssertPtrReturn(m.get(), false);
+
+    if (!m->fBinding)
+        return (ASMDivU64ByU32RetU32(RTTimeMilliTS() - m->u64TimestampLeasingStarted, 1000)
+                > m->u32LeaseExpirationPeriod);
+    else
+        return (ASMDivU64ByU32RetU32(RTTimeMilliTS() - m->u64TimestampBindingStarted, 1000)
+                > m->u32BindExpirationPeriod);
+}
+
+
+void Lease::expire()
+{
+    /* XXX: TODO */
+}
+
+
+void Lease::phaseStart(uint64_t u64Start)
+{
+    if (m->fBinding)
+        m->u64TimestampBindingStarted = u64Start;
+    else
+        m->u64TimestampLeasingStarted = u64Start;
+}
+
+
+void Lease::bindingPhase(bool fOnOff)
+{
+    m->fBinding = fOnOff;
+}
+
+
+bool Lease::isInBindingPhase() const
+{
+    return m->fBinding;
+}
+
+
+uint64_t Lease::issued() const
+{
+    return m->u64TimestampLeasingStarted;
+}
+
+
+void Lease::setExpiration(uint32_t exp)
+{
+    if (m->fBinding)
+        m->u32BindExpirationPeriod = exp;
+    else
+        m->u32LeaseExpirationPeriod = exp;
+}
+
+
+uint32_t Lease::getExpiration() const
+{
+    if (m->fBinding)
+        return m->u32BindExpirationPeriod;
+    else
+        return m->u32LeaseExpirationPeriod;
+}
+
+
+RTNETADDRIPV4 Lease::getAddress() const
+{
+    return m->m_address;
+}
+
+
+void Lease::setAddress(RTNETADDRIPV4 address)
+{
+    m->m_address = address;
+}
+
+
+const NetworkConfigEntity *Lease::getConfig() const
+{
+    return m->pCfg;
+}
+
+
+void Lease::setConfig(NetworkConfigEntity *pCfg)
+{
+    m->pCfg = pCfg;
+}
+
+
+const MapOptionId2RawOption& Lease::options() const
+{
+    return m->options;
+}
+
+
+MapOptionId2RawOption& Lease::options()
+{
+    return m->options;
+}
+
+
+Lease::Lease(ClientData *pd):m(SharedPtr<ClientData>(pd)){}
+
+
+bool Lease::toXML(xml::ElementNode *node) const
+{
+    bool valueAddition = node->setAttribute(tagXMLLeaseAttributeMac.c_str(), com::Utf8StrFmt("%RTmac", &m->m_mac));
+    if (!valueAddition) return false;
+
+    valueAddition = node->setAttribute(tagXMLLeaseAttributeNetwork.c_str(), com::Utf8StrFmt("%RTnaipv4", m->m_network));
+    if (!valueAddition) return false;
+
+    xml::ElementNode *address = node->createChild(tagXMLLeaseAddress.c_str()); 
+    if (!address) return false;
+
+    valueAddition = address->setAttribute(tagXMLAddressAttributeValue.c_str(), com::Utf8StrFmt("%RTnaipv4", m->m_address));
+    if (!valueAddition) return false;
+
+    xml::ElementNode *time = node->createChild(tagXMLLeaseTime.c_str()); 
+    if (!time) return false;
+
+    valueAddition = time->setAttribute(tagXMLTimeAttributeIssued.c_str(), 
+                                       m->u64TimestampLeasingStarted);
+    if (!valueAddition) return false;
+
+    valueAddition = time->setAttribute(tagXMLTimeAttributeExpiration.c_str(), 
+                                       m->u32LeaseExpirationPeriod);
+    if (!valueAddition) return false;
+
+    return true;
+}
+
+
+bool Lease::fromXML(const xml::ElementNode *node)
+{
+    com::Utf8Str mac;
+    bool valueExists = node->getAttributeValue(tagXMLLeaseAttributeMac.c_str(), mac);
+    if (!valueExists) return false;
+    int rc = RTNetStrToMacAddr(mac.c_str(), &m->m_mac);
+    if (RT_FAILURE(rc)) return false;
+
+    com::Utf8Str network;
+    valueExists = node->getAttributeValue(tagXMLLeaseAttributeNetwork.c_str(), network);
+    if (!valueExists) return false;
+    rc = RTNetStrToIPv4Addr(network.c_str(), &m->m_network);
+    if (RT_FAILURE(rc)) return false;
+
+    /* Address */
+    const xml::ElementNode *address = node->findChildElement(tagXMLLeaseAddress.c_str());
+    if (!address) return false;
+    com::Utf8Str addressValue;
+    valueExists = address->getAttributeValue(tagXMLAddressAttributeValue.c_str(), addressValue);
+    if (!valueExists) return false;
+    rc = RTNetStrToIPv4Addr(addressValue.c_str(), &m->m_address);
+    
+    /* Time */
+    const xml::ElementNode *time = node->findChildElement(tagXMLLeaseTime.c_str());
+    if (!time) return false;
+
+    valueExists = time->getAttributeValue(tagXMLTimeAttributeIssued.c_str(), 
+                                          &m->u64TimestampLeasingStarted);
+    if (!valueExists) return false;
+    m->fBinding = false;
+    
+    valueExists = time->getAttributeValue(tagXMLTimeAttributeExpiration.c_str(), 
+                                          &m->u32LeaseExpirationPeriod);
+    if (!valueExists) return false;
+
+    m->fHasLease = true;
+    return true;
+}
+
+
+const Lease Lease::NullLease;
+
+
+const Client Client::NullClient;

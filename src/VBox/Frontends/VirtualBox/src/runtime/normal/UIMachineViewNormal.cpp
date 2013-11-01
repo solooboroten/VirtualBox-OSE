@@ -48,9 +48,10 @@ UIMachineViewNormal::UIMachineViewNormal(  UIMachineWindow *pMachineWindow
                     )
     , m_bIsGuestAutoresizeEnabled(gActionPool->action(UIActionIndexRuntime_Toggle_GuestAutoresize)->isChecked())
 {
-
-    /* Initialization: */
-    sltAdditionsStateChanged();
+    /* Resend the last resize hint if there was a fullscreen or
+     * seamless transition previously. If we were not in graphical
+     * mode initially after the transition this happens when we switch. */
+    maybeResendResizeHint();
 }
 
 UIMachineViewNormal::~UIMachineViewNormal()
@@ -64,11 +65,7 @@ UIMachineViewNormal::~UIMachineViewNormal()
 
 void UIMachineViewNormal::sltAdditionsStateChanged()
 {
-    /* Resend the last resize hint if there was a fullscreen or
-     * seamless transition previously.  If we were not in graphical
-     * mode initially after the transition this happens when we
-     * switch. */
-    maybeResendResizeHint();
+    maybeAdjustGuestScreenSize();
 }
 
 bool UIMachineViewNormal::eventFilter(QObject *pWatched, QEvent *pEvent)
@@ -145,6 +142,30 @@ void UIMachineViewNormal::prepareConsoleConnections()
     connect(uisession(), SIGNAL(sigAdditionsStateChange()), this, SLOT(sltAdditionsStateChanged()));
 }
 
+void UIMachineViewNormal::saveMachineViewSettings()
+{
+    /* Store guest size in case we are switching to fullscreen: */
+    storeGuestSizeHint(QSize(frameBuffer()->width(), frameBuffer()->height()));
+}
+
+void UIMachineViewNormal::setGuestAutoresizeEnabled(bool fEnabled)
+{
+    if (m_bIsGuestAutoresizeEnabled != fEnabled)
+    {
+        m_bIsGuestAutoresizeEnabled = fEnabled;
+
+        if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
+            sltPerformGuestResize();
+    }
+}
+
+/**
+ * Resends guest size-hint if necessary.
+ * If the last guest size hint was sent to switch to
+ * fullscreen or seamless mode then send one to restore the old view size.
+ * @note This method also does some hacks to suppress intermediary resizes
+ *       to the old fullscreen size.
+ */
 void UIMachineViewNormal::maybeResendResizeHint()
 {
     if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
@@ -169,70 +190,15 @@ void UIMachineViewNormal::maybeResendResizeHint()
     }
 }
 
-void UIMachineViewNormal::saveMachineViewSettings()
+/** Adjusts guest screen size to correspond current machine-window size. */
+void UIMachineViewNormal::maybeAdjustGuestScreenSize()
 {
-    /* Store guest size in case we are switching to fullscreen: */
-    storeGuestSizeHint(QSize(frameBuffer()->width(), frameBuffer()->height()));
-}
-
-void UIMachineViewNormal::setGuestAutoresizeEnabled(bool fEnabled)
-{
-    if (m_bIsGuestAutoresizeEnabled != fEnabled)
-    {
-        m_bIsGuestAutoresizeEnabled = fEnabled;
-
+    /* Check if we should adjust guest to new size: */
+    QSize centralWidgetSize = machineWindow()->centralWidget()->size();
+    if ((int)frameBuffer()->width() != centralWidgetSize.width() ||
+        (int)frameBuffer()->height() != centralWidgetSize.height())
         if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
-            sltPerformGuestResize();
-    }
-}
-
-void UIMachineViewNormal::normalizeGeometry(bool bAdjustPosition)
-{
-#ifndef VBOX_GUI_WITH_CUSTOMIZATIONS1
-    QWidget *pTopLevelWidget = window();
-
-    /* Calculate client window offsets: */
-    QRect frameGeo = pTopLevelWidget->frameGeometry();
-    QRect geo = pTopLevelWidget->geometry();
-    int dl = geo.left() - frameGeo.left();
-    int dt = geo.top() - frameGeo.top();
-    int dr = frameGeo.right() - geo.right();
-    int db = frameGeo.bottom() - geo.bottom();
-
-    /* Get the best size w/o scroll bars: */
-    QSize s = pTopLevelWidget->sizeHint();
-
-    /* Resize the frame to fit the contents: */
-    s -= pTopLevelWidget->size();
-    frameGeo.setRight(frameGeo.right() + s.width());
-    frameGeo.setBottom(frameGeo.bottom() + s.height());
-
-    if (bAdjustPosition)
-    {
-        QRegion availableGeo;
-        QDesktopWidget *dwt = QApplication::desktop();
-        if (dwt->isVirtualDesktop())
-            /* Compose complex available region */
-            for (int i = 0; i < dwt->numScreens(); ++ i)
-                availableGeo += dwt->availableGeometry(i);
-        else
-            /* Get just a simple available rectangle */
-            availableGeo = dwt->availableGeometry(pTopLevelWidget->pos());
-
-        frameGeo = VBoxGlobal::normalizeGeometry(frameGeo, availableGeo);
-    }
-
-#if 0
-    /* Center the frame on the desktop: */
-    frameGeo.moveCenter(availableGeo.center());
-#endif
-
-    /* Finally, set the frame geometry */
-    pTopLevelWidget->setGeometry(frameGeo.left() + dl, frameGeo.top() + dt, frameGeo.width() - dl - dr, frameGeo.height() - dt - db);
-
-#else /* !VBOX_GUI_WITH_CUSTOMIZATIONS1 */
-    Q_UNUSED(bAdjustPosition);
-#endif /* VBOX_GUI_WITH_CUSTOMIZATIONS1 */
+            sltPerformGuestResize(centralWidgetSize);
 }
 
 QRect UIMachineViewNormal::workingArea() const

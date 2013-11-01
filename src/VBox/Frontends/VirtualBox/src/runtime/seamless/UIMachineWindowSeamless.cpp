@@ -106,7 +106,11 @@ void UIMachineWindowSeamless::prepareVisualState()
      * - Under x11 host Qt has it broken with KDE 4.9 (black background): */
     setAttribute(Qt::WA_TranslucentBackground);
 # endif /* !Q_WS_MAC */
-#endif /* VBOX_WITH_TRANSLUCENT_SEAMLESS */
+#else /* !VBOX_WITH_TRANSLUCENT_SEAMLESS */
+    /* Make sure we have no background
+     * until the first one set-region-event: */
+    setMask(m_maskRegion);
+#endif /* !VBOX_WITH_TRANSLUCENT_SEAMLESS */
 
 #ifndef Q_WS_MAC
     /* Prepare mini-toolbar: */
@@ -196,8 +200,8 @@ void UIMachineWindowSeamless::placeOnScreen()
     move(workingArea.topLeft());
     /* Resize to the appropriate size: */
     resize(workingArea.size());
-    /* Adjust guest if necessary: */
-    machineView()->normalizeGeometry(false);
+    /* Adjust guest screen size if necessary: */
+    machineView()->maybeAdjustGuestScreenSize();
 #ifndef Q_WS_MAC
     /* Move mini-toolbar into appropriate place: */
     if (m_pMiniToolBar)

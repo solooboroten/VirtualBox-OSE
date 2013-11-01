@@ -4,31 +4,31 @@
 <context>
     <name>@@@</name>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1872"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1889"/>
         <source>English</source>
         <comment>Native language name</comment>
         <translation>日本語</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1883"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1900"/>
         <source>--</source>
         <comment>Native language country name (empty if this language is for all countries)</comment>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1896"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1913"/>
         <source>English</source>
         <comment>Language name, in English</comment>
         <translation>Japanese</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1907"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1924"/>
         <source>--</source>
         <comment>Language country name, in English (empty if native country name is empty)</comment>
         <translation></translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1920"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1937"/>
         <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
         <translation>Toshimitsu Tanaka,Ikuya Awashiro,Shushi Kurose</translation>
@@ -482,8 +482,8 @@
     </message>
     <message>
         <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="165"/>
-        <source>Show Session Information Dialog</source>
-        <translation>セッション情報ダイアログを表示</translation>
+        <source>Show Session Information Window</source>
+        <translation type="unfinished">セッション情報ダイアログを表示</translation>
     </message>
     <message>
         <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="277"/>
@@ -665,6 +665,16 @@
         <translation>ビデオキャプチャーの設定を変更</translation>
     </message>
     <message>
+        <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="983"/>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="984"/>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <source>&amp;Network Adapters...</source>
         <translation type="obsolete">ネットワークアダプター(&amp;N)...</translation>
     </message>
@@ -721,14 +731,12 @@
         <translation type="obsolete">この仮想マシンへのリモートデスクトップ(RDP)接続を有効化または無効化</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="983"/>
         <source>&amp;Install Guest Additions...</source>
-        <translation>Guest Additions のインストール(&amp;I)...</translation>
+        <translation type="obsolete">Guest Additions のインストール(&amp;I)...</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="984"/>
         <source>Mount the Guest Additions installation image</source>
-        <translation>Guest Additions インストールイメージをマウントする</translation>
+        <translation type="obsolete">Guest Additions インストールイメージをマウントする</translation>
     </message>
     <message>
         <location filename="../src/runtime/UIActionPoolRuntime.cpp" line="1005"/>
@@ -2635,80 +2643,80 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>UIGDetails</name>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="119"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="117"/>
         <source>Name</source>
         <comment>details (general)</comment>
         <translation>名前</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="141"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="139"/>
         <source>Groups</source>
         <comment>details (general)</comment>
         <translation>グループ</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="293"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="390"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="291"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="388"/>
         <source>%1 MB</source>
         <comment>details</comment>
         <translation>%1 MB</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="298"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="296"/>
         <source>Processors</source>
         <comment>details (system)</comment>
         <translation>プロセッサー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="305"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="303"/>
         <source>%1%</source>
         <comment>details</comment>
         <translation>%1%</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="327"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="325"/>
         <source>VT-x/AMD-V</source>
         <comment>details (system)</comment>
         <translation>VT-x/AMD-V</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="334"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="332"/>
         <source>PAE/NX</source>
         <comment>details (system)</comment>
         <translation>PAE/NX</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="336"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="334"/>
         <source>Acceleration</source>
         <comment>details (system)</comment>
         <translation>アクセラレーション</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="395"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="393"/>
         <source>Screens</source>
         <comment>details (display)</comment>
         <translation>スクリーン</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="406"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="404"/>
         <source>3D</source>
         <comment>details (display)</comment>
         <translation>3D</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="408"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="406"/>
         <source>Acceleration</source>
         <comment>details (display)</comment>
         <translation>アクセラレーション</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="420"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="418"/>
         <source>Disabled</source>
         <comment>details (display/vrde/VRDE server)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="511"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="509"/>
         <source>[CD/DVD]</source>
         <comment>details (storage)</comment>
         <translation>[CD/DVD]</translation>
@@ -2719,13 +2727,13 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">未割り当て</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="583"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="581"/>
         <source>Controller</source>
         <comment>details (audio)</comment>
         <translation>コントローラー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="587"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="585"/>
         <source>Disabled</source>
         <comment>details (audio)</comment>
         <translation>無効</translation>
@@ -2746,226 +2754,226 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">ホストオンリーアダプター, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="122"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="120"/>
         <source>Operating System</source>
         <comment>details (general)</comment>
         <translation>オペレーティングシステム</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="145"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="340"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="440"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="528"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="591"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="699"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="784"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="849"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="919"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="974"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="1029"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="143"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="338"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="438"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="526"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="589"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="697"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="782"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="847"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="917"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="972"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="1027"/>
         <source>Information Inaccessible</source>
         <comment>details</comment>
         <translation>取得不可能な情報</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="292"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="290"/>
         <source>Base Memory</source>
         <comment>details (system)</comment>
         <translation>メインメモリー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="304"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="302"/>
         <source>Execution Cap</source>
         <comment>details (system)</comment>
         <translation>使用率制限</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="318"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="316"/>
         <source>Boot Order</source>
         <comment>details (system)</comment>
         <translation>起動順序</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="330"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="328"/>
         <source>Nested Paging</source>
         <comment>details (system)</comment>
         <translation>ネステッドページング</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="389"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="387"/>
         <source>Video Memory</source>
         <comment>details (display)</comment>
         <translation>ビデオメモリー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="402"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="400"/>
         <source>2D Video</source>
         <comment>details (display)</comment>
         <translation>2D ビデオ</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="416"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="414"/>
         <source>Remote Desktop Server Port</source>
         <comment>details (display/vrde)</comment>
         <translation>リモートデスクトップサーバーポート</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="419"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="417"/>
         <source>Remote Desktop Server</source>
         <comment>details (display/vrde)</comment>
         <translation>リモートデスクトップサーバー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="426"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="424"/>
         <source>Video Capture File</source>
         <comment>details (display/video capture)</comment>
         <translation>ビデオキャプチャーしたファイル</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="428"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="426"/>
         <source>Video Capture Attributes</source>
         <comment>details (display/video capture)</comment>
         <translation>ビデオキャプチャーの属性</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="429"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="427"/>
         <source>Frame Size: %1x%2, Frame Rate: %3fps, Bit Rate: %4kbps</source>
         <translation>フレームサイズ: %1x%2, フレームレート: %3fps, ビットレート: %4kbps</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="435"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="433"/>
         <source>Video Capture</source>
         <comment>details (display/video capture)</comment>
         <translation>ビデオキャプチャー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="436"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="434"/>
         <source>Disabled</source>
         <comment>details (display/video capture)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="525"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="523"/>
         <source>Not Attached</source>
         <comment>details (storage)</comment>
         <translation>未割り当て</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="579"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="577"/>
         <source>Host Driver</source>
         <comment>details (audio)</comment>
         <translation>ホストドライバー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="654"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="652"/>
         <source>Bridged Adapter, %1</source>
         <comment>details (network)</comment>
         <translation>ブリッジアダプター, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="660"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="658"/>
         <source>Internal Network, &apos;%1&apos;</source>
         <comment>details (network)</comment>
         <translation>内部ネットワーク, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="666"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="664"/>
         <source>Host-only Adapter, &apos;%1&apos;</source>
         <comment>details (network)</comment>
         <translation>ホストオンリーアダプター, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="674"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="672"/>
         <source>Generic Driver, &apos;%1&apos;</source>
         <comment>details (network)</comment>
         <translation>汎用ドライバー, &apos;%1&apos; </translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="675"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="673"/>
         <source>Generic Driver, &apos;%1&apos; {&amp;nbsp;%2&amp;nbsp;}</source>
         <comment>details (network)</comment>
         <translation>汎用ドライバー, &apos;%1&apos; {&amp;nbsp;%2&amp;nbsp;} </translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="681"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="679"/>
         <source>NAT Network, &apos;%1&apos;</source>
         <comment>details (network)</comment>
         <translation>NAT ネットワーク, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="691"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="689"/>
         <source>Adapter %1</source>
         <comment>details (network)</comment>
         <translation>アダプター %1</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="696"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="694"/>
         <source>Disabled</source>
         <comment>details (network/adapter)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="776"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="774"/>
         <source>Port %1</source>
         <comment>details (serial)</comment>
         <translation>ポート %1</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="781"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="779"/>
         <source>Disabled</source>
         <comment>details (serial)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="841"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="839"/>
         <source>Port %1</source>
         <comment>details (parallel)</comment>
         <translation>ポート %1</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="846"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="844"/>
         <source>Disabled</source>
         <comment>details (parallel)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="909"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="907"/>
         <source>Device Filters</source>
         <comment>details (usb)</comment>
         <translation>デバイスフィルター</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="916"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="914"/>
         <source>USB Controller Inaccessible</source>
         <comment>details (usb)</comment>
         <translation>USB コントローラーにアクセスできません</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="969"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="967"/>
         <source>Shared Folders</source>
         <comment>details (shared folders)</comment>
         <translation>共有フォルダー</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="910"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="908"/>
         <source>%1 (%2 active)</source>
         <comment>details (usb)</comment>
         <translation>%1 (%2 アクティブ)</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="913"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="911"/>
         <source>Disabled</source>
         <comment>details (usb)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="971"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="969"/>
         <source>None</source>
         <comment>details (shared folders)</comment>
         <translation>なし</translation>
     </message>
     <message>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="1026"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="1024"/>
         <source>None</source>
         <comment>details (description)</comment>
         <translation>なし</translation>
@@ -4948,12 +4956,12 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">試験的ビルド %1r%2 - %3</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="627"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="643"/>
         <source>Preview Monitor %1</source>
         <translation>プレビュー ディスプレイ %1</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1180"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1198"/>
         <source>Snapshot %1</source>
         <translation>スナップショット %1</translation>
     </message>
@@ -4974,7 +4982,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">フロッピーデバイスのマウント解除</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1275"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1293"/>
         <source>Select a filename for the screenshot ...</source>
         <translation>スクリーンショットの名前を選択...</translation>
     </message>
@@ -4995,12 +5003,12 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">フロッピーデバイス 未割り当て</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1783"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1801"/>
         <source>No USB Devices Connected</source>
         <translation>USB デバイス 未接続</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1784"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1802"/>
         <source>No supported devices connected to the host PC</source>
         <translation>ホストマシンに接続されたデバイスはサポートされていません</translation>
     </message>
@@ -6319,9 +6327,13 @@ p, li { white-space: pre-wrap; }
         <translation>設定の編集</translation>
     </message>
     <message>
-        <location filename="../src/settings/machine/UIMachineSettingsSFDetails.ui" line="26"/>
         <source>Dialog</source>
-        <translation>ダイアログ</translation>
+        <translation type="obsolete">ダイアログ</translation>
+    </message>
+    <message>
+        <location filename="../src/settings/machine/UIMachineSettingsSFDetails.ui" line="26"/>
+        <source>Window</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/settings/machine/UIMachineSettingsSFDetails.ui" line="32"/>
@@ -6826,21 +6838,21 @@ p, li { white-space: pre-wrap; }
         <translation>仮想ハードディスクファイルの選択...</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1592"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1610"/>
         <location filename="../src/settings/machine/UIMachineSettingsStorage.cpp" line="2665"/>
         <source>Choose a virtual CD/DVD disk file...</source>
         <translation>仮想CD/DVDディスクファイルの選択...</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1593"/>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1599"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1611"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1617"/>
         <location filename="../src/settings/machine/UIMachineSettingsStorage.cpp" line="2672"/>
         <location filename="../src/settings/machine/UIMachineSettingsStorage.cpp" line="2689"/>
         <source>Remove disk from virtual drive</source>
         <translation>仮想ドライブからディスクを除去</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMachineLogic.cpp" line="1598"/>
+        <location filename="../src/runtime/UIMachineLogic.cpp" line="1616"/>
         <location filename="../src/settings/machine/UIMachineSettingsStorage.cpp" line="2682"/>
         <source>Choose a virtual floppy disk file...</source>
         <translation>仮想フロッピーディスクファイルの選択...</translation>
@@ -7025,8 +7037,8 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="551"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1287"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="492"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1289"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="490"/>
         <location filename="../src/settings/machine/UIMachineSettingsStorage.cpp" line="544"/>
         <source>Controller: %1</source>
         <translation>コントローラー: %1</translation>
@@ -7649,7 +7661,7 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>UIMachineWindowNormal</name>
     <message>
-        <location filename="../src/runtime/normal/UIMachineWindowNormal.cpp" line="560"/>
+        <location filename="../src/runtime/normal/UIMachineWindowNormal.cpp" line="558"/>
         <source>Shows the currently assigned Host key.&lt;br&gt;This key, when pressed alone, toggles the keyboard and mouse capture state. It can also be used in combination with other keys to quickly perform actions from the main menu.</source>
         <translation>現在割り当てられているホストキーを表示します。&lt;br&gt;ホストキーを単独で押すと、キーボードとマウスの制御が切り替わります。また、他のキーと合わせてメインメニューからキーボード ショートカットの操作に使用することもできます。</translation>
     </message>
@@ -7762,6 +7774,11 @@ p, li { white-space: pre-wrap; }
         <translation>仮想マシン &lt;b&gt;%1&lt;/b&gt; のビデオキャプチャーを無効化できませんでした。</translation>
     </message>
     <message>
+        <location filename="../src/globals/UIMessageCenter.cpp" line="1959"/>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../src/globals/UIMessageCenter.cpp" line="2000"/>
         <source>&lt;p&gt;Could not find the &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file.&lt;/p&gt;&lt;p&gt;Do you wish to download this disk image file from the Internet?&lt;/p&gt;</source>
         <translation>&lt;p&gt;&lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; ディスクイメージファイルが見つかりません。&lt;/p&gt;&lt;p&gt;インターネットからディスクイメージをダウンロードしますか？&lt;/p&gt;</translation>
@@ -7790,6 +7807,12 @@ p, li { white-space: pre-wrap; }
         <location filename="../src/globals/UIMessageCenter.cpp" line="2029"/>
         <source>&lt;p&gt;The &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to register this disk image file and insert it into the virtual CD/DVD drive?&lt;/p&gt;</source>
         <translation>&lt;p&gt;&lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; ディスクイメージを&lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt;からダウンロードし、&lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;に保存しました。&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;ディスクイメージファイルを登録し、仮想CD/DVDドライブに挿入しますか？&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <location filename="../src/globals/UIMessageCenter.cpp" line="2035"/>
+        <source>Insert</source>
+        <comment>additions</comment>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/globals/UIMessageCenter.cpp" line="2041"/>
@@ -8593,10 +8616,9 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">ダウンロード</translation>
     </message>
     <message>
-        <location filename="../src/globals/UIMessageCenter.cpp" line="2035"/>
         <source>Mount</source>
         <comment>additions</comment>
-        <translation>マウント</translation>
+        <translation type="obsolete">マウント</translation>
     </message>
     <message>
         <location filename="../src/globals/UIMessageCenter.cpp" line="1810"/>
@@ -9279,9 +9301,8 @@ p, li { white-space: pre-wrap; }
         <translation>仮想マシン&lt;b&gt;%1&lt;/b&gt;のグループの設定に失敗しました。</translation>
     </message>
     <message>
-        <location filename="../src/globals/UIMessageCenter.cpp" line="1959"/>
         <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;VirtualBox Guest Additionsがインストールされていないため、共有フォルダーは利用できません。共有フォルダーを使用するには&lt;b&gt;[デバイス]&lt;/b&gt;メニューから&lt;b&gt;[Guest Additions のインストール]&lt;/b&gt;を選びGuest Additionsをインストールまたは再インストールしてください。インストール後、仮想マシンを再起動すると共有フォルダーが利用できます。&lt;/p&gt;</translation>
+        <translation type="obsolete">&lt;p&gt;VirtualBox Guest Additionsがインストールされていないため、共有フォルダーは利用できません。共有フォルダーを使用するには&lt;b&gt;[デバイス]&lt;/b&gt;メニューから&lt;b&gt;[Guest Additions のインストール]&lt;/b&gt;を選びGuest Additionsをインストールまたは再インストールしてください。インストール後、仮想マシンを再起動すると共有フォルダーが利用できます。&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;Could not find the VirtualBox Guest Additions disk image file file.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this disk image file from the Internet?&lt;/p&gt;</source>
@@ -9820,12 +9841,12 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>UIMultiScreenLayout</name>
     <message>
-        <location filename="../src/runtime/UIMultiScreenLayout.cpp" line="316"/>
+        <location filename="../src/runtime/UIMultiScreenLayout.cpp" line="329"/>
         <source>Virtual Screen %1</source>
         <translation>仮想スクリーン %1</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UIMultiScreenLayout.cpp" line="323"/>
+        <location filename="../src/runtime/UIMultiScreenLayout.cpp" line="336"/>
         <source>Use Host Screen %1</source>
         <translation>ホスト スクリーン %1 を使う</translation>
     </message>
@@ -9937,32 +9958,32 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>UINetworkReplyPrivate</name>
     <message>
-        <location filename="../src/net/UINetworkReply.cpp" line="557"/>
+        <location filename="../src/net/UINetworkReply.cpp" line="566"/>
         <source>Host not found</source>
         <translation>ホストが見つかりません</translation>
     </message>
     <message>
-        <location filename="../src/net/UINetworkReply.cpp" line="559"/>
+        <location filename="../src/net/UINetworkReply.cpp" line="568"/>
         <source>Content access denied</source>
         <translation>内容へのアクセスを拒否されました</translation>
     </message>
     <message>
-        <location filename="../src/net/UINetworkReply.cpp" line="561"/>
+        <location filename="../src/net/UINetworkReply.cpp" line="570"/>
         <source>Protocol failure</source>
         <translation>プロトコル失敗</translation>
     </message>
     <message>
-        <location filename="../src/net/UINetworkReply.cpp" line="563"/>
+        <location filename="../src/net/UINetworkReply.cpp" line="572"/>
         <source>Wrong SSL certificate format</source>
         <translation>誤ったSSL証明書のフォーマット</translation>
     </message>
     <message>
-        <location filename="../src/net/UINetworkReply.cpp" line="565"/>
+        <location filename="../src/net/UINetworkReply.cpp" line="574"/>
         <source>SSL authentication failed</source>
         <translation>SSL認証に失敗</translation>
     </message>
     <message>
-        <location filename="../src/net/UINetworkReply.cpp" line="567"/>
+        <location filename="../src/net/UINetworkReply.cpp" line="576"/>
         <source>Unknown reason</source>
         <translation>原因不明</translation>
     </message>
@@ -10834,7 +10855,7 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
         <translation type="obsolete">インストール</translation>
     </message>
     <message>
-        <location filename="../src/runtime/UISession.cpp" line="509"/>
+        <location filename="../src/runtime/UISession.cpp" line="544"/>
         <source>Updating Guest Additions</source>
         <translation>Guest Additions をアップデートしています</translation>
     </message>
@@ -11685,22 +11706,22 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
         <translation>ファイルを除去中...</translation>
     </message>
     <message>
-        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="146"/>
+        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="149"/>
         <source>Exporting Appliance ...</source>
         <translation>仮想アプライアンスのエクスポート...</translation>
     </message>
     <message>
-        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="238"/>
+        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="241"/>
         <source>Export Virtual Appliance</source>
         <translation>仮想アプライアンスのエクスポート</translation>
     </message>
     <message>
-        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="239"/>
+        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="242"/>
         <source>Restore Defaults</source>
         <translation>デフォルト値に戻す</translation>
     </message>
     <message>
-        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="240"/>
+        <location filename="../src/wizards/exportappliance/UIWizardExportApp.cpp" line="243"/>
         <source>Export</source>
         <translation>エクスポート</translation>
     </message>
@@ -12139,12 +12160,12 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
 <context>
     <name>UIWizardNewVM</name>
     <message>
-        <location filename="../src/wizards/newvm/UIWizardNewVM.cpp" line="272"/>
+        <location filename="../src/wizards/newvm/UIWizardNewVM.cpp" line="276"/>
         <source>Create Virtual Machine</source>
         <translation>仮想マシンの作成</translation>
     </message>
     <message>
-        <location filename="../src/wizards/newvm/UIWizardNewVM.cpp" line="273"/>
+        <location filename="../src/wizards/newvm/UIWizardNewVM.cpp" line="277"/>
         <source>Create</source>
         <translation>作成</translation>
     </message>
@@ -12858,7 +12879,7 @@ Version %1</source>
         <translation type="obsolete">セッション情報ダイアログ(&amp;N)</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
+        <source>Show Session Information Window</source>
         <translation type="obsolete">セッション情報ダイアログを表示</translation>
     </message>
     <message>
@@ -13342,9 +13363,13 @@ Version %1</source>
         <translation>&lt;デフォルトに戻す&gt;</translation>
     </message>
     <message>
-        <location filename="../src/widgets/VBoxFilePathSelectorWidget.cpp" line="284"/>
         <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation>変更後、再度このダイアログを開くとデフォルトパスが表示されます。</translation>
+        <translation type="obsolete">変更後、再度このダイアログを開くとデフォルトパスが表示されます。</translation>
+    </message>
+    <message>
+        <location filename="../src/widgets/VBoxFilePathSelectorWidget.cpp" line="284"/>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../src/widgets/VBoxFilePathSelectorWidget.cpp" line="289"/>
@@ -13468,43 +13493,43 @@ Version %1</source>
         <translation type="obsolete">差分</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="974"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="976"/>
         <source>Unknown device %1:%2</source>
         <comment>USB device details</comment>
         <translation>不明なデバイス %1:%2</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="999"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1001"/>
         <source>&lt;nobr&gt;Vendor ID: %1&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;Product ID: %2&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;Revision: %3&lt;/nobr&gt;</source>
         <comment>USB device tooltip</comment>
         <translation>&lt;nobr&gt;ベンダーID: %1&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;プロダクトID: %2&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;リビジョン: %3&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1008"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1010"/>
         <source>&lt;br&gt;&lt;nobr&gt;Serial No. %1&lt;/nobr&gt;</source>
         <comment>USB device tooltip</comment>
         <translation>&lt;br&gt;&lt;nobr&gt;シリアルNo. %1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1015"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1017"/>
         <source>&lt;br&gt;&lt;nobr&gt;State: %1&lt;/nobr&gt;</source>
         <comment>USB device tooltip</comment>
         <translation>&lt;br&gt;&lt;nobr&gt;状態: %1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1110"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1112"/>
         <source>Name</source>
         <comment>details report</comment>
         <translation>名前</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1112"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1114"/>
         <source>OS Type</source>
         <comment>details report</comment>
         <translation>OSタイプ</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1182"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1184"/>
         <source>Base Memory</source>
         <comment>details report</comment>
         <translation>メインメモリー</translation>
@@ -13515,13 +13540,13 @@ Version %1</source>
         <translation type="obsolete">&lt;nobr&gt;%3 MB&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1119"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1121"/>
         <source>General</source>
         <comment>details report</comment>
         <translation>一般</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1218"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1220"/>
         <source>Video Memory</source>
         <comment>details report</comment>
         <translation>ビデオメモリー</translation>
@@ -13532,19 +13557,19 @@ Version %1</source>
         <translation type="obsolete">&lt;nobr&gt;%4 MB&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1191"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1193"/>
         <source>Boot Order</source>
         <comment>details report</comment>
         <translation>起動順序</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1193"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1195"/>
         <source>ACPI</source>
         <comment>details report</comment>
         <translation>ACPI</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1194"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1196"/>
         <source>I/O APIC</source>
         <comment>details report</comment>
         <translation>I/O APIC</translation>
@@ -13560,25 +13585,25 @@ Version %1</source>
         <translation type="obsolete">ハードディスク</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1150"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1152"/>
         <source>Enabled</source>
         <comment>details report (ACPI)</comment>
         <translation>有効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1151"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1153"/>
         <source>Disabled</source>
         <comment>details report (ACPI)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1155"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1157"/>
         <source>Enabled</source>
         <comment>details report (I/O APIC)</comment>
         <translation>有効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1156"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1158"/>
         <source>Disabled</source>
         <comment>details report (I/O APIC)</comment>
         <translation>無効</translation>
@@ -13624,50 +13649,50 @@ Version %1</source>
         <translation type="obsolete">CD/DVD</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1360"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1362"/>
         <source>Disabled</source>
         <comment>details report (audio)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1366"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1368"/>
         <source>Audio</source>
         <comment>details report</comment>
         <translation>オーディオ</translation>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="695"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1406"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1408"/>
         <source>Adapter %1</source>
         <comment>details report (network)</comment>
         <translation>アダプター %1</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1415"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1417"/>
         <source>Disabled</source>
         <comment>details report (network)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1423"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1425"/>
         <source>Network</source>
         <comment>details report</comment>
         <translation>ネットワーク</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1532"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1534"/>
         <source>Device Filters</source>
         <comment>details report (USB)</comment>
         <translation>デバイスフィルター</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1533"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1535"/>
         <source>%1 (%2 active)</source>
         <comment>details report (USB)</comment>
         <translation>%1 (%2 アクティブ)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1538"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1540"/>
         <source>Disabled</source>
         <comment>details report (USB)</comment>
         <translation>無効</translation>
@@ -14030,31 +14055,31 @@ Version %1</source>
         <translation type="obsolete">ファイルを選択</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1451"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1453"/>
         <source>Port %1</source>
         <comment>details report (serial ports)</comment>
         <translation>ポート %1</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1460"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1462"/>
         <source>Disabled</source>
         <comment>details report (serial ports)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1468"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1470"/>
         <source>Serial Ports</source>
         <comment>details report</comment>
         <translation>シリアルポート</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1544"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1546"/>
         <source>USB</source>
         <comment>details report</comment>
         <translation>USB</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1557"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1559"/>
         <source>Shared Folders</source>
         <comment>details report (shared folders)</comment>
         <translation>共有フォルダー</translation>
@@ -14065,13 +14090,13 @@ Version %1</source>
         <translation type="obsolete">%1</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1562"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1564"/>
         <source>None</source>
         <comment>details report (shared folders)</comment>
         <translation>なし</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1568"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1570"/>
         <source>Shared Folders</source>
         <comment>details report</comment>
         <translation>共有フォルダー</translation>
@@ -14115,7 +14140,7 @@ Version %1</source>
         <translation>ICH9</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1932"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1949"/>
         <source>User-defined</source>
         <comment>serial port</comment>
         <translation>ユーザー定義</translation>
@@ -14127,21 +14152,21 @@ Version %1</source>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="526"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1200"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1202"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="687"/>
         <source>VT-x/AMD-V</source>
         <comment>details report</comment>
         <translation>VT-x/AMD-V</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1195"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1197"/>
         <source>PAE/NX</source>
         <comment>details report</comment>
         <translation>PAE/NX</translation>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="484"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1168"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1170"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="665"/>
         <source>Enabled</source>
         <comment>details report (VT-x/AMD-V)</comment>
@@ -14149,7 +14174,7 @@ Version %1</source>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="485"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1169"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1171"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="666"/>
         <source>Disabled</source>
         <comment>details report (VT-x/AMD-V)</comment>
@@ -14178,135 +14203,135 @@ Version %1</source>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="531"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1256"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1258"/>
         <source>Remote Desktop Server Port</source>
         <comment>details report (VRDE Server)</comment>
         <translation>リモートデスクトップサーバーポート</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1160"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1162"/>
         <source>Enabled</source>
         <comment>details report (PAE/NX)</comment>
         <translation>有効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1161"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1163"/>
         <source>Disabled</source>
         <comment>details report (PAE/NX)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1188"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1190"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="690"/>
         <source>Execution Cap</source>
         <comment>details report</comment>
         <translation>使用率制限</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1189"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1191"/>
         <source>&lt;nobr&gt;%1%&lt;/nobr&gt;</source>
         <comment>details report</comment>
         <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1353"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1355"/>
         <source>Host Driver</source>
         <comment>details report (audio)</comment>
         <translation>ホストドライバー</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1356"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1358"/>
         <source>Controller</source>
         <comment>details report (audio)</comment>
         <translation>コントローラー</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1397"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1399"/>
         <source>Generic, &apos;%1&apos;</source>
         <comment>details report (network)</comment>
         <translation>一般, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1400"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1402"/>
         <source>NAT network, &apos;%1&apos;</source>
         <comment>details report (network)</comment>
         <translation>NATネットワーク, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1489"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1491"/>
         <source>Port %1</source>
         <comment>details report (parallel ports)</comment>
         <translation>ポート %1</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1498"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1500"/>
         <source>Disabled</source>
         <comment>details report (parallel ports)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1507"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1509"/>
         <source>Parallel Ports</source>
         <comment>details report</comment>
         <translation>パラレルポート</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1700"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1708"/>
         <source>Please choose a virtual hard drive file</source>
         <translation>仮想ハードドライブファイルを選択してください</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1701"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1709"/>
         <source>All virtual hard drive files (%1)</source>
         <translation>すべての仮想ハードドライブファイル (%1)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1712"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1720"/>
         <source>Please choose a virtual optical disk file</source>
         <translation>仮想光学ディスクファイルを選択してください</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1713"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1721"/>
         <source>All virtual optical disk files (%1)</source>
         <translation>すべての仮想光学ディスクファイル (%1)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1724"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1732"/>
         <source>Please choose a virtual floppy disk file</source>
         <translation>仮想フロッピーディスクファイルを選択してください</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1725"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1733"/>
         <source>All virtual floppy disk files (%1)</source>
         <translation>すべての仮想フロッピーディスクファイル (%1)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="3303"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="3320"/>
         <source>VDI (VirtualBox Disk Image)</source>
         <translation>VDI (VirtualBox Disk Image)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="3305"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="3322"/>
         <source>VMDK (Virtual Machine Disk)</source>
         <translation>VMDK (Virtual Machine Disk)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="3307"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="3324"/>
         <source>VHD (Virtual Hard Disk)</source>
         <translation>VHD (Virtual Hard Disk)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="3309"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="3326"/>
         <source>HDD (Parallels Hard Disk)</source>
         <translation>HDD (Parallels Hard Disk)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="3311"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="3328"/>
         <source>QED (QEMU enhanced disk)</source>
         <translation>QED (QEMU enhanced disk)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="3313"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="3330"/>
         <source>QCOW (QEMU Copy-On-Write)</source>
         <translation>QCOW (QEMU Copy-On-Write)</translation>
     </message>
@@ -14427,49 +14452,49 @@ Version %1</source>
         <translation>Intel PRO/1000 T Server (82543GC)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1031"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1033"/>
         <source>&lt;nobr&gt;Vendor ID: %1&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;ベンダーID: %1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1036"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1038"/>
         <source>&lt;nobr&gt;Product ID: %2&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;プロダクトID: %2&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1041"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1043"/>
         <source>&lt;nobr&gt;Revision: %3&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;リビジョン: %3&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1046"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1048"/>
         <source>&lt;nobr&gt;Product: %4&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;製品: %4&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1051"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1053"/>
         <source>&lt;nobr&gt;Manufacturer: %5&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;メーカー: %5&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1056"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1058"/>
         <source>&lt;nobr&gt;Serial No.: %1&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;シリアルNo.: %1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1061"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1063"/>
         <source>&lt;nobr&gt;Port: %1&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;ポート: %1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1068"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1070"/>
         <source>&lt;nobr&gt;State: %1&lt;/nobr&gt;</source>
         <comment>USB filter tooltip</comment>
         <translation>&lt;nobr&gt;状態: %1&lt;/nobr&gt;</translation>
@@ -14527,7 +14552,7 @@ Version %1</source>
     </message>
     <message>
         <location filename="../src/medium/UIMedium.cpp" line="526"/>
-        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="505"/>
+        <location filename="../src/selector/graphics/details/UIGDetailsElements.cpp" line="503"/>
         <source>Inaccessible</source>
         <comment>medium</comment>
         <translation>アクセスできません</translation>
@@ -14541,19 +14566,19 @@ Version %1</source>
         <translation type="obsolete">%1&lt;hr&gt;このベースハードディスクは以下の差分ハードディスクを使用して間接的に割り当てられます:&lt;br&gt;%2%3</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1237"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1239"/>
         <source>3D Acceleration</source>
         <comment>details report</comment>
         <translation>3D アクセラレーション</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1233"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1235"/>
         <source>Enabled</source>
         <comment>details report (3D Acceleration)</comment>
         <translation>有効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1234"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1236"/>
         <source>Disabled</source>
         <comment>details report (3D Acceleration)</comment>
         <translation>無効</translation>
@@ -14565,21 +14590,21 @@ Version %1</source>
         <translation>セットアップ</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1930"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1947"/>
         <source>Differencing</source>
         <comment>DiskType</comment>
         <translation>差分</translation>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="527"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1201"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1203"/>
         <source>Nested Paging</source>
         <comment>details report</comment>
         <translation>ネステッドページング</translation>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="487"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1173"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1175"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="670"/>
         <source>Enabled</source>
         <comment>details report (Nested Paging)</comment>
@@ -14587,7 +14612,7 @@ Version %1</source>
     </message>
     <message>
         <location filename="../src/VBoxVMInformationDlg.cpp" line="488"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1174"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1176"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="671"/>
         <source>Disabled</source>
         <comment>details report (Nested Paging)</comment>
@@ -14599,7 +14624,7 @@ Version %1</source>
         <translation type="obsolete">ブリッジネットワーク, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1391"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1393"/>
         <source>Internal network, &apos;%1&apos;</source>
         <comment>details report (network)</comment>
         <translation>内部ネットワーク, &apos;%1&apos;</translation>
@@ -14668,13 +14693,13 @@ Version %1</source>
         <translation>BusLogic</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1388"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1390"/>
         <source>Bridged adapter, %1</source>
         <comment>details report (network)</comment>
         <translation>ブリッジアダプター, &apos;%1&apos;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1394"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1396"/>
         <source>Host-only adapter, &apos;%1&apos;</source>
         <comment>details report (network)</comment>
         <translation>ホストオンリーアダプター, &apos;%1&apos;</translation>
@@ -14698,27 +14723,27 @@ Version %1</source>
         <translation>ホストオンリーアダプター</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1183"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1219"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1185"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1221"/>
         <source>&lt;nobr&gt;%1 MB&lt;/nobr&gt;</source>
         <comment>details report</comment>
         <translation>&lt;nobr&gt;%1 MB&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1185"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1187"/>
         <location filename="../src/runtime/UIIndicatorsPool.cpp" line="695"/>
         <source>Processor(s)</source>
         <comment>details report</comment>
         <translation>プロセッサー数</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1186"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1188"/>
         <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
         <comment>details report</comment>
         <translation>&lt;nobr&gt;%1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1207"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1209"/>
         <source>System</source>
         <comment>details report</comment>
         <translation>システム</translation>
@@ -14739,7 +14764,7 @@ Version %1</source>
         <translation type="obsolete">無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1269"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1271"/>
         <source>Display</source>
         <comment>details report</comment>
         <translation>ディスプレイ</translation>
@@ -14752,60 +14777,60 @@ Version %1</source>
         <translation>Rawファイル</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1242"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1244"/>
         <source>Enabled</source>
         <comment>details report (2D Video Acceleration)</comment>
         <translation>有効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="965"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="967"/>
         <source>Unknown device</source>
         <comment>USB device details</comment>
         <translation>不明なデバイス</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1227"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1229"/>
         <source>Screens</source>
         <comment>details report</comment>
         <translation>スクリーン</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1243"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1245"/>
         <source>Disabled</source>
         <comment>details report (2D Video Acceleration)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1246"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1248"/>
         <source>2D Video Acceleration</source>
         <comment>details report</comment>
         <translation>2D ビデオアクセラレーション</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1260"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1262"/>
         <source>Remote Desktop Server</source>
         <comment>details report (VRDE Server)</comment>
         <translation>リモートデスクトップサーバー</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1261"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1263"/>
         <source>Disabled</source>
         <comment>details report (VRDE Server)</comment>
         <translation>無効</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1301"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1303"/>
         <source>(CD/DVD)</source>
         <translation>(CD/DVD)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1333"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1335"/>
         <source>Not Attached</source>
         <comment>details report (Storage)</comment>
         <translation>未割り当て</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1341"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1343"/>
         <source>Storage</source>
         <comment>details report</comment>
         <translation>ストレージ</translation>
@@ -14844,7 +14869,7 @@ Version %1</source>
         <translation type="obsolete">すべての%1イメージ(%2)</translation>
     </message>
     <message>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="1751"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="1759"/>
         <source>All files (*)</source>
         <translation>すべてのファイル(*)</translation>
     </message>
@@ -15245,8 +15270,8 @@ Version %1</source>
     <message>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="49"/>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="68"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2508"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2540"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2525"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2557"/>
         <source>B</source>
         <comment>size suffix Bytes</comment>
         <translation>B</translation>
@@ -15254,8 +15279,8 @@ Version %1</source>
     <message>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="50"/>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="69"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2509"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2542"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2526"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2559"/>
         <source>KB</source>
         <comment>size suffix KBytes=1024 Bytes</comment>
         <translation>KB</translation>
@@ -15263,8 +15288,8 @@ Version %1</source>
     <message>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="51"/>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="70"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2510"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2544"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2527"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2561"/>
         <location filename="../src/widgets/UIApplianceEditorWidget.cpp" line="241"/>
         <location filename="../src/widgets/UIApplianceEditorWidget.cpp" line="432"/>
         <location filename="../src/wizards/newvm/UIWizardNewVMPageBasic2.cpp" line="136"/>
@@ -15280,8 +15305,8 @@ Version %1</source>
     <message>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="52"/>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="71"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2511"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2546"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2528"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2563"/>
         <source>GB</source>
         <comment>size suffix GBytes=1024 MBytes</comment>
         <translation>GB</translation>
@@ -15289,8 +15314,8 @@ Version %1</source>
     <message>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="53"/>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="72"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2512"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2548"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2529"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2565"/>
         <source>TB</source>
         <comment>size suffix TBytes=1024 GBytes</comment>
         <translation>TB</translation>
@@ -15298,8 +15323,8 @@ Version %1</source>
     <message>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="54"/>
         <location filename="../src/converter/UIConverterBackendGlobal.cpp" line="73"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2513"/>
-        <location filename="../src/globals/VBoxGlobal.cpp" line="2550"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2530"/>
+        <location filename="../src/globals/VBoxGlobal.cpp" line="2567"/>
         <source>PB</source>
         <comment>size suffix PBytes=1024 TBytes</comment>
         <translation>PB</translation>

@@ -310,10 +310,6 @@
         <translation>Makina Birtualaren egoera-argazki bat egin</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation></translation>
-    </message>
-    <message>
         <source>&amp;Pause</source>
         <translation>&amp;Gelditu</translation>
     </message>
@@ -394,12 +390,12 @@
         <translation type="obsolete">Urruneko idazmahai (RDP) konexioak gaitu edo ezgaitu maina honetarako</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation>Bezero Gehigarriak &amp;Instalatu...</translation>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished">Bezero Gehigarriak &amp;Instalatu...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
-        <translation>Bezero Gehigarri instalazio irudia muntatu</translation>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished">Bezero Gehigarri instalazio irudia muntatu</translation>
     </message>
     <message>
         <source>De&amp;bug</source>
@@ -845,6 +841,20 @@
     </message>
     <message>
         <source>Popup Menu</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <comment>new</comment>
+        <translation type="obsolete">Bezero Gehigarriak &amp;Instalatu...</translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <comment>new</comment>
+        <translation type="obsolete">Bezero Gehigarri instalazio irudia muntatu</translation>
+    </message>
+    <message>
+        <source>Show Session Information Window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4010,10 +4020,6 @@
         <translation type="unfinished">Editatu Partekatzea</translation>
     </message>
     <message>
-        <source>Dialog</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Folder Path:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4047,6 +4053,10 @@
     </message>
     <message>
         <source>If checked, this shared folder will be permanent.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5250,15 +5260,15 @@
         <translation type="obsolete">&lt;p&gt;Ezin da &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; hizkuntza fitxategia kargatu.&lt;p&gt;Hizkuntza aldiroko Ingelesera (barneratua) berrezarriko da. Mesedez joan VirtualBox leiho nagusiko &lt;b&gt;Fitxategia&lt;/b&gt; menuan aurki dezakezun &lt;b&gt;Hobespenak&lt;/b&gt; leihora eta hautatu erabilgarri daudenetako bat &lt;b&gt;Hizkuntza&lt;/b&gt; orrialdean.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Bezero sistema eragilea instalaturik dauden Virtualbox Bezero Gehigarriak zaharregiak dira: Instalaturiko bertsioa %1 da eta espero zena %2. Bezero gehigarriak behar dituzten zenbait funtziok (sagu integrazioa, bezero pantaila auto tamaina aldaketa) behar bezala funtzionatzeaz utziko dute ziurrenik.&lt;/p&gt;&lt;p&gt;Mesedez eguneratu Bezero Gehigarriak gaur egungo bertsiora &lt;b&gt;Gailuak&lt;/b&gt; menuko &lt;b&gt;Bezero Gehigarriak&lt;/b&gt; Instalatu hautatuaz.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Bezero sistema eragilea instalaturik dauden Virtualbox Bezero Gehigarriak zaharkiturik daude: Instalaturiko bertsioa %1 da eta espero zena %2. Bezero gehigarriak behar dituzten zenbait funtziok (sagu integrazioa, bezero pantaila auto tamaina aldaketa) behar bezala funtzionatzeaz utziko dute ziurrenik.&lt;/p&gt;&lt;p&gt;Mesedez eguneratu Bezero Gehigarriak gaur egungo bertsiora &lt;b&gt;Gailuak&lt;/b&gt; menuko &lt;b&gt;Bezero Gehigarriak Instalatu&lt;/b&gt; hautatuaz.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Bezero sistema eragilea instalaturik dauden Virtualbox Bezero Gehigarriak berriegiak dira: Instalaturik dagoen bertsioa %1 da eta espero zena %2&lt;/p&gt;&lt;p&gt;Gehigarrien Virtualbox baino bertsio berriago bat erabiltzea ez da onartzen. Mesedez instalatu egungo Bezero Gehigarriak &lt;b&gt;Gailuak&lt;/b&gt; menuko &lt;b&gt;Bezero Gehigarriak Instalatu &lt;/b&gt;hautatuaz.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5344,11 +5354,6 @@
         <source>Disable</source>
         <comment>hard disk</comment>
         <translation type="obsolete">Ezgaitu</translation>
-    </message>
-    <message>
-        <source>Mount</source>
-        <comment>additions</comment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
@@ -5752,10 +5757,6 @@
     </message>
     <message>
         <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and that it will be possible to use it later again.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -6218,6 +6219,15 @@
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -8222,11 +8232,11 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Partekatutako karpetekin aritzeko leihoa ireki</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
+        <source>&amp;Insert Guest Additions CD image...</source>
         <translation type="obsolete">Bezero Gehigarriak &amp;Instalatu...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
         <translation type="obsolete">Bezero Gehigarri instalazio irudia muntatu</translation>
     </message>
     <message>
@@ -8791,10 +8801,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;not selected&gt;</source>
         <translation type="unfinished">&lt;ez hautaturik&gt;</translation>
     </message>
@@ -8836,6 +8842,10 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Please type the file path here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -10483,6 +10493,11 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <source>You can create or add disk image files in the virtual machine settings.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>USB</source>
+        <comment>StorageControllerType</comment>
+        <translation type="obsolete">USB</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -10760,11 +10775,11 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">Lehenetsiriko VDI karpetaren bidea bistaratzen du. Karpeta hau erabiliko, beste ezer zehazten ez den bitartean, disko gogor birtual sortu edo gehitzerakoan.</translation>
     </message>
     <message>
-        <source>Resets the virtual machine folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the virtual machine folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Berrezarri makina birtual karpeta bidea lehenetsiriko baliora. Oraingo lehenetsiriko bidea bistaraziko da aldaketak onartu eta leiho hau berriz irekitzean.</translation>
     </message>
     <message>
-        <source>Resets the VDI folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the VDI folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">VDI karpeta bidearen lehenetsiriko balioa berrezartzen du. Uneko lehenetsiriko bidea bistaraziko da aldaketak onartu eta leiho hau berriz irekitzean.</translation>
     </message>
     <message>
@@ -10808,7 +10823,7 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">VRDP autentifikazio liburutegiaren bidea hautatzeko leihoa irekitzen du.</translation>
     </message>
     <message>
-        <source>Resets the authentication library file to the default value. The actual default library file will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the authentication library file to the default value. The actual default library file will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Estratifikazio liburutegi fitxategia lehenetsiriko balioan berrezarri. Lehenetsiriko liburutegia erakutsiko da aldaketak onartu eta leiho hau berriz irekitzean.</translation>
     </message>
     <message>
@@ -12965,7 +12980,7 @@ ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</
         <translation type="obsolete">Makina birtual honen egoera-argazkiak gordeko diren bidea erakusten du. Kontutan izan egoera-argazkiek disko leku asko erabili dezaketela.</translation>
     </message>
     <message>
-        <source>Resets the snapshot folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the snapshot folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Egoera-argazki karpeta bidea lehenetsiriko balioan berrezartzen du. Uneko lehenetsiriko bidea erakutsiko da aldaketak onartu eta leiho hau berriz irekitzean.</translation>
     </message>
     <message>

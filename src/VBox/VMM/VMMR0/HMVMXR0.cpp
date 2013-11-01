@@ -2607,6 +2607,15 @@ DECLINLINE(int) hmR0VmxSaveHostMsrs(PVM pVM, PVMCPU pVCpu)
     }
 # endif
 
+    /* Host TSC AUX MSR must be restored since we always load/store guest TSC AUX MSR. */
+    if (pVCpu->hm.s.vmx.u32ProcCtls2 & VMX_VMCS_CTRL_PROC_EXEC2_RDTSCP)
+    {
+        pHostMsr->u32Msr      = MSR_K8_TSC_AUX;
+        pHostMsr->u32Reserved = 0;
+        pHostMsr->u64Value    = ASMRdMsr(MSR_K8_TSC_AUX);
+        pHostMsr++; cHostMsrs++;
+    }
+
     /* Shouldn't ever happen but there -is- a number. We're well within the recommended 512. */
     if (RT_UNLIKELY(cHostMsrs > MSR_IA32_VMX_MISC_MAX_MSR(pVM->hm.s.vmx.Msrs.u64Misc)))
     {
@@ -2820,9 +2829,9 @@ DECLINLINE(int) hmR0VmxLoadGuestApicState(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
             uint32_t u32TprThreshold = 0;
             if (fPendingIntr)
             {
-                /* Bits 3-0 of the TPR threshold field correspond to bits 7-4 of the TPR (which is the Task-Priority Class). */
-                const uint8_t u8PendingPriority = (u8PendingIntr >> 4);
-                const uint8_t u8TprPriority     = (u8Tpr >> 4) & 7;
+                /* Bits 3:0 of the TPR threshold field correspond to bits 7:4 of the TPR (which is the Task-Priority Class). */
+                const uint8_t u8PendingPriority = (u8PendingIntr >> 4) & 0xf;
+                const uint8_t u8TprPriority     = (u8Tpr >> 4) & 0xf;
                 if (u8PendingPriority <= u8TprPriority)
                     u32TprThreshold = u8PendingPriority;
                 else
@@ -3442,7 +3451,8 @@ static int hmR0VmxLoadSharedDebugState(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
     PVM  pVM              = pVCpu->CTX_SUFF(pVM);
     bool fInterceptDB     = false;
     bool fInterceptMovDRx = false;
-    if (pVCpu->hm.s.fSingleInstruction || DBGFIsStepping(pVCpu))
+    if (   pVCpu->hm.s.fSingleInstruction
+        || DBGFIsStepping(pVCpu))
     {
         /* If the CPU supports the monitor trap flag, use it for single stepping in DBGF and avoid intercepting #DB. */
         if (pVM->hm.s.vmx.Msrs.VmxProcCtls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_MONITOR_TRAP_FLAG)
@@ -3461,7 +3471,8 @@ static int hmR0VmxLoadSharedDebugState(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
         }
     }
 
-    if (fInterceptDB || (CPUMGetHyperDR7(pVCpu) & X86_DR7_ENABLED_MASK))
+    if (   fInterceptDB
+        || (CPUMGetHyperDR7(pVCpu) & X86_DR7_ENABLED_MASK))
     {
         /*
          * Use the combined guest and host DRx values found in the hypervisor
@@ -3514,22 +3525,23 @@ static int hmR0VmxLoadSharedDebugState(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
             }
             else
 #endif
-            if (CPUMIsGuestDebugStateActive(pVCpu))
+            if (!CPUMIsGuestDebugStateActive(pVCpu))
             {
                 CPUMR0LoadGuestDebugState(pVCpu, true /* include DR6 */);
                 Assert(CPUMIsGuestDebugStateActive(pVCpu));
                 Assert(!CPUMIsHyperDebugStateActive(pVCpu));
                 STAM_COUNTER_INC(&pVCpu->hm.s.StatDRxArmed);
             }
+            Assert(!fInterceptDB);
+            Assert(!fInterceptMovDRx);
         }
         /*
          * If no debugging enabled, we'll lazy load DR0-3.  Unlike on AMD-V, we
          * must intercept #DB in order to maintain a correct DR6 guest value.
          */
 #if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
-        else if (   (   CPUMIsGuestInLongModeEx(pMixedCtx)
-                     && !CPUMIsGuestDebugStateActivePending(pVCpu))
-                 || !CPUMIsGuestDebugStateActive(pVCpu))
+        else if (   !CPUMIsGuestDebugStateActivePending(pVCpu)
+                 && !CPUMIsGuestDebugStateActive(pVCpu))
 #else
         else if (!CPUMIsGuestDebugStateActive(pVCpu))
 #endif
@@ -4070,10 +4082,9 @@ static int hmR0VmxLoadGuestMsrs(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
 
         /*
          * RDTSCP requires the TSC_AUX MSR. Host and guest share the physical MSR. So we have to
-         * load the guest's copy if the guest can execute RDTSCP without causing VM-exits.
+         * load the guest's copy always (since the MSR bitmap allows passthru unconditionally).
          */
-        if (   CPUMGetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_RDTSCP)
-            && (pVCpu->hm.s.vmx.u32ProcCtls2 & VMX_VMCS_CTRL_PROC_EXEC2_RDTSCP))
+        if (pVCpu->hm.s.vmx.u32ProcCtls2 & VMX_VMCS_CTRL_PROC_EXEC2_RDTSCP)
         {
             pGuestMsr->u32Msr      = MSR_K8_TSC_AUX;
             pGuestMsr->u32Reserved = 0;
@@ -6687,7 +6698,8 @@ static int hmR0VmxInjectPendingEvent(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
     if (   fBlockSti
         || fBlockMovSS)
     {
-        if (!pVCpu->hm.s.fSingleInstruction && !DBGFIsStepping(pVCpu))
+        if (   !pVCpu->hm.s.fSingleInstruction
+            && !DBGFIsStepping(pVCpu))
         {
             Assert(pVCpu->hm.s.vmx.fUpdatedGuestState & HMVMX_UPDATED_GUEST_RFLAGS);
             if (pMixedCtx->eflags.Bits.u1TF)    /* We don't have any IA32_DEBUGCTL MSR for guests. Treat as all bits 0. */
@@ -7095,7 +7107,7 @@ static void hmR0VmxClearEventVmcs(PVMCPU pVCpu)
     uint32_t u32EntryInfo;
     rc = VMXReadVmcs32(VMX_VMCS32_CTRL_ENTRY_INTERRUPTION_INFO, &u32EntryInfo);
     AssertRC(rc);
-    Assert(VMX_ENTRY_INTERRUPTION_INFO_VALID(u32EntryInfo));
+    Assert(VMX_ENTRY_INTERRUPTION_INFO_IS_VALID(u32EntryInfo));
 #endif
 
     /* Clear the entry-interruption field (including the valid bit). */
@@ -7713,8 +7725,7 @@ static void hmR0VmxPreRunGuestCommitted(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCt
      * Save the current Host TSC_AUX and write the guest TSC_AUX to the host, so that
      * RDTSCPs (that don't cause exits) reads the guest MSR. See @bugref{3324}.
      */
-    if (    (pVCpu->hm.s.vmx.u32ProcCtls2 & VMX_VMCS_CTRL_PROC_EXEC2_RDTSCP)
-        && !(pVCpu->hm.s.vmx.u32ProcCtls & VMX_VMCS_CTRL_PROC_EXEC_RDTSC_EXIT))
+    if (pVCpu->hm.s.vmx.u32ProcCtls2 & VMX_VMCS_CTRL_PROC_EXEC2_RDTSCP)
     {
         pVCpu->hm.s.u64HostTscAux = ASMRdMsr(MSR_K8_TSC_AUX);
         uint64_t u64HostTscAux = 0;
@@ -7790,7 +7801,7 @@ static void hmR0VmxPostRunGuest(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXT
     rc     |= hmR0VmxReadEntryIntInfoVmcs(pVmxTransient);
     AssertRC(rc);
     pVmxTransient->uExitReason    = (uint16_t)VMX_EXIT_REASON_BASIC(uExitReason);
-    pVmxTransient->fVMEntryFailed = !!VMX_ENTRY_INTERRUPTION_INFO_VALID(pVmxTransient->uEntryIntInfo);
+    pVmxTransient->fVMEntryFailed = VMX_ENTRY_INTERRUPTION_INFO_IS_VALID(pVmxTransient->uEntryIntInfo);
 
     /* If the VMLAUNCH/VMRESUME failed, we can bail out early. This does -not- cover VMX_EXIT_ERR_*. */
     if (RT_UNLIKELY(rcVMRun != VINF_SUCCESS))
@@ -8294,7 +8305,7 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         uint32_t u32EntryInfo;
         rc = VMXReadVmcs32(VMX_VMCS32_CTRL_ENTRY_INTERRUPTION_INFO, &u32EntryInfo);
         AssertRCBreak(rc);
-        if (   VMX_ENTRY_INTERRUPTION_INFO_VALID(u32EntryInfo)
+        if (   VMX_ENTRY_INTERRUPTION_INFO_IS_VALID(u32EntryInfo)
             && VMX_ENTRY_INTERRUPTION_INFO_TYPE(u32EntryInfo) == VMX_EXIT_INTERRUPTION_INFO_TYPE_EXT_INT)
         {
             HMVMX_CHECK_BREAK(u32Eflags & X86_EFL_IF, VMX_IGS_RFLAGS_IF_INVALID);
@@ -8671,7 +8682,7 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         HMVMX_CHECK_BREAK(   (u32Eflags & X86_EFL_IF)
                           || !(u32IntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI),
                           VMX_IGS_INTERRUPTIBILITY_STATE_STI_EFL_INVALID);
-        if (VMX_ENTRY_INTERRUPTION_INFO_VALID(u32EntryInfo))
+        if (VMX_ENTRY_INTERRUPTION_INFO_IS_VALID(u32EntryInfo))
         {
             if (VMX_ENTRY_INTERRUPTION_INFO_TYPE(u32EntryInfo) == VMX_EXIT_INTERRUPTION_INFO_TYPE_EXT_INT)
             {
@@ -8694,7 +8705,7 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
                           || (u32IntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_SMI),
                              VMX_IGS_INTERRUPTIBILITY_STATE_SMI_SMM_INVALID);
         if (   (pVCpu->hm.s.vmx.u32PinCtls & VMX_VMCS_CTRL_PIN_EXEC_VIRTUAL_NMI)
-            && VMX_ENTRY_INTERRUPTION_INFO_VALID(u32EntryInfo)
+            && VMX_ENTRY_INTERRUPTION_INFO_IS_VALID(u32EntryInfo)
             && VMX_ENTRY_INTERRUPTION_INFO_TYPE(u32EntryInfo) == VMX_EXIT_INTERRUPTION_INFO_TYPE_NMI)
         {
             HMVMX_CHECK_BREAK(!(u32IntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_NMI),
@@ -9500,6 +9511,7 @@ HMVMX_EXIT_DECL hmR0VmxExitWrmsr(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIENT
     rc  = hmR0VmxSaveGuestCR0(pVCpu, pMixedCtx);
     rc |= hmR0VmxSaveGuestRflags(pVCpu, pMixedCtx);
     rc |= hmR0VmxSaveGuestSegmentRegs(pVCpu, pMixedCtx);
+    rc |= hmR0VmxSaveGuestAutoLoadStoreMsrs(pVCpu, pMixedCtx);
     AssertRCReturn(rc, rc);
     Log4(("ecx=%#RX32\n", pMixedCtx->ecx));
 
@@ -9521,11 +9533,7 @@ HMVMX_EXIT_DECL hmR0VmxExitWrmsr(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIENT
             VMCPU_HMCF_SET(pVCpu, HM_CHANGED_VMX_GUEST_APIC_STATE);
         }
         else if (pMixedCtx->ecx == MSR_K6_EFER)         /* EFER is the only MSR we auto-load but don't allow write-passthrough. */
-        {
-            rc = hmR0VmxSaveGuestAutoLoadStoreMsrs(pVCpu, pMixedCtx);
-            AssertRCReturn(rc, rc);
             VMCPU_HMCF_SET(pVCpu, HM_CHANGED_VMX_GUEST_AUTO_MSRS);
-        }
         else if (pMixedCtx->ecx == MSR_IA32_TSC)        /* Windows 7 does this during bootup. See @bugref{6398}. */
             pVmxTransient->fUpdateTscOffsettingAndPreemptTimer = true;
 

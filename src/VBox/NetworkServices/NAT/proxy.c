@@ -34,7 +34,7 @@
 
 static SOCKET proxy_create_socket(int, int);
 
-volatile const struct proxy_options *g_proxy_options;
+volatile struct proxy_options *g_proxy_options;
 static sys_thread_t pollmgr_tid;
 
 /* XXX: for mapping loopbacks to addresses in our network (ip4) */
@@ -45,7 +45,7 @@ struct netif *g_proxy_netif;
  * (e.g. rtadvd), but netconn API is not.
  */
 void
-proxy_init(struct netif *proxy_netif, const struct proxy_options *opts)
+proxy_init(struct netif *proxy_netif, struct proxy_options *opts)
 {
     int status;
 
@@ -82,6 +82,8 @@ proxy_init(struct netif *proxy_netif, const struct proxy_options *opts)
     pxudp_init();
 
     portfwd_init();
+
+    pxdns_init(proxy_netif);
 
     pollmgr_tid = sys_thread_new("pollmgr_thread",
                                  pollmgr_thread, NULL,
@@ -377,7 +379,6 @@ proxy_bound_socket(int sdom, int stype, struct sockaddr *src_addr)
 void
 proxy_reset_socket(SOCKET s)
 {
-    int rc;
     struct linger linger;
 
     linger.l_onoff = 1;
@@ -390,11 +391,9 @@ proxy_reset_socket(SOCKET s)
      * http://msdn.microsoft.com/en-us/library/windows/desktop/ms738547%28v=vs.85%29.aspx
      * http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4468997
      */
-    rc = setsockopt(s, SOL_SOCKET, SO_LINGER, (char *)&linger, sizeof(linger));
-    AssertReturnVoid(rc != SOCKET_ERROR);
-
-    rc = closesocket(s);
-    AssertReturnVoid(rc != SOCKET_ERROR);
+    setsockopt(s, SOL_SOCKET, SO_LINGER, (char *)&linger, sizeof(linger));
+    
+    closesocket(s);
 }
 
 

@@ -363,8 +363,8 @@
         <translation type="obsolete">I&amp;nformacje o sesji</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation>Wyświetla okno z informacjami o sesji</translation>
+        <source>Show Session Information Window</source>
+        <translation type="unfinished">Wyświetla okno z informacjami o sesji</translation>
     </message>
     <message>
         <source>&amp;Pause</source>
@@ -455,12 +455,12 @@
         <translation type="obsolete">Włącza lub wyłącza zdalne połączenia RDP do tej maszyny</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation>Za&amp;instaluj Dodatki (Guest Additions)...</translation>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished">Za&amp;instaluj Dodatki (Guest Additions)...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
-        <translation>Montuje obraz z instalatorem Dodatków dla goszczonych systemów (Guest Additions)</translation>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished">Montuje obraz z instalatorem Dodatków dla goszczonych systemów (Guest Additions)</translation>
     </message>
     <message>
         <source>De&amp;bug</source>
@@ -965,6 +965,16 @@
     <message>
         <source>Popup Menu</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <comment>new</comment>
+        <translation type="obsolete">Za&amp;instaluj Dodatki (Guest Additions)...</translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <comment>new</comment>
+        <translation type="obsolete">Montuje obraz z instalatorem Dodatków dla goszczonych systemów (Guest Additions)</translation>
     </message>
 </context>
 <context>
@@ -5248,7 +5258,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>Dialog</source>
-        <translation>Okno dialogowe</translation>
+        <translation type="obsolete">Okno dialogowe</translation>
     </message>
     <message>
         <source>Folder Path:</source>
@@ -5284,6 +5294,10 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>If checked, this shared folder will be permanent.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Window</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -6667,15 +6681,15 @@ p, li { white-space: pre-wrap; }
         <translation>&lt;p&gt;Wystąpił błąd podczas pracy maszyny wirtualnej! Więcej informacji o błędzie znajduje się poniżej. Można spróbować usunąć przyczynę błędu i wznowić pracę maszyny wirtualnej.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Dodatki VirtualBox (Guest Additions) zainstalowane w goszczonym systemie operacyjnym są zbyt stare: zainstalowana wersja to %1, a wersja wymagana - %2. Niektóre z funkcji wymagające do pracy Dodatków (jak np. integracja myszy, automatyczne skalowanie ekranu gościa) najprawdopodobniej przestaną pracować poprawnie.&lt;/p&gt;&lt;p&gt;Proszę uaktualnić Dodatki do wymaganej wersji poprzez wybranie opcji &lt;b&gt;Zainstaluj Dodatki (Guest Additions)...&lt;/b&gt; z menu &lt;b&gt;Urządzenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Dodatki VirtualBox (Guest Additions) zainstalowane w goszczonym systemie operacyjnym są zbyt stare: zainstalowana wersja to %1, a wersja wymagana to %2. Niektóre z funkcji wymagające do pracy Dodatków (jak np. integracja myszy, automatyczne skalowanie ekranu gościa) mogą pracować niezgodnie z oczekiwaniami.&lt;/p&gt;&lt;p&gt;Zalecane jest uaktualnienie Dodatków do wymaganej wersji poprzez wybranie opcji &lt;b&gt;Zainstaluj Dodatki (Guest Additions)...&lt;/b&gt; z menu &lt;b&gt;Urządzenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Dodatki VirtualBox (Guest Additions) zainstalowane w goszczonym systemie operacyjnym są zbyt nowe dla tej wersji programu VirtualBox: zainstalowana wersja to %1, a wersja wymagana - %2. Używanie nowszej wersji Dodatków wraz ze starsza wersją programu VirtualBox nie jest wspierane. Proszę zainstalować wymaganą wersję Dodatków poprzez wybranie opcji &lt;b&gt;Zainstaluj Dodatki (Guest Additions)...&lt;/b&gt; z menu &lt;b&gt;Urządzenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6827,9 +6841,9 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">Pobierz</translation>
     </message>
     <message>
-        <source>Mount</source>
+        <source>Insert</source>
         <comment>additions</comment>
-        <translation>Zamontuj</translation>
+        <translation type="unfinished">Zamontuj</translation>
     </message>
     <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
@@ -7552,10 +7566,6 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8027,6 +8037,15 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions-new</comment>
+        <translation type="obsolete">Zamontuj</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -10474,11 +10493,11 @@ Wersja %1</translation>
         <translation type="obsolete">Otwiera okno ustawień współdzielonych katalogów</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
+        <source>&amp;Insert Guest Additions CD image...</source>
         <translation type="obsolete">Za&amp;instaluj Dodatki (Guest Additions)...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
         <translation type="obsolete">Montuje obraz z instalatorem Dodatków dla goszczonych systemów (Guest Additions)</translation>
     </message>
     <message>
@@ -10823,7 +10842,7 @@ Wersja %1</translation>
         <translation type="obsolete">I&amp;nformacje o sesji</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
+        <source>Show Session Information Window</source>
         <translation type="obsolete">Wyświetla okno z informacjami o sesji</translation>
     </message>
     <message>
@@ -11273,8 +11292,8 @@ Wersja %1</translation>
         <translation>&lt;przywróć domyślny&gt;</translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation>Aktualna domyślna ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <translation type="unfinished">Aktualna domyślna ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
     </message>
     <message>
         <source>&lt;not selected&gt;</source>
@@ -11319,6 +11338,11 @@ Wersja %1</translation>
     <message>
         <source>Please type the file path here.</source>
         <translation>Proszę podać żądaną ścieżkę do pliku.</translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <comment>new</comment>
+        <translation type="obsolete">Aktualna domyślna ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
     </message>
 </context>
 <context>
@@ -13153,6 +13177,11 @@ Wersja %1</translation>
         <source>You can create or add disk image files in the virtual machine settings.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>USB</source>
+        <comment>StorageControllerType</comment>
+        <translation type="obsolete">USB</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -13365,11 +13394,11 @@ języka ustawiony jako domyślny dla systemu.&lt;/qt&gt;
         <translation type="obsolete">Zawiera ścieżkę do domyślnego katalogu z obrazami dysków VDI. Katalog ten będzie użyty w przypadku, gdy nie zostanie wybrany inny podczas dodawania istniejących bądź tworzenia nowych wirtualnych dysków twardych.</translation>
     </message>
     <message>
-        <source>Resets the virtual machine folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the virtual machine folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Przywraca domyślną ścieżkę do katalogu maszyn wirtualnych. Nowa ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
     </message>
     <message>
-        <source>Resets the VDI folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the VDI folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Przywraca domyślną ścieżkę do katalogu z obrazami dysków VDI. Nowa ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
     </message>
     <message>
@@ -13418,7 +13447,7 @@ języka ustawiony jako domyślny dla systemu.&lt;/qt&gt;
         <translation type="obsolete">Otwiera okno umożliwiające wybór pliku biblioteki uwierzytelniania dla VRDP.</translation>
     </message>
     <message>
-        <source>Resets the authentication library file to the default value. The actual default library file will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the authentication library file to the default value. The actual default library file will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Przywraca domyślną ścieżkę do pliku biblioteki uwierzytelniania. Nowa ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
     </message>
     <message>
@@ -16126,7 +16155,7 @@ tej opcji po zainstalowaniu na tej maszynie systemu Windows!&lt;/qt&gt;</transla
         <translation type="obsolete">Zawiera ścieżkę, do której będą zapisywane migawki maszyny wirtualnej. Uwaga: migawki mogą zająć sporo miejsca na dysku.</translation>
     </message>
     <message>
-        <source>Resets the snapshot folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the snapshot folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Przywraca domyślną ścieżkę do katalogu z migawkami. Nowa ścieżka będzie widoczna po zatwierdzeniu zmian i ponownym otwarciu tego okna.</translation>
     </message>
     <message>

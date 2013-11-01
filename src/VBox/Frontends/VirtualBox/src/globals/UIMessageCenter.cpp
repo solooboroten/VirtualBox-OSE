@@ -63,6 +63,7 @@
 #include "CExtPackFile.h"
 #include "CHostNetworkInterface.h"
 #include "CVRDEServer.h"
+#include "CEmulatedUSB.h"
 #ifdef VBOX_WITH_DRAG_AND_DROP
 # include "CGuest.h"
 #endif /* VBOX_WITH_DRAG_AND_DROP */
@@ -1933,6 +1934,22 @@ void UIMessageCenter::cannotDetachUSBDevice(const CVirtualBoxErrorInfo &errorInf
           formatErrorInfo(errorInfo));
 }
 
+void UIMessageCenter::cannotAttachWebCam(const CEmulatedUSB &dispatcher, const QString &strWebCamName, const QString &strMachineName) const
+{
+    error(0, MessageType_Error,
+          tr("Failed to attach the webcam <b>%1</b> to the virtual machine <b>%2</b>.")
+             .arg(strWebCamName, strMachineName),
+          formatErrorInfo(dispatcher));
+}
+
+void UIMessageCenter::cannotDetachWebCam(const CEmulatedUSB &dispatcher, const QString &strWebCamName, const QString &strMachineName) const
+{
+    error(0, MessageType_Error,
+          tr("Failed to detach the webcam <b>%1</b> from the virtual machine <b>%2</b>.")
+             .arg(strWebCamName, strMachineName),
+          formatErrorInfo(dispatcher));
+}
+
 void UIMessageCenter::cannotToggleVRDEServer(const CVRDEServer &server, const QString &strMachineName, bool fEnable)
 {
     error(0, MessageType_Error,
@@ -1959,7 +1976,7 @@ void UIMessageCenter::remindAboutGuestAdditionsAreNotActive() const
           tr("<p>The VirtualBox Guest Additions do not appear to be available on this virtual machine, "
              "and shared folders cannot be used without them. To use shared folders inside the virtual machine, "
              "please install the Guest Additions if they are not installed, or re-install them if they are "
-             "not working correctly, by selecting <b>Install Guest Additions</b> from the <b>Devices</b> menu. "
+             "not working correctly, by selecting <b>Insert Guest Additions CD image</b> from the <b>Devices</b> menu. "
              "If they are installed but the machine is not yet fully started then shared folders will be available once it is.</p>"),
           "remindAboutGuestAdditionsAreNotActive");
 }
@@ -2032,7 +2049,7 @@ bool UIMessageCenter::proposeMountGuestAdditions(const QString &strUrl, const QS
                              "<p>Do you wish to register this disk image file and insert it into the virtual CD/DVD drive?</p>")
                              .arg(strUrl, strSrc),
                           0 /* auto-confirm id */,
-                          tr("Mount", "additions"));
+                          tr("Insert", "additions"));
 }
 
 void UIMessageCenter::cannotMountGuestAdditions(const QString &strMachineName) const

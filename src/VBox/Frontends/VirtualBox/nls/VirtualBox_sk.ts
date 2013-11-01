@@ -359,8 +359,8 @@
         <translation type="obsolete">I&amp;nformačné okno o relácii</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
-        <translation>Zobrazí informačné okno o relácii</translation>
+        <source>Show Session Information Window</source>
+        <translation type="unfinished">Zobrazí informačné okno o relácii</translation>
     </message>
     <message>
         <source>&amp;Pause</source>
@@ -447,12 +447,12 @@
         <translation type="obsolete">Zapne alebo vypne spojenia Vzdialenej plochy (RDP) k tomuto stroju</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
-        <translation>&amp;Nainštalovať Hosťovské doplnky...</translation>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <translation type="unfinished">&amp;Nainštalovať Hosťovské doplnky...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
-        <translation>Pripojí inštalačný obraz Hosťovských doplnkov</translation>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <translation type="unfinished">Pripojí inštalačný obraz Hosťovských doplnkov</translation>
     </message>
     <message>
         <source>De&amp;bug</source>
@@ -912,6 +912,16 @@
     <message>
         <source>Popup Menu</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Insert Guest Additions CD image...</source>
+        <comment>new</comment>
+        <translation type="obsolete">&amp;Nainštalovať Hosťovské doplnky...</translation>
+    </message>
+    <message>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
+        <comment>new</comment>
+        <translation type="obsolete">Pripojí inštalačný obraz Hosťovských doplnkov</translation>
     </message>
 </context>
 <context>
@@ -5090,7 +5100,7 @@
     </message>
     <message>
         <source>Dialog</source>
-        <translation>Dialógové okno</translation>
+        <translation type="obsolete">Dialógové okno</translation>
     </message>
     <message>
         <source>Folder Path:</source>
@@ -5127,6 +5137,10 @@
     <message>
         <source>If checked, this shared folder will be permanent.</source>
         <translation>Keď je zaškrtnuté, zdieľaný priečinok bude permanentným.</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -6415,9 +6429,9 @@
         <translation type="obsolete">Stiahnuť</translation>
     </message>
     <message>
-        <source>Mount</source>
+        <source>Insert</source>
         <comment>additions</comment>
-        <translation>Pripojiť</translation>
+        <translation type="unfinished">Pripojiť</translation>
     </message>
     <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
@@ -6901,10 +6915,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7376,6 +7386,15 @@
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Insert</source>
+        <comment>additions-new</comment>
+        <translation type="obsolete">Pripojiť</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox Guest Additions do not appear to be available on this virtual machine, and shared folders cannot be used without them. To use shared folders inside the virtual machine, please install the Guest Additions if they are not installed, or re-install them if they are not working correctly, by selecting &lt;b&gt;Insert Guest Additions CD image&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu. If they are installed but the machine is not yet fully started then shared folders will be available once it is.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -9750,11 +9769,11 @@ verzia %1</translation>
         <translation type="obsolete">Otvorí dialóg operácií so zdieľanými priečinkami</translation>
     </message>
     <message>
-        <source>&amp;Install Guest Additions...</source>
+        <source>&amp;Insert Guest Additions CD image...</source>
         <translation type="obsolete">&amp;Nainštalovať Hosťovské doplnky...</translation>
     </message>
     <message>
-        <source>Mount the Guest Additions installation image</source>
+        <source>Insert the Guest Additions disk file into the virtual drive</source>
         <translation type="obsolete">Pripojí inštalačný obraz Hosťovských doplnkov</translation>
     </message>
     <message>
@@ -10033,7 +10052,7 @@ verzia %1</translation>
         <translation type="obsolete">I&amp;nformačné okno o relácii</translation>
     </message>
     <message>
-        <source>Show Session Information Dialog</source>
+        <source>Show Session Information Window</source>
         <translation type="obsolete">Zobrazí informačné okno o relácii</translation>
     </message>
     <message>
@@ -10448,8 +10467,8 @@ verzia %1</translation>
         <translation>&lt;nastaviť na východzie&gt;</translation>
     </message>
     <message>
-        <source>The actual default path value will be displayed after accepting the changes and opening this dialog again.</source>
-        <translation>Aktuálna východzia cesta bude zobrazená po akceptovaní zmien a novom otvorení tohto dialógového okna.</translation>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <translation type="unfinished">Aktuálna východzia cesta bude zobrazená po akceptovaní zmien a novom otvorení tohto dialógového okna.</translation>
     </message>
     <message>
         <source>&lt;not selected&gt;</source>
@@ -10494,6 +10513,11 @@ verzia %1</translation>
     <message>
         <source>Please type the file path here.</source>
         <translation>Prosím zadajte sem požadovanú cestu k súboru.</translation>
+    </message>
+    <message>
+        <source>The actual default path value will be displayed after accepting the changes and opening this window again.</source>
+        <comment>new</comment>
+        <translation type="obsolete">Aktuálna východzia cesta bude zobrazená po akceptovaní zmien a novom otvorení tohto dialógového okna.</translation>
     </message>
 </context>
 <context>
@@ -12350,6 +12374,11 @@ verzia %1</translation>
         <source>You can create or add disk image files in the virtual machine settings.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>USB</source>
+        <comment>StorageControllerType</comment>
+        <translation type="obsolete">USB</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -12626,11 +12655,11 @@ je zobrazený &lt;b&gt;tučným&lt;/b&gt; písmom. Voľbou &lt;i&gt;Štandardný
         <translation type="obsolete">Zobrazí cestu k štandardnému priečinku VDI. Priečinok sa použije, ak nie je výslovne uvedené inak, pri pridávaní existujúcich a tvorbe nových virtuálnych pevných diskov.</translation>
     </message>
     <message>
-        <source>Resets the virtual machine folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the virtual machine folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Obnoví štandardnú cestu k virtuálnym strojom na štandardnú hodnotu. Skutočná štandardná cesta sa zobrazí po prijatí zmien a opätovnom otvorení tohto dialógu.</translation>
     </message>
     <message>
-        <source>Resets the VDI folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the VDI folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Obnoví štandardnú cestu k VDI na štandardnú hodnotu. Skutočná štandardná cesta sa zobrazí po prijatí zmien a opätovnom otvorení tohto dialógu.</translation>
     </message>
     <message>
@@ -12674,7 +12703,7 @@ je zobrazený &lt;b&gt;tučným&lt;/b&gt; písmom. Voľbou &lt;i&gt;Štandardný
         <translation type="obsolete">Otvorí dialóg pre výber autentifikačnej knižnice VRDP.</translation>
     </message>
     <message>
-        <source>Resets the authentication library file to the default value. The actual default library file will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the authentication library file to the default value. The actual default library file will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Obnoví súbor autentifikačnej knižnice na štandardnú hodnotu. Skutočná štandardný súbor autentifikačnej knižnice sa zobrazí po prijatí zmien a opätovnom otvorení tohto dialógu.</translation>
     </message>
     <message>
@@ -15013,7 +15042,7 @@ je zobrazený &lt;b&gt;tučným&lt;/b&gt; písmom. Voľbou &lt;i&gt;Štandardný
         <translation type="obsolete">Určuje cestu, kam budú ukladané snímky virtuálneho stroja. Všimnite si, že snímky môžu zaberať veľkú časť diskového priestoru.</translation>
     </message>
     <message>
-        <source>Resets the snapshot folder path to the default value. The actual default path will be displayed after accepting the changes and opening this dialog again.</source>
+        <source>Resets the snapshot folder path to the default value. The actual default path will be displayed after accepting the changes and opening this window again.</source>
         <translation type="obsolete">Obnoví štandardnú cestu pre snímky. Vlastná štandardná cesta bude zobrazená po prijatí zmien a opätovnom otvorení tohto dialógového okna.</translation>
     </message>
     <message>

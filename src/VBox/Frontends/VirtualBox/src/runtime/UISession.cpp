@@ -75,6 +75,7 @@
 #include "CVRDEServer.h"
 #include "CUSBController.h"
 #include "CUSBDeviceFilters.h"
+#include "CHostVideoInputDevice.h"
 #include "CSnapshot.h"
 #include "CMedium.h"
 
@@ -210,22 +211,6 @@ UISession::~UISession()
 #endif /* Q_WS_WIN */
 }
 
-void UISession::adjustGuestView()
-{
-    foreach(UIMachineWindow *pMachineWindow, machineLogic()->machineWindows())
-    {
-        bool fAdjustPosition = false;
-        UIVisualStateType visualStateType = machineLogic()->visualStateType();
-
-        if (visualStateType == UIVisualStateType_Normal ||
-            visualStateType == UIVisualStateType_Scale)
-            fAdjustPosition = true;
-
-        /* Normalize view's geometry: */
-        pMachineWindow->machineView()->normalizeGeometry(fAdjustPosition);
-    }
-}
-
 void UISession::powerUp()
 {
     /* Do nothing if we had started already: */
@@ -280,9 +265,8 @@ void UISession::powerUp()
     if (isSaved())
     {
         msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_restore_90px.png", 0, 0);
-        /* If restoring from saved state, guest MachineView
-           should be notified about host MachineWindow geometry change */
-        adjustGuestView();
+        /* After restoring from 'saved' state, guest screen size should be adjusted: */
+        machineLogic()->maybeAdjustGuestScreenSize();
     }
     else
         msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_start_90px.png");
@@ -1070,12 +1054,12 @@ void UISession::cleanupFramebuffers()
         UIFrameBuffer *pFb = m_frameBufferVector[i];
         if (pFb)
         {
-            /* Warn framebuffer about its no more necessary: */
-            pFb->setScheduledToDelete(true);
+            /* Mark framebuffer as unused: */
+            pFb->setMarkAsUnused(true);
             /* Detach framebuffer from Display: */
             CDisplay display = session().GetConsole().GetDisplay();
             display.SetFramebuffer(i, CFramebuffer(NULL));
-            /* Release the reference: */
+            /* Release framebuffer reference: */
             pFb->Release();
         }
     }
@@ -1347,6 +1331,9 @@ void UISession::setPointerShape(const uchar *pShapeData, bool fHasAlpha,
 
 void UISession::reinitMenuPool()
 {
+    /* Get host: */
+    const CHost &host = vboxGlobal().host();
+
     /* Get uisession machine: */
     const CMachine &machine = session().GetConsole().GetMachine();
 
@@ -1385,22 +1372,31 @@ void UISession::reinitMenuPool()
                 break;
             }
         }
+
         /* Show/Hide Network Adapters action depending on overall adapters activity status: */
         gActionPool->action(UIActionIndexRuntime_Simple_NetworkSettings)->setVisible(fAtLeastOneAdapterActive);
     }
 
     /* USB stuff: */
     {
-        /*
-         * Check whether there is at least one OHCI USB controllers with
-         * an available proxy.
-         */
+        /* Check whether there is at least one OHCI USB controllers with an available proxy. */
         const CUSBDeviceFilters &filters = machine.GetUSBDeviceFilters();
         ULONG cOhciCtls = machine.GetUSBControllerCountByType(KUSBControllerType_OHCI);
         bool fUSBEnabled = !filters.isNull() && cOhciCtls && machine.GetUSBProxyAvailable();
 
         /* Show/Hide USB menu depending on controller availability, activity and USB-proxy presence: */
         gActionPool->action(UIActionIndexRuntime_Menu_USBDevices)->setVisible(fUSBEnabled);
+    }
+
+    /* WebCams stuff: */
+    {
+        /* Check whether there is an accessible video input devices pool: */
+        const CHostVideoInputDeviceVector &webcams = host.GetVideoInputDevices(); Q_UNUSED(webcams);
+        ULONG cOhciCtls = machine.GetUSBControllerCountByType(KUSBControllerType_OHCI);
+        bool fWebCamsEnabled = host.isOk() && cOhciCtls;
+
+        /* Show/Hide WebCams menu depending on ExtPack availability: */
+        gActionPool->action(UIActionIndexRuntime_Menu_WebCams)->setVisible(fWebCamsEnabled);
     }
 }
 

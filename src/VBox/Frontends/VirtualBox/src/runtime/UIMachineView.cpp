@@ -199,6 +199,9 @@ void UIMachineView::sltPerformGuestResize(const QSize &toSize)
     QSize newSize(toSize.isValid() ? toSize : machineWindow()->centralWidget()->size());
     AssertMsg(newSize.isValid(), ("Size should be valid!\n"));
 
+    /* Expand current limitations: */
+    setMaxGuestSize(newSize);
+
     /* Send new size-hint to the guest: */
     LogRelFlow(("UIMachineView: Sending guest size-hint to screen %d: %dx%d\n",
                 (int)screenId(), newSize.width(), newSize.height()));
@@ -274,7 +277,7 @@ void UIMachineView::sltHandleRequestResize(int iPixelFormat, uchar *pVRAM,
 
             /* Normalize machine-window geometry: */
             if (visualStateType() == UIVisualStateType_Normal)
-                normalizeGeometry(true /* Adjust Position? */);
+                machineWindow()->normalizeGeometry(true /* adjust position */);
         }
     }
 
@@ -283,6 +286,13 @@ void UIMachineView::sltHandleRequestResize(int iPixelFormat, uchar *pVRAM,
 
     /* Emit a signal about guest was resized: */
     emit resizeHintDone();
+
+    LogRelFlow(("UIMachineView::ResizeHandled: "
+                "Screen=%d, Format=%d, "
+                "BitsPerPixel=%d, BytesPerLine=%d, "
+                "Size=%dx%d.\n",
+                (unsigned long)m_uScreenId, iPixelFormat,
+                iBitsPerPixel, iBytesPerLine, iWidth, iHeight));
 }
 
 void UIMachineView::sltHandleNotifyUpdate(int iX, int iY, int iWidth, int iHeight)
@@ -411,9 +421,14 @@ void UIMachineView::prepareFrameBuffer()
 #ifdef VBOX_GUI_USE_QIMAGE
         case QImageMode:
         {
-            UIFrameBuffer* pFrameBuffer = uisession()->frameBuffer(screenId());
+            UIFrameBuffer *pFrameBuffer = uisession()->frameBuffer(screenId());
             if (pFrameBuffer)
+            {
                 pFrameBuffer->setView(this);
+                /* Mark framebuffer as used again: */
+                LogRelFlow(("UIMachineView::prepareFrameBuffer: Start EMT callbacks accepting for screen: %d.\n", screenId()));
+                pFrameBuffer->setMarkAsUnused(false);
+            }
             else
             {
 # ifdef VBOX_WITH_VIDEOHWACCEL
@@ -441,9 +456,14 @@ void UIMachineView::prepareFrameBuffer()
         {
             /* Indicate that we are doing all drawing stuff ourself: */
             viewport()->setAttribute(Qt::WA_PaintOnScreen);
-            UIFrameBuffer* pFrameBuffer = uisession()->frameBuffer(screenId());
+            UIFrameBuffer *pFrameBuffer = uisession()->frameBuffer(screenId());
             if (pFrameBuffer)
+            {
                 pFrameBuffer->setView(this);
+                /* Mark framebuffer as used again: */
+                LogRelFlow(("UIMachineView::prepareFrameBuffer: Start EMT callbacks accepting for screen: %d.\n", screenId()));
+                pFrameBuffer->setMarkAsUnused(false);
+            }
             else
             {
 # ifdef VBOX_WITH_VIDEOHWACCEL
@@ -594,47 +614,29 @@ void UIMachineView::loadMachineViewSettings()
 
 void UIMachineView::cleanupFrameBuffer()
 {
-    if (m_pFrameBuffer)
-    {
-        /* Process pending frame-buffer resize events: */
-        QApplication::sendPostedEvents(this, ResizeEventType);
-        if (   0
-#ifdef VBOX_GUI_USE_QIMAGE
-            || vboxGlobal().vmRenderMode() == QImageMode
-#endif /* VBOX_GUI_USE_QIMAGE */
-#ifdef VBOX_GUI_USE_QUARTZ2D
-            || vboxGlobal().vmRenderMode() == Quartz2DMode
-#endif /* VBOX_GUI_USE_QUARTZ2D */
-#ifdef VBOX_WITH_VIDEOHWACCEL
-            || m_fAccelerate2DVideo
-#endif /* VBOX_WITH_VIDEOHWACCEL */
-           )
-        {
-            Assert(m_pFrameBuffer == uisession()->frameBuffer(screenId()));
-            CDisplay display = session().GetConsole().GetDisplay();
-            /* Temporarily remove the framebuffer in Display while unsetting
-             * the view in order to respect the thread synchonisation logic
-             * (see UIFrameBuffer.h). */
-            /* Note! VBOX_WITH_CROGL additionally requires us to call
-             * SetFramebuffer to ensure 3D gets notified of view being
-             * destroyed */
-            display.SetFramebuffer(m_uScreenId, CFramebuffer(NULL));
-            m_pFrameBuffer->setView(NULL);
-            display.SetFramebuffer(m_uScreenId, CFramebuffer(m_pFrameBuffer));
-        }
-        else
-        {
-            /* Warn framebuffer about its no more necessary: */
-            m_pFrameBuffer->setScheduledToDelete(true);
-            /* Detach framebuffer from Display: */
-            CDisplay display = session().GetConsole().GetDisplay();
-            display.SetFramebuffer(m_uScreenId, CFramebuffer(NULL));
-            /* Release the reference: */
-            m_pFrameBuffer->Release();
-//          delete m_pFrameBuffer; // TODO_NEW_CORE: possibly necessary to really cleanup
-            m_pFrameBuffer = NULL;
-        }
-    }
+    /* Make sure proper framebuffer assigned: */
+    AssertReturnVoid(m_pFrameBuffer);
+    AssertReturnVoid(m_pFrameBuffer == uisession()->frameBuffer(screenId()));
+
+    /* Mark framebuffer as unused: */
+    LogRelFlow(("UIMachineView::cleanupFrameBuffer: Stop EMT callbacks accepting for screen: %d.\n", screenId()));
+    m_pFrameBuffer->setMarkAsUnused(true);
+
+    /* Process pending framebuffer events: */
+    QApplication::sendPostedEvents(this, QEvent::MetaCall);
+
+    /* Temporarily detach the framebuffer from IDisplay before detaching
+     * from view in order to respect the thread synchonisation logic (see UIFrameBuffer.h).
+     * Note: VBOX_WITH_CROGL additionally requires us to call SetFramebuffer
+     * to ensure 3D gets notified of view being destroyed... */
+    CDisplay display = session().GetConsole().GetDisplay();
+    display.SetFramebuffer(m_uScreenId, CFramebuffer(NULL));
+
+    /* Detach framebuffer from view: */
+    m_pFrameBuffer->setView(NULL);
+
+    /* Attach frambuffer back to IDisplay: */
+    display.SetFramebuffer(m_uScreenId, CFramebuffer(m_pFrameBuffer));
 }
 
 UIMachineLogic* UIMachineView::machineLogic() const
@@ -703,7 +705,7 @@ int UIMachineView::visibleHeight() const
     return verticalScrollBar()->pageStep();
 }
 
-void UIMachineView::setMaxGuestSize()
+void UIMachineView::setMaxGuestSize(const QSize &minimumSizeHint /* = QSize() */)
 {
     QSize maxSize;
     switch (m_maxGuestSizePolicy)
@@ -712,7 +714,7 @@ void UIMachineView::setMaxGuestSize()
             maxSize = m_fixedMaxGuestSize;
             break;
         case MaxGuestSizePolicy_Automatic:
-            maxSize = calculateMaxGuestSize();
+            maxSize = calculateMaxGuestSize().expandedTo(minimumSizeHint);
             break;
         case MaxGuestSizePolicy_Any:
         default:

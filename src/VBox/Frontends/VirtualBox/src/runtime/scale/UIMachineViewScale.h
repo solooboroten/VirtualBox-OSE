@@ -57,17 +57,13 @@ private:
     bool eventFilter(QObject *pWatched, QEvent *pEvent);
 
     /* Prepare helpers: */
-    // void prepareFrameBuffer();
-    //void loadMachineViewSettings();
+    //void loadMachineViewSettings() {}
 
     /* Cleanup helpers: */
     void saveMachineViewSettings();
-    //void cleanupConnections() {}
-    //void cleanupFrameBuffer() {}
 
     /* Private helpers: */
     QSize sizeHint() const;
-    void normalizeGeometry(bool /* fAdjustPosition */) {}
     QRect workingArea() const;
     QSize calculateMaxGuestSize() const;
     void updateSliders();

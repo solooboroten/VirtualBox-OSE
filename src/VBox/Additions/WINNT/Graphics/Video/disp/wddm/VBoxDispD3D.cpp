@@ -38,7 +38,7 @@
 volatile uint32_t g_u32VBoxDispProfileFunctionLoggerIndex = 0;
 
 /* the number of frames to collect data before doing dump/reset */
-#define VBOXDISPPROFILE_DDI_DUMP_FRAME_COUNT 0xffffffff
+#define VBOXDISPPROFILE_DDI_DUMP_FRAME_COUNT 0x20
 
 struct VBOXDISPPROFILE_GLOBAL {
     VBoxDispProfileFpsCounter ProfileDdiFps;
@@ -4177,7 +4177,7 @@ static HRESULT APIENTRY vboxWddmDDevCreateResource(HANDLE hDevice, D3DDDIARG_CRE
             bCreateKMResource = true;
         }
 
-        if (pRc->RcDesc.fFlags.RenderTarget)
+        if (pRc->RcDesc.fFlags.RenderTarget || pRc->RcDesc.fFlags.Primary)
         {
             bIssueCreateResource = true;
             bSetHostID = true;
@@ -5458,7 +5458,11 @@ static HRESULT APIENTRY vboxWddmDDevDestroyDevice(IN HANDLE hDevice)
     HRESULT hr = vboxDispCmCtxDestroy(pDevice, &pDevice->DefaultContext);
     Assert(hr == S_OK);
     if (hr == S_OK)
+    {
+        if (pDevice->hHgsmiTransportModule)
+            FreeLibrary(pDevice->hHgsmiTransportModule);
         RTMemFree(pDevice);
+    }
     vboxVDbgPrintF(("<== "__FUNCTION__", hDevice(0x%p)\n", hDevice));
     return hr;
 }
@@ -5743,7 +5747,8 @@ static HRESULT APIENTRY vboxWddmDDevOpenResource(HANDLE hDevice, D3DDDIARG_OPENR
             pRc->RcDesc.enmMultisampleType = D3DDDIMULTISAMPLE_NONE;
             pRc->RcDesc.MultisampleQuality = 0;
             pRc->RcDesc.MipLevels = 0;
-            pRc->RcDesc.Fvf;
+            /*pRc->RcDesc.Fvf;*/
+            pRc->RcDesc.fFlags.SharedResource = 1;
 
             if (pData->NumAllocations != 1)
             {
@@ -6008,7 +6013,7 @@ static HRESULT APIENTRY vboxWddmDispCreateDevice (IN HANDLE hAdapter, IN D3DDDIA
                     Assert(hr == S_OK);
                     if (hr == S_OK)
                     {
-    #ifdef VBOXDISP_EARLYCREATEDEVICE
+#ifdef VBOXDISP_EARLYCREATEDEVICE
                         PVBOXWDDMDISP_RESOURCE pRc = vboxResourceAlloc(2);
                         Assert(pRc);
                         if (pRc)
@@ -6044,13 +6049,13 @@ static HRESULT APIENTRY vboxWddmDispCreateDevice (IN HANDLE hAdapter, IN D3DDDIA
                         {
                             hr = E_OUTOFMEMORY;
                         }
-    #else
+#else
 //# define VBOXDISP_TEST_SWAPCHAIN
 # ifdef VBOXDISP_TEST_SWAPCHAIN
                         VBOXDISP_D3DEV(pDevice);
 # endif
                         break;
-    #endif
+#endif
 
                         HRESULT tmpHr = vboxDispCmCtxDestroy(pDevice, &pDevice->DefaultContext);
                         Assert(tmpHr == S_OK);
@@ -6072,6 +6077,22 @@ static HRESULT APIENTRY vboxWddmDispCreateDevice (IN HANDLE hAdapter, IN D3DDDIA
     {
         vboxVDbgPrintR((__FUNCTION__": RTMemAllocZ returned NULL\n"));
         hr = E_OUTOFMEMORY;
+    }
+
+    if (SUCCEEDED(hr))
+    {
+        if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                                (LPCWSTR)pDevice->RtCallbacks.pfnAllocateCb,
+                                &pDevice->hHgsmiTransportModule))
+        {
+            Assert(pDevice->hHgsmiTransportModule);
+        }
+        else
+        {
+            DWORD winEr = GetLastError();
+            WARN(("GetModuleHandleEx failed winEr %d, ignoring", winEr));
+            pDevice->hHgsmiTransportModule = 0;
+        }
     }
 
     vboxVDbgPrint(("<== "__FUNCTION__", hAdapter(0x%p)\n", hAdapter));
