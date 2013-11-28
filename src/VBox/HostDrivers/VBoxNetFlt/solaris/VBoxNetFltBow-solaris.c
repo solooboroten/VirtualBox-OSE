@@ -1505,7 +1505,8 @@ void vboxNetFltPortOsNotifyMacAddress(PVBOXNETFLTINS pThis, void *pvIfData, PCRT
                 /*
                  * Set the RX receive function.
                  * This shouldn't be necessary as vboxNetFltPortOsSetActive() will be invoked after this, but in the future,
-                 * if the guest NIC changes MAC address this may not be followed by a vboxNetFltPortOsSetActive() call, so set it here anyway.
+                 * if the guest NIC changes MAC address this may not be followed by a vboxNetFltPortOsSetActive() call,
+                 * so set it here anyway.
                  */
                 mac_rx_set(pVNIC->hClient, vboxNetFltSolarisRecv, pThis);
                 Log((DEVICE_NAME ":vboxNetFltPortOsNotifyMacAddress successfully added unicast address %.6Rhxs\n", pMac));
@@ -1638,9 +1639,10 @@ int vboxNetFltPortOsDisconnectInterface(PVBOXNETFLTINS pThis, void *pvIfData)
                     VERR_INVALID_POINTER);
 
     /*
-     * If the underlying interface is not a VNIC, we need to delete the created VNIC.
+     * If the underlying interface is a physical interface or a VNIC template, we need to delete the created VNIC.
      */
-    if (!pThis->u.s.fIsVNIC)
+    if (   !pThis->u.s.fIsVNIC
+        || pThis->u.s.fIsVNICTemplate)
     {
         /*
          * Remove the VNIC from the list, destroy and free it.

@@ -204,6 +204,8 @@ void UIMachineWindowSeamless::placeOnScreen()
     move(workingArea.topLeft());
     /* Resize to the appropriate size: */
     resize(workingArea.size());
+    /* Adjust guest screen size if necessary: */
+    machineView()->maybeAdjustGuestScreenSize();
     /* Process pending move & resize events: */
     qApp->processEvents();
 }

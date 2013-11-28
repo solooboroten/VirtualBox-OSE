@@ -79,6 +79,9 @@ public:
     bool isPreventAutoClose() const { return m_fIsPreventAutoClose; }
     void setPreventAutoClose(bool fIsPreventAutoClose) { m_fIsPreventAutoClose = fIsPreventAutoClose; }
 
+    /* API: Guest screen size stuff: */
+    virtual void maybeAdjustGuestScreenSize();
+
     /* Wrapper to open Machine settings / Network page: */
     void openNetworkAdaptersDialog() { sltOpenNetworkAdaptersDialog(); }
 
@@ -99,6 +102,7 @@ protected slots:
     virtual void sltMachineStateChanged();
     virtual void sltAdditionsStateChanged();
     virtual void sltMouseCapabilityChanged();
+    virtual void sltKeyboardLedsChanged();
     virtual void sltUSBDeviceStateChange(const CUSBDevice &device, bool fIsAttached, const CVirtualBoxErrorInfo &error);
     virtual void sltRuntimeError(bool fIsFatal, const QString &strErrorId, const QString &strMessage);
 #ifdef RT_OS_DARWIN
@@ -107,7 +111,8 @@ protected slots:
     virtual void sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect screenGeo);
 
     /* Qt callback handler: */
-    virtual void sltHostScreenCountChanged(int cHostScreenCount);
+    virtual void sltHostScreenCountChanged();
+    virtual void sltHostScreenGeometryChanged();
 
 protected:
 
@@ -160,6 +165,9 @@ protected:
     virtual void cleanupActionGroups();
     //virtual void cleanupSessionConnections() {}
     //virtual void cleanupRequiredFeatures() {}
+
+    /* Handler: Event-filter stuff: */
+    bool eventFilter(QObject *pWatched, QEvent *pEvent);
 
 private slots:
 
@@ -215,6 +223,10 @@ private slots:
     void sltChangeDockIconUpdate(bool fEnabled);
 #endif /* RT_OS_DARWIN */
 
+    /* Handlers: Keyboard LEDs sync logic: */
+    void sltSwitchKeyboardLedsToGuestLeds();
+    void sltSwitchKeyboardLedsToPreviousLeds();
+
 private:
 
     /* Helpers: */
@@ -254,6 +266,7 @@ private:
     UIDockIconPreview *m_pDockIconPreview;
     QActionGroup *m_pDockPreviewSelectMonitorGroup;
     int m_DockIconPreviewMonitor;
+    void *m_pHostLedsState;
 #endif /* Q_WS_MAC */
 
     /* Friend classes: */

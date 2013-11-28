@@ -213,6 +213,8 @@ static void stubCheckWindowsState(void)
         return;
 #endif
 
+    /* Try to keep a consistent locking order. */
+    crHashtableLock(stub.windowTable);
 #if defined(CR_NEWWINTRACK) && !defined(WINDOWS)
     crLockMutex(&stub.mutex);
 #endif
@@ -223,6 +225,7 @@ static void stubCheckWindowsState(void)
 #if defined(CR_NEWWINTRACK) && !defined(WINDOWS)
     crUnlockMutex(&stub.mutex);
 #endif
+    crHashtableUnlock(stub.windowTable);
 }
 
 
@@ -1143,9 +1146,12 @@ static DECLCALLBACK(int) stubSyncThreadProc(RTTHREAD ThreadSelf, void *pvUser)
             }
         }
 #else
+        /* Try to keep a consistent locking order. */
+        crHashtableLock(stub.windowTable);
         crLockMutex(&stub.mutex);
         crHashtableWalk(stub.windowTable, stubSyncTrCheckWindowsCB, NULL);
         crUnlockMutex(&stub.mutex);
+        crHashtableUnlock(stub.windowTable);
         RTThreadSleep(50);
 #endif
     }
@@ -1242,15 +1248,6 @@ stubInitLocked(void)
         {
             crNetFreeConnection(ns.conn);
         }
-#if 0 && defined(CR_NEWWINTRACK)
-        {
-            Status st = XInitThreads();
-            if (st==0)
-            {
-                crWarning("XInitThreads returned %i", (int)st);
-            }
-        }
-#endif
     }
 #endif
 

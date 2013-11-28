@@ -38,6 +38,9 @@
 #ifdef VBOX_WITH_VIDEOHWACCEL
 # include "VBoxFBOverlay.h"
 #endif /* VBOX_WITH_VIDEOHWACCEL */
+#ifdef Q_WS_MAC
+# include "VBoxUtils-darwin.h"
+#endif /* Q_WS_MAC */
 
 #ifdef Q_WS_X11
 # include <QX11Info>
@@ -68,6 +71,43 @@
 #include "CUSBController.h"
 #include "CSnapshot.h"
 
+#ifdef Q_WS_MAC
+/**
+ * Application Services: Core Graphics: Display reconfiguration callback.
+ *
+ * Notifies UISession about @a display configuration change.
+ * Corresponding change described by Core Graphics @a flags.
+ * Uses UISession @a pHandler to process this change.
+ *
+ * @note Last argument (@a pHandler) must always be valid pointer to UISession object.
+ * @note Calls for UISession::sltHandleHostDisplayAboutToChange() slot if display configuration changed.
+ */
+void cgDisplayReconfigurationCallback(CGDirectDisplayID display, CGDisplayChangeSummaryFlags flags, void *pHandler)
+{
+    /* Which flags we are handling? */
+    int iHandledFlags = kCGDisplayAddFlag     /* display added */
+                      | kCGDisplayRemoveFlag  /* display removed */
+                      | kCGDisplaySetModeFlag /* display mode changed */;
+
+    /* Handle 'display-add' case: */
+    if (flags & kCGDisplayAddFlag)
+        LogRelFlow(("UISession::cgDisplayReconfigurationCallback: Display added.\n"));
+    /* Handle 'display-remove' case: */
+    else if (flags & kCGDisplayRemoveFlag)
+        LogRelFlow(("UISession::cgDisplayReconfigurationCallback: Display removed.\n"));
+    /* Handle 'mode-set' case: */
+    else if (flags & kCGDisplaySetModeFlag)
+        LogRelFlow(("UISession::cgDisplayReconfigurationCallback: Display mode changed.\n"));
+
+    /* Ask handler to process our callback: */
+    if (flags & iHandledFlags)
+        QTimer::singleShot(0, static_cast<UISession*>(pHandler),
+                           SLOT(sltHandleHostDisplayAboutToChange()));
+
+    Q_UNUSED(display);
+}
+#endif /* Q_WS_MAC */
+
 UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     : QObject(pMachine)
     /* Base variables: */
@@ -75,10 +115,14 @@ UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     , m_session(sessionReference)
     /* Common variables: */
     , m_pMenuPool(0)
+    , m_machineStatePrevious(KMachineState_Null)
     , m_machineState(session().GetMachine().GetState())
 #ifdef Q_WS_WIN
     , m_alphaCursor(0)
 #endif /* Q_WS_WIN */
+#ifdef Q_WS_MAC
+    , m_pWatchdogDisplayChange(0)
+#endif /* Q_WS_MAC */
     /* Common flags: */
     , m_fIsFirstTimeStarted(false)
     , m_fIsIgnoreRuntimeMediumsChanging(false)
@@ -94,6 +138,9 @@ UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     , m_fNumLock(false)
     , m_fCapsLock(false)
     , m_fScrollLock(false)
+    , m_fHostNumLock(false)
+    , m_fHostCapsLock(false)
+    , m_fHostScrollLock(false)
     , m_uNumLockAdaptionCnt(2)
     , m_uCapsLockAdaptionCnt(2)
     /* Mouse flags: */
@@ -203,7 +250,11 @@ void UISession::powerUp()
 
     /* Show "Starting/Restoring" progress dialog: */
     if (isSaved())
+    {
         msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_restore_90px.png", mainMachineWindow(), true, 0);
+        /* After restoring from 'saved' state, guest screen size should be adjusted: */
+        machineLogic()->maybeAdjustGuestScreenSize();
+    }
     else
         msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_start_90px.png", mainMachineWindow(), true);
 
@@ -690,6 +741,7 @@ void UISession::sltStateChange(KMachineState state)
     if (m_machineState != state)
     {
         /* Store new data: */
+        m_machineStatePrevious = m_machineState;
         m_machineState = state;
 
         /* Update session settings: */
@@ -739,6 +791,93 @@ void UISession::sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, 
 
     /* Notify listeners about the change: */
     emit sigGuestMonitorChange(changeType, uScreenId, screenGeo);
+}
+
+#ifdef RT_OS_DARWIN
+/**
+ * MacOS X: Restarts display-reconfiguration watchdog timer from the beginning.
+ * @note Watchdog is trying to determine display reconfiguration in
+ *       UISession::sltCheckIfHostDisplayChanged() slot every 500ms for 40 tries.
+ */
+void UISession::sltHandleHostDisplayAboutToChange()
+{
+    LogRelFlow(("UISession::sltHandleHostDisplayAboutToChange()\n"));
+
+    if (m_pWatchdogDisplayChange->isActive())
+        m_pWatchdogDisplayChange->stop();
+    m_pWatchdogDisplayChange->setProperty("tryNumber", 1);
+    m_pWatchdogDisplayChange->start();
+}
+
+/**
+ * MacOS X: Determines display reconfiguration.
+ * @note Calls for UISession::sltHandleHostScreenCountChange() if screen count changed.
+ * @note Calls for UISession::sltHandleHostScreenGeometryChange() if screen geometry changed.
+ */
+void UISession::sltCheckIfHostDisplayChanged()
+{
+    LogRelFlow(("UISession::sltCheckIfHostDisplayChanged()\n"));
+
+    /* Acquire desktop wrapper: */
+    QDesktopWidget *pDesktop = QApplication::desktop();
+
+    /* Check if display count changed: */
+    if (pDesktop->screenCount() != m_screens.size())
+    {
+        /* Recache display data: */
+        recacheDisplayData();
+        /* Reset watchdog: */
+        m_pWatchdogDisplayChange->setProperty("tryNumber", 0);
+        /* Notify listeners about screen-count changed: */
+        return sltHandleHostScreenCountChange();
+    }
+    else
+    {
+        /* Check if at least one display geometry changed: */
+        for (int iScreenIndex = 0; iScreenIndex < pDesktop->screenCount(); ++iScreenIndex)
+        {
+            if (pDesktop->screenGeometry(iScreenIndex) != m_screens.at(iScreenIndex))
+            {
+                /* Recache display data: */
+                recacheDisplayData();
+                /* Reset watchdog: */
+                m_pWatchdogDisplayChange->setProperty("tryNumber", 0);
+                /* Notify listeners about screen-geometry changed: */
+                return sltHandleHostScreenGeometryChange();
+            }
+        }
+    }
+
+    /* Check if watchdog expired, restart if not: */
+    int cTryNumber = m_pWatchdogDisplayChange->property("tryNumber").toInt();
+    if (cTryNumber > 0 && cTryNumber < 40)
+    {
+        /* Restart watchdog again: */
+        m_pWatchdogDisplayChange->setProperty("tryNumber", ++cTryNumber);
+        m_pWatchdogDisplayChange->start();
+    }
+    else
+    {
+        /* Reset watchdog: */
+        m_pWatchdogDisplayChange->setProperty("tryNumber", 0);
+    }
+}
+#endif /* RT_OS_DARWIN */
+
+void UISession::sltHandleHostScreenCountChange()
+{
+    LogRelFlow(("UISession: Host-screen count changed.\n"));
+
+    /* Notify current machine-logic: */
+    emit sigHostScreenCountChanged();
+}
+
+void UISession::sltHandleHostScreenGeometryChange()
+{
+    LogRelFlow(("UISession: Host-screen geometry changed.\n"));
+
+    /* Notify current machine-logic: */
+    emit sigHostScreenGeometryChanged();
 }
 
 void UISession::sltAdditionsChange()
@@ -824,12 +963,35 @@ void UISession::prepareConsoleEventHandlers()
 
 void UISession::prepareConnections()
 {
+#ifdef Q_WS_MAC
+    /* Install native display reconfiguration callback: */
+    CGDisplayRegisterReconfigurationCallback(cgDisplayReconfigurationCallback, this);
+#else /* !Q_WS_MAC */
+    /* Install Qt display reconfiguration callbacks: */
     connect(QApplication::desktop(), SIGNAL(screenCountChanged(int)),
-            this, SIGNAL(sigHostScreenCountChanged(int)));
+            this, SLOT(sltHandleHostScreenCountChange()));
+    connect(QApplication::desktop(), SIGNAL(resized(int)),
+            this, SLOT(sltHandleHostScreenGeometryChange()));
+    connect(QApplication::desktop(), SIGNAL(workAreaResized(int)),
+            this, SLOT(sltHandleHostScreenGeometryChange()));
+#endif /* !Q_WS_MAC */
 }
 
 void UISession::prepareScreens()
 {
+#ifdef Q_WS_MAC
+    /* Recache display data: */
+    recacheDisplayData();
+    /* Prepare display-change watchdog: */
+    m_pWatchdogDisplayChange = new QTimer(this);
+    {
+        m_pWatchdogDisplayChange->setInterval(500);
+        m_pWatchdogDisplayChange->setSingleShot(true);
+        connect(m_pWatchdogDisplayChange, SIGNAL(timeout()),
+                this, SLOT(sltCheckIfHostDisplayChanged()));
+    }
+#endif /* Q_WS_MAC */
+
     /* Get machine: */
     CMachine machine = m_session.GetMachine();
 
@@ -959,6 +1121,14 @@ void UISession::cleanupConsoleEventHandlers()
 {
     /* Destroy console event-handler: */
     UIConsoleEventHandler::destroy();
+}
+
+void UISession::cleanupConnections()
+{
+#ifdef Q_WS_MAC
+    /* Remove display reconfiguration callback: */
+    CGDisplayRemoveReconfigurationCallback(cgDisplayReconfigurationCallback, this);
+#endif /* Q_WS_MAC */
 }
 
 void UISession::updateSessionSettings()
@@ -1389,6 +1559,18 @@ void UISession::setFrameBuffer(ulong uScreenId, UIFrameBuffer* pFrameBuffer)
     if (uScreenId < (ulong)m_frameBufferVector.size())
         m_frameBufferVector[(int)uScreenId] = pFrameBuffer;
 }
+
+#ifdef Q_WS_MAC
+/** MacOS X: Recaches display-configuration data. */
+void UISession::recacheDisplayData()
+{
+    /* Recache display data: */
+    m_screens.clear();
+    QDesktopWidget *pDesktop = QApplication::desktop();
+    for (int iScreenIndex = 0; iScreenIndex < pDesktop->screenCount(); ++iScreenIndex)
+        m_screens << pDesktop->screenGeometry(iScreenIndex);
+}
+#endif /* Q_WS_MAC */
 
 #ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
 /**

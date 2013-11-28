@@ -36,6 +36,7 @@ extern DWORD g_VBoxDisplayOnly;
 # include "wddm/VBoxMPTypes.h"
 #endif
 
+#define VBOXMP_MAX_VIDEO_MODES 128
 typedef struct VBOXMP_COMMON
 {
     int cDisplays;                      /* Number of displays. */
@@ -63,6 +64,8 @@ typedef struct VBOXMP_COMMON
     HGSMIHOSTCOMMANDCONTEXT hostCtx;
     /** Context information needed to submit commands to the host. */
     HGSMIGUESTCOMMANDCONTEXT guestCtx;
+
+    BOOLEAN fAnyX;                      /* Unrestricted horizontal resolution flag. */
 } VBOXMP_COMMON, *PVBOXMP_COMMON;
 
 typedef struct _VBOXMP_DEVEXT
@@ -74,7 +77,13 @@ typedef struct _VBOXMP_DEVEXT
    struct _VBOXMP_DEVEXT *pPrimary;            /* Pointer to the primary device extension. */
 
    ULONG iDevice;                              /* Device index: 0 for primary, otherwise a secondary device. */
-
+   /* Standart video modes list.
+    * Additional space is reserved for a custom video mode for this guest monitor.
+    * The custom video mode index is alternating for each mode set and 2 indexes are needed for the custom mode.
+    */
+   VIDEO_MODE_INFORMATION aVideoModes[VBOXMP_MAX_VIDEO_MODES + 2];
+   /* Number of available video modes, set by VBoxMPCmnBuildVideoModesTable. */
+   uint32_t cVideoModes;
    ULONG CurrentMode;                          /* Saved information about video modes */
    ULONG CurrentModeWidth;
    ULONG CurrentModeHeight;
@@ -82,6 +91,11 @@ typedef struct _VBOXMP_DEVEXT
 
    ULONG ulFrameBufferOffset;                  /* The framebuffer position in the VRAM. */
    ULONG ulFrameBufferSize;                    /* The size of the current framebuffer. */
+
+   uint8_t  iInvocationCounter;
+   uint32_t Prev_xres;
+   uint32_t Prev_yres;
+   uint32_t Prev_bpp;
 #endif /*VBOX_XPDM_MINIPORT*/
 
 #ifdef VBOX_WDDM_MINIPORT
@@ -180,7 +194,6 @@ typedef struct _VBOXMP_DEVEXT
    } u;
 
    HGSMIAREA areaDisplay;                      /* Entire VRAM chunk for this display device. */
-   BOOLEAN fAnyX;                              /* Unrestricted horizontal resolution flag. */
 } VBOXMP_DEVEXT, *PVBOXMP_DEVEXT;
 
 DECLINLINE(PVBOXMP_DEVEXT) VBoxCommonToPrimaryExt(PVBOXMP_COMMON pCommon)

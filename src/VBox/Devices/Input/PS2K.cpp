@@ -1110,6 +1110,23 @@ static DECLCALLBACK(void) PS2KDelayTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, vo
     PDMCritSectLeave(&pThis->KbdCritSect);
 }
 
+/* Release any and all currently depressed keys. Used whenever the guest keyboard
+ * is likely to be out of sync with the host, such as when loading a saved state
+ * or resuming a suspended host.
+ */
+static void ps2kReleaseKeys(PPS2K pThis)
+{
+    LogFlowFunc(("Releasing keys...\n"));
+
+    for (unsigned uKey = 0; uKey < sizeof(pThis->abDepressedKeys); ++uKey)
+        if (pThis->abDepressedKeys[uKey])
+        {
+            PS2KProcessKeyEvent(pThis, uKey, false /* key up */);
+            pThis->abDepressedKeys[uKey] = 0;
+        }
+    LogFlowFunc(("Done releasing keys\n"));
+}
+
 
 /**
  * Debug device info handler. Prints basic keyboard state.
@@ -1310,9 +1327,9 @@ void PS2KSaveState(PSSMHANDLE pSSM, PPS2K pThis)
 
     SSMR3PutU32(pSSM, cPressed);
 
-    for (unsigned i = 0; i < sizeof(pThis->abDepressedKeys); ++i)
-        if (pThis->abDepressedKeys[i])
-            SSMR3PutU8(pSSM, pThis->abDepressedKeys[i]);
+    for (unsigned uKey = 0; uKey < sizeof(pThis->abDepressedKeys); ++uKey)
+        if (pThis->abDepressedKeys[uKey])
+            SSMR3PutU8(pSSM, uKey);
 
     /* Save the typematic settings for Scan Set 3. */
     SSMR3PutU32(pSSM, cbTMSSize);
@@ -1363,7 +1380,7 @@ int PS2KLoadState(PSSMHANDLE pSSM, PPS2K pThis, uint32_t uVersion)
         {
             rc = SSMR3GetU8(pSSM, &u8);
             if (RT_FAILURE(rc)) break;
-            PS2KProcessKeyEvent(pThis, u8, false /* key up */);
+            pThis->abDepressedKeys[u8] = 1;
         }
         if (RT_FAILURE(rc)) break;
 
@@ -1379,6 +1396,15 @@ int PS2KLoadState(PSSMHANDLE pSSM, PPS2K pThis, uint32_t uVersion)
     } while (0);
 
     return rc;
+}
+
+int PS2KLoadDone(PPS2K pThis, PSSMHANDLE pSSM)
+{
+    /* This *must* be done after the inital load because it may trigger
+     * interrupts and change the interrupt controller state.
+     */
+    ps2kReleaseKeys(pThis);
+    return VINF_SUCCESS;
 }
 
 void PS2KReset(PPS2K pThis)

@@ -817,7 +817,7 @@ static DECLCALLBACK(void) cpumR0MapLocalApicCpuChecker(RTCPUID idCpu, void *pvUs
         g_aLApics[iCpu].uVersion    = uApicVersion;
         g_aLApics[iCpu].fHasThermal = APIC_REG_VERSION_GET_MAX_LVT(uApicVersion) >= 5;
 
-#if 1 /* enable if you need it. */
+#if 0 /* enable if you need it. */
         if (g_aLApics[iCpu].fX2Apic)
             SUPR0Printf("CPUM: X2APIC %02u - ver %#010x, lint0=%#07x lint1=%#07x pc=%#07x thmr=%#07x\n",
                         iCpu, uApicVersion,

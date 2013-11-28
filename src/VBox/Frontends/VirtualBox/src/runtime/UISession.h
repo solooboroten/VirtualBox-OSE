@@ -94,6 +94,7 @@ public:
 
     /* Common getters: */
     CSession& session() { return m_session; }
+    KMachineState machineStatePrevious() const { return m_machineStatePrevious; }
     KMachineState machineState() const { return m_machineState; }
     UIMachineLogic* machineLogic() const;
     QWidget* mainMachineWindow() const;
@@ -117,6 +118,8 @@ public:
                                     machineState() == KMachineState_Teleporting ||
                                     machineState() == KMachineState_LiveSnapshotting; }
     bool isStuck() const { return machineState() == KMachineState_Stuck; }
+    bool wasPaused() const { return machineStatePrevious() == KMachineState_Paused ||
+                                    machineStatePrevious() == KMachineState_TeleportingPausedVM; }
     bool isFirstTimeStarted() const { return m_fIsFirstTimeStarted; }
     bool isIgnoreRuntimeMediumsChanging() const { return m_fIsIgnoreRuntimeMediumsChanging; }
     bool isGuestResizeIgnored() const { return m_fIsGuestResizeIgnored; }
@@ -132,6 +135,12 @@ public:
     bool isNumLock() const { return m_fNumLock; }
     bool isCapsLock() const { return m_fCapsLock; }
     bool isScrollLock() const { return m_fScrollLock; }
+    bool isHostNumLock() const { return m_fHostNumLock; }
+    bool isHostCapsLock() const { return m_fHostCapsLock; }
+    bool isHostScrollLock() const { return m_fHostScrollLock; }
+    void setHostNumLock(bool fHostNumLock) { m_fHostNumLock = fHostNumLock; }
+    void setHostCapsLock(bool fHostCapsLock) { m_fHostCapsLock = fHostCapsLock; }
+    void setHostScrollLock(bool fHostScrollLock) { m_fHostScrollLock = fHostScrollLock; }
     uint numLockAdaptionCnt() const { return m_uNumLockAdaptionCnt; }
     uint capsLockAdaptionCnt() const { return m_uCapsLockAdaptionCnt; }
 
@@ -151,6 +160,7 @@ public:
     void setGuestResizeIgnored(bool fIsGuestResizeIgnored) { m_fIsGuestResizeIgnored = fIsGuestResizeIgnored; }
     void setSeamlessModeRequested(bool fIsSeamlessModeRequested) { m_fIsSeamlessModeRequested = fIsSeamlessModeRequested; }
     void setAutoCaptureDisabled(bool fIsAutoCaptureDisabled) { m_fIsAutoCaptureDisabled = fIsAutoCaptureDisabled; }
+    void forgetPreviousMachineState() { m_machineStatePrevious = m_machineState; }
 
     /* Keyboard setters: */
     void setNumLockAdaptionCnt(uint uNumLockAdaptionCnt) { m_uNumLockAdaptionCnt = uNumLockAdaptionCnt; }
@@ -192,8 +202,9 @@ signals:
     void sigCPUExecutionCapChange();
     void sigGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect screenGeo);
 
-    /* Qt callback signal: */
-    void sigHostScreenCountChanged(int cHostScreenCount);
+    /* Notifiers: Qt callback stuff: */
+    void sigHostScreenCountChanged();
+    void sigHostScreenGeometryChanged();
 
     /* Session signals: */
     void sigMachineStarted();
@@ -216,6 +227,14 @@ private slots:
     void sltVRDEChange();
     void sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect screenGeo);
 
+    /* Handlers: Display reconfiguration stuff: */
+#ifdef RT_OS_DARWIN
+    void sltHandleHostDisplayAboutToChange();
+    void sltCheckIfHostDisplayChanged();
+#endif /* RT_OS_DARWIN */
+    void sltHandleHostScreenCountChange();
+    void sltHandleHostScreenGeometryChange();
+
 private:
 
     /* Private getters: */
@@ -235,7 +254,7 @@ private:
     void cleanupFramebuffers();
     //void cleanupScreens() {}
     void cleanupConsoleEventHandlers();
-    //void cleanupConnections() {}
+    void cleanupConnections();
 
     /* Update helpers: */
     void updateSessionSettings();
@@ -246,6 +265,11 @@ private:
     void reinitMenuPool();
     bool preparePowerUp();
     int countOfVisibleWindows();
+
+#ifdef Q_WS_MAC
+    /* Helper: Display reconfiguration stuff: */
+    void recacheDisplayData();
+#endif /* Q_WS_MAC */
 
 #ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
     static void signalHandlerSIGUSR1(int sig, siginfo_t *pInfo, void *pSecret);
@@ -264,11 +288,21 @@ private:
     QVector<UIFrameBuffer*> m_frameBufferVector;
 
     /* Common variables: */
+    KMachineState m_machineStatePrevious;
     KMachineState m_machineState;
     QCursor m_cursor;
 #if defined(Q_WS_WIN)
     HCURSOR m_alphaCursor;
 #endif
+#ifdef Q_WS_MAC
+    /** @name MacOS X: Display reconfiguration variables.
+     * @{ */
+    /** MacOS X: Watchdog timer looking for display reconfiguration. */
+    QTimer *m_pWatchdogDisplayChange;
+    /** MacOS X: A list of display geometries we currently have. */
+    QList<QRect> m_screens;
+    /** @} */
+#endif /* Q_WS_MAC */
 
     /* Common flags: */
     bool m_fIsFirstTimeStarted : 1;
@@ -287,6 +321,9 @@ private:
     bool m_fNumLock : 1;
     bool m_fCapsLock : 1;
     bool m_fScrollLock : 1;
+    bool m_fHostNumLock : 1;
+    bool m_fHostCapsLock : 1;
+    bool m_fHostScrollLock : 1;
     uint m_uNumLockAdaptionCnt;
     uint m_uCapsLockAdaptionCnt;
 

@@ -474,6 +474,7 @@ VMMR3DECL(int)              VMR3GetCpuCoreAndPackageIdFromCpuId(PVM pVM, VMCPUID
 VMMR3DECL(int)              VMR3HotUnplugCpu(PVM pVM, VMCPUID idCpu);
 VMMR3DECL(int)              VMR3HotPlugCpu(PVM pVM, VMCPUID idCpu);
 VMMR3DECL(int)              VMR3SetCpuExecutionCap(PVM pVM, uint32_t uCpuExecutionCap);
+VMMR3DECL(int)              VMR3SetPowerOffInsteadOfReset(PUVM pUVM, bool fPowerOffInsteadOfReset);
 /** @} */
 #endif /* IN_RING3 */
 

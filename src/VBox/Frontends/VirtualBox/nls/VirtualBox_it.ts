@@ -802,7 +802,7 @@
     </message>
     <message>
         <source>Power off the virtual machine</source>
-        <translation type="obsolete">Spegni la macchina virtuale</translation>
+        <translation type="unfinished">Spegni la macchina virtuale</translation>
     </message>
     <message>
         <source>Show &amp;log...</source>
@@ -1067,6 +1067,10 @@
     <message>
         <source>Drag&apos;n&apos;Drop</source>
         <translation>Trascina e rilascia</translation>
+    </message>
+    <message>
+        <source>Save the virtual machine state</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -10078,7 +10082,7 @@ questo passo e collegare hard disk più tardi tramite Impostazioni della MV.&lt;
     <name>UIWizardImportApp</name>
     <message>
         <source>Import Virtual Applicance</source>
-        <translation>Importa applicazione virtuale</translation>
+        <translation type="obsolete">Importa applicazione virtuale</translation>
     </message>
     <message>
         <source>Restore Defaults</source>
@@ -10115,6 +10119,10 @@ questo passo e collegare hard disk più tardi tramite Impostazioni della MV.&lt;
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>Queste sono le macchine virtuali contenute  nell&apos;applicazione virtuale con le impostazioni proposte per l&apos;importazione in VirtualBox. Puoi cambiare molte delle proprietà mostrate facendo un doppio clic sugli elementi e disabilitarne altre utilizzando le caselle di selezione che seguono.</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

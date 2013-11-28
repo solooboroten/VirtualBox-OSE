@@ -113,11 +113,30 @@ _handler_chain_destroy(void)
 }
 
 #else /* VBOX */
-# define LIBALIAS_WLOCK_ASSERT() ;
-# define LIBALIAS_RLOCK() ;
-# define LIBALIAS_RUNLOCK() ;
-# define LIBALIAS_WLOCK() ;
-# define LIBALIAS_WUNLOCK() ;
+# define LIBALIAS_WLOCK_ASSERT() \
+    do { \
+        Assert(RTSemRWIsWriteOwner(pData->hSemRwHandlerChain)); \
+    } while (0)
+# define LIBALIAS_RLOCK() \
+    do {\
+        int rc = RTSemRWRequestRead(pData->hSemRwHandlerChain, RT_INDEFINITE_WAIT); \
+        AssertRC(rc); \
+    } while (0)
+# define LIBALIAS_RUNLOCK() \
+    do {\
+        int rc = RTSemRWReleaseRead(pData->hSemRwHandlerChain); \
+        AssertRC(rc); \
+    } while (0)
+# define LIBALIAS_WLOCK() \
+    do {\
+        int rc = RTSemRWRequestWrite(pData->hSemRwHandlerChain, RT_INDEFINITE_WAIT); \
+        AssertRC(rc); \
+    } while (0)
+# define LIBALIAS_WUNLOCK() \
+    do {\
+        int rc = RTSemRWReleaseWrite(pData->hSemRwHandlerChain); \
+        AssertRC(rc); \
+    } while (0)
 # define _handler_chain_init() ;
 # define _handler_chain_destroy() ;
 #endif
@@ -141,7 +160,7 @@ _attach_handler(PNATState pData, struct proto_handler *p)
 _attach_handler(struct proto_handler *p)
 #endif
 {
-    struct proto_handler *b = NULL;
+    struct proto_handler *b = NULL, *handler_chain_tail = NULL;
 
     LIBALIAS_WLOCK_ASSERT();
     LIST_FOREACH(b, &handler_chain, entries) {
@@ -153,10 +172,14 @@ _attach_handler(struct proto_handler *p)
             LIST_INSERT_BEFORE(b, p, entries);
             return (0);
         }
+
+        /* If the conditions above do not work, we should keep the last
+         * element of the list in order to insert *p right after it. */
+        handler_chain_tail = b;
     }
     /* End of list or found right position, inserts here. */
-    if (b)
-        LIST_INSERT_AFTER(b, p, entries);
+    if (handler_chain_tail)
+        LIST_INSERT_AFTER(handler_chain_tail, p, entries);
     else
         LIST_INSERT_HEAD(&handler_chain, p, entries);
     return (0);

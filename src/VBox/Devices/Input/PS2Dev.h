@@ -38,6 +38,7 @@ void PS2KReset(PPS2K pThis);
 void PS2KRelocate(PPS2K pThis, RTGCINTPTR offDelta);
 void PS2KSaveState(PSSMHANDLE pSSM, PPS2K pThis);
 int  PS2KLoadState(PSSMHANDLE pSSM, PPS2K pThis, uint32_t uVersion);
+int  PS2KLoadDone(PPS2K pThis, PSSMHANDLE pSSM);
 
 void KBCUpdateInterrupts(void *pKbc);
 

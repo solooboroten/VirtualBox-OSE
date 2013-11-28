@@ -1,7 +1,12 @@
 #!/bin/sh
+# $Id: VirtualBoxStartup.sh $
+## @file
+# Startup service for loading the kernel extensions and select the set of VBox
+# binaries that matches the kernel architecture.
+#
 
 #
-# Copyright (C) 2007-2010 Oracle Corporation
+# Copyright (C) 2007-2013 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -12,7 +17,52 @@
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 #
 
-. /etc/rc.common
+if false; then
+    . /etc/rc.common
+else
+    # Fake the startup item functions we're using. 
+
+    ConsoleMessage()
+    {
+        if [ "$1" != "-f" ]; then 
+            echo "$@"
+        else
+            shift
+            echo "Fatal error: $@"
+            exit 1;
+        fi
+    }
+
+    RunService()
+    {
+        case "$1" in 
+            "start")
+                StartService
+                exit $?;
+                ;;
+            "stop")
+                StopService
+                exit $?;
+                ;;
+            "restart")
+                RestartService
+                exit $?;
+                ;;
+            "launchd")
+                if RestartService; then
+                    while true;
+                    do
+                        sleep 3600
+                    done
+                fi 
+                exit $?;
+                ;;
+             **)
+                echo "Error: Unknown action '$1'"
+                exit 1;
+        esac                    
+    }
+fi
 
 
 StartService()
@@ -35,8 +85,8 @@ StartService()
         VBOX_LINKNAME=`echo "$VBOX_TRG" | sed -e 's|-'"${VBOX_ARCH}"'$||' `
         if test "$VBOX_LINKNAME" != "$VBOX_TRG"; then
             rm -f "$VBOX_LINKNAME"
-            if ! ln -vh "$VBOX_TRG" "$VBOX_LINKNAME"; then
-                ConsoleMessage "Error: ln -vh $VBOX_TRG $VBOX_LINKNAME failed"
+            if ! /bin/ln -vh "$VBOX_TRG" "$VBOX_LINKNAME"; then
+                ConsoleMessage "Error: /bin/ln -vh $VBOX_TRG $VBOX_LINKNAME failed"
                 VBOX_RC=1
             fi
         else
@@ -48,20 +98,20 @@ StartService()
     #
     # Check that all the directories exist first.
     #
-    if [ ! -d /Library/Extensions/${VBOXDRV}.kext ]; then
-        ConsoleMessage "Error: /Library/Extensions/${VBOXDRV}.kext is missing"
+    if [ ! -d "/Library/Application Support/VirtualBox/${VBOXDRV}.kext" ]; then
+        ConsoleMessage "Error: /Library/Application Support/VirtualBox/${VBOXDRV}.kext is missing"
         VBOX_RC=1
     fi
-    if [ ! -d /Library/Extensions/${VBOXUSB}.kext ]; then
-        ConsoleMessage "Error: /Library/Extensions/${VBOXUSB}.kext is missing"
+    if [ ! -d "/Library/Application Support/VirtualBox/${VBOXUSB}.kext" ]; then
+        ConsoleMessage "Error: /Library/Application Support/VirtualBox/${VBOXUSB}.kext is missing"
         VBOX_RC=1
     fi
-    if [ ! -d /Library/Extensions/VBoxNetFlt.kext ]; then
-        ConsoleMessage "Error: /Library/Extensions/VBoxNetFlt.kext is missing"
+    if [ ! -d "/Library/Application Support/VirtualBox/VBoxNetFlt.kext" ]; then
+        ConsoleMessage "Error: /Library/Application Support/VirtualBox/VBoxNetFlt.kext is missing"
         VBOX_RC=1
     fi
-    if [ ! -d /Library/Extensions/VBoxNetAdp.kext ]; then
-        ConsoleMessage "Error: /Library/Extensions/VBoxNetAdp.kext is missing"
+    if [ ! -d "/Library/Application Support/VirtualBox/VBoxNetAdp.kext" ]; then
+        ConsoleMessage "Error: /Library/Application Support/VirtualBox/VBoxNetAdp.kext is missing"
         VBOX_RC=1
     fi
 
@@ -71,19 +121,19 @@ StartService()
     #
     if [ $VBOX_RC -eq 0 ]; then
         if kextstat -lb org.virtualbox.kext.VBoxDrv 2>&1 | grep -q org.virtualbox.kext.VBoxDrv; then
-            ConsoleMessage -v "Error: ${VBOXDRV}.kext is already loaded"
+            ConsoleMessage "Error: ${VBOXDRV}.kext is already loaded"
             VBOX_RC=1
         fi
         if kextstat -lb org.virtualbox.kext.VBoxUSB 2>&1 | grep -q org.virtualbox.kext.VBoxUSB; then
-            ConsoleMessage -v "Error: ${VBOXUSB}.kext is already loaded"
+            ConsoleMessage "Error: ${VBOXUSB}.kext is already loaded"
             VBOX_RC=1
         fi
         if kextstat -lb org.virtualbox.kext.VBoxNetFlt 2>&1 | grep -q org.virtualbox.kext.VBoxNetFlt; then
-            ConsoleMessage -v "Error: VBoxNetFlt.kext is already loaded"
+            ConsoleMessage "Error: VBoxNetFlt.kext is already loaded"
             VBOX_RC=1
         fi
         if kextstat -lb org.virtualbox.kext.VBoxNetAdp 2>&1 | grep -q org.virtualbox.kext.VBoxNetAdp; then
-            ConsoleMessage -v "Error: VBoxNetAdp.kext is already loaded"
+            ConsoleMessage "Error: VBoxNetAdp.kext is already loaded"
             VBOX_RC=1
         fi
     fi
@@ -93,26 +143,26 @@ StartService()
     #
     if [ $VBOX_RC -eq 0 ]; then
         ConsoleMessage "Loading ${VBOXDRV}.kext"
-        if ! kextload /Library/Extensions/${VBOXDRV}.kext; then
-            ConsoleMessage "Error: Failed to load /Library/Extensions/${VBOXDRV}.kext"
+        if ! kextload "/Library/Application Support/VirtualBox/${VBOXDRV}.kext"; then
+            ConsoleMessage "Error: Failed to load /Library/Application Support/VirtualBox/${VBOXDRV}.kext"
             VBOX_RC=1
         fi
 
         ConsoleMessage "Loading ${VBOXUSB}.kext"
-        if ! kextload -d /Library/Extensions/${VBOXDRV}.kext /Library/Extensions/${VBOXUSB}.kext; then
-            ConsoleMessage "Error: Failed to load /Library/Extensions/${VBOXUSB}.kext"
+        if ! kextload -d "/Library/Application Support/VirtualBox/${VBOXDRV}.kext" "/Library/Application Support/VirtualBox/${VBOXUSB}.kext"; then
+            ConsoleMessage "Error: Failed to load /Library/Application Support/VirtualBox/${VBOXUSB}.kext"
             VBOX_RC=1
         fi
 
         ConsoleMessage "Loading VBoxNetFlt.kext"
-        if ! kextload -d /Library/Extensions/${VBOXDRV}.kext /Library/Extensions/VBoxNetFlt.kext; then
-            ConsoleMessage "Error: Failed to load /Library/Extensions/VBoxNetFlt.kext"
+        if ! kextload -d "/Library/Application Support/VirtualBox/${VBOXDRV}.kext" "/Library/Application Support/VirtualBox/VBoxNetFlt.kext"; then
+            ConsoleMessage "Error: Failed to load /Library/Application Support/VirtualBox/VBoxNetFlt.kext"
             VBOX_RC=1
         fi
 
         ConsoleMessage "Loading VBoxNetAdp.kext"
-        if ! kextload -d /Library/Extensions/${VBOXDRV}.kext /Library/Extensions/VBoxNetAdp.kext; then
-            ConsoleMessage "Error: Failed to load /Library/Extensions/VBoxNetAdp.kext"
+        if ! kextload -d "/Library/Application Support/VirtualBox/${VBOXDRV}.kext" "/Library/Application Support/VirtualBox/VBoxNetAdp.kext"; then
+            ConsoleMessage "Error: Failed to load /Library/Application Support/VirtualBox/VBoxNetAdp.kext"
             VBOX_RC=1
         fi
 
@@ -144,7 +194,7 @@ StopService()
     if kextstat -lb org.virtualbox.kext.VBoxUSB 2>&1 | grep -q org.virtualbox.kext.VBoxUSB; then
         ConsoleMessage "Unloading ${VBOXUSB}.kext"
         if ! kextunload -m org.virtualbox.kext.VBoxUSB; then
-            ConsoleMessage -v "Error: Failed to unload VBoxUSB.kext"
+            ConsoleMessage "Error: Failed to unload VBoxUSB.kext"
             VBOX_RC=1
         fi
     fi
@@ -152,7 +202,7 @@ StopService()
     if kextstat -lb org.virtualbox.kext.VBoxNetFlt 2>&1 | grep -q org.virtualbox.kext.VBoxNetFlt; then
         ConsoleMessage "Unloading VBoxNetFlt.kext"
         if ! kextunload -m org.virtualbox.kext.VBoxNetFlt; then
-            ConsoleMessage -v "Error: Failed to unload VBoxNetFlt.kext"
+            ConsoleMessage "Error: Failed to unload VBoxNetFlt.kext"
             VBOX_RC=1
         fi
     fi
@@ -160,7 +210,7 @@ StopService()
     if kextstat -lb org.virtualbox.kext.VBoxNetAdp 2>&1 | grep -q org.virtualbox.kext.VBoxNetAdp; then
         ConsoleMessage "Unloading VBoxNetAdp.kext"
         if ! kextunload -m org.virtualbox.kext.VBoxNetAdp; then
-            ConsoleMessage -v "Error: Failed to unload VBoxNetAdp.kext"
+            ConsoleMessage "Error: Failed to unload VBoxNetAdp.kext"
             VBOX_RC=1
         fi
     fi
@@ -169,7 +219,7 @@ StopService()
     if kextstat -lb org.virtualbox.kext.VBoxDrv 2>&1 | grep -q org.virtualbox.kext.VBoxDrv; then
         ConsoleMessage "Unloading ${VBOXDRV}.kext"
         if ! kextunload -m org.virtualbox.kext.VBoxDrv; then
-            ConsoleMessage -v "Error: Failed to unload VBoxDrv.kext"
+            ConsoleMessage "Error: Failed to unload VBoxDrv.kext"
             VBOX_RC=1
         fi
     fi

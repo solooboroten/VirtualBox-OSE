@@ -182,6 +182,10 @@ VirtualBox_INCS = \
 # Necessary for the hdd backend enumeration
 VirtualBox_LIBS = $(LIB_DDU)
 
+if1of ($(KBUILD_TARGET), linux freebsd netbsd openbsd)
+ VirtualBox_LIBS += dl
+endif
+
 # This library is required for multi-monitor support
 VirtualBox_LIBS.linux   += Xinerama
 VirtualBox_LIBS.solaris += Xinerama
@@ -212,7 +216,7 @@ endif
 #endif
 
 VirtualBox_LDFLAGS.darwin = \
-	-framework AppKit -framework Carbon \
+	-framework AppKit -framework Carbon -framework IOKit \
 	$(if $(VBOX_WITH_HARDENING),-install_name $(VBOX_DYLD_EXECUTABLE_PATH)/VirtualBox.dylib)
 ifdef VBOX_WITH_ICHAT_THEATER
  VirtualBox_LDFLAGS.darwin += -framework InstantMessage -framework QuartzCore

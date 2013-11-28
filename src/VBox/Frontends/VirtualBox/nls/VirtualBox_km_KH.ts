@@ -777,6 +777,14 @@
         <source>Drag&apos;n&apos;Drop</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Save the virtual machine state</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Power off the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIApplianceEditorWidget</name>
@@ -7908,10 +7916,6 @@ You may wish to translate this more like &quot;Time remaining: %1&quot;</comment
 <context>
     <name>UIWizardImportApp</name>
     <message>
-        <source>Import Virtual Applicance</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Restore Defaults</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7946,6 +7950,10 @@ You may wish to translate this more like &quot;Time remaining: %1&quot;</comment
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation type="unfinished">មាន​ម៉ាស៊ីន​និម្មិត​ដែល​មាន​នៅ​ក្នុង​ឧបករណ៍​ និង​ការ​កំណត់​ដែលបាន​ស្នើ​របស់ម៉ាស៊ីន VirtualBox ដែល​បាននាំចូល ។ អ្នក​អាច​ផ្លាស់ប្ដូរ​លក្ខណសម្បត្តិ​ដែលបានបង្ហាញ​ដោយ​ចុច​ទ្វេដង​លើ​ធាតុ និងបិទ​​លក្ខណសម្បត្តិ​ផ្សេងៗ​ទៀត ដោយ​ប្រើ​ប្រ​អប់ធីក​ខាង​ក្រោម ។</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

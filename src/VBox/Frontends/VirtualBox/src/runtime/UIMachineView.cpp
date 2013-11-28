@@ -170,6 +170,9 @@ UIMachineView* UIMachineView::create(  UIMachineWindow *pMachineWindow
      * but not for Fullscreen and Scale.  However for Scale it is a no op.,
      * so it would not hurt.  Would it hurt for Fullscreen? */
 
+    /* Set a preliminary maximum size: */
+    pMachineView->setMaxGuestSize();
+
     return pMachineView;
 }
 
@@ -194,7 +197,12 @@ void UIMachineView::sltPerformGuestResize(const QSize &toSize)
     QSize newSize(toSize.isValid() ? toSize : machineWindow()->centralWidget()->size());
     AssertMsg(newSize.isValid(), ("Size should be valid!\n"));
 
+    /* Expand current limitations: */
+    setMaxGuestSize(newSize);
+
     /* Send new size-hint to the guest: */
+    LogRelFlow(("UIMachineView: Sending guest size-hint to screen %d: %dx%d\n",
+                (int)screenId(), newSize.width(), newSize.height()));
     session().GetConsole().GetDisplay().SetVideoModeHint(screenId(),
                                                          uisession()->isScreenVisible(screenId()),
                                                          false, 0, 0, newSize.width(), newSize.height(), 0);
@@ -253,8 +261,12 @@ void UIMachineView::sltMachineStateChanged()
                     resetPauseShot();
                     /* Ask for full guest display update (it will also update
                      * the viewport through IFramebuffer::NotifyUpdate): */
-                    CDisplay dsp = session().GetConsole().GetDisplay();
-                    dsp.InvalidateAndUpdate();
+                    if (   m_previousState == KMachineState_Paused
+                        || m_previousState == KMachineState_TeleportingPausedVM)
+                    {
+                        CDisplay dsp = session().GetConsole().GetDisplay();
+                        dsp.InvalidateAndUpdate();
+                    }
                 }
             }
             break;
@@ -568,6 +580,7 @@ void UIMachineView::cleanupFrameBuffer()
     {
         /* Process pending frame-buffer resize events: */
         QApplication::sendPostedEvents(this, ResizeEventType);
+
         if (   0
 #ifdef VBOX_GUI_USE_QIMAGE
             || vboxGlobal().vmRenderMode() == QImageMode
@@ -592,7 +605,23 @@ void UIMachineView::cleanupFrameBuffer()
              * SetFramebuffer to ensure 3D gets notified of view being
              * destroyed */
             display.SetFramebuffer(m_uScreenId, CFramebuffer(NULL));
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+            bool fLocked = false;
+            if (m_fAccelerate2DVideo)
+            {
+                m_pFrameBuffer->lock();
+                fLocked = true;
+                QApplication::sendPostedEvents(this, VHWACommandProcessType);
+            }
+#endif
             m_pFrameBuffer->setView(NULL);
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+            if (fLocked)
+                m_pFrameBuffer->unlock();
+#endif
+
             display.SetFramebuffer(m_uScreenId, CFramebuffer(m_pFrameBuffer));
         }
         else
@@ -676,7 +705,7 @@ int UIMachineView::visibleHeight() const
     return verticalScrollBar()->pageStep();
 }
 
-void UIMachineView::setMaxGuestSize()
+void UIMachineView::setMaxGuestSize(const QSize &minimumSizeHint /* = QSize() */)
 {
     QSize maxSize;
     switch (m_maxGuestSizePolicy)
@@ -685,7 +714,7 @@ void UIMachineView::setMaxGuestSize()
             maxSize = m_fixedMaxGuestSize;
             break;
         case MaxGuestSizePolicy_Automatic:
-            maxSize = calculateMaxGuestSize();
+            maxSize = calculateMaxGuestSize().expandedTo(minimumSizeHint);
             break;
         case MaxGuestSizePolicy_Any:
         default:
@@ -958,7 +987,7 @@ bool UIMachineView::guestResizeEvent(QEvent *pEvent,
 
         /* Normalize machine-window geometry: */
         if (!fFullscreenOrSeamless)
-            normalizeGeometry(true /* Adjust Position? */);
+            machineWindow()->normalizeGeometry(true /* adjust position */);
     }
 
     /* Report to the VM thread that we finished resizing: */

@@ -950,6 +950,14 @@
         <source>Drag&apos;n&apos;Drop</source>
         <translation>Arrosega i deixa anar</translation>
     </message>
+    <message>
+        <source>Save the virtual machine state</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Power off the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIApplianceEditorWidget</name>
@@ -9644,7 +9652,7 @@ pas i connectar discos durs més endavant, fent servir el diàleg de configuraci
     <name>UIWizardImportApp</name>
     <message>
         <source>Import Virtual Applicance</source>
-        <translation>Importa una aplicació virtual</translation>
+        <translation type="obsolete">Importa una aplicació virtual</translation>
     </message>
     <message>
         <source>Restore Defaults</source>
@@ -9681,6 +9689,10 @@ pas i connectar discos durs més endavant, fent servir el diàleg de configuraci
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>Aquestes són les màquines virtuals que conté l&apos;aplicació i els paràmetres suggerits per a les màquines importades al VirtualBox. Podeu canviar moltes de les propietats mostrades fent doble click sobre els elements o desactivar-ne altres fent clic sobre les caselles de selecció.</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

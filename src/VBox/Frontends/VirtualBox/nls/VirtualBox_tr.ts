@@ -858,6 +858,14 @@
         <source>Drag&apos;n&apos;Drop</source>
         <translation>Sürükle&apos;v&apos;Bırak</translation>
     </message>
+    <message>
+        <source>Save the virtual machine state</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Power off the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIApplianceEditorWidget</name>
@@ -7894,7 +7902,7 @@ bu basamağı atlayarak sabit diskleri Sanal Makine Ayarları penceresinden ekle
     <name>UIWizardImportApp</name>
     <message>
         <source>Import Virtual Applicance</source>
-        <translation>Sanal Cihazı İçe Aktar</translation>
+        <translation type="obsolete">Sanal Cihazı İçe Aktar</translation>
     </message>
     <message>
         <source>Restore Defaults</source>
@@ -7931,6 +7939,10 @@ bu basamağı atlayarak sabit diskleri Sanal Makine Ayarları penceresinden ekle
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>Bunlar cihaz içinde bulunan sanal makineler ve içe aktarılmış VirtualBox makinelerinin önerilen ayarlarıdır. Öğelere çift tıklandığında gösterilen çoğu özellikleri değiştirebilirsiniz ve aşağıdan işaretleme kutularını kullanarak diğerlerini etkisizleştirebilirsiniz.</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

@@ -1205,7 +1205,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_Blt(IWineD3DSurface *iface, const RECT *D
 
     if (sEntry->Flags & dEntry->Flags & WINED3DFMT_FLAG_FOURCC)
     {
-        if (!DestRect || Src == This)
+        if (Src && (!DestRect || Src == This))
         {
             memcpy(dlock.pBits, slock.pBits, This->resource.size);
             goto release;

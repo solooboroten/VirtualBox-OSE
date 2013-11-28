@@ -68,7 +68,7 @@ STDMETHODIMP UIFrameBufferQGL::NotifyUpdate (ULONG aX, ULONG aY,
                              new VBoxRepaintEvent (aX, aY, aW, aH));
 #else
     QRect r(aX, aY, aW, aH);
-    m_cmdPipe.postCmd(VBOXVHWA_PIPECMD_PAINT, &r, 0);
+    m_cmdPipe.postCmd(VBOXVHWA_PIPECMD_PAINT, &r);
 #endif
     return S_OK;
 }
@@ -149,7 +149,7 @@ STDMETHODIMP UIFrameBufferQGL::ProcessVHWACommand(BYTE *pCommand)
     /* post the command to the GUI thread for processing */
 //    QApplication::postEvent (m_pMachineView,
 //                             new VBoxVHWACommandProcessEvent (pCmd));
-    m_cmdPipe.postCmd(VBOXVHWA_PIPECMD_VHWA, pCmd, 0);
+    m_cmdPipe.postCmd(VBOXVHWA_PIPECMD_VHWA, pCmd);
     return S_OK;
 }
 

@@ -221,6 +221,22 @@ typedef struct VRDEVIDEOINDEVICEDESC
 #define VRDE_VIDEOIN_F_DEV_CAP_TRIGGER         0x02 /* Whether hardware triggering is supported. */
 #define VRDE_VIDEOIN_F_DEV_CAP_TRIGGER_USAGE   0x04 /* 0 - still image, 1 - generic button event.*/
 
+/* VRDEVIDEOINDEVICEDESC extended description. */
+typedef struct VRDEVIDEOINDEVICEEXT
+{
+    uint32_t fu32Fields;
+    /* One or more VRDEVIDEOINDEVICEFIELD follow. */
+} VRDEVIDEOINDEVICEEXT;
+
+typedef struct VRDEVIDEOINDEVICEFIELDHDR
+{
+    uint16_t cbField;  /* Number of bytes reserved for this field. */
+} VRDEVIDEOINDEVICEFIELDHDR;
+
+/* VRDEVIDEOINDEVICEDESC::fu32Fields */
+#define VRDE_VIDEOIN_F_DEV_EXT_NAME   0x00000001 /* Utf8 device name. */
+#define VRDE_VIDEOIN_F_DEV_EXT_SERIAL 0x00000002 /* Utf8 device serial number. */
+
 /* The video format descriptor. */
 typedef struct VRDEVIDEOINFORMATDESC
 {
@@ -261,12 +277,18 @@ typedef struct VRDEVIDEOINFRAMEDESC
     /* Supported frame intervals (in 100ns units) follow if VRDE_VIDEOIN_F_FRM_DISCRETE_INTERVALS is set.
      * uint32_t au32FrameIntervals[u32NumFrameIntervals];
      */
+    /* Supported min and max bitrate in bits per second follow if VRDE_VIDEOIN_F_FRM_BITRATE is set.
+     * uint32_t u32MinBitRate;
+     * uint32_t u32MaxBitRate;
+     */
     /* Other frame specific data may follow. */
 } VRDEVIDEOINFRAMEDESC;
 
 /* VRDEVIDEOINFRAMEDESC::u8FrameFlags. */
 #define VRDE_VIDEOIN_F_FRM_STILL              0x01 /* If still images are supported for this frame. */
 #define VRDE_VIDEOIN_F_FRM_DISCRETE_INTERVALS 0x02 /* If the discrete intervals list is included. */
+#define VRDE_VIDEOIN_F_FRM_BITRATE            0x04 /* If the bitrate fields are included. */
+#define VRDE_VIDEOIN_F_FRM_SIZE_OF_FIELDS     0x08 /* If the all optional fields start with 16 bit field size. */
 
 /*
  * Controls.

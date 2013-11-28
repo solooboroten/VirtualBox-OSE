@@ -701,6 +701,14 @@
         <source>Drag&apos;n&apos;Drop</source>
         <translation>拖放</translation>
     </message>
+    <message>
+        <source>Save the virtual machine state</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Power off the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIApplianceEditorWidget</name>
@@ -5723,7 +5731,7 @@
     <name>UIWizardImportApp</name>
     <message>
         <source>Import Virtual Applicance</source>
-        <translation>匯入虛擬應用裝置</translation>
+        <translation type="obsolete">匯入虛擬應用裝置</translation>
     </message>
     <message>
         <source>Restore Defaults</source>
@@ -5760,6 +5768,10 @@
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>這些是包含在應用裝置的虛擬機器和匯入 VirtualBox 機器的建議設定值。 您可以在項目按兩下變更許多顯示的內容和使用以下核取方塊停用其它。</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

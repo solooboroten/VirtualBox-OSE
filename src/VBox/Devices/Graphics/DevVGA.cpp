@@ -5271,6 +5271,11 @@ static DECLCALLBACK(void) vgaTimerRefresh(PPDMDEVINS pDevIns, PTMTIMER pTimer, v
 
     if (pThis->cMilliesRefreshInterval)
         TMTimerSetMillies(pTimer, pThis->cMilliesRefreshInterval);
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    vbvaTimerCb(pThis);
+#endif
+
 }
 
 

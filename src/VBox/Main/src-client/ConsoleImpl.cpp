@@ -53,12 +53,14 @@
 #include "DisplayImpl.h"
 #include "MachineDebuggerImpl.h"
 #include "USBDeviceImpl.h"
+#include "HostUSBDeviceImpl.h"
 #include "RemoteUSBDeviceImpl.h"
 #include "SharedFolderImpl.h"
 #include "AudioSnifferInterface.h"
 #include "Nvram.h"
 #ifdef VBOX_WITH_USB_VIDEO
 # include "UsbWebcamInterface.h"
+# include "EmulatedUSBImpl.h"
 #endif
 #ifdef VBOX_WITH_USB_CARDREADER
 # include "UsbCardReader.h"
@@ -348,13 +350,34 @@ public:
                 break;
             }
 
+            case VBoxEventType_OnExtraDataChanged:
+            {
+                ComPtr<IExtraDataChangedEvent> pEDCEv = aEvent;
+                Bstr strMachineId;
+                Bstr strKey;
+                Bstr strVal;
+                HRESULT hrc = S_OK;
+
+                hrc = pEDCEv->COMGETTER(MachineId)(strMachineId.asOutParam());
+                if (FAILED(hrc)) break;
+
+                hrc = pEDCEv->COMGETTER(Key)(strKey.asOutParam());
+                if (FAILED(hrc)) break;
+
+                hrc = pEDCEv->COMGETTER(Value)(strVal.asOutParam());
+                if (FAILED(hrc)) break;
+
+                mConsole->onExtraDataChange(strMachineId.raw(), strKey.raw(), strVal.raw());
+                break;
+            }
+
             default:
               AssertFailed();
         }
         return S_OK;
     }
 private:
-    Console *mConsole;
+    ComObjPtr<Console>    mConsole;
 };
 
 typedef ListenerImpl<VmEventListener, Console*> VmEventListenerImpl;
@@ -378,12 +401,14 @@ Console::Console()
     , mfSnapshotFolderSizeWarningShown(false)
     , mfSnapshotFolderExt4WarningShown(false)
     , mfSnapshotFolderDiskTypeShown(false)
+    , mfPowerOffCausedByReset(false)
     , mpVmm2UserMethods(NULL)
     , m_pVMMDev(NULL)
     , mAudioSniffer(NULL)
     , mNvram(NULL)
 #ifdef VBOX_WITH_USB_VIDEO
     , mEmWebcam(NULL)
+    , mEmulatedUSB(NULL)
 #endif
 #ifdef VBOX_WITH_USB_CARDREADER
     , mUsbCardReader(NULL)
@@ -420,6 +445,7 @@ HRESULT Console::FinalConstruct()
     pVmm2UserMethods->pfnNotifyEmtTerm  = Console::vmm2User_NotifyEmtTerm;
     pVmm2UserMethods->pfnNotifyPdmtInit = Console::vmm2User_NotifyPdmtInit;
     pVmm2UserMethods->pfnNotifyPdmtTerm = Console::vmm2User_NotifyPdmtTerm;
+    pVmm2UserMethods->pfnNotifyResetTurnedIntoPowerOff = Console::vmm2User_NotifyResetTurnedIntoPowerOff;
     pVmm2UserMethods->u32EndMagic       = VMM2USERMETHODS_MAGIC;
     pVmm2UserMethods->pConsole          = this;
     mpVmm2UserMethods = pVmm2UserMethods;
@@ -555,6 +581,10 @@ HRESULT Console::init(IMachine *aMachine, IInternalMachineControl *aControl, Loc
 #ifdef VBOX_WITH_USB_VIDEO
         unconst(mEmWebcam) = new EmWebcam(this);
         AssertReturn(mEmWebcam, E_FAIL);
+
+        unconst(mEmulatedUSB) = new EmulatedUSB();
+        AssertReturn(mEmulatedUSB, E_FAIL);
+        mEmulatedUSB->init(this);
 #endif
 #ifdef VBOX_WITH_USB_CARDREADER
         unconst(mUsbCardReader) = new UsbCardReader(this);
@@ -573,6 +603,7 @@ HRESULT Console::init(IMachine *aMachine, IInternalMachineControl *aControl, Loc
             com::SafeArray<VBoxEventType_T> eventTypes;
             eventTypes.push_back(VBoxEventType_OnNATRedirect);
             eventTypes.push_back(VBoxEventType_OnHostPCIDevicePlug);
+            eventTypes.push_back(VBoxEventType_OnExtraDataChanged);
             rc = pES->RegisterListener(aVmListener, ComSafeArrayAsInParam(eventTypes), true);
             AssertComRC(rc);
         }
@@ -658,6 +689,13 @@ void Console::uninit()
     {
         delete mEmWebcam;
         unconst(mEmWebcam) = NULL;
+    }
+
+    if (mEmulatedUSB)
+    {
+        mEmulatedUSB->uninit();
+        delete mEmulatedUSB;
+        unconst(mEmulatedUSB) = NULL;
     }
 #endif
 
@@ -2159,19 +2197,19 @@ STDMETHODIMP Console::PowerDown(IProgress **aProgress)
     {
         ComPtr<IProgress> pProgress;
 
+#ifdef VBOX_WITH_GUEST_PROPS
         alock.release();
 
-#ifdef VBOX_WITH_GUEST_PROPS
-    if (isResetTurnedIntoPowerOff())
-    {
-        mMachine->DeleteGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw());
-        mMachine->SetGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw(),
-                                   Bstr("PowerOff").raw(), Bstr("RDONLYGUEST").raw());
-        mMachine->SaveSettings();
-    }
-#endif
+        if (isResetTurnedIntoPowerOff())
+        {
+            mMachine->DeleteGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw());
+            mMachine->SetGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw(),
+                                       Bstr("PowerOff").raw(), Bstr("RDONLYGUEST").raw());
+            mMachine->SaveSettings();
+        }
 
         alock.acquire();
+#endif
 
         /*
          * request a progress object from the server
@@ -2879,6 +2917,11 @@ STDMETHODIMP Console::AttachUSBDevice(IN_BSTR aId)
      * (via onUSBDeviceAttach()) */
     alock.release();
 
+    HRESULT hrEUSB = S_OK;
+    bool fIntercepted = attachEmulatedUSBDevice(&hrEUSB, aId);
+    if (fIntercepted)
+        return hrEUSB;
+
     /* Request the device capture */
     return mControl->CaptureUSBDevice(aId);
 
@@ -2895,6 +2938,11 @@ STDMETHODIMP Console::DetachUSBDevice(IN_BSTR aId, IUSBDevice **aDevice)
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    HRESULT hrEUSB = S_OK;
+    bool fIntercepted = detachEmulatedUSBDevice(&hrEUSB, aId);
+    if (fIntercepted && FAILED(hrEUSB))
+        return hrEUSB;
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
@@ -2924,6 +2972,10 @@ STDMETHODIMP Console::DetachUSBDevice(IN_BSTR aId, IUSBDevice **aDevice)
      * Inform the USB device and USB proxy about what's cooking.
      */
     alock.release();
+
+    if (fIntercepted)
+        return hrEUSB;
+
     HRESULT rc = mControl->DetachUSBDevice(aId, false /* aDone */);
     if (FAILED(rc))
     {
@@ -5239,6 +5291,48 @@ HRESULT Console::onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOO
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
+}
+
+HRESULT Console::onExtraDataChange(IN_BSTR aMachineId, IN_BSTR aKey, IN_BSTR aVal)
+{
+    LogFlowThisFunc(("\n"));
+
+    AutoCaller autoCaller(this);
+    AssertComRCReturnRC(autoCaller.rc());
+
+    if (!aMachineId)
+        return S_OK;
+
+    HRESULT hrc = S_OK;
+    Bstr idMachine(aMachineId);
+    Bstr idSelf;
+    hrc = mMachine->COMGETTER(Id)(idSelf.asOutParam());
+    if (   FAILED(hrc)
+        || idMachine != idSelf)
+        return hrc;
+
+    /* don't do anything if the VM isn't running */
+    SafeVMPtrQuiet ptrVM(this);
+    if (ptrVM.isOk())
+    {
+        Bstr strKey(aKey);
+        Bstr strVal(aVal);
+
+        if (strKey == "VBoxInternal2/TurnResetIntoPowerOff")
+        {
+            int vrc = VMR3SetPowerOffInsteadOfReset(ptrVM.rawUVM(), strVal == "1");
+            AssertRC(vrc);
+        }
+
+        ptrVM.release();
+    }
+
+    /* notify console callbacks on success */
+    if (SUCCEEDED(hrc))
+        fireExtraDataChangedEvent(mEventSource, aMachineId, aKey, aVal);
+
+    LogFlowThisFunc(("Leaving hrc=%#x\n", hrc));
+    return hrc;
 }
 
 /**
@@ -7607,100 +7701,6 @@ HRESULT Console::removeSharedFolder(const Utf8Str &strName)
     return S_OK;
 }
 
-/**
- * Internal VM power off worker.
- *
- * @return nothing.
- * @param  that   Console object.
- * @param  fCalledFromReset Flag whether the worker was called from the reset state change.
- */
-void Console::vmstateChangePowerOff(bool fCalledFromReset = false)
-{
-#ifdef VBOX_WITH_GUEST_PROPS
-    if (isResetTurnedIntoPowerOff())
-    {
-        Bstr strPowerOffReason;
-
-        if (fCalledFromReset)
-            strPowerOffReason = Bstr("Reset");
-        else
-            strPowerOffReason = Bstr("PowerOff");
-
-        mMachine->DeleteGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw());
-        mMachine->SetGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw(),
-                                   strPowerOffReason.raw(), Bstr("RDONLYGUEST").raw());
-        mMachine->SaveSettings();
-    }
-#endif
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    if (mVMStateChangeCallbackDisabled)
-        return;
-
-    /* Do we still think that it is running? It may happen if this is a
-     * VM-(guest-)initiated shutdown/poweroff.
-     */
-    if (   mMachineState != MachineState_Stopping
-        && mMachineState != MachineState_Saving
-        && mMachineState != MachineState_Restoring
-        && mMachineState != MachineState_TeleportingIn
-        && mMachineState != MachineState_FaultTolerantSyncing
-        && mMachineState != MachineState_TeleportingPausedVM
-        && !mVMIsAlreadyPoweringOff
-       )
-    {
-        LogFlowFunc(("VM has powered itself off but Console still thinks it is running. Notifying.\n"));
-
-        /*
-         * Prevent powerDown() from calling VMR3PowerOff() again if this was called from
-         * the power off state change.
-         * When called from the Reset state make sure to call VMR3PowerOff() first.
-         */
-        Assert(mVMPoweredOff == false);
-        mVMPoweredOff = !fCalledFromReset;
-
-        /*
-         * request a progress object from the server
-         * (this will set the machine state to Stopping on the server
-         * to block others from accessing this machine)
-         */
-        ComPtr<IProgress> pProgress;
-        HRESULT rc = mControl->BeginPoweringDown(pProgress.asOutParam());
-        AssertComRC(rc);
-
-        /* sync the state with the server */
-        setMachineStateLocally(MachineState_Stopping);
-
-        /* Setup task object and thread to carry out the operation
-         * asynchronously (if we call powerDown() right here but there
-         * is one or more mpUVM callers (added with addVMCaller()) we'll
-         * deadlock).
-         */
-        std::auto_ptr<VMPowerDownTask> task(new VMPowerDownTask(this, pProgress));
-
-         /* If creating a task failed, this can currently mean one of
-          * two: either Console::uninit() has been called just a ms
-          * before (so a powerDown() call is already on the way), or
-          * powerDown() itself is being already executed. Just do
-          * nothing.
-          */
-        if (!task->isOk())
-        {
-            LogFlowFunc(("Console is already being uninitialized.\n"));
-            return;
-        }
-
-        int vrc = RTThreadCreate(NULL, Console::powerDownThread,
-                                 (void *)task.get(), 0,
-                                 RTTHREADTYPE_MAIN_WORKER, 0,
-                                 "VMPwrDwn");
-        AssertMsgRCReturnVoid(vrc, ("Could not create VMPowerDown thread (%Rrc)\n", vrc));
-
-        /* task is now owned by powerDownThread(), so release it */
-        task.release();
-    }
-}
 
 /**
  * VM state callback function. Called by the VMM
@@ -7745,7 +7745,90 @@ DECLCALLBACK(void) Console::vmstateChangeCallback(PVM aVM,
          */
         case VMSTATE_OFF:
         {
-            that->vmstateChangePowerOff();
+#ifdef VBOX_WITH_GUEST_PROPS
+            if (that->isResetTurnedIntoPowerOff())
+            {
+                Bstr strPowerOffReason;
+
+                if (that->mfPowerOffCausedByReset)
+                    strPowerOffReason = Bstr("Reset");
+                else
+                    strPowerOffReason = Bstr("PowerOff");
+
+                that->mMachine->DeleteGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw());
+                that->mMachine->SetGuestProperty(Bstr("/VirtualBox/HostInfo/VMPowerOffReason").raw(),
+                                                 strPowerOffReason.raw(), Bstr("RDONLYGUEST").raw());
+                that->mMachine->SaveSettings();
+            }
+#endif
+
+            AutoWriteLock alock(that COMMA_LOCKVAL_SRC_POS);
+
+            if (that->mVMStateChangeCallbackDisabled)
+                return;
+
+            /* Do we still think that it is running? It may happen if this is a
+             * VM-(guest-)initiated shutdown/poweroff.
+             */
+            if (   that->mMachineState != MachineState_Stopping
+                && that->mMachineState != MachineState_Saving
+                && that->mMachineState != MachineState_Restoring
+                && that->mMachineState != MachineState_TeleportingIn
+                && that->mMachineState != MachineState_FaultTolerantSyncing
+                && that->mMachineState != MachineState_TeleportingPausedVM
+                && !that->mVMIsAlreadyPoweringOff
+               )
+            {
+                LogFlowFunc(("VM has powered itself off but Console still thinks it is running. Notifying.\n"));
+
+                /*
+                 * Prevent powerDown() from calling VMR3PowerOff() again if this was called from
+                 * the power off state change.
+                 * When called from the Reset state make sure to call VMR3PowerOff() first.
+                 */
+                Assert(that->mVMPoweredOff == false);
+                that->mVMPoweredOff = true;
+
+                /*
+                 * request a progress object from the server
+                 * (this will set the machine state to Stopping on the server
+                 * to block others from accessing this machine)
+                 */
+                ComPtr<IProgress> pProgress;
+                HRESULT rc = that->mControl->BeginPoweringDown(pProgress.asOutParam());
+                AssertComRC(rc);
+
+                /* sync the state with the server */
+                that->setMachineStateLocally(MachineState_Stopping);
+
+                /* Setup task object and thread to carry out the operation
+                 * asynchronously (if we call powerDown() right here but there
+                 * is one or more mpUVM callers (added with addVMCaller()) we'll
+                 * deadlock).
+                 */
+                std::auto_ptr<VMPowerDownTask> task(new VMPowerDownTask(that, pProgress));
+
+                 /* If creating a task failed, this can currently mean one of
+                  * two: either Console::uninit() has been called just a ms
+                  * before (so a powerDown() call is already on the way), or
+                  * powerDown() itself is being already executed. Just do
+                  * nothing.
+                  */
+                if (!task->isOk())
+                {
+                    LogFlowFunc(("Console is already being uninitialized.\n"));
+                    return;
+                }
+
+                int vrc = RTThreadCreate(NULL, Console::powerDownThread,
+                                         (void *)task.get(), 0,
+                                         RTTHREADTYPE_MAIN_WORKER, 0,
+                                         "VMPwrDwn");
+                AssertMsgRCReturnVoid(vrc, ("Could not create VMPowerDown thread (%Rrc)\n", vrc));
+
+                /* task is now owned by powerDownThread(), so release it */
+                task.release();
+            }
             break;
         }
 
@@ -7815,15 +7898,10 @@ DECLCALLBACK(void) Console::vmstateChangeCallback(PVM aVM,
 
         case VMSTATE_RESETTING:
         {
-            if (!that->isResetTurnedIntoPowerOff())
-            {
 #ifdef VBOX_WITH_GUEST_PROPS
-                /* Do not take any read/write locks here! */
-                that->guestPropertiesHandleVMReset();
+            /* Do not take any read/write locks here! */
+            that->guestPropertiesHandleVMReset();
 #endif
-            }
-            else
-                that->vmstateChangePowerOff(true /* fCalledFromReset*/);
             break;
         }
 
@@ -8865,6 +8943,134 @@ void Console::processRemoteUSBDevices(uint32_t u32ClientId, VRDEUSBDEVICEDESC *p
     }
 
     LogFlowThisFuncLeave();
+}
+
+HRESULT Console::isEmulatedUSBDevice(IHostUSBDevice *aDevice, bool *pfEmulated)
+{
+    /** @todo  */
+    NOREF(aDevice);
+    *pfEmulated = true;
+    return S_OK;
+}
+
+bool Console::attachEmulatedUSBDevice(HRESULT *phrEUSB, IN_BSTR aId)
+{
+    bool fIntercepted = false;
+    HRESULT hr = S_OK;
+
+    Bstr value;
+    hr = mMachine->GetExtraData(Bstr("VBoxInternal2/WebcamPassthrough").raw(),
+                                     value.asOutParam());
+    if (   FAILED(hr)
+        || value != "1")
+    {
+        *phrEUSB = hr;
+        return false;
+    }
+
+    Utf8Str serialPrefix("");
+    hr = mMachine->GetExtraData(Bstr("VBoxInternal2/WebcamPassthrough/SerialPrefix").raw(),
+                                value.asOutParam());
+    if (   SUCCEEDED(hr)
+        && !value.isEmpty())
+    {
+        serialPrefix = value;
+    }
+
+    LogRel(("EmulatedUSB: attach %ls [%s]\n", aId, serialPrefix.c_str()));
+
+    do {
+        /* Get the IHostUSBDevice description. */
+        ComPtr<IVirtualBox> virtualBox;
+        hr = mMachine->COMGETTER(Parent)(virtualBox.asOutParam());
+        if (FAILED(hr)) break;
+
+        ComPtr<IHost> host;
+        hr = virtualBox->COMGETTER(Host)(host.asOutParam());
+        if (FAILED(hr)) break;
+
+        ComPtr<IHostUSBDevice> device;
+        hr = host->FindUSBDeviceById(aId, device.asOutParam());
+        if (FAILED(hr)) break;
+
+        /* Check if this device must be used with EUSB. */
+        hr = isEmulatedUSBDevice(device, &fIntercepted);
+        if (FAILED(hr)) break;
+
+        if (fIntercepted)
+        {
+            /* Construct a special path for webcam backend: .{uuid}VVVVPPPP:address. */
+            USHORT vendorId = 0;
+            hr = device->COMGETTER(VendorId)(&vendorId);
+            if (FAILED(hr)) break;
+
+            USHORT productId = 0;
+            hr = device->COMGETTER(ProductId)(&productId);
+            if (FAILED(hr)) break;
+
+            Bstr address;
+            hr = device->COMGETTER(Address)(address.asOutParam());
+            if (FAILED(hr)) break;
+
+            Utf8Str path = Utf8StrFmt(".{%ls}%04X%04X:%ls",
+                                       aId, vendorId, productId,
+                                       address.raw());
+            LogRel(("EmulatedUSB: attaching %s\n", path.c_str()));
+            hr = getEmulatedUSB()->webcamAttach(path, "");
+            if (hr == VBOX_E_IPRT_ERROR)
+            {
+                /* If webcam backend can't use the device, let it be captured by USB.  */
+                LogRel(("EmulatedUSB: not attached.\n"));
+                fIntercepted = false;
+            }
+            clearError(); /* Make sure that EmulatedUSB errors are cleared. */
+            if (FAILED(hr)) break;
+
+            /* Update the list of USB devices attached to the VM. */
+            ComObjPtr<OUSBDevice> pUSBDevice;
+            pUSBDevice.createObject();
+            hr = pUSBDevice->init(device);
+            if (SUCCEEDED(hr))
+                pUSBDevice->setSerialPrefix(&serialPrefix);
+
+            AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+            if (SUCCEEDED(hr))
+                mUSBDevices.push_back(pUSBDevice);
+
+            /* Remember that this device has been attached with emulated USB. */
+            mEUSBMap[aId] = path;
+        }
+    } while (0);
+
+    *phrEUSB = hr;
+    return fIntercepted;
+}
+
+bool Console::detachEmulatedUSBDevice(HRESULT *phrEUSB, IN_BSTR aId)
+{
+    HRESULT hr = S_OK;
+    bool fFound = false;
+    Utf8Str path;
+
+    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    EmulatedUSBDeviceMap::iterator it = mEUSBMap.find(aId);
+    if (it != mEUSBMap.end())
+    {
+        fFound = true;
+        path = it->second;
+        mEUSBMap.erase(it);
+    }
+    alock.release();
+
+    if (fFound)
+    {
+        hr = getEmulatedUSB()->webcamDetach(path);
+    }
+
+    *phrEUSB = hr;
+    return fFound;
 }
 
 /**
@@ -9933,6 +10139,18 @@ Console::vmm2User_NotifyPdmtTerm(PCVMM2USERMETHODS pThis, PUVM pUVM)
 {
     NOREF(pThis); NOREF(pUVM);
     VirtualBoxBase::uninitializeComForThread();
+}
+
+/**
+ * @interface_method_impl{VMM2USERMETHODS,pfnNotifyResetTurnedIntoPowerOff}
+ */
+/*static*/ DECLCALLBACK(void)
+Console::vmm2User_NotifyResetTurnedIntoPowerOff(PCVMM2USERMETHODS pThis, PUVM pUVM)
+{
+    Console *pConsole = ((MYVMM2USERMETHODS *)pThis)->pConsole;
+    NOREF(pUVM);
+
+    pConsole->mfPowerOffCausedByReset = true;
 }
 
 

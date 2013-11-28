@@ -40,7 +40,7 @@ protected:
 
 private slots:
 
-    /* Console callback handlers: */
+    /* Handler: Console callback stuff: */
     void sltAdditionsStateChanged();
 
 private:
@@ -56,15 +56,14 @@ private:
 
     /* Cleanup routines: */
     //void cleanupConsoleConnections() {}
-    //void cleanupConnections() {}
     //void cleanupFilters() {}
     //void cleanupCommon() {}
 
     /* Private setters: */
     void setGuestAutoresizeEnabled(bool bEnabled);
 
-    /* Private helpers: */
-    void normalizeGeometry(bool /* fAdjustPosition */) {}
+    /* Helpers: Geometry stuff: */
+    void maybeAdjustGuestScreenSize();
     QRect workingArea() const;
     QSize calculateMaxGuestSize() const;
     void maybeRestrictMinimumSize();

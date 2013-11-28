@@ -52,7 +52,7 @@ STDMETHODIMP VBoxQGLFrameBuffer::NotifyUpdate (ULONG aX, ULONG aY,
                              new VBoxRepaintEvent (aX, aY, aW, aH));
 #else
     QRect r(aX, aY, aW, aH);
-    mCmdPipe.postCmd(VBOXVHWA_PIPECMD_PAINT, &r, 0);
+    mCmdPipe.postCmd(VBOXVHWA_PIPECMD_PAINT, &r);
 #endif
     return S_OK;
 }
@@ -117,7 +117,10 @@ void VBoxQGLFrameBuffer::resizeEvent (VBoxResizeEvent *re)
 /* processing the VHWA command, called from the GUI thread */
 void VBoxQGLFrameBuffer::doProcessVHWACommand(QEvent * pEvent)
 {
-    Q_UNUSED(pEvent);
+    VBoxVHWACommandProcessEvent *pVhwaEvent = (VBoxVHWACommandProcessEvent*)pEvent;
+    /* sanity actually */
+    pVhwaEvent->setProcessed();
+
     vboxWidget()->vboxProcessVHWACommands(&mCmdPipe);
 }
 
@@ -133,7 +136,7 @@ STDMETHODIMP VBoxQGLFrameBuffer::ProcessVHWACommand(BYTE *pCommand)
     /* post the command to the GUI thread for processing */
 //    QApplication::postEvent (mView,
 //                             new VBoxVHWACommandProcessEvent (pCmd));
-    mCmdPipe.postCmd(VBOXVHWA_PIPECMD_VHWA, pCmd, 0);
+    mCmdPipe.postCmd(VBOXVHWA_PIPECMD_VHWA, pCmd);
     return S_OK;
 }
 

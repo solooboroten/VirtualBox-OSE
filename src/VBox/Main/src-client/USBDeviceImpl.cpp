@@ -134,6 +134,12 @@ void OUSBDevice::uninit()
     unconst(mData.remote) = FALSE;
 }
 
+void OUSBDevice::setSerialPrefix(const Utf8Str *pSerialPrefix)
+{
+    if (!pSerialPrefix->isEmpty())
+        unconst(mData.serialNumber) = BstrFmt("%s%s", pSerialPrefix->c_str(), Utf8Str(mData.serialNumber).c_str());
+}
+
 // IUSBDevice properties
 /////////////////////////////////////////////////////////////////////////////
 

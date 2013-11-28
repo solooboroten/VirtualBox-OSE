@@ -19,6 +19,7 @@
 
 #include <iprt/req.h>
 #include <iprt/critsect.h>
+#include <iprt/semaphore.h>
 
 #define COUNTERS_INIT
 #include "counters.h"
@@ -246,6 +247,9 @@ typedef struct NATState
 #endif
     uma_zone_t zone_ext_refcnt;
     bool fUseHostResolver;
+    /** Flag whether using the host resolver mode is permanent
+     * because the user configured it that way. */
+    bool fUseHostResolverPermanent;
     /* from dnsproxy/dnsproxy.h*/
     unsigned int authoritative_port;
     unsigned int authoritative_timeout;
@@ -282,6 +286,8 @@ typedef struct NATState
     struct libalias *proxy_alias;
     struct libalias *dns_alias;
     LIST_HEAD(handler_chain, proto_handler) handler_chain;
+    /** R/W semaphore for protecting the handler list. */
+    RTSEMRW hSemRwHandlerChain;
     struct port_forward_rule_list port_forward_rule_head;
     int cRedirectionsActive;
     int cRedirectionsStored;

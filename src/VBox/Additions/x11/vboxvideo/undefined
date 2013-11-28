@@ -25,6 +25,7 @@ chdir
 chmod
 chown
 close
+drmClose
 drmFreeVersion
 drmGetVersion
 fbPictureInit
@@ -117,6 +118,7 @@ unlink
 unsetenv
 utimes
 vfprintf
+__vfprintf_chk
 vgaHWFreeHWRec
 vgaHWGetHWRec
 vgaHWGetIOBase

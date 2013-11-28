@@ -1017,6 +1017,12 @@ void UIKeyboardHandler::darwinGrabKeyboardEvents(bool fGrab)
         ::CGSetLocalEventsSuppressionInterval(0.0);
         ::darwinSetMouseCoalescingEnabled(false);
 
+        /* Bring the caps lock state up to date, otherwise e.g. a later Shift
+         * key press will accidentally inject a CapsLock key press and release,
+         * see UIKeyboardHandler::darwinKeyboardEvent for the code handling
+         * modifier key state changes */
+        m_darwinKeyModifiers ^= (m_darwinKeyModifiers ^ ::GetCurrentEventKeyModifiers()) & alphaLock;
+
         /* Register the event callback/hook and grab the keyboard. */
         UICocoaApplication::instance()->registerForNativeEvents(RT_BIT_32(10) | RT_BIT_32(11) | RT_BIT_32(12) /* NSKeyDown  | NSKeyUp | | NSFlagsChanged */,
                                                                 UIKeyboardHandler::darwinEventHandlerProc, this);
@@ -1197,8 +1203,10 @@ bool UIKeyboardHandler::keyEventHandleNormal(int iKey, uint8_t uScan, int fFlags
         /* Check if the guest has the same view on the modifier keys
          * (NumLock, CapsLock, ScrollLock) as the X server.
          * If not, send KeyPress events to synchronize the state: */
+#if !defined(Q_WS_MAC)
         if (fFlags & KeyPressed)
             fixModifierState(pCodes, puCodesCount);
+#endif
 
         /* Prepend 'extended' scancode if needed: */
         if (fFlags & KeyExtended)

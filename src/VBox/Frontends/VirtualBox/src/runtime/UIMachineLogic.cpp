@@ -24,6 +24,7 @@
 #include <QImageWriter>
 #include <QPainter>
 #include <QTimer>
+#include <QDateTime>
 #ifdef Q_WS_MAC
 # include <QMenuBar>
 #endif /* Q_WS_MAC */
@@ -76,6 +77,9 @@
 #ifdef VBOX_WITH_DEBUGGER_GUI
 # include <iprt/ldr.h>
 #endif /* VBOX_WITH_DEBUGGER_GUI */
+#ifdef Q_WS_MAC
+# include "DarwinKeyboard.h"
+#endif
 
 /* External includes: */
 #ifdef Q_WS_X11
@@ -258,6 +262,13 @@ UIMachineWindow* UIMachineLogic::activeMachineWindow() const
 
     /* Return main machine window: */
     return mainMachineWindow();
+}
+
+/** Adjusts guest screen size for each the machine-window we have. */
+void UIMachineLogic::maybeAdjustGuestScreenSize()
+{
+    foreach(UIMachineWindow *pMachineWindow, machineWindows())
+        pMachineWindow->machineView()->maybeAdjustGuestScreenSize();
 }
 
 #ifdef Q_WS_MAC
@@ -457,6 +468,16 @@ void UIMachineLogic::sltMouseCapabilityChanged()
         pAction->setChecked(false);
 }
 
+void UIMachineLogic::sltKeyboardLedsChanged()
+{
+    /* Here we have to update host LED lock states using values provided by UISession:
+     * [bool] uisession() -> isNumLock(), isCapsLock(), isScrollLock() can be used for that. */
+    LogRelFlow(("UIMachineLogic::sltKeyboardLedsChanged: Updating host LED lock states (NOT IMPLEMENTED).\n"));
+#ifdef Q_WS_MAC
+    DarwinHidDevicesBroadcastLeds(m_pHostLedsState, uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
+#endif
+}
+
 void UIMachineLogic::sltUSBDeviceStateChange(const CUSBDevice &device, bool fIsAttached, const CVirtualBoxErrorInfo &error)
 {
     /* Check if USB device have anything to tell us: */
@@ -500,11 +521,20 @@ void UIMachineLogic::sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong,
         pMachineWindow->handleScreenCountChange();
 }
 
-void UIMachineLogic::sltHostScreenCountChanged(int /*cHostScreenCount*/)
+void UIMachineLogic::sltHostScreenCountChanged()
 {
     /* Deliver event to all machine-windows: */
     foreach (UIMachineWindow *pMachineWindow, machineWindows())
         pMachineWindow->handleScreenCountChange();
+}
+
+void UIMachineLogic::sltHostScreenGeometryChanged()
+{
+    LogRelFlow(("UIMachineLogic: Host-screen geometry changed.\n"));
+
+    /* Deliver event to all machine-windows: */
+    foreach (UIMachineWindow *pMachineWindow, machineWindows())
+        pMachineWindow->handleScreenGeometryChange();
 }
 
 UIMachineLogic::UIMachineLogic(QObject *pParent, UISession *pSession, UIVisualStateType visualStateType)
@@ -529,6 +559,7 @@ UIMachineLogic::UIMachineLogic(QObject *pParent, UISession *pSession, UIVisualSt
     , m_pDockIconPreview(0)
     , m_pDockPreviewSelectMonitorGroup(0)
     , m_DockIconPreviewMonitor(0)
+    , m_pHostLedsState(NULL)
 #endif /* Q_WS_MAC */
 {
 }
@@ -623,6 +654,9 @@ void UIMachineLogic::prepareSessionConnections()
     /* Mouse capability state-change updater: */
     connect(uisession(), SIGNAL(sigMouseCapabilityChange()), this, SLOT(sltMouseCapabilityChanged()));
 
+    /* Keyboard LEDs state-change updater: */
+    connect(uisession(), SIGNAL(sigKeyboardLedsChange()), this, SLOT(sltKeyboardLedsChanged()));
+
     /* USB devices state-change updater: */
     connect(uisession(), SIGNAL(sigUSBDeviceStateChange(const CUSBDevice &, bool, const CVirtualBoxErrorInfo &)),
             this, SLOT(sltUSBDeviceStateChange(const CUSBDevice &, bool, const CVirtualBoxErrorInfo &)));
@@ -640,9 +674,11 @@ void UIMachineLogic::prepareSessionConnections()
     connect(uisession(), SIGNAL(sigGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)),
             this, SLOT(sltGuestMonitorChange(KGuestMonitorChangedEventType, ulong, QRect)));
 
-    /* Host-screen-change updater: */
-    connect(uisession(), SIGNAL(sigHostScreenCountChanged(int)),
-            this, SLOT(sltHostScreenCountChanged(int)));
+    /* Host-screen-change updaters: */
+    connect(uisession(), SIGNAL(sigHostScreenCountChanged()),
+            this, SLOT(sltHostScreenCountChanged()));
+    connect(uisession(), SIGNAL(sigHostScreenGeometryChanged()),
+            this, SLOT(sltHostScreenGeometryChanged()));
 }
 
 void UIMachineLogic::prepareActionGroups()
@@ -940,6 +976,45 @@ void UIMachineLogic::cleanupActionGroups()
 {
 }
 
+bool UIMachineLogic::eventFilter(QObject *pWatched, QEvent *pEvent)
+{
+    /* Handle machine-window events: */
+    if (UIMachineWindow *pMachineWindow = qobject_cast<UIMachineWindow*>(pWatched))
+    {
+        /* Make sure this window still registered: */
+        if (isMachineWindowsCreated() && m_machineWindowsList.contains(pMachineWindow))
+        {
+            switch (pEvent->type())
+            {
+                /* Handle *window activated* event: */
+                case QEvent::WindowActivate:
+                {
+                    /* We should save current lock states as *previous* and
+                     * set current lock states to guest values we have,
+                     * As we have no ipc between threads of different VMs
+                     * we are using 300ms timer as lazy sync timout: */
+                    //QTimer::singleShot(300, this, SLOT(sltSwitchKeyboardLedsToGuestLeds()));
+
+                    /* Trigger callback synchronously for now! */
+                    sltSwitchKeyboardLedsToGuestLeds();
+                    break;
+                }
+                /* Handle *window deactivated* event: */
+                case QEvent::WindowDeactivate:
+                {
+                    /* We should restore lock states to *previous* known: */
+                    sltSwitchKeyboardLedsToPreviousLeds();
+                    break;
+                }
+                /* Default: */
+                default: break;
+            }
+        }
+    }
+    /* Call to base-class: */
+    return QIWithRetranslateUI3<QObject>::eventFilter(pWatched, pEvent);
+}
+
 void UIMachineLogic::sltCheckRequestedModes()
 {
     /* Do not try to enter extended mode if machine was not started yet: */
@@ -992,8 +1067,8 @@ void UIMachineLogic::sltAdjustWindow()
         if (pMachineWindow->isMaximized())
             pMachineWindow->showNormal();
 
-        /* Normalize view's geometry: */
-        pMachineWindow->machineView()->normalizeGeometry(true);
+        /* Normalize window geometry: */
+        pMachineWindow->normalizeGeometry(true /* adjust position */);
     }
 }
 
@@ -1992,6 +2067,48 @@ void UIMachineLogic::sltChangeDockIconUpdate(bool fEnabled)
     }
 }
 #endif /* Q_WS_MAC */
+
+void UIMachineLogic::sltSwitchKeyboardLedsToGuestLeds()
+{
+//    /* Log statement (printf): */
+//    QString strDt = QDateTime::currentDateTime().toString("HH:mm:ss:zzz");
+//    printf("%s: UIMachineLogic: sltSwitchKeyboardLedsToGuestLeds called, machine name is {%s}\n",
+//           strDt.toAscii().constData(),
+//           session().GetMachine().GetName().toAscii().constData());
+
+    /* Here we have to save current host LED lock states in UISession registry.
+     * [void] uisession() -> setHostNumLock(), setHostCapsLock(), setHostScrollLock() can be used for that. */
+
+    /* Here we have to update host LED lock states using values provided by UISession registry.
+     * [bool] uisession() -> isNumLock(), isCapsLock(), isScrollLock() can be used for that. */
+
+    LogRelFlow(("UIMachineLogic::sltSwitchKeyboardLedsToGuestLeds: keep host LED lock states and broadcast guest's ones (NOT IMPLEMENTED).\n"));
+#ifdef Q_WS_MAC
+    if (m_pHostLedsState == NULL)
+        m_pHostLedsState = DarwinHidDevicesKeepLedsState();
+    DarwinHidDevicesBroadcastLeds(m_pHostLedsState, uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
+#endif /* Q_WS_MAC */
+}
+
+void UIMachineLogic::sltSwitchKeyboardLedsToPreviousLeds()
+{
+//    /* Log statement (printf): */
+//    QString strDt = QDateTime::currentDateTime().toString("HH:mm:ss:zzz");
+//    printf("%s: UIMachineLogic: sltSwitchKeyboardLedsToPreviousLeds called, machine name is {%s}\n",
+//           strDt.toAscii().constData(),
+//           session().GetMachine().GetName().toAscii().constData());
+
+    LogRelFlow(("UIMachineLogic::sltSwitchKeyboardLedsToPreviousLeds: restore host LED lock states (NOT IMPLEMENTED).\n"));
+
+    /* Here we have to restore host LED lock states. */
+#ifdef Q_WS_MAC
+    if (m_pHostLedsState)
+    {
+        DarwinHidDevicesApplyAndReleaseLedsState(m_pHostLedsState);
+        m_pHostLedsState = NULL;
+    }
+#endif /* Q_WS_MAC */
+}
 
 int UIMachineLogic::searchMaxSnapshotIndex(const CMachine &machine,
                                            const CSnapshot &snapshot,

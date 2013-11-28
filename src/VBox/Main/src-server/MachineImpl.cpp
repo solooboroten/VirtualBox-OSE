@@ -10179,13 +10179,13 @@ HRESULT Machine::saveStorageDevices(ComObjPtr<StorageController> aStorageControl
         dev.deviceType = pAttach->getType();
         dev.lPort = pAttach->getPort();
         dev.lDevice = pAttach->getDevice();
+        dev.fPassThrough = pAttach->getPassthrough();
         if (pMedium)
         {
             if (pMedium->isHostDrive())
                 dev.strHostDriveSrc = pMedium->getLocationFull();
             else
                 dev.uuid = pMedium->getId();
-            dev.fPassThrough = pAttach->getPassthrough();
             dev.fTempEject = pAttach->getTempEject();
             dev.fNonRotational = pAttach->getNonRotational();
             dev.fDiscard = pAttach->getDiscard();
@@ -10505,10 +10505,15 @@ HRESULT Machine::createImplicitDiffs(IProgress *aProgress,
 
             rc = lockedMediaMap->Unlock();
             AssertComRCThrowRC(rc);
-            alock.release();
-            rc = pMediumLockList->Append(diff, true);
-            alock.acquire();
-            AssertComRCThrowRC(rc);
+
+            /* In the aOnline case the lock is added in #Machine::commitMedia(). */
+            if (!aOnline)
+            {
+                alock.release();
+                rc = pMediumLockList->Append(diff, true);
+                alock.acquire();
+                AssertComRCThrowRC(rc);
+            }
             alock.release();
             rc = lockedMediaMap->Lock();
             alock.acquire();
@@ -11147,11 +11152,21 @@ void Machine::commitMedia(bool aOnline /*= false*/)
                 /* unlock since medium is not used anymore */
                 MediumLockList *pMediumLockList;
                 rc = mData->mSession.mLockedMedia.Get(pAttach, pMediumLockList);
-                AssertComRC(rc);
-                if (pMediumLockList)
+                if (RT_UNLIKELY(rc == VBOX_E_INVALID_OBJECT_STATE))
                 {
-                    rc = mData->mSession.mLockedMedia.Remove(pAttach);
+                    /* this happens for online snapshots, there the attachment
+                     * is changing, but only to a diff image created under
+                     * the old one, so there is no separate lock list */
+                    Assert(!pMediumLockList);
+                }
+                else
+                {
                     AssertComRC(rc);
+                    if (pMediumLockList)
+                    {
+                        rc = mData->mSession.mLockedMedia.Remove(pAttach);
+                        AssertComRC(rc);
+                    }
                 }
             }
         }
@@ -11162,7 +11177,14 @@ void Machine::commitMedia(bool aOnline /*= false*/)
     {
         Assert(aOnline);
         rc = mData->mSession.mLockedMedia.Lock();
-        AssertComRC(rc);
+        if (RT_UNLIKELY(rc == VBOX_E_INVALID_OBJECT_STATE))
+        {
+            /* this happens for online snapshots, there the attachment
+             * is changing, but only to a diff image created under
+             * the old one, so there is no separate lock list */
+        }
+        else
+            AssertComRC(rc);
     }
 
     /* commit the hard disk changes */

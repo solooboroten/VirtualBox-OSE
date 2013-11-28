@@ -1506,6 +1506,8 @@ DECLINLINE(const char *) e1kGetTimerName(E1KSTATE *pState, PTMTIMER pTimer)
         return "Int";
     if (pTimer == pState->CTX_SUFF(pTXDTimer))
         return "TXD";
+    if (pTimer == pState->CTX_SUFF(pLUTimer))
+        return "LinkUp";
     return "unknown";
 }
 
@@ -2470,6 +2472,61 @@ DECLINLINE(void) e1kBringLinkUpDelayed(E1KSTATE* pState)
     e1kArmTimer(pState, pState->CTX_SUFF(pLUTimer), pState->cMsLinkUpDelay * 1000);
 }
 
+#ifdef IN_RING3
+/**
+ * Bring up the link immediately.
+ *
+ * @param   pState       The device state structure.
+ */
+DECLINLINE(void) e1kR3LinkUp(E1KSTATE* pState)
+{
+    E1kLog(("%s Link is up\n", INSTANCE(pState)));
+    STATUS |= STATUS_LU;
+    Phy::setLinkStatus(&pState->phy, true);
+    e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
+    if (pState->pDrvR3)
+        pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, PDMNETWORKLINKSTATE_UP);
+}
+
+/**
+ * Bring down the link immediately.
+ *
+ * @param   pState       The device state structure.
+ */
+DECLINLINE(void) e1kR3LinkDown(E1KSTATE* pState)
+{
+    E1kLog(("%s Link is down\n", INSTANCE(pState)));
+    STATUS &= ~STATUS_LU;
+    Phy::setLinkStatus(&pState->phy, false);
+    e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
+    if (pState->pDrvR3)
+        pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, PDMNETWORKLINKSTATE_DOWN);
+}
+
+/**
+ * Bring down the link temporarily.
+ *
+ * @param   pState       The device state structure.
+ */
+DECLINLINE(void) e1kR3LinkDownTemp(E1KSTATE* pState)
+{
+    E1kLog(("%s Link is down temporarily\n", INSTANCE(pState)));
+    STATUS &= ~STATUS_LU;
+    Phy::setLinkStatus(&pState->phy, false);
+    e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
+    /*
+     * Notifying the associated driver that the link went down (even temporarily)
+     * seems to be the right thing, but it was not done before. This may cause
+     * a regression if the driver does not expect the link to go down as a result
+     * of sending PDMNETWORKLINKSTATE_DOWN_RESUME to this device. Earlier versions
+     * of code notified the driver that the link was up! See @bugref{7057}.
+     */
+    if (pState->pDrvR3)
+        pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, PDMNETWORKLINKSTATE_DOWN);
+    e1kBringLinkUpDelayed(pState);
+}
+#endif /* IN_RING3 */
+
 #if 0 /* unused */
 /**
  * Read handler for Device Status register.
@@ -3230,10 +3287,7 @@ static DECLCALLBACK(void) e1kLinkUpTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, vo
     if (!pState->fCableConnected)
         return;
 
-    E1kLog(("%s e1kLinkUpTimer: Link is up\n", INSTANCE(pState)));
-    STATUS |= STATUS_LU;
-    Phy::setLinkStatus(&pState->phy, true);
-    e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
+    e1kR3LinkUp(pState);
 }
 
 #endif /* IN_RING3 */
@@ -6371,44 +6425,30 @@ static DECLCALLBACK(PDMNETWORKLINKSTATE) e1kGetLinkState(PPDMINETWORKCONFIG pInt
 static DECLCALLBACK(int) e1kSetLinkState(PPDMINETWORKCONFIG pInterface, PDMNETWORKLINKSTATE enmState)
 {
     E1KSTATE *pState = RT_FROM_MEMBER(pInterface, E1KSTATE, INetworkConfig);
-    bool fOldUp = !!(STATUS & STATUS_LU);
-    bool fNewUp = enmState == PDMNETWORKLINKSTATE_UP || enmState == PDMNETWORKLINKSTATE_DOWN_RESUME;
 
-    /* old state was connected but STATUS not yet written by guest */
-    if (   fNewUp != fOldUp
-        || (!fNewUp && pState->fCableConnected)
-        || (pState->fCableConnected && enmState == PDMNETWORKLINKSTATE_DOWN_RESUME))
+    E1kLog(("%s e1kR3SetLinkState: enmState=%d\n", INSTANCE(pState), enmState));
+    switch (enmState)
     {
-        if (fNewUp)
-        {
-            E1kLog(("%s Link will be up in approximately %d secs\n",
-                    INSTANCE(pState), pState->cMsLinkUpDelay / 1000));
+        case PDMNETWORKLINKSTATE_UP:
             pState->fCableConnected = true;
-            STATUS &= ~STATUS_LU;
-            Phy::setLinkStatus(&pState->phy, false);
-            e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
-            /* Restore the link back in 5 seconds (by default). */
-            e1kBringLinkUpDelayed(pState);
-        }
-        else
-        {
-            E1kLog(("%s Link is down\n", INSTANCE(pState)));
+            /* If link was down, bring it up after a while. */
+            if (!(STATUS & STATUS_LU))
+                e1kBringLinkUpDelayed(pState);
+            break;
+        case PDMNETWORKLINKSTATE_DOWN:
             pState->fCableConnected = false;
-            STATUS &= ~STATUS_LU;
-            Phy::setLinkStatus(&pState->phy, false);
-            e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
-        }
-        if (pState->pDrvR3)
-        {
+            /* If link was up, bring it down. */
+            if (STATUS & STATUS_LU)
+                e1kR3LinkDown(pState);
+            break;
+        case PDMNETWORKLINKSTATE_DOWN_RESUME:
             /*
-             * Send a UP link state to the driver below if the network adapter is only
-             * temproarily disconnected due to resume event.
+             * There is not much sense in bringing down the link if it has not come up yet.
+             * If it is up though, we bring it down temporarely, then bring it up again.
              */
-            if (enmState == PDMNETWORKLINKSTATE_DOWN_RESUME)
-                pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, PDMNETWORKLINKSTATE_UP);
-            else
-                pState->pDrvR3->pfnNotifyLinkChanged(pState->pDrvR3, enmState);
-        }
+            if (STATUS & STATUS_LU)
+                e1kR3LinkDownTemp(pState);
+            break;
     }
     return VINF_SUCCESS;
 }
@@ -6725,12 +6765,7 @@ static DECLCALLBACK(int) e1kLoadDone(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
         && !PDMDevHlpVMTeleportedAndNotFullyResumedYet(pDevIns)
         && pState->cMsLinkUpDelay)
     {
-        E1kLog(("%s Link is down temporarily\n", INSTANCE(pState)));
-        STATUS &= ~STATUS_LU;
-        Phy::setLinkStatus(&pState->phy, false);
-        e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
-        /* Restore the link back in five seconds (default). */
-        e1kBringLinkUpDelayed(pState);
+        e1kR3LinkDownTemp(pState);
     }
     return VINF_SUCCESS;
 }
@@ -6834,13 +6869,7 @@ static DECLCALLBACK(int) e1kAttach(PPDMDEVINS pDevIns, unsigned iLUN, uint32_t f
      * network card
      */
     if ((STATUS & STATUS_LU) && RT_SUCCESS(rc))
-    {
-        STATUS &= ~STATUS_LU;
-        Phy::setLinkStatus(&pState->phy, false);
-        e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_LSC);
-        /* Restore the link back in 5 seconds (default). */
-        e1kBringLinkUpDelayed(pState);
-    }
+        e1kR3LinkDownTemp(pState);
 
     PDMCritSectLeave(&pState->cs);
     return rc;

@@ -126,6 +126,9 @@ EXPORTS
     PDMR3ThreadSleep
     PDMR3ThreadSuspend
 
+    PDMR3USBCreateEmulatedDevice
+    PDMR3USBCreateProxyDevice
+
     PGMHandlerPhysicalPageTempOff
     PGMPhysReadGCPtr
     PGMPhysSimpleDirtyWriteGCPtr
@@ -243,5 +246,8 @@ EXPORTS
     TMTimerUnlock
 
     VMMGetSvnRev
+    VMR3ReqCallNoWait
+    VMR3ReqCallWait
+    VMR3SetPowerOffInsteadOfReset
     VMSetError
     VMSetErrorV

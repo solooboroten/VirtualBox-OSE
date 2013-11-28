@@ -701,6 +701,14 @@
         <source>Drag&apos;n&apos;Drop</source>
         <translation>Drag&apos;n&apos;Drop</translation>
     </message>
+    <message>
+        <source>Save the virtual machine state</source>
+        <translation>Sichert den Zustand der virtuellen Maschine</translation>
+    </message>
+    <message>
+        <source>Power off the virtual machine</source>
+        <translation>Schaltet die virtuelle Maschine aus</translation>
+    </message>
 </context>
 <context>
     <name>UIApplianceEditorWidget</name>
@@ -5751,7 +5759,7 @@
     <name>UIWizardImportApp</name>
     <message>
         <source>Import Virtual Applicance</source>
-        <translation>Appliance importieren</translation>
+        <translation type="obsolete">Appliance importieren</translation>
     </message>
     <message>
         <source>Restore Defaults</source>
@@ -5788,6 +5796,10 @@
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>Dies sind die in der Appliance beschriebenen virtuellen Maschinen mit den entsprechenden Abbildungen für den Import in VirtualBox. Sie können Änderungen an vielen dieser Einstellungen mittels Doppelklick bzw. duch Auswahl der entsprechenden Checkbox ändern.</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation>Appliance importieren</translation>
     </message>
 </context>
 <context>

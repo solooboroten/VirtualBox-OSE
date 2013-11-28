@@ -68,10 +68,10 @@
 #    define DRM_RHEL61
 #   endif
 #   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(6, 3)
-#    define DRM_RHEL63
+#    define DRM_FOPS_AS_POINTER
 #   endif
 #   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(6, 4)
-#    define DRM_RHEL64
+#    define DRM_NO_RECLAIM_BUFFERS
 #   endif
 #  endif
 # endif
@@ -82,10 +82,20 @@
 # ifndef RHEL_RELEASE_CODE
 #  if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 39) && LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0)
 #   if defined(DRM_MODE_OBJECT_PLANE) && defined(DRM_IOCTL_MODE_ADDFB2)
-#    define DRM_DEBIAN_34ON32
+#    define DRM_FOPS_AS_POINTER
 #   endif
 #  endif
 # endif
+
+#ifdef CONFIG_SUSE_KERNEL
+/* This is to cover the SLES 11 SP3 kernel back-ports. */
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,61)
+#  if LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)
+#    define DRM_FOPS_AS_POINTER
+#    define DRM_NO_RECLAIM_BUFFERS
+#  endif
+# endif
+#endif
 
 static struct pci_device_id pciidlist[] = {
         vboxvideo_PCI_IDS
@@ -101,7 +111,7 @@ int vboxvideo_driver_load(struct drm_device * dev, unsigned long flags)
     return 0;
 #endif
 }
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0) || defined(DRM_RHEL63) || defined(DRM_DEBIAN_34ON32)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0) || defined(DRM_FOPS_AS_POINTER)
 /* since linux-3.3.0-rc1 drm_driver::fops is pointer */
 static struct file_operations driver_fops =
 {
@@ -111,7 +121,6 @@ static struct file_operations driver_fops =
         .unlocked_ioctl = drm_ioctl,
         .mmap = drm_mmap,
         .poll = drm_poll,
-        .fasync = drm_fasync,
 };
 #endif
 
@@ -119,7 +128,7 @@ static struct drm_driver driver =
 {
     /* .driver_features = DRIVER_USE_MTRR, */
     .load = vboxvideo_driver_load,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0) && !defined(DRM_RHEL64)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0) && !defined(DRM_NO_RECLAIM_BUFFERS)
     .reclaim_buffers = drm_core_reclaim_buffers,
 #endif
     /* As of Linux 2.6.37, always the internal functions are used. */
@@ -127,7 +136,7 @@ static struct drm_driver driver =
     .get_map_ofs = drm_core_get_map_ofs,
     .get_reg_ofs = drm_core_get_reg_ofs,
 #endif
-# if LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0) && !defined(DRM_RHEL63) && !defined(DRM_DEBIAN_34ON32)
+# if LINUX_VERSION_CODE < KERNEL_VERSION(3, 3, 0) && !defined(DRM_FOPS_AS_POINTER)
     .fops =
     {
         .owner = THIS_MODULE,
@@ -142,12 +151,11 @@ static struct drm_driver driver =
 #endif
         .mmap = drm_mmap,
         .poll = drm_poll,
-        .fasync = drm_fasync,
     },
-#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0) || defined(DRM_RHEL63) || defined(DRM_DEBIAN_34ON32) */
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 3, 0) || defined(DRM_FOPS_AS_POINTER) */
     .fops = &driver_fops,
 #endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39) && !defined(DRM_RHEL61)
+#ifndef DRIVER_BUS_PCI
     .pci_driver =
     {
         .name = DRIVER_NAME,
@@ -162,7 +170,7 @@ static struct drm_driver driver =
     .patchlevel = DRIVER_PATCHLEVEL,
 };
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39) || defined(DRM_RHEL61)
+#ifdef DRIVER_BUS_PCI
 static struct pci_driver pci_driver =
 {
     .name = DRIVER_NAME,
@@ -172,7 +180,7 @@ static struct pci_driver pci_driver =
 
 static int __init vboxvideo_init(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39) && !defined(DRM_RHEL61)
+#ifndef DRIVER_BUS_PCI
     return drm_init(&driver);
 #else
     return drm_pci_init(&driver, &pci_driver);
@@ -181,7 +189,7 @@ static int __init vboxvideo_init(void)
 
 static void __exit vboxvideo_exit(void)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 39) && !defined(DRM_RHEL61)
+#ifndef DRIVER_BUS_PCI
     drm_exit(&driver);
 #else
     drm_pci_exit(&driver, &pci_driver);

@@ -196,7 +196,7 @@ VBOX_VERSION_MINOR = 2
 # This is the current build number. It should be increased every time we publish a
 # new build. The define is available in every source file. Only even build numbers
 # will be published, odd numbers are set during development.
-VBOX_VERSION_BUILD = 18
+VBOX_VERSION_BUILD = 20
 # The raw version string. This *must not* contain any other information/fields than
 # major, minor and build revision (as it is now) -- also will be used for host/guest version
 # comparison.
@@ -450,6 +450,9 @@ ifdef VBOX_WITH_EHCI
 endif
 ifdef VBOX_WITH_PCI_PASSTHROUGH
  VBOX_WITH_PCI_PASSTHROUGH_IMPL = 1
+endif
+ifndef VBOX_WITHOUT_HOSTWEBCAM
+ VBOX_WITH_USB_VIDEO_IMPL = 1
 endif
 # Enable the hal/sysfs USB code on Linux.
 ifeq ($(KBUILD_TARGET),linux)
@@ -1006,6 +1009,7 @@ endif
 ifdef VBOX_OSE
  VBOX_WITH_VRDP=
  VBOX_WITH_EHCI_IMPL=
+ VBOX_WITH_USB_VIDEO_IMPL=
  VBOX_WITH_EXTPACK_PUEL=
  VBOX_WITH_EXTPACK_PUEL_BUILD=
  VBOX_WITH_PCI_PASSTHROUGH_IMPL=
@@ -1925,6 +1929,10 @@ ifeq ($(KBUILD_TARGET),darwin)
   TOOL_GXX4MACHO_PREFIX := $(VBOX_PATH_MACOSX_DEVEL_ROOT)/usr/bin/$(TOOL_GXX4MACHO_PREFIX)
   TOOL_GCC4MACHO_SUFFIX := $(TOOL_GCC4MACHO_SUFFIX) -isysroot $(VBOX_PATH_MACOSX_SDK)
   TOOL_GXX4MACHO_SUFFIX := $(TOOL_GXX4MACHO_SUFFIX) -isysroot $(VBOX_PATH_MACOSX_SDK)
+  ifndef SVN  # must expand first so we won't be using old svn.
+   SVN := $(firstword $(which svn) svn)
+  endif
+  export PATH:=$(VBOX_PATH_MACOSX_DEVEL_ROOT)/usr/bin/:$(PATH)
  endif
  ## @todo WTF do we do the -m32/64 stuff here for these compilers? Also the visibility should be elsewhere...
  TOOL_GXX4MACHO_OBJC   = $(TOOL_GCC4MACHO_PREFIX)gcc$(TOOL_GCC4MACHO_SUFFIX) $(if-expr $(KBUILD_TARGET_ARCH) == "x86",-m32,-m64) -fvisibility=hidden
@@ -2721,7 +2729,8 @@ if1of ($(KBUILD_TARGET), linux)
  ifneq ($(VBOX_LINUX_SRC),)
   ifeq ($(origin VBOX_LINUX_INCS),undefined)
    export VBOX_LINUX_INCS := $(VBOX_LINUX_SRC)/include
-   # XXX hack alert! support split Linux kernels (make O=<build directory>)
+   # XXX hack alert! Support split Linux kernels (make O=<build directory>). kernelpath points to
+   #                 the obj directory while VBOX_LINUX_SRC points to the virgin source directory.
    # XXX put this crap elsewhere
    kernelpath := $(shell $(SED_EXT) -ne 's+^KERNELSRC.*= *\(.*\)+\1+p' $(VBOX_LINUX_SRC)/Makefile)
    ifeq ($(kernelpath),)
@@ -2746,18 +2755,18 @@ if1of ($(KBUILD_TARGET), linux)
                        $(kernelpath)/arch/x86/include \
                        $(kernelpath)/arch/x86/include/asm/mach-default \
                        $(kernelpath)/arch/x86/include/uapi \
-                       $(kernelpath)/arch/x86/include/generated \
-                       $(kernelpath)/arch/x86/include/generated/uapi \
+                       $(VBOX_LINUX_SRC)/arch/x86/include/generated \
+                       $(VBOX_LINUX_SRC)/arch/x86/include/generated/uapi \
                        $(kernelpath)/include/uapi \
-                       $(kernelpath)/include/generated/uapi \
+                       $(VBOX_LINUX_SRC)/include/generated/uapi \
                        $(kernelpath)/include
   endif
  endif
  # Since Linux 2.6.15, <linux/autoconf.h> is included like this. It cannot hurt to do the
  # same for older Linux kernels
- ifneq ($(wildcard $(VBOX_LINUX_SRC)/include/linux/kconfig.h),)
+ ifneq ($(wildcard $(kernelpath)/include/linux/kconfig.h),)
   # Linux >= 3.1
-  export VBOX_LINUX_INCLUDE := -include $(VBOX_LINUX_SRC)/include/linux/kconfig.h
+  export VBOX_LINUX_INCLUDE := -include $(kernelpath)/include/linux/kconfig.h
  else ifneq ($(wildcard $(VBOX_LINUX_SRC)/include/generated/autoconf.h),)
   # Linux >= 2.6.33
   export VBOX_LINUX_INCLUDE := -include $(VBOX_LINUX_SRC)/include/generated/autoconf.h
@@ -5208,7 +5217,7 @@ endif
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 88780 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 90983 $  )
  VBOX_SVN_DEP          := $(wildcard $(PATH_ROOT)/.svn/entries)
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

@@ -755,7 +755,7 @@
     </message>
     <message>
         <source>Power off the virtual machine</source>
-        <translation type="obsolete">Ukončí činnost virtuálního počítače</translation>
+        <translation type="unfinished">Ukončí činnost virtuálního počítače</translation>
     </message>
     <message>
         <source>&amp;Contents...</source>
@@ -955,6 +955,10 @@
     </message>
     <message>
         <source>Drag&apos;n&apos;Drop</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save the virtual machine state</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -9649,7 +9653,7 @@ krok a připojit pevné disky později použitím dialogu Nastavení VM.&lt;/p&g
     <name>UIWizardImportApp</name>
     <message>
         <source>Import Virtual Applicance</source>
-        <translation>Import virtuální appliance</translation>
+        <translation type="obsolete">Import virtuální appliance</translation>
     </message>
     <message>
         <source>Restore Defaults</source>
@@ -9686,6 +9690,10 @@ krok a připojit pevné disky později použitím dialogu Nastavení VM.&lt;/p&g
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>Zde jsou virtuální počítače s doporučeným mapováním pro import do VirtualBoxu. Většinu těchto vlastností můžete změnit poklepáním na položku a zakázat jiné pomocí zaškrtávácích tlačítek níže.</translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

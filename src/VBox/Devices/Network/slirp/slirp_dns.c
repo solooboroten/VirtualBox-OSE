@@ -233,6 +233,7 @@ static int get_dns_addr_domain(PNATState pData, const char **ppszDomain)
             && rc != VERR_EOF)
     {
         struct dns_entry *pDns = NULL;
+
         if (   cNameserversFound == 4
             && !fWarnTooManyDnsServers
             && sscanf(buff, "nameserver%*[ \t]%255s", buff2) == 1)
@@ -318,7 +319,8 @@ int slirpInitializeDnsSettings(PNATState pData)
     int rc = VINF_SUCCESS;
     AssertPtrReturn(pData, VERR_INVALID_PARAMETER);
     LogFlowFuncEnter();
-    if (!pData->fUseHostResolver)
+
+    if (!pData->fUseHostResolverPermanent)
     {
         TAILQ_INIT(&pData->pDnsList);
         LIST_INIT(&pData->pDomainList);
@@ -327,9 +329,20 @@ int slirpInitializeDnsSettings(PNATState pData)
          * so we should other way to configure DNS settings.
          */
         if (get_dns_addr_domain(pData, NULL) < 0)
-            pData->fUseHostResolver = 1;
+        {
+            /* Load the DNS handler if host resolver mode was not used before. */
+            if (!pData->fUseHostResolver)
+                dns_alias_load(pData);
+            pData->fUseHostResolver = true;
+        }
         else
+        {
+            /* Unload to not intercept in the future. */
+            if (pData->fUseHostResolver)
+                dns_alias_unload(pData);
+            pData->fUseHostResolver = false;
             dnsproxy_init(pData);
+        }
 
         if (!pData->fUseHostResolver)
         {

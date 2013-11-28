@@ -31,6 +31,7 @@
 #include "UIActionPoolRuntime.h"
 #include "UIMachineLogicFullscreen.h"
 #include "UIMachineWindowFullscreen.h"
+#include "UIMachineView.h"
 #include "UIMachineDefs.h"
 #include "VBoxMiniToolBar.h"
 
@@ -165,6 +166,8 @@ void UIMachineWindowFullscreen::placeOnScreen()
     move(workingArea.topLeft());
     /* Resize to the appropriate size: */
     resize(workingArea.size());
+    /* Adjust guest screen size if necessary: */
+    machineView()->maybeAdjustGuestScreenSize();
     /* Process pending move & resize events: */
     qApp->processEvents();
 }

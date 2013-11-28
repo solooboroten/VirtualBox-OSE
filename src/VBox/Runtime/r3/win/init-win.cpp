@@ -220,6 +220,7 @@ DECLHIDDEN(int) rtR3InitNativeObtrusiveWorker(void)
             rc = VERR_INTERNAL_ERROR_3;
     }
 
+#if 1
     /** @bugref 6861: Observed GUI issues on Vista (32-bit and 64-bit). */
     if (g_enmWinVer > kRTWinOSType_VISTA)
     {
@@ -234,6 +235,7 @@ DECLHIDDEN(int) rtR3InitNativeObtrusiveWorker(void)
                 rc = VERR_INTERNAL_ERROR_4;
         }
     }
+#endif
 
     return rc;
 }

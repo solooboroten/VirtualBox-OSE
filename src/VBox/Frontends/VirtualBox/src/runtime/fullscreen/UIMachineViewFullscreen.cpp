@@ -64,12 +64,8 @@ void UIMachineViewFullscreen::sltAdditionsStateChanged()
 {
     /* Check if we should restrict minimum size: */
     maybeRestrictMinimumSize();
-
-    /* Check if we should resize guest to fullscreen */
-    if ((int)frameBuffer()->width() != workingArea().size().width() ||
-        (int)frameBuffer()->height() != workingArea().size().height())
-        if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
-            sltPerformGuestResize(workingArea().size());
+    /* Adjust guest to fullscreen: */
+    maybeAdjustGuestScreenSize();
 }
 
 bool UIMachineViewFullscreen::event(QEvent *pEvent)
@@ -100,6 +96,9 @@ bool UIMachineViewFullscreen::eventFilter(QObject *pWatched, QEvent *pEvent)
                 if (pResizeEvent->size() != workingArea().size())
                     break;
 
+                /* Recalculate max guest size: */
+                setMaxGuestSize();
+                /* And resize guest to that size: */
                 if (m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
                     QTimer::singleShot(0, this, SLOT(sltPerformGuestResize()));
                 break;
@@ -154,6 +153,22 @@ void UIMachineViewFullscreen::setGuestAutoresizeEnabled(bool fEnabled)
         if (uisession()->isGuestSupportsGraphics())
             sltPerformGuestResize();
     }
+}
+
+/** Adjusts guest screen size to correspond current <i>working area</i> size. */
+void UIMachineViewFullscreen::maybeAdjustGuestScreenSize()
+{
+    /* Check if we should adjust guest to new size: */
+    if (frameBuffer()->isAutoEnabled() ||
+        (int)frameBuffer()->width() != workingArea().size().width() ||
+        (int)frameBuffer()->height() != workingArea().size().height())
+        if (m_bIsGuestAutoresizeEnabled &&
+            uisession()->isGuestSupportsGraphics() &&
+            uisession()->isScreenVisible(screenId()))
+        {
+            frameBuffer()->setAutoEnabled(false);
+            sltPerformGuestResize(workingArea().size());
+        }
 }
 
 QRect UIMachineViewFullscreen::workingArea() const

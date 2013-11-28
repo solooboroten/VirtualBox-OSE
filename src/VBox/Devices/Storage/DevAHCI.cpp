@@ -2990,7 +2990,8 @@ static int ahciIdentifySS(PAHCIPort pAhciPort, void *pvBuf)
     p[68] = RT_H2LE_U16(120); /* minimum PIO cycle time with IORDY flow control */
     if (   pAhciPort->pDrvBlock->pfnDiscard
         || ( pAhciPort->fAsyncInterface
-            && pAhciPort->pDrvBlockAsync->pfnStartDiscard))
+            && pAhciPort->pDrvBlockAsync->pfnStartDiscard)
+        || pAhciPort->fNonRotational)
     {
         p[80] = RT_H2LE_U16(0x1f0); /* support everything up to ATA/ATAPI-8 ACS */
         p[81] = RT_H2LE_U16(0x28); /* conforms to ATA/ATAPI-8 ACS */
@@ -3804,7 +3805,7 @@ static int atapiReadTOCRawSS(PAHCIREQ pAhciReq, PAHCIPort pAhciPort, size_t cbDa
 /**
  * Sets the given media track type.
  */
-static uint32_t ataMediumTypeSet(PAHCIPort pAhciPort, uint32_t MediaTrackType)
+static uint32_t ahciMediumTypeSet(PAHCIPort pAhciPort, uint32_t MediaTrackType)
 {
     return ASMAtomicXchgU32(&pAhciPort->MediaTrackType, MediaTrackType);
 }
@@ -4002,7 +4003,7 @@ static int atapiPassthroughSS(PAHCIREQ pAhciReq, PAHCIPort pAhciPort, size_t cbD
                     else
                         NewMediaType = ATA_MEDIA_TYPE_CDDA;
 
-                    OldMediaType = ataMediumTypeSet(pAhciPort, NewMediaType);
+                    OldMediaType = ahciMediumTypeSet(pAhciPort, NewMediaType);
 
                     if (OldMediaType != NewMediaType)
                         LogRel(("AHCI: LUN#%d: CD-ROM passthrough, detected %s CD\n",
@@ -4012,7 +4013,7 @@ static int atapiPassthroughSS(PAHCIREQ pAhciReq, PAHCIPort pAhciPort, size_t cbD
                                 : "audio"));
                 }
                 else /* Play safe and set to unknown. */
-                    ataMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
+                    ahciMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
             }
 
             if (cbTransfer)
@@ -7211,7 +7212,7 @@ static DECLCALLBACK(void) ahciMountNotify(PPDMIMOUNTNOTIFY pInterface)
         if (pAhciPort->cNotifiedMediaChange < 2)
             pAhciPort->cNotifiedMediaChange = 2;
         ahciMediumInserted(pAhciPort);
-        ataMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
+        ahciMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
     }
     else
         AssertMsgFailed(("Hard disks don't have a mount interface!\n"));
@@ -7238,7 +7239,7 @@ static DECLCALLBACK(void) ahciUnmountNotify(PPDMIMOUNTNOTIFY pInterface)
          */
         pAhciPort->cNotifiedMediaChange = 4;
         ahciMediumRemoved(pAhciPort);
-        ataMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
+        ahciMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
     }
     else
         AssertMsgFailed(("Hard disks don't have a mount interface!\n"));
@@ -7634,7 +7635,15 @@ static DECLCALLBACK(int)  ahciR3Attach(PPDMDEVINS pDevIns, unsigned iLUN, uint32
      */
     rc = PDMDevHlpDriverAttach(pDevIns, pAhciPort->iLUN, &pAhciPort->IBase, &pAhciPort->pDrvBase, NULL);
     if (RT_SUCCESS(rc))
+    {
         rc = ahciR3ConfigureLUN(pDevIns, pAhciPort);
+
+        /*
+         * In case there is a medium inserted.
+         */
+        ahciMediumInserted(pAhciPort);
+        ahciMediumTypeSet(pAhciPort, ATA_MEDIA_TYPE_UNKNOWN);
+    }
     else
         AssertMsgFailed(("Failed to attach LUN#%d. rc=%Rrc\n", pAhciPort->iLUN, rc));
 

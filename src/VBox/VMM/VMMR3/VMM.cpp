@@ -1230,7 +1230,9 @@ VMMR3_INT_DECL(int) VMMR3RawRunGC(PVM pVM, PVMCPU pVCpu)
             EMR3FatalError(pVCpu, VERR_VMM_HYPER_CR3_MISMATCH);
         PGMMapCheck(pVM);
 # ifdef VBOX_WITH_SAFE_STR
+#  ifdef VBOX_WITH_RAW_MODE
         SELMR3CheckShadowTR(pVM);
+#  endif
 # endif
 #endif
         int rc;

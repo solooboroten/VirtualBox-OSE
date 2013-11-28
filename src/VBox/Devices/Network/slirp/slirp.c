@@ -303,8 +303,16 @@ int slirp_init(PNATState *ppData, uint32_t u32NetAddr, uint32_t u32Netmask,
         return VERR_NO_MEMORY;
     pData->fPassDomain = !fUseHostResolver ? fPassDomain : false;
     pData->fUseHostResolver = fUseHostResolver;
+    pData->fUseHostResolverPermanent = fUseHostResolver;
     pData->pvUser = pvUser;
     pData->netmask = u32Netmask;
+
+    rc = RTSemRWCreate(&pData->hSemRwHandlerChain);
+    if (RT_FAILURE(rc))
+    {
+        RTMemFree(pData);
+        return rc;
+    }
 
     /* sockets & TCP defaults */
     pData->socket_rcv = 64 * _1K;
@@ -547,6 +555,7 @@ void slirp_term(PNATState pData)
          "\n"));
 #endif
 #endif
+    RTSemRWDestroy(pData->hSemRwHandlerChain);
     RTMemFree(pData);
 }
 

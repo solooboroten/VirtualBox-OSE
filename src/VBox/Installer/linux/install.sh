@@ -392,7 +392,7 @@ if [ "$ACTION" = "install" ]; then
     addrunlevel vboxweb-service 25 75 # This may produce useful output
 
     # Create users group
-    groupadd $GROUPNAME 2> /dev/null
+    groupadd -r -f $GROUPNAME 2> /dev/null
 
     # Create symlinks to start binaries
     ln -sf $INSTALLATION_DIR/VBox.sh /usr/bin/VirtualBox

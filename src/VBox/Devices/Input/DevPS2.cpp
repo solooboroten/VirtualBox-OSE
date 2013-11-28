@@ -1344,6 +1344,18 @@ static DECLCALLBACK(int) kbdLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
 }
 
 /**
+ * @callback_method_impl{FNSSMDEVLOADDONE, Key state fix-up after loading
+ */
+static DECLCALLBACK(int) kbdLoadDone(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
+{
+    KBDState    *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
+    int rc;
+
+    rc = PS2KLoadDone(&pThis->Kbd, pSSM);
+    return rc;
+}
+
+/**
  * Reset notification.
  *
  * @returns VBox status.
@@ -1617,7 +1629,10 @@ static DECLCALLBACK(int) kbdConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNO
         if (RT_FAILURE(rc))
             return rc;
     }
-    rc = PDMDevHlpSSMRegister(pDevIns, PCKBD_SAVED_STATE_VERSION, sizeof(*pThis), kbdSaveExec, kbdLoadExec);
+    rc = PDMDevHlpSSMRegisterEx(pDevIns, PCKBD_SAVED_STATE_VERSION, sizeof(*pThis), NULL,
+                                NULL, NULL, NULL,
+                                NULL, kbdSaveExec, NULL,
+                                NULL, kbdLoadExec, kbdLoadDone);
     if (RT_FAILURE(rc))
         return rc;
 

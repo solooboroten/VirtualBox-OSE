@@ -88,6 +88,16 @@ bool UIMachineLogicSeamless::checkAvailability()
     return true;
 }
 
+/** Adjusts guest screen count/size for the machine-logic we have. */
+void UIMachineLogicSeamless::maybeAdjustGuestScreenSize()
+{
+    /* We should rebuild screen-layout: */
+    m_pScreenLayout->rebuild();
+    /* We should update machine-windows sizes: */
+    foreach (UIMachineWindow *pMachineWindow, machineWindows())
+        pMachineWindow->handleScreenGeometryChange();
+}
+
 int UIMachineLogicSeamless::hostScreenForGuestScreen(int iScreenId) const
 {
     return m_pScreenLayout->hostScreenForGuestScreen(iScreenId);
@@ -98,9 +108,31 @@ bool UIMachineLogicSeamless::hasHostScreenForGuestScreen(int iScreenId) const
     return m_pScreenLayout->hasHostScreenForGuestScreen(iScreenId);
 }
 
+void UIMachineLogicSeamless::sltMachineStateChanged()
+{
+    /* Call to base-class: */
+    UIMachineLogic::sltMachineStateChanged();
+
+    /* If machine-state changed from 'paused' to 'running': */
+    if (uisession()->isRunning() && uisession()->wasPaused())
+    {
+        LogRelFlow(("UIMachineLogicSeamless: "
+                    "Machine-state changed from 'paused' to 'running': "
+                    "Updating screen-layout...\n"));
+
+        /* Make sure further code will be called just once: */
+        uisession()->forgetPreviousMachineState();
+        /* We should rebuild screen-layout: */
+        m_pScreenLayout->rebuild();
+        /* We should update machine-windows sizes: */
+        foreach (UIMachineWindow *pMachineWindow, machineWindows())
+            pMachineWindow->handleScreenGeometryChange();
+    }
+}
+
 void UIMachineLogicSeamless::sltGuestMonitorChange(KGuestMonitorChangedEventType changeType, ulong uScreenId, QRect screenGeo)
 {
-    LogRelFlow(("UIMachineLogicSeamless::GuestScreenCountChanged.\n"));
+    LogRelFlow(("UIMachineLogicSeamless: Guest-screen count changed.\n"));
 
     /* Update multi-screen layout before any window update: */
     if (changeType == KGuestMonitorChangedEventType_Enabled ||
@@ -111,15 +143,15 @@ void UIMachineLogicSeamless::sltGuestMonitorChange(KGuestMonitorChangedEventType
     UIMachineLogic::sltGuestMonitorChange(changeType, uScreenId, screenGeo);
 }
 
-void UIMachineLogicSeamless::sltHostScreenCountChanged(int cScreenCount)
+void UIMachineLogicSeamless::sltHostScreenCountChanged()
 {
-    LogRelFlow(("UIMachineLogicSeamless::HostScreenCountChanged.\n"));
+    LogRelFlow(("UIMachineLogicSeamless: Host-screen count changed.\n"));
 
     /* Update multi-screen layout before any window update: */
     m_pScreenLayout->rebuild();
 
     /* Call to base-class: */
-    UIMachineLogic::sltHostScreenCountChanged(cScreenCount);
+    UIMachineLogic::sltHostScreenCountChanged();
 }
 
 void UIMachineLogicSeamless::prepareActionGroups()

@@ -32,6 +32,7 @@ class OUSBDevice;
 class RemoteUSBDevice;
 class SharedFolder;
 class VRDEServerInfo;
+class EmulatedUSB;
 class AudioSniffer;
 class Nvram;
 #ifdef VBOX_WITH_USB_VIDEO
@@ -206,6 +207,7 @@ public:
     HRESULT onUSBDeviceDetach(IN_BSTR aId, IVirtualBoxErrorInfo *aError);
     HRESULT onBandwidthGroupChange(IBandwidthGroup *aBandwidthGroup);
     HRESULT onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOOL aRemove, BOOL aSilent);
+    HRESULT onExtraDataChange(IN_BSTR aMachineId, IN_BSTR aKey, IN_BSTR aVal);
     HRESULT getGuestProperty(IN_BSTR aKey, BSTR *aValue, LONG64 *aTimestamp, BSTR *aFlags);
     HRESULT setGuestProperty(IN_BSTR aKey, IN_BSTR aValue, IN_BSTR aFlags);
     HRESULT enumerateGuestProperties(IN_BSTR aPatterns,
@@ -230,7 +232,11 @@ public:
 #endif
 #ifdef VBOX_WITH_USB_VIDEO
     EmWebcam *getEmWebcam() { return mEmWebcam; }
+    EmulatedUSB *getEmulatedUSB() { return mEmulatedUSB; }
 #endif
+    HRESULT isEmulatedUSBDevice(IHostUSBDevice *aDevice, bool *pfEmulated);
+    bool attachEmulatedUSBDevice(HRESULT *phrEUSB, IN_BSTR aId);
+    bool detachEmulatedUSBDevice(HRESULT *phrEUSB, IN_BSTR aId);
 
     int VRDPClientLogon(uint32_t u32ClientId, const char *pszUser, const char *pszPassword, const char *pszDomain);
     void VRDPClientStatusChange(uint32_t u32ClientId, const char *pszStatus);
@@ -597,7 +603,6 @@ private:
 
     static DECLCALLBACK(int) configGuestProperties(void *pvConsole, PVM pVM);
     static DECLCALLBACK(int) configGuestControl(void *pvConsole);
-    void vmstateChangePowerOff(bool fCalledFromReset /* = false */);
     static DECLCALLBACK(void) vmstateChangeCallback(PVM aVM, VMSTATE aState,
                                                     VMSTATE aOldState, void *aUser);
     static DECLCALLBACK(int) unplugCpu(Console *pThis, PVM pVM, unsigned uCpu);
@@ -666,6 +671,7 @@ private:
     static DECLCALLBACK(void)   vmm2User_NotifyEmtTerm(PCVMM2USERMETHODS pThis, PUVM pUVM, PUVMCPU pUVCpu);
     static DECLCALLBACK(void)   vmm2User_NotifyPdmtInit(PCVMM2USERMETHODS pThis, PUVM pUVM);
     static DECLCALLBACK(void)   vmm2User_NotifyPdmtTerm(PCVMM2USERMETHODS pThis, PUVM pUVM);
+    static DECLCALLBACK(void)   vmm2User_NotifyResetTurnedIntoPowerOff(PCVMM2USERMETHODS pThis, PUVM pUVM);
 
     static DECLCALLBACK(void *) drvStatus_QueryInterface(PPDMIBASE pInterface, const char *pszIID);
     static DECLCALLBACK(void)   drvStatus_UnitChanged(PPDMILEDCONNECTORS pInterface, unsigned iLUN);
@@ -768,6 +774,8 @@ private:
     bool mfSnapshotFolderExt4WarningShown : 1;
     /** true if we already listed the disk type of the snapshot folder. */
     bool mfSnapshotFolderDiskTypeShown : 1;
+    /** true if the VM power off was caused by reset. */
+    bool mfPowerOffCausedByReset : 1;
 
     /** Pointer to the VMM -> User (that's us) callbacks. */
     struct MYVMM2USERMETHODS : public VMM2USERMETHODS
@@ -788,7 +796,10 @@ private:
     Nvram   * const mNvram;
 #ifdef VBOX_WITH_USB_VIDEO
     EmWebcam * const mEmWebcam;
+    EmulatedUSB *mEmulatedUSB;
 #endif
+    typedef std::map<Bstr, Utf8Str> EmulatedUSBDeviceMap;
+    EmulatedUSBDeviceMap mEUSBMap;
 #ifdef VBOX_WITH_USB_CARDREADER
     UsbCardReader * const mUsbCardReader;
 #endif

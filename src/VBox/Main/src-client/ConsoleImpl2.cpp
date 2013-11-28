@@ -1014,6 +1014,11 @@ int Console::configConstructorInner(PVM pVM, AutoWriteLock *pAlock)
 #endif
 
 
+        /* Reset overwrite. */
+        if (isResetTurnedIntoPowerOff())
+            InsertConfigInteger(pRoot, "PowerOffInsteadOfReset", 1);
+
+
         /*
          * Block cache settings.
          */

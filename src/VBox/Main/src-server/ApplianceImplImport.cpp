@@ -1895,6 +1895,7 @@ void Appliance::importOneDiskImage(const ovf::DiskImage &di,
            )
             strSrcFormat = "VMDK";
         srcFormat = pSysProps->mediumFormat(strSrcFormat);
+
         if (srcFormat.isNull())
             throw setError(VBOX_E_NOT_SUPPORTED,
                            tr("Could not find a valid medium format for the source disk '%s'"),
@@ -2400,10 +2401,17 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
             if (FAILED(rc)) throw rc;
             stack.fSessionOpen = true;
 
+            /* get VM name from virtual system description. Only one record is possible (size of list is equal 1). */
+            std::list<VirtualSystemDescriptionEntry*> vmName = vsdescThis->findByType(VirtualSystemDescriptionType_Name);
+            std::list<VirtualSystemDescriptionEntry*>::iterator vmNameIt = vmName.begin();
+            VirtualSystemDescriptionEntry* vmNameEntry = *vmNameIt;
+
             ovf::DiskImagesMap::const_iterator oit = stack.mapDisks.begin();
             std::set<RTCString>  disksResolvedNames;
 
-            while(oit != stack.mapDisks.end())
+            uint32_t cImportedDisks = 0;
+
+            while(oit != stack.mapDisks.end() && cImportedDisks != avsdeHDs.size())
             {
                 if (RTPathHaveExt(oit->second.strHref.c_str()))
                 {
@@ -2445,9 +2453,13 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                         }
                     }
                     if (!vsdeTargetHD)
-                        throw setError(E_FAIL,
-                                       tr("Internal inconsistency looking up disk image '%s'"),
-                                       diCurrent.strHref.c_str());
+                    {
+                        /* possible case if a disk image belongs to other virtual system (OVF package with multiple VMs inside) */
+                        LogWarning(("OVA/OVF import: Disk image %s was missed during import of VM %s\n",
+                                    oit->first.c_str(), vmNameEntry->strOvf.c_str()));
+                        ++oit;
+                        continue;
+                    }
 
                     //diCurrent.strDiskId contains the disk identifier (e.g. "vmdisk1"), which should exist
                     //in the virtual system's disks map under that ID and also in the global images map
@@ -2512,7 +2524,9 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                                 if (itDiskImage == stack.mapDisks.end())
                                 {
                                     throw setError(E_FAIL,
-                                                   tr("Internal inconsistency looking up disk image '%s'"),
+                                                   tr("Internal inconsistency looking up disk image '%s'. "
+                                                      "Check compliance OVA package structure and file names "
+                                                      "references in the section <References> in the OVF file."),
                                                    availableImage.c_str());
                                 }
 
@@ -2540,9 +2554,15 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                                     }
                                 }
                                 if (!vsdeTargetHD)
+                                {
+                                    /*
+                                     * in this case it's an error because something wrong with OVF description file.
+                                     * May be VB imports OVA package with wrong file sequence inside the archive.
+                                     */
                                     throw setError(E_FAIL,
                                                    tr("Internal inconsistency looking up disk image '%s'"),
                                                    diCurrent.strHref.c_str());
+                                }
 
                                 itVDisk = vsysThis.mapVirtualDisks.find(diCurrent.strDiskId);
                                 if (itVDisk == vsysThis.mapVirtualDisks.end())
@@ -2609,7 +2629,19 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
 
                 rc = sMachine->SaveSettings();
                 if (FAILED(rc)) throw rc;
+
+                ++cImportedDisks;
+
             } // end while(oit != stack.mapDisks.end())
+
+            /*
+             * quantity of the imported disks isn't equal to the size of the avsdeHDs list.
+             */
+            if(cImportedDisks < avsdeHDs.size())
+            {
+                LogWarning(("Not all disk images were imported for VM %s. Check OVF description file.",
+                            vmNameEntry->strOvf.c_str()));
+            }
 
             // only now that we're done with all disks, close the session
             rc = stack.pSession->UnlockMachine();
@@ -2817,6 +2849,11 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
      *
      */
 
+    /* get VM name from virtual system description. Only one record is possible (size of list is equal 1). */
+    std::list<VirtualSystemDescriptionEntry*> vmName = vsdescThis->findByType(VirtualSystemDescriptionType_Name);
+    std::list<VirtualSystemDescriptionEntry*>::iterator vmNameIt = vmName.begin();
+    VirtualSystemDescriptionEntry* vmNameEntry = *vmNameIt;
+
     /* Get all hard disk descriptions. */
     std::list<VirtualSystemDescriptionEntry*> avsdeHDs = vsdescThis->findByType(VirtualSystemDescriptionType_HardDiskImage);
     std::list<VirtualSystemDescriptionEntry*>::iterator avsdeHDsIt = avsdeHDs.begin();
@@ -2828,7 +2865,9 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
     ovf::DiskImagesMap::const_iterator oit = stack.mapDisks.begin();
     std::set<RTCString>  disksResolvedNames;
 
-    while(oit != stack.mapDisks.end())
+    uint32_t cImportedDisks = 0;
+
+    while(oit != stack.mapDisks.end() && cImportedDisks != avsdeHDs.size())
     {
         ovf::DiskImage diCurrent = oit->second;
 
@@ -2851,9 +2890,13 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
                 }
             }
             if (!vsdeTargetHD)
-                throw setError(E_FAIL,
-                               tr("Internal inconsistency looking up disk image '%s'"),
-                               oit->first.c_str());
+            {
+                /* possible case if a disk image belongs to other virtual system (OVF package with multiple VMs inside) */
+                LogWarning(("OVA/OVF import: Disk image %s was missed during import of VM %s\n", 
+                            oit->first.c_str(), vmNameEntry->strOvf.c_str()));
+                ++oit;
+                continue;
+            }
         }
 
         /*
@@ -2904,7 +2947,9 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
                     if (itDiskImage == stack.mapDisks.end())
                     {
                         throw setError(E_FAIL,
-                                       tr("Internal inconsistency looking up disk image '%s'"),
+                                       tr("Internal inconsistency looking up disk image '%s'. "
+                                          "Check compliance OVA package structure and file names "
+                                          "references in the section <References> in the OVF file."),
                                        availableImage.c_str());
                     }
 
@@ -2927,6 +2972,10 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
                         }
                     }
                     if (!vsdeTargetHD)
+                        /* 
+                         * in this case it's an error because something wrong with OVF description file.
+                         * May be VB imports OVA package with wrong file sequence inside the archive.
+                         */
                         throw setError(E_FAIL,
                                        tr("Internal inconsistency looking up disk image '%s'"),
                                        diCurrent.strHref.c_str());
@@ -3030,13 +3079,24 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
         // no disk with such a UUID found:
         if (!fFound)
             throw setError(E_FAIL,
-                           tr("<vbox:Machine> element in OVF contains a medium attachment for the disk image %s but the OVF describes no such image"),
+                           tr("<vbox:Machine> element in OVF contains a medium attachment for the disk image %s "
+                              "but the OVF describes no such image"),
                            strUuid.c_str());
+
+        ++cImportedDisks;
+
     }// while(oit != stack.mapDisks.end())
     /*
-     *
+     * quantity of the imported disks isn't equal to the size of the avsdeHDs list.
+     */
+    if(cImportedDisks < avsdeHDs.size())
+    {
+        LogWarning(("Not all disk images were imported for VM %s. Check OVF description file.",
+                    vmNameEntry->strOvf.c_str()));
+    }
+
+    /*
      * step 4): create the machine and have it import the config
-     *
      */
 
     ComObjPtr<Machine> pNewMachine;

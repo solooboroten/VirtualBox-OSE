@@ -132,6 +132,10 @@ public:
 
     void setDeleted(bool fIsDeleted) { m_fIsDeleted = fIsDeleted; }
 
+    /* API: Auto-enabled stuff: */
+    bool isAutoEnabled() const;
+    void setAutoEnabled(bool fIsAutoEnabled);
+
     NS_DECL_ISUPPORTS
 
 #if defined (Q_OS_WIN32)
@@ -251,6 +255,7 @@ protected:
     QSize m_scaledSize;
     int64_t m_WinId;
     bool m_fIsDeleted;
+    bool m_fIsAutoEnabled;
 
 #if defined (Q_OS_WIN32)
 private:

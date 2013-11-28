@@ -562,6 +562,11 @@ void UIMachineWindow::handleScreenCountChange()
     showInNecessaryMode();
 }
 
+void UIMachineWindow::handleScreenGeometryChange()
+{
+    showInNecessaryMode();
+}
+
 void UIMachineWindow::updateAppearanceOf(int iElement)
 {
     /* Update window title: */

@@ -66,6 +66,7 @@ public:
 
     // public methods only for internal purposes
     const Guid &id() const { return mData.id; }
+    void setSerialPrefix(const Utf8Str *pSerialPrefix);
 
 private:
 
