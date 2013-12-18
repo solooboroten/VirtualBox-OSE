@@ -1,6 +1,105 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-  <sect1> 
+  <sect1>
+    <title>Version 4.3.6 (2013-12-18)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: fixed a Guru Meditation <emphasis>VINF_EM_TRIPLE_FAULT</emphasis>
+          caused by VMCB caching with nested paging on certain AMD CPUs (bug #12451)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a Guru Meditation <emphasis>VERR_VMX_UNEXPECTED_INTERRUPTION_EXIT_TYPE</emphasis>
+          while intercepting debug exceptions (VT-x only; bug #12410)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a Guru Meditation <emphasis>VERR_SVM_UNEXPECTED_EXIT</emphasis>
+          while intercepting debug register accesses (AMD-V only; bug #12481)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed a <emphasis>VERR_SSM_STRUCTURE_MAGIC</emphasis> error when trying
+          to load a saved state made with VBox 4.3.4 when VT-x/AMD-V is disabled. Unfortunately,
+          VBox 4.3.4 produced broken saved states for this configuration so you have to discard
+          these states (bug #12414)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: added a few more MSRs to the whitelist required by certain guests
+          (bug #12245)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed deleting of inaccessible VMs (4.3 regression, bug
+          #12205)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed warnings in VM settings / number of guest processors
+          (bug #12480)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: don't automatically enable 64-bit guests on 64-bit hosts if
+          VT-x/AMD-V is not available (bug #12424)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: always expose the DMI memory information to Windows 2012 guests
+          (bug #12017)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: fixed occasional crashes on guest display resolution change
+          (bug #7063)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: fixed reporting back temporary name when calling
+          <emphasis>IGuestSession::DirectoryCreateTemp()</emphasis> (bug #12498)</para>
+      </listitem>
+
+      <listitem>
+        <para>API: fix for a hang when launching a GUI VM through the API, which crashes
+          due to GUI unavailability</para>
+      </listitem>
+
+      <listitem>
+        <para>Storage: fix for <emphasis>BLKCACHE_IOERR</emphasis> runtime errors under
+          rare circumstances (bug #11030)</para>
+      </listitem>
+
+      <listitem>
+        <para>Network: allow to start more than 5 PCNet instances (bug #12426)</para>
+      </listitem>
+
+      <listitem>
+        <para>E1000: if the cable was disconnected before the guest initialized
+          the device, the link status was not properly set to 'down' after the
+          initialization completed despite the fact that there was no connection</para>
+      </listitem>
+
+      <listitem>
+        <para>3D support: fixed offset of guest 3D image elements (Mac OS X Retina
+          hosts only; bug #11021)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: fixed accessing the host driver from non-global zones
+          (4.3 regression, bug #12271)</para>
+      </listitem>
+
+    </itemizedlist>
+
+  </sect1>
+
+  <sect1>
     <title>Version 4.3.4 (2013-11-29)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or

@@ -965,27 +965,33 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
         /*
          * Hardware virtualization extensions.
          */
+        BOOL fSupportsHwVirtEx;
+        hrc = host->GetProcessorFeature(ProcessorFeature_HWVirtEx, &fSupportsHwVirtEx);     H();
+
         BOOL fIsGuest64Bit;
         hrc = pMachine->GetCPUProperty(CPUPropertyType_LongMode, &fIsGuest64Bit);           H();
-        BOOL fSupportsLongMode;
-        hrc = host->GetProcessorFeature(ProcessorFeature_LongMode, &fSupportsLongMode);     H();
-        if (!fSupportsLongMode && fIsGuest64Bit)
+        if (fIsGuest64Bit)
         {
-            LogRel(("WARNING! 64-bit guest type selected but the host CPU does NOT support 64-bit.\n"));
-            fIsGuest64Bit = FALSE;
+            BOOL fSupportsLongMode;
+            hrc = host->GetProcessorFeature(ProcessorFeature_LongMode, &fSupportsLongMode); H();
+            if (!fSupportsLongMode)
+            {
+                LogRel(("WARNING! 64-bit guest type selected but the host CPU does NOT support 64-bit.\n"));
+                fIsGuest64Bit = FALSE;
+            }
+            if (!fSupportsHwVirtEx)
+            {
+                LogRel(("WARNING! 64-bit guest type selected but the host CPU does NOT support HW virtualization.\n"));
+                fIsGuest64Bit = FALSE;
+            }
         }
 
         BOOL fHMEnabled;
-        hrc = pMachine->GetHWVirtExProperty(HWVirtExPropertyType_Enabled, &fHMEnabled); H();
+        hrc = pMachine->GetHWVirtExProperty(HWVirtExPropertyType_Enabled, &fHMEnabled);     H();
         if (cCpus > 1 && !fHMEnabled)
         {
             LogRel(("Forced fHMEnabled to TRUE by SMP guest.\n"));
             fHMEnabled = TRUE;
-        }
-        if (!fHMEnabled && fIsGuest64Bit)
-        {
-            LogRel(("WARNING! 64-bit guest type selected on host without hardware virtualization (VT-x or AMD-V).\n"));
-            fIsGuest64Bit = FALSE;
         }
 
         BOOL fHMForced;
@@ -1164,7 +1170,7 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
 
             hrc = bwGroups[i]->COMGETTER(Name)(strName.asOutParam());                       H();
             hrc = bwGroups[i]->COMGETTER(Type)(&enmType);                                   H();
-            hrc = bwGroups[i]->COMGETTER(MaxBytesPerSec)(&cMaxBytesPerSec);                       H();
+            hrc = bwGroups[i]->COMGETTER(MaxBytesPerSec)(&cMaxBytesPerSec);                 H();
 
             if (enmType == BandwidthGroupType_Disk)
             {
@@ -1352,7 +1358,7 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
 
         Mouse *pMouse = mMouse;
         PointingHIDType_T aPointingHID;
-        hrc = pMachine->COMGETTER(PointingHIDType)(&aPointingHID);          H();
+        hrc = pMachine->COMGETTER(PointingHIDType)(&aPointingHID);                          H();
         InsertConfigNode(pInst,    "LUN#1", &pLunL0);
         InsertConfigString(pLunL0, "Driver",               "MouseQueue");
         InsertConfigNode(pLunL0,   "Config", &pCfg);
@@ -1506,6 +1512,11 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
                 }
                 InsertConfigString(pBiosCfg, szParamName, pszBootDevice);
             }
+
+            /** @todo @bugref{7145}: We might want to enable this by default for new VMs. For now,
+             *        this is required for Windows 2012 guests. */
+            if (osTypeId == "Windows2012_64")
+                InsertConfigInteger(pBiosCfg, "DmiExposeMemoryTable", 1); /* boolean */
         }
         else
         {

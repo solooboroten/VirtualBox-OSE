@@ -1117,6 +1117,8 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
         case MSR_P4_LASTBRANCH_1:
         case MSR_P4_LASTBRANCH_2:
         case MSR_P4_LASTBRANCH_3:
+        case 0x2c:                          /* accessed by some Intel driver but also read on
+                                               AMD systems */
             *puValue = 0;
             break;
 
@@ -1140,6 +1142,7 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
         case MSR_PKG_CST_CONFIG_CONTROL:    /* Nahalem, Sandy Bridge */
         case MSR_CORE_THREAD_COUNT:         /* Apple queries this. */
         case MSR_FLEX_RATIO:                /* Apple queries this. */
+        case 0x1ad:                         /* MSR_TURBO_POWER_CURRENT_LIMIT */
             *puValue = 0;
             if (CPUMGetGuestCpuVendor(pVCpu->CTX_SUFF(pVM)) != CPUMCPUVENDOR_INTEL)
             {
@@ -1206,6 +1209,7 @@ static int cpumQueryGuestMsrInt(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
         case 0xc001102a:                /* quick fix for w2k8 + opposition. */
         case 0xc0011004:                /* quick fix for the opposition. */
         case 0xc0011005:                /* quick fix for the opposition. */
+        case 0xc0011023:                /* quick fix for the opposition. */
         case MSR_K7_EVNTSEL0:           /* quick fix for the opposition. */
         case MSR_K7_EVNTSEL1:           /* quick fix for the opposition. */
         case MSR_K7_EVNTSEL2:           /* quick fix for the opposition. */
@@ -2796,9 +2800,11 @@ VMMDECL(bool) CPUMIsGuestInLongMode(PVMCPU pVCpu)
  */
 VMMDECL(bool) CPUMIsGuestInPAEMode(PVMCPU pVCpu)
 {
+    /* Intel mentions EFER.LMA and EFER.LME in different parts of their spec. We shall use EFER.LMA rather
+       than EFER.LME as it reflects if the CPU has entered paging with EFER.LME set.  */
     return (pVCpu->cpum.s.Guest.cr4 & X86_CR4_PAE)
         && (pVCpu->cpum.s.Guest.cr0 & X86_CR0_PG)
-        && !(pVCpu->cpum.s.Guest.msrEFER & MSR_K6_EFER_LME);
+        && !(pVCpu->cpum.s.Guest.msrEFER & MSR_K6_EFER_LMA);
 }
 
 

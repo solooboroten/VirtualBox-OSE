@@ -137,11 +137,6 @@ typedef struct PATMPATCHRECSSM
     PATCHINFOSSM     patch;
 } PATMPATCHRECSSM, *PPATMPATCHRECSSM;
 
-/*******************************************************************************
-*   Defined Constants And Macros                                               *
-*******************************************************************************/
-#define PATM_SUBTRACT_PTR(a, b) *(uintptr_t *)&(a) = (uintptr_t)(a) - (uintptr_t)(b)
-#define PATM_ADD_PTR(a, b)      *(uintptr_t *)&(a) = (uintptr_t)(a) + (uintptr_t)(b)
 
 /*******************************************************************************
 *   Internal Functions                                                         *
@@ -554,9 +549,16 @@ static DECLCALLBACK(int) patmSaveFixupRecords(PAVLPVNODECORE pNode, void *pVM1)
     RELOCREC            rec  = *(PRELOCREC)pNode;
     RTRCPTR            *pFixup = (RTRCPTR *)rec.pRelocPos;
 
+    /* Convert pointer to an offset into patch memory.  May not be applicable
+       to all fixup types, thus the UINT32_MAX. */
     Assert(rec.pRelocPos);
-    /* Convert pointer to an offset into patch memory. */
-    PATM_SUBTRACT_PTR(rec.pRelocPos, pVM->patm.s.pPatchMemHC);
+    uintptr_t offRelocPos = (uintptr_t)rec.pRelocPos - (uintptr_t)pVM->patm.s.pPatchMemHC;
+    if (offRelocPos > pVM->patm.s.cbPatchMem)
+        offRelocPos = UINT32_MAX;
+    rec.pRelocPos = (uint8_t *)offRelocPos;
+
+    /* Zero rec.Core.Key since it's unused and may trigger SSM check due to the hack below. */
+    rec.Core.Key = 0;
 
     if (rec.uType == FIXUP_ABSOLUTE)
     {
@@ -719,7 +721,8 @@ static DECLCALLBACK(int) patmSavePatchState(PAVLOU32NODECORE pNode, void *pVM1)
     RTAvlPVDoWithAll(&pPatch->patch.FixupTree, true, patmCountLeafPV, &nrFixupRecs);
     AssertMsg(nrFixupRecs == pPatch->patch.nrFixups, ("Fixup inconsistency! counted %d vs %d\n", nrFixupRecs, pPatch->patch.nrFixups));
 #endif
-    RTAvlPVDoWithAll(&pPatch->patch.FixupTree, true, patmSaveFixupRecords, pVM);
+    rc = RTAvlPVDoWithAll(&pPatch->patch.FixupTree, true, patmSaveFixupRecords, pVM);
+    AssertRCReturn(rc, rc);
 
 #ifdef VBOX_STRICT
     uint32_t nrLookupRecords = 0;
@@ -727,7 +730,9 @@ static DECLCALLBACK(int) patmSavePatchState(PAVLOU32NODECORE pNode, void *pVM1)
     Assert(nrLookupRecords == pPatch->patch.nrPatch2GuestRecs);
 #endif
 
-    RTAvlU32DoWithAll(&pPatch->patch.Patch2GuestAddrTree, true, patmSaveP2GLookupRecords, pVM);
+    rc = RTAvlU32DoWithAll(&pPatch->patch.Patch2GuestAddrTree, true, patmSaveP2GLookupRecords, pVM);
+    AssertRCReturn(rc, rc);
+
     return VINF_SUCCESS;
 }
 
@@ -984,7 +989,10 @@ DECLCALLBACK(int) patmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32
                 /* rec.pRelocPos now contains the relative position inside the hypervisor area. */
                 offset = (int32_t)(intptr_t)rec.pRelocPos;
                 /* Convert to HC pointer again. */
-                PATM_ADD_PTR(rec.pRelocPos, pVM->patm.s.pPatchMemHC);
+                if ((uintptr_t)rec.pRelocPos < pVM->patm.s.cbPatchMem)
+                    rec.pRelocPos = pVM->patm.s.pPatchMemHC + (uintptr_t)rec.pRelocPos;
+                else
+                    rec.pRelocPos = NULL;
                 pFixup = (RTRCPTR *)rec.pRelocPos;
 
                 if (pPatchRec->patch.uState != PATCH_REFUSED)

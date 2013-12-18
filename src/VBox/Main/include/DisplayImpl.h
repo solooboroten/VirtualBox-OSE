@@ -84,8 +84,8 @@ typedef struct _DISPLAYFBINFO
         void *pvVRAM;
         uint32_t bpp;
         uint32_t cbLine;
-        int w;
-        int h;
+        uint32_t w;
+        uint32_t h;
         uint16_t flags;
     } pendingResize;
 
@@ -142,7 +142,7 @@ public:
     int  registerSSM(PUVM pUVM);
 
     // public methods only for internal purposes
-    int  handleDisplayResize(unsigned uScreenId, uint32_t bpp, void *pvVRAM, uint32_t cbLine, int w, int h, uint16_t flags);
+    int  handleDisplayResize(unsigned uScreenId, uint32_t bpp, void *pvVRAM, uint32_t cbLine, uint32_t w, uint32_t h, uint16_t flags);
     void handleDisplayUpdateLegacy(int x, int y, int cx, int cy);
     void handleDisplayUpdate(unsigned uScreenId, int x, int y, int w, int h);
 #ifdef VBOX_WITH_VIDEOHWACCEL
@@ -202,7 +202,7 @@ public:
 
 private:
 
-    void updateDisplayData(void);
+    int updateDisplayData(void);
 
 #ifdef VBOX_WITH_CRHGSMI
     void setupCrHgsmiData(void);
@@ -265,8 +265,8 @@ private:
     void       *mLastAddress;
     uint32_t    mLastBytesPerLine;
     uint32_t    mLastBitsPerPixel;
-    int         mLastWidth;
-    int         mLastHeight;
+    uint32_t    mLastWidth;
+    uint32_t    mLastHeight;
     uint16_t    mLastFlags;
 
     VBVAMEMORY *mpVbvaMemory;
