@@ -2654,7 +2654,7 @@ void VBoxGlobal::retranslateUi()
     mMachineStates [KMachineState_Paused] =     tr ("Paused", "MachineState");
     mMachineStates [KMachineState_Stuck] =      tr ("Guru Meditation", "MachineState");
     mMachineStates [KMachineState_Teleporting] = tr ("Teleporting", "MachineState");
-    mMachineStates [KMachineState_LiveSnapshotting] = tr ("Live Snapshotting", "MachineState");
+    mMachineStates [KMachineState_LiveSnapshotting] = tr ("Taking Live Snapshot", "MachineState");
     mMachineStates [KMachineState_Starting] =   tr ("Starting", "MachineState");
     mMachineStates [KMachineState_Stopping] =   tr ("Stopping", "MachineState");
     mMachineStates [KMachineState_Saving] =     tr ("Saving", "MachineState");
@@ -2752,7 +2752,7 @@ void VBoxGlobal::retranslateUi()
         tr ("Intel PRO/1000 MT Server (82545EM)", "NetworkAdapterType");
 #ifdef VBOX_WITH_VIRTIO
     mNetworkAdapterTypes [KNetworkAdapterType_Virtio] =
-        tr ("Virtio Network Adapter (Linux guests only)", "NetworkAdapterType");
+        tr ("Paravirtualized Network (virtio-net)", "NetworkAdapterType");
 #endif /* VBOX_WITH_VIRTIO */
 
     mNetworkAttachmentTypes [KNetworkAttachmentType_Null] =
@@ -3684,6 +3684,16 @@ quint64 VBoxGlobal::requiredVideoMemory (CMachine *aMachine)
     quint64 needMBytes = needBits % (8 * _1M) ? needBits / (8 * _1M) + 1 :
                          needBits / (8 * _1M) /* convert to megabytes */;
 
+    if (aMachine && !aMachine->isNull())
+    {
+       QString typeId = aMachine->GetOSTypeId();
+       if (typeId.startsWith("Windows"))
+       {
+           /* Windows guests need offscreen VRAM too for graphics acceleration features. */
+           needMBytes *= 2;
+       }
+    }
+
     return needMBytes * _1M;
 }
 
@@ -3972,6 +3982,7 @@ bool VBoxGlobal::activateWindow (WId aWId, bool aSwitchDesktop /* = true */)
 
 #else
 
+    NOREF (aWId);
     NOREF (aSwitchDesktop);
     AssertFailed();
     result = false;
@@ -4927,7 +4938,7 @@ void VBoxUSBMenu::processAboutToShow()
     bool isUSBEmpty = host.GetUSBDevices().size() == 0;
     if (isUSBEmpty)
     {
-        QAction *action = addAction (tr ("<no available devices>", "USB devices"));
+        QAction *action = addAction (tr ("<no devices available>", "USB devices"));
         action->setEnabled (false);
         action->setToolTip (tr ("No supported devices connected to the host PC",
                                 "USB device tooltip"));

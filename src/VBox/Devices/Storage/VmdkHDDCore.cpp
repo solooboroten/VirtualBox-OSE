@@ -1682,16 +1682,17 @@ static int vmdkDescExtInsert(PVMDKIMAGE pImage, PVMDKDESCRIPTOR pDescriptor,
         RTStrPrintf(szExt, sizeof(szExt), "%s %llu %s ", apszAccess[enmAccess],
                     cNominalSectors, apszType[enmType]);
     }
+    else if (enmType == VMDKETYPE_FLAT)
+    {
+        RTStrPrintf(szExt, sizeof(szExt), "%s %llu %s \"%s\" %llu",
+                    apszAccess[enmAccess], cNominalSectors,
+                    apszType[enmType], pszBasename, uSectorOffset);
+    }
     else
     {
-        if (!uSectorOffset)
-            RTStrPrintf(szExt, sizeof(szExt), "%s %llu %s \"%s\"",
-                        apszAccess[enmAccess], cNominalSectors,
-                        apszType[enmType], pszBasename);
-        else
-            RTStrPrintf(szExt, sizeof(szExt), "%s %llu %s \"%s\" %llu",
-                        apszAccess[enmAccess], cNominalSectors,
-                        apszType[enmType], pszBasename, uSectorOffset);
+        RTStrPrintf(szExt, sizeof(szExt), "%s %llu %s \"%s\"",
+                    apszAccess[enmAccess], cNominalSectors,
+                    apszType[enmType], pszBasename);
     }
     cbDiff = strlen(szExt) + 1;
 
@@ -2074,7 +2075,7 @@ static int vmdkParseDescriptor(PVMDKIMAGE pImage, char *pDescData,
         return vmdkError(pImage, VERR_VD_VMDK_UNSUPPORTED_VERSION, RT_SRC_POS, N_("VMDK: unsupported format version in descriptor in '%s'"), pImage->pszFilename);
 
     /* Get image creation type and determine image flags. */
-    const char *pszCreateType;
+    const char *pszCreateType = NULL;   /* initialized to make gcc shut up */
     rc = vmdkDescBaseGetStr(pImage, &pImage->Descriptor, "createType",
                             &pszCreateType);
     if (RT_FAILURE(rc))

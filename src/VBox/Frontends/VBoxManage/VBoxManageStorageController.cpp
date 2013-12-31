@@ -59,7 +59,7 @@ static const RTGETOPTDEF g_aStorageAttachOptions[] =
 
 int handleStorageAttach(HandlerArg *a)
 {
-    int c;
+    int c = VERR_INTERNAL_ERROR;        /* initialized to shut up gcc */
     HRESULT rc = S_OK;
     ULONG port   = ~0U;
     ULONG device = ~0U;
@@ -184,17 +184,21 @@ int handleStorageAttach(HandlerArg *a)
         fRunTime = true;
     }
 
-    if (   fRunTime
-        && (   !RTStrICmp(pszMedium, "none")
-            || !RTStrICmp(pszType, "hdd")))
+    if (fRunTime && !RTStrICmp(pszType, "hdd"))
     {
-        errorArgument("DVD/HardDisk Drives can't be changed while the VM is still running\n");
+        errorArgument("Hard disk drives cannot be changed while the VM is running\n");
+        goto leave;
+    }
+
+    if (fRunTime && !RTStrICmp(pszMedium, "none"))
+    {
+        errorArgument("Drives cannot be removed while the VM is running\n");
         goto leave;
     }
 
     if (fRunTime && pszPassThrough)
     {
-        errorArgument("Drive passthrough state can't be changed while the VM is still running\n");
+        errorArgument("Drive passthrough state can't be changed while the VM is running\n");
         goto leave;
     }
 

@@ -222,6 +222,11 @@ public:
         setError (E_FAIL, tr("Could not load the external authentication library '%s' (%Rrc)"), filename, rc);
     }
 
+    static HRESULT handleUnexpectedExceptions(RT_SRC_POS_DECL);
+
+    static const char *convertControllerTypeToDev(StorageControllerType_T enmCtrlType);
+    static HRESULT convertBusPortDeviceToLun(StorageBus_T enmBus, LONG port, LONG device, unsigned &uLun);
+
     // for VirtualBoxSupportErrorInfoImpl
     static const wchar_t *getComponentName() { return L"Console"; }
 
@@ -442,8 +447,6 @@ private:
                                           bool fHostDrive, const char *pszPath,
                                           const char *pszFormat, bool fPassthrough,
                                           bool fForce);
-    const char *controllerTypeToDev(StorageControllerType_T enmCtrlType);
-    HRESULT convertBusPortDeviceToLun(StorageBus_T enmBus, LONG port, LONG device, unsigned &uLun);
     HRESULT doMediumChange(IMediumAttachment *aMediumAttachment, bool fForce);
 
 #ifdef VBOX_DYNAMIC_NET_ATTACH
@@ -503,13 +506,13 @@ private:
     static DECLCALLBACK(int)    loadStateFileExec (PSSMHANDLE pSSM, void *pvUser, uint32_t uVersion, uint32_t uPass);
 
 #ifdef VBOX_WITH_GUEST_PROPS
-    static DECLCALLBACK(int)    doGuestPropNotification (void *pvExtension, uint32_t,
-                                                         void *pvParms, uint32_t cbParms);
-    HRESULT doEnumerateGuestProperties (CBSTR aPatterns,
-                                        ComSafeArrayOut(BSTR, aNames),
-                                        ComSafeArrayOut(BSTR, aValues),
-                                        ComSafeArrayOut(ULONG64, aTimestamps),
-                                        ComSafeArrayOut(BSTR, aFlags));
+    static DECLCALLBACK(int)    doGuestPropNotification(void *pvExtension, uint32_t, void *pvParms, uint32_t cbParms);
+    HRESULT                     doMoveGuestPropertiesOnPowerOff(bool fSaving);
+    HRESULT                     doEnumerateGuestProperties(CBSTR aPatterns,
+                                                           ComSafeArrayOut(BSTR, aNames),
+                                                           ComSafeArrayOut(BSTR, aValues),
+                                                           ComSafeArrayOut(ULONG64, aTimestamps),
+                                                           ComSafeArrayOut(BSTR, aFlags));
 
     bool enabledGuestPropertiesVRDP (void);
     void updateGuestPropertiesVRDPLogon (uint32_t u32ClientId, const char *pszUser, const char *pszDomain);

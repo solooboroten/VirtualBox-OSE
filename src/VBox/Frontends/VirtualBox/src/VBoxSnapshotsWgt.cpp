@@ -40,38 +40,59 @@ class SnapshotWgtItem : public QTreeWidgetItem
 {
 public:
 
+    enum { ItemType = QTreeWidgetItem::UserType + 1 };
+
     /* Normal snapshot item (child of tree-widget) */
     SnapshotWgtItem (QTreeWidget *aTreeWidget, const CSnapshot &aSnapshot)
-        : QTreeWidgetItem (aTreeWidget)
+        : QTreeWidgetItem (aTreeWidget, ItemType)
+        , mIsCurrentState (false)
         , mSnapshot (aSnapshot)
     {
-        recache();
     }
 
     /* Normal snapshot item (child of tree-widget-item) */
     SnapshotWgtItem (QTreeWidgetItem *aRootItem, const CSnapshot &aSnapshot)
-        : QTreeWidgetItem (aRootItem)
+        : QTreeWidgetItem (aRootItem, ItemType)
+        , mIsCurrentState (false)
         , mSnapshot (aSnapshot)
     {
-        recache();
     }
 
     /* Current state item (child of tree-widget) */
     SnapshotWgtItem (QTreeWidget *aTreeWidget, const CMachine &aMachine)
-        : QTreeWidgetItem (aTreeWidget)
+        : QTreeWidgetItem (aTreeWidget, ItemType)
+        , mIsCurrentState (true)
         , mMachine (aMachine)
     {
         updateCurrentState (mMachine.GetState());
-        recache();
     }
 
     /* Current state item (child of tree-widget-item) */
     SnapshotWgtItem (QTreeWidgetItem *aRootItem, const CMachine &aMachine)
-        : QTreeWidgetItem (aRootItem)
+        : QTreeWidgetItem (aRootItem, ItemType)
+        , mIsCurrentState (true)
         , mMachine (aMachine)
     {
         updateCurrentState (mMachine.GetState());
-        recache();
+    }
+
+    QVariant data (int aColumn, int aRole) const
+    {
+        switch (aRole)
+        {
+            case Qt::DisplayRole:
+                return mIsCurrentState ? QTreeWidgetItem::data (aColumn, aRole) : QVariant (QString ("%1%2")
+                                         .arg (QTreeWidgetItem::data (aColumn, Qt::DisplayRole).toString())
+                                         .arg (QTreeWidgetItem::data (aColumn, Qt::UserRole).toString()));
+            default:
+                break;
+        }
+        return QTreeWidgetItem::data (aColumn, aRole);
+    }
+
+    QString text (int aColumn) const
+    {
+        return QTreeWidgetItem::data (aColumn, Qt::DisplayRole).toString();
     }
 
     bool isCurrentStateItem() const
@@ -104,7 +125,7 @@ public:
     void setItalic (bool aItalic)
     {
         QFont myFont = font (0);
-        myFont.setBold (aItalic);
+        myFont.setItalic (aItalic);
         setFont (0, myFont);
         adjustText();
     }
@@ -114,17 +135,7 @@ public:
 
     void recache()
     {
-        if (!mSnapshot.isNull())
-        {
-            mId = mSnapshot.GetId();
-            setText (0, mSnapshot.GetName());
-            mOnline = mSnapshot.GetOnline();
-            setIcon (0, vboxGlobal().snapshotIcon (mOnline));
-            mDesc = mSnapshot.GetDescription();
-            mTimestamp.setTime_t (mSnapshot.GetTimeStamp() / 1000);
-            mCurStateModified = false;
-        }
-        else
+        if (mIsCurrentState)
         {
             Assert (!mMachine.isNull());
             mCurStateModified = mMachine.GetCurrentStateModified();
@@ -136,6 +147,17 @@ public:
                     parent() != 0 ?
                     VBoxSnapshotsWgt::tr ("The current state is identical to the state stored in the current snapshot") :
                     QString::null;
+        }
+        else
+        {
+            Assert (!mSnapshot.isNull());
+            mId = mSnapshot.GetId();
+            setText (0, mSnapshot.GetName());
+            mOnline = mSnapshot.GetOnline();
+            setIcon (0, vboxGlobal().snapshotIcon (mOnline));
+            mDesc = mSnapshot.GetDescription();
+            mTimestamp.setTime_t (mSnapshot.GetTimeStamp() / 1000);
+            mCurStateModified = false;
         }
         adjustText();
         recacheToolTip();
@@ -151,10 +173,49 @@ public:
         mTimestamp.setTime_t (mMachine.GetLastStateChange() / 1000);
     }
 
+    SnapshotAgeFormat updateAge()
+    {
+        QString age;
+
+        /* Age: [date time|%1d ago|%1h ago|%1min ago|%1sec ago] */
+        SnapshotAgeFormat ageFormat;
+        if (mTimestamp.daysTo (QDateTime::currentDateTime()) > 30)
+        {
+            age = VBoxSnapshotsWgt::tr (" (%1)").arg (mTimestamp.toString (Qt::LocalDate));
+            ageFormat = AgeMax;
+        }
+        else if (mTimestamp.secsTo (QDateTime::currentDateTime()) > 60 * 60 * 24)
+        {
+            age = VBoxSnapshotsWgt::tr (" (%n day(s) ago)", "", mTimestamp.secsTo (QDateTime::currentDateTime()) / 60 / 60 / 24);
+            ageFormat = AgeInDays;
+        }
+        else if (mTimestamp.secsTo (QDateTime::currentDateTime()) > 60 * 60)
+        {
+            age = VBoxSnapshotsWgt::tr (" (%n hour(s) ago)", "", mTimestamp.secsTo (QDateTime::currentDateTime()) / 60 / 60);
+            ageFormat = AgeInHours;
+        }
+        else if (mTimestamp.secsTo (QDateTime::currentDateTime()) > 60)
+        {
+            age = VBoxSnapshotsWgt::tr (" (%n minute(s) ago)", "", mTimestamp.secsTo (QDateTime::currentDateTime()) / 60);
+            ageFormat = AgeInMinutes;
+        }
+        else
+        {
+            age = VBoxSnapshotsWgt::tr (" (%n second(s) ago)", "", mTimestamp.secsTo (QDateTime::currentDateTime()));
+            ageFormat = AgeInSeconds;
+        }
+
+        /* Update data */
+        setData (0, Qt::UserRole, age);
+
+        return ageFormat;
+    }
+
 private:
 
     void adjustText()
     {
+        if (!treeWidget()) return; /* only for initialised items */
         QFontMetrics metrics (font (0));
         int hei0 = (metrics.height() > 16 ?
                    metrics.height() /* text */ : 16 /* icon */) +
@@ -205,6 +266,8 @@ private:
 
         setToolTip (0, toolTip);
     }
+
+    bool mIsCurrentState;
 
     CSnapshot mSnapshot;
     CMachine mMachine;
@@ -310,6 +373,8 @@ VBoxSnapshotsWgt::VBoxSnapshotsWgt (QWidget *aParent)
     mShowSnapshotDetailsAction->setShortcut (QString ("Ctrl+Space"));
     mTakeSnapshotAction->setShortcut (QString ("Ctrl+Shift+S"));
 
+    mAgeUpdateTimer.setSingleShot (true);
+
     /* Setup connections */
     connect (mTreeWidget, SIGNAL (currentItemChanged (QTreeWidgetItem*, QTreeWidgetItem*)),
              this, SLOT (onCurrentChanged (QTreeWidgetItem*)));
@@ -329,6 +394,8 @@ VBoxSnapshotsWgt::VBoxSnapshotsWgt (QWidget *aParent)
              this, SLOT (machineStateChanged (const VBoxMachineStateChangeEvent&)));
     connect (&vboxGlobal(), SIGNAL (sessionStateChanged (const VBoxSessionStateChangeEvent&)),
              this, SLOT (sessionStateChanged (const VBoxSessionStateChangeEvent&)));
+
+    connect (&mAgeUpdateTimer, SIGNAL (timeout()), this, SLOT (updateSnapshotsAge()));
 
     retranslateUi();
 }
@@ -408,7 +475,7 @@ void VBoxSnapshotsWgt::onItemChanged (QTreeWidgetItem *aItem)
 
     if (item)
     {
-        CSnapshot snap = mMachine.GetSnapshot (item->snapshotId());
+        CSnapshot snap = item->snapshotId().isNull() ? CSnapshot() : mMachine.GetSnapshot (item->snapshotId());
         if (!snap.isNull() && snap.isOk() && snap.GetName() != item->text (0))
             snap.SetName (item->text (0));
     }
@@ -520,7 +587,7 @@ void VBoxSnapshotsWgt::takeSnapshot()
     QTreeWidgetItemIterator iterator (mTreeWidget);
     while (*iterator)
     {
-        QString snapShot = (*iterator)->text (0);
+        QString snapShot = static_cast <SnapshotWgtItem*> (*iterator)->text (0);
         int pos = regExp.indexIn (snapShot);
         if (pos != -1)
             maxSnapShotIndex = regExp.cap (1).toInt() > maxSnapShotIndex ?
@@ -588,6 +655,36 @@ void VBoxSnapshotsWgt::sessionStateChanged (const VBoxSessionStateChangeEvent &a
     onCurrentChanged (mTreeWidget->currentItem());
 }
 
+void VBoxSnapshotsWgt::updateSnapshotsAge()
+{
+    if (mAgeUpdateTimer.isActive())
+        mAgeUpdateTimer.stop();
+
+    SnapshotAgeFormat age = traverseSnapshotAge (mTreeWidget->invisibleRootItem());
+
+    switch (age)
+    {
+        case AgeInSeconds:
+            mAgeUpdateTimer.setInterval (5 * 1000);
+            break;
+        case AgeInMinutes:
+            mAgeUpdateTimer.setInterval (60 * 1000);
+            break;
+        case AgeInHours:
+            mAgeUpdateTimer.setInterval (60 * 60 * 1000);
+            break;
+        case AgeInDays:
+            mAgeUpdateTimer.setInterval (24 * 60 * 60 * 1000);
+            break;
+        default:
+            mAgeUpdateTimer.setInterval (0);
+            break;
+    }
+
+    if (mAgeUpdateTimer.interval() > 0)
+        mAgeUpdateTimer.start();
+}
+
 void VBoxSnapshotsWgt::retranslateUi()
 {
     /* Translate uic generated strings */
@@ -600,7 +697,7 @@ void VBoxSnapshotsWgt::retranslateUi()
 
     mRestoreSnapshotAction->setStatusTip (tr ("Restore the selected snapshot of the virtual machine"));
     mDeleteSnapshotAction->setStatusTip (tr ("Delete the selected snapshot of the virtual machine"));
-    mShowSnapshotDetailsAction->setStatusTip (tr ("Show details of the selected snapshot"));
+    mShowSnapshotDetailsAction->setStatusTip (tr ("Show the details of the selected snapshot"));
     mTakeSnapshotAction->setStatusTip (tr ("Take a snapshot of the current virtual machine state"));
 
     mRestoreSnapshotAction->setToolTip (mRestoreSnapshotAction->text().remove ('&').remove ('.') +
@@ -644,7 +741,9 @@ void VBoxSnapshotsWgt::refreshAll()
         Assert (mCurSnapshotItem);
 
         /* Add the "current state" item */
-        new SnapshotWgtItem (mCurSnapshotItem, mMachine);
+        SnapshotWgtItem *csi = new SnapshotWgtItem (mCurSnapshotItem, mMachine);
+        csi->setBold (true);
+        csi->recache();
 
         SnapshotWgtItem *cur = findItem (selectedItem);
         if (cur == 0)
@@ -662,10 +761,15 @@ void VBoxSnapshotsWgt::refreshAll()
 
         /* Add the "current state" item */
         SnapshotWgtItem *csi = new SnapshotWgtItem (mTreeWidget, mMachine);
+        csi->setBold (true);
+        csi->recache();
 
         mTreeWidget->setCurrentItem (csi);
         onCurrentChanged (csi);
     }
+
+    /* Updating age */
+    updateSnapshotsAge();
 
     mTreeWidget->resizeColumnToContents (0);
 }
@@ -697,6 +801,7 @@ void VBoxSnapshotsWgt::populateSnapshots (const CSnapshot &aSnapshot, QTreeWidge
 {
     SnapshotWgtItem *item = aItem ? new SnapshotWgtItem (aItem, aSnapshot) :
                                     new SnapshotWgtItem (mTreeWidget, aSnapshot);
+    item->recache();
 
     if (mMachine.GetCurrentSnapshot().GetId() == aSnapshot.GetId())
     {
@@ -710,5 +815,20 @@ void VBoxSnapshotsWgt::populateSnapshots (const CSnapshot &aSnapshot, QTreeWidge
 
     item->setExpanded (true);
     item->setFlags (item->flags() | Qt::ItemIsEditable);
+}
+
+SnapshotAgeFormat VBoxSnapshotsWgt::traverseSnapshotAge (QTreeWidgetItem *aParentItem)
+{
+    SnapshotWgtItem *parentItem = aParentItem->type() == SnapshotWgtItem::ItemType ?
+                                  static_cast <SnapshotWgtItem*> (aParentItem) : 0;
+
+    SnapshotAgeFormat age = parentItem ? parentItem->updateAge() : AgeMax;
+    for (int i = 0; i < aParentItem->childCount(); ++ i)
+    {
+        SnapshotAgeFormat newAge = traverseSnapshotAge (aParentItem->child (i));
+        age = newAge < age ? newAge : age;
+    }
+
+    return age;
 }
 

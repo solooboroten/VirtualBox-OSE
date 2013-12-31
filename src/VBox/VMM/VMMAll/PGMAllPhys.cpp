@@ -191,36 +191,15 @@ VMMDECL(int) PGMPhysGCPhys2HCPhys(PVM pVM, RTGCPHYS GCPhys, PRTHCPHYS pHCPhys)
 
 
 /**
- * Invalidates the GC page mapping TLB.
+ * Invalidates all page mapping TLBs.
  *
  * @param   pVM     The VM handle.
  */
-VMMDECL(void) PGMPhysInvalidatePageGCMapTLB(PVM pVM)
-{
-    /* later */
-    NOREF(pVM);
-}
-
-
-/**
- * Invalidates the ring-0 page mapping TLB.
- *
- * @param   pVM     The VM handle.
- */
-VMMDECL(void) PGMPhysInvalidatePageR0MapTLB(PVM pVM)
-{
-    PGMPhysInvalidatePageR3MapTLB(pVM);
-}
-
-
-/**
- * Invalidates the ring-3 page mapping TLB.
- *
- * @param   pVM     The VM handle.
- */
-VMMDECL(void) PGMPhysInvalidatePageR3MapTLB(PVM pVM)
+VMMDECL(void) PGMPhysInvalidatePageMapTLB(PVM pVM)
 {
     pgmLock(pVM);
+    STAM_COUNTER_INC(&pVM->pgm.s.StatPageMapTlbFlushes);
+    /* Clear the shared R0/R3 TLB completely. */
     for (unsigned i = 0; i < RT_ELEMENTS(pVM->pgm.s.PhysTlbHC.aEntries); i++)
     {
         pVM->pgm.s.PhysTlbHC.aEntries[i].GCPhys = NIL_RTGCPHYS;
@@ -228,9 +207,37 @@ VMMDECL(void) PGMPhysInvalidatePageR3MapTLB(PVM pVM)
         pVM->pgm.s.PhysTlbHC.aEntries[i].pMap = 0;
         pVM->pgm.s.PhysTlbHC.aEntries[i].pv = 0;
     }
+    /* @todo clear the RC TLB whenever we add it. */
     pgmUnlock(pVM);
 }
 
+/**
+ * Invalidates a page mapping TLB entry
+ *
+ * @param   pVM     The VM handle.
+ * @param   GCPhys  GCPhys entry to flush
+ */
+VMMDECL(void) PGMPhysInvalidatePageMapTLBEntry(PVM pVM, RTGCPHYS GCPhys)
+{
+    Assert(PGMIsLocked(pVM));
+
+    STAM_COUNTER_INC(&pVM->pgm.s.StatPageMapTlbFlushEntry);
+    /* Clear the shared R0/R3 TLB entry. */
+#ifdef IN_RC
+    unsigned idx = PGM_PAGER3MAPTLB_IDX(GCPhys);
+    pVM->pgm.s.PhysTlbHC.aEntries[idx].GCPhys = NIL_RTGCPHYS;
+    pVM->pgm.s.PhysTlbHC.aEntries[idx].pPage = 0;
+    pVM->pgm.s.PhysTlbHC.aEntries[idx].pMap = 0;
+    pVM->pgm.s.PhysTlbHC.aEntries[idx].pv = 0;
+#else
+    PPGMPAGEMAPTLBE pTlbe = &pVM->pgm.s.CTXSUFF(PhysTlb).aEntries[PGM_PAGEMAPTLB_IDX(GCPhys)];
+    pTlbe->GCPhys = NIL_RTGCPHYS;
+    pTlbe->pPage  = 0;
+    pTlbe->pMap   = 0;
+    pTlbe->pv     = 0;
+#endif
+    /* @todo clear the RC TLB whenever we add it. */
+}
 
 /**
  * Makes sure that there is at least one handy page ready for use.
@@ -420,11 +427,33 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
     PGM_PAGE_SET_HCPHYS(pPage, HCPhys);
     PGM_PAGE_SET_PAGEID(pPage, pVM->pgm.s.aHandyPages[iHandyPage].idPage);
     PGM_PAGE_SET_STATE(pPage, PGM_PAGE_STATE_ALLOCATED);
+    PGMPhysInvalidatePageMapTLBEntry(pVM, GCPhys);
 
     if (    fFlushTLBs
         &&  rc != VINF_PGM_GCPHYS_ALIASED)
         PGM_INVL_ALL_VCPU_TLBS(pVM);
     return rc;
+}
+
+
+/**
+ * Deal with a write monitored page.
+ *
+ * @returns VBox strict status code.
+ *
+ * @param   pVM         The VM address.
+ * @param   pPage       The physical page tracking structure.
+ *
+ * @remarks Called from within the PGM critical section.
+ */
+void pgmPhysPageMakeWriteMonitoredWritable(PVM pVM, PPGMPAGE pPage)
+{
+    Assert(PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_WRITE_MONITORED);
+    PGM_PAGE_SET_WRITTEN_TO(pPage);
+    PGM_PAGE_SET_STATE(pPage, PGM_PAGE_STATE_ALLOCATED);
+    Assert(pVM->pgm.s.cMonitoredPages > 0);
+    pVM->pgm.s.cMonitoredPages--;
+    pVM->pgm.s.cWrittenToPages++;
 }
 
 
@@ -447,11 +476,7 @@ int pgmPhysPageMakeWritable(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
     switch (PGM_PAGE_GET_STATE(pPage))
     {
         case PGM_PAGE_STATE_WRITE_MONITORED:
-            PGM_PAGE_SET_WRITTEN_TO(pPage);
-            PGM_PAGE_SET_STATE(pPage, PGM_PAGE_STATE_ALLOCATED);
-            Assert(pVM->pgm.s.cMonitoredPages > 0);
-            pVM->pgm.s.cMonitoredPages--;
-            pVM->pgm.s.cWrittenToPages++;
+            pgmPhysPageMakeWriteMonitoredWritable(pVM, pPage);
             /* fall thru */
         default: /* to shut up GCC */
         case PGM_PAGE_STATE_ALLOCATED:
@@ -802,6 +827,7 @@ int pgmPhysPageMapReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void const 
  */
 int pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys)
 {
+    Assert(PGMIsLocked(PGM2VM(pPGM)));
     STAM_COUNTER_INC(&pPGM->CTX_MID_Z(Stat,PageMapTlbMisses));
 
     /*
@@ -843,7 +869,10 @@ int pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys)
         pTlbe->pMap = NULL;
         pTlbe->pv = pPGM->CTXALLSUFF(pvZeroPg);
     }
-    pTlbe->pPage = pPage;
+#if 1 /* Testing */
+    pTlbe->GCPhys = (GCPhys & X86_PTE_PAE_PG_MASK);
+#endif
+    pTlbe->pPage  = pPage;
     return VINF_SUCCESS;
 }
 
@@ -862,6 +891,7 @@ int pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys)
  */
 int pgmPhysPageLoadIntoTlbWithPage(PPGM pPGM, PPGMPAGE pPage, RTGCPHYS GCPhys)
 {
+    Assert(PGMIsLocked(PGM2VM(pPGM)));
     STAM_COUNTER_INC(&pPGM->CTX_MID_Z(Stat,PageMapTlbMisses));
 
     /*
@@ -885,6 +915,9 @@ int pgmPhysPageLoadIntoTlbWithPage(PPGM pPGM, PPGMPAGE pPage, RTGCPHYS GCPhys)
         pTlbe->pMap = NULL;
         pTlbe->pv = pPGM->CTXALLSUFF(pvZeroPg);
     }
+#if 1 /* Testing */
+    pTlbe->GCPhys = (GCPhys & X86_PTE_PAE_PG_MASK);
+#endif
     pTlbe->pPage = pPage;
     return VINF_SUCCESS;
 }

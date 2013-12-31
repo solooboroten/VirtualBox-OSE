@@ -35,7 +35,7 @@
 #include <VBox/pdmthread.h>
 #include <VBox/pdmifs.h>
 #include <VBox/pdmins.h>
-#include <VBox/pdmdevdrv.h>
+#include <VBox/pdmcommon.h>
 #include <VBox/tm.h>
 #include <VBox/ssm.h>
 #include <VBox/cfgm.h>
@@ -697,6 +697,30 @@ typedef struct PDMDRVHLP
     DECLR3CALLBACKMEMBER(int, pfnUSBRegisterHub,(PPDMDRVINS pDrvIns, uint32_t fVersions, uint32_t cPorts, PCPDMUSBHUBREG pUsbHubReg, PPCPDMUSBHUBHLP ppUsbHubHlp));
 
     /**
+     * Set up asynchronous handling of a suspend, reset or power off notification.
+     *
+     * This shall only be called when getting the notification.  It must be called
+     * for each one.
+     *
+     * @returns VBox status code.
+     * @param   pDrvIns             The driver instance.
+     * @param   pfnAsyncNotify      The callback.
+     * @thread  EMT(0)
+     */
+    DECLR3CALLBACKMEMBER(int, pfnSetAsyncNotification, (PPDMDRVINS pDrvIns, PFNPDMDRVASYNCNOTIFY pfnAsyncNotify));
+
+    /**
+     * Notify EMT(0) that the driver has completed the asynchronous notification
+     * handling.
+     *
+     * This can be called at any time, spurious calls will simply be ignored.
+     *
+     * @param   pDrvIns             The driver instance.
+     * @thread  Any
+     */
+    DECLR3CALLBACKMEMBER(void, pfnAsyncNotificationCompleted, (PPDMDRVINS pDrvIns));
+
+    /**
      * Creates a PDM thread.
      *
      * This differs from the RTThreadCreate() API in that PDM takes care of suspending,
@@ -1022,6 +1046,22 @@ DECLINLINE(int) PDMDrvHlpSTAMDeregister(PPDMDRVINS pDrvIns, void *pvSample)
 DECLINLINE(int) PDMDrvHlpUSBRegisterHub(PPDMDRVINS pDrvIns, uint32_t fVersions, uint32_t cPorts, PCPDMUSBHUBREG pUsbHubReg, PPCPDMUSBHUBHLP ppUsbHubHlp)
 {
     return pDrvIns->pDrvHlp->pfnUSBRegisterHub(pDrvIns, fVersions, cPorts, pUsbHubReg, ppUsbHubHlp);
+}
+
+/**
+ * @copydoc PDMDRVHLP::pfnSetAsyncNotification
+ */
+DECLINLINE(int) PDMDrvHlpSetAsyncNotification(PPDMDRVINS pDrvIns, PFNPDMDRVASYNCNOTIFY pfnAsyncNotify)
+{
+    return pDrvIns->pDrvHlp->pfnSetAsyncNotification(pDrvIns, pfnAsyncNotify);
+}
+
+/**
+ * @copydoc PDMDRVHLP::pfnAsyncNotificationCompleted
+ */
+DECLINLINE(void) PDMDrvHlpAsyncNotificationCompleted(PPDMDRVINS pDrvIns)
+{
+    pDrvIns->pDrvHlp->pfnAsyncNotificationCompleted(pDrvIns);
 }
 
 /**

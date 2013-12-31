@@ -54,7 +54,7 @@ ifdef VBOX_LOOPBACK_USEFLAGS
  VBoxNetFlt_DEFS.win += VBOX_LOOPBACK_USEFLAGS
 endif
 VBoxNetFlt_SOURCES = VBoxNetFlt.c
-VBoxNetFlt_LDFLAGS.darwin = -v -Wl,-whyload -Wl,-v -Wl,-whatsloaded
+#VBoxNetFlt_LDFLAGS.darwin = -v -Wl,-whyload -Wl,-v -Wl,-whatsloaded
 VBoxNetFlt_LDFLAGS.win.x86 = -Entry:DriverEntry@8
 VBoxNetFlt_LDFLAGS.win.amd64 = -Entry:DriverEntry
 VBoxNetFlt_SOURCES.win.amd64 += win/VBoxNetFltA-win.asm
@@ -81,8 +81,8 @@ VBoxNetFlt.kext_CLEAN    = \
 
 $$(PATH_VBoxNetFlt.kext)/Info.plist: $(PATH_SUB_CURRENT)/darwin/Info.plist $(VBOX_VERSION_MK) | $$(dir $$@)
 	$(call MSG_GENERATE,VBoxNetFlt,$@,$<)
-	$(xQUIET)$(RM) -f $@
-	$(xQUIET)$(SED) \
+	$(QUIET)$(RM) -f $@
+	$(QUIET)$(SED) \
 		-e 's/@VBOX_VERSION_STRING@/$(VBOX_VERSION_STRING)/g' \
 		-e 's/@VBOX_VERSION_MAJOR@/$(VBOX_VERSION_MAJOR)/g' \
 		-e 's/@VBOX_VERSION_MINOR@/$(VBOX_VERSION_MINOR)/g' \

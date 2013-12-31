@@ -35,6 +35,8 @@
 #include <iprt/string.h>
 #include "internal/iprt.h"
 
+#include <iprt/assert.h>
+#include <iprt/ctype.h> /* needed for RT_C_IS_DIGIT */
 #include <iprt/err.h>
 
 
@@ -88,7 +90,6 @@ int main()
     return 0;
 }
 */
-
 
 
 /**

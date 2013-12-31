@@ -104,7 +104,7 @@
         <translation>&lt;html&gt;&lt;b&gt;%1 (rc=%2)&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;</translation>
     </message>
     <message>
-        <source>It may help to reinstall VirtualBox.</source>
+        <source>Please try reinstalling VirtualBox.</source>
         <translation>Być może pomocna będzie ponowna instalacja VirtualBox.</translation>
     </message>
     <message>
@@ -112,7 +112,7 @@
         <translation>Ten błąd oznacza, że sterownik jądra systemu (vboxdrv) nie był w stanie przydzielić wystarczającej ilości pamięci lub nie powiodła się operacja mapowania.&lt;br/&gt;&lt;br/&gt;Występują pewne znane problemy w systemach typu Linux 2.6.29. Jeśli używany jest taki właśnie kernel, należy zmienić plik /usr/src/vboxdrv-*/Makefile i włączyć &lt;i&gt;VBOX_USE_INSERT_PAGE = 1&lt;/i&gt;. Następnie należy przekompilować moduł kernela, wydając polecenie&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;jako administrator.</translation>
     </message>
     <message>
-        <source>The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or there is a permission problem with /dev/vboxdrv. Re-setup the kernel module by executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;as root. Users of Ubuntu, Fedora or Mandriva should install the DKMS package first. This package keeps track of Linux kernel changes and recompiles the vboxdrv kernel module if necessary.</source>
+        <source>The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or there is a permission problem with /dev/vboxdrv. Please reinstall the kernel module by executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;as root. Users of Ubuntu, Fedora or Mandriva should install the DKMS package first. This package keeps track of Linux kernel changes and recompiles the vboxdrv kernel module if necessary.</source>
         <translation>Sterownik VirtualBox dla jądra systemu Linux (vboxdrv) nie jest załadowany lub występuje problem z uprawnieniami dla /dev/vboxdrv. Należy ponownie przygotować moduł kernela, wydając polecenie&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;jako administrator. Użytkownicy systemów Ubuntu, Fedora i Mandriva powinni najpierw zainstalować pakiet DKMS. Pakiet ten śledzi zmiany kernela Linux i przekompilowuje moduł vboxdrv jeśli zachodzi taka potrzeba.</translation>
     </message>
     <message>
@@ -128,7 +128,7 @@
         <translation>&lt;b&gt;Nie można uzyskać dostępu do sterownika jądra systemu!&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;</translation>
     </message>
     <message>
-        <source>Unknown %2 error during initialization of the Runtime</source>
+        <source>Unknown error %2 during initialization of the Runtime</source>
         <translation>Nieznany błąd %2 w czasie inicjalizacji środowiska wykonawczego</translation>
     </message>
     <message>
@@ -136,11 +136,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>The VirtualBox kernel modules do not fit to this version of VirtualBox. The installation of VirtualBox was apparently not successful. It may help to completely uninstall and re-install VirtualBox.</source>
+        <source>The VirtualBox kernel modules do not match this version of VirtualBox. The installation of VirtualBox was apparently not successful. Please try completely uninstalling and reinstalling VirtualBox.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>The VirtualBox kernel modules do not fit to this version of VirtualBox. The installation of VirtualBox was apparently not successful. Executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;should fix that problem. Make sure that you don&apos;t mix the OSE version and the PUEL version of VirtualBox.</source>
+        <source>The VirtualBox kernel modules do not match this version of VirtualBox. The installation of VirtualBox was apparently not successful. Executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;may correct this. Make sure that you do not mix the OSE version and the PUEL version of VirtualBox.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -421,7 +421,7 @@
         <translation>niewłaściwa</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;Value of the &lt;b&gt;%1&lt;/b&gt; field on the &lt;b&gt;%2&lt;/b&gt; page is %3.&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;The value of the &lt;b&gt;%1&lt;/b&gt; field on the &lt;b&gt;%2&lt;/b&gt; page is %3.&lt;/qt&gt;</source>
         <translation>&lt;qt&gt;Wartość pola &lt;b&gt;%1&lt;/b&gt; na stronie &lt;b&gt;%2&lt;/b&gt; jest %3.&lt;/qt&gt;</translation>
     </message>
     <message>
@@ -619,15 +619,15 @@ Wersja %1</translation>
         <translation>Pamięć</translation>
     </message>
     <message>
-        <source>Hard Disk Controller IDE</source>
+        <source>Hard Disk Controller (IDE)</source>
         <translation>Kontroler dysków IDE</translation>
     </message>
     <message>
-        <source>Hard Disk Controller SATA</source>
+        <source>Hard Disk Controller (SATA)</source>
         <translation>Kontroler dysków SATA</translation>
     </message>
     <message>
-        <source>Hard Disk Controller SCSI</source>
+        <source>Hard Disk Controller (SCSI)</source>
         <translation>Kontroler dysków SCSI</translation>
     </message>
     <message>
@@ -760,7 +760,7 @@ Wersja %1</translation>
 &lt;p&gt;Uwaga: spowoduje to natychmiastowe zakończenie pracy maszyny wirtualnej w taki sposób, że uruchomiony w niej goszczony system operacyjny nie będzie mógł przeprowadzić procedury bezpiecznego zamknięcia, co może doprowadzić do &lt;i&gt;utraty danych&lt;/i&gt; w maszynie. Zamykanie w ten sposób jest zalecane tylko jeśli maszyna wirtualna nie odpowiada na &lt;b&gt;Wysłanie sygnału wyłączenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;When checked, the machine state will be restored from the state stored in the current snapshot right after it is turned off. This is useful if you are sure that you want to discard the results of your last sessions and go back to the current snapshot.&lt;/p&gt;</source>
+        <source>&lt;p&gt;When checked, the machine will be returned to the state stored in the current snapshot after it is turned off. This is useful if you are sure that you want to discard the results of your last sessions and start again at that snapshot.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Zaznaczenie tej opcji powoduje, że zaraz po wyłączeniu maszyny jej stan zostanie przywrócony do stanu zapisanego w aktualnej migawce. Jest to przydatne, jeśli na pewno chce się porzucić efekty swojej pracy lub zmian i powrócić do aktualnej migawki.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -977,7 +977,7 @@ Wersja %1</translation>
         <translation type="obsolete">Z&amp;resetuj wszystkie ostrzeżenia</translation>
     </message>
     <message>
-        <source>Cause all suppressed warnings and messages to be shown again</source>
+        <source>Go back to showing all suppressed warnings and messages</source>
         <translation type="obsolete">Powoduje, że wszystkie wyłączone typy ostrzeżeń i wiadomości będą pokazywane ponownie</translation>
     </message>
     <message>
@@ -1066,7 +1066,7 @@ Wersja %1</translation>
         <translation type="obsolete">Wskazuje, czy serwer zdalnego pulpitu (VRDP) jest włączony (&lt;img src=vrdp_16px.png/&gt;) czy nie (&lt;img src=vrdp_disabled_16px.png/&gt;)</translation>
     </message>
     <message>
-        <source>&lt;hr&gt;VRDP Server is listening on port %1</source>
+        <source>&lt;hr&gt;The VRDP Server is listening on port %1</source>
         <translation>&lt;hr&gt;Serwer VRDP nasłuchuje na porcie %1</translation>
     </message>
     <message>
@@ -1226,7 +1226,7 @@ Wersja %1</translation>
         <translation>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Niezamontowany&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>HDD tooltip</comment>
         <translation>&lt;qt&gt;&lt;nobr&gt;Wskaźnik aktywności wirtualnych dysków twardych:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
@@ -1280,7 +1280,7 @@ Wersja %1</translation>
         <translation type="obsolete">Wskazuje, czy serwer zdalnego pulpitu (VRDP) jest włączony (&lt;img src=vrdp_16px.png/&gt;) czy nie (&lt;img src=vrdp_disabled_16px.png/&gt;).</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of shared folders:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the machineof the machine'sapos;s shared folders: shared folders:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>Shared folders tooltip</comment>
         <translation>&lt;qt&gt;&lt;nobr&gt;Wskaźnik aktywności współdzielonych katalogów:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
@@ -1704,7 +1704,7 @@ p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;This wizard will guide you through the process of exporting an appliance. &lt;/p&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Use the &lt;span style=&quot; font-weight:600;&quot;&gt;Next&lt;/span&gt; button to go the next page of the wizard and the &lt;span style=&quot; font-weight:600;&quot;&gt;Back&lt;/span&gt; button to return to the previous page.&lt;/p&gt;
-&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Please select the virtual machines that should be exported to the appliance. You can select more than one. Please note that these machines have to be turned off before they can be exported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Please select the virtual machines that you wish to the appliance. You can select more than one. Please note that these machines have to be turned off before they can be exported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
@@ -1730,7 +1730,7 @@ p, li { white-space: pre-wrap; }
         <translation>Ustawienia eksportu urządzenia programowego</translation>
     </message>
     <message>
-        <source>Here you can change additional configuration values of the selected virtual machines. You can modify most of the shown properties by double-clicking on the items.</source>
+        <source>Here you can change additional configuration values of the selected virtual machines. You can modify most of the properties shown by double-clicking on the items.</source>
         <translation>Tu można zmienić dodatkowe ustawienia wybranych maszyn wirtualnych. Większość właściwości można zmieniać klikając dwukrotnie na dostępnych elementach.</translation>
     </message>
     <message>
@@ -1754,15 +1754,15 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please choose a filename to export the OVF in.</source>
+        <source>Please choose a filename to export the OVF to.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please complete the additionally fields like the username, password and the bucket. Finally you have to provide a filename for the OVF target.</source>
+        <source>Please complete the additional fields like the username, password and the bucket, and provide a filename for the OVF target.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please complete the additionally fields like the username, password, hostname and the bucket. Finally you have to provide a filename for the OVF target.</source>
+        <source>Please complete the additional fields like the username, password, hostname and the bucket, and provide a filename for the OVF target.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1774,7 +1774,7 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please specify the target for the OVF export. You can choose between a local file system export, the uploading of the OVF to the Sun Cloud service or an S3 storage server.</source>
+        <source>Please specify the target for the OVF export. You can choose between a local file system export, uploading the OVF to the Sun Cloud service or an S3 storage server.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1825,7 +1825,7 @@ p, li { white-space: pre-wrap; }
         <translation>&lt;nie wybrano&gt;</translation>
     </message>
     <message>
-        <source>Please use the &lt;b&gt;Other...&lt;/b&gt; item from the drop-down list to select a desired path.</source>
+        <source>Please use the &lt;b&gt;Other...&lt;/b&gt; item from the drop-down list to select a path.</source>
         <translation>Proszę użyć opcji &lt;b&gt;Inny...&lt;/b&gt; z listy rozwijanej aby wybrać żądaną ścieżkę.</translation>
     </message>
     <message>
@@ -1857,11 +1857,11 @@ p, li { white-space: pre-wrap; }
         <translation>S&amp;kopiuj</translation>
     </message>
     <message>
-        <source>Please type the desired folder path here.</source>
+        <source>Please type the folder path here.</source>
         <translation>Proszę podać żądaną ścieżkę do katalogu.</translation>
     </message>
     <message>
-        <source>Please type the desired file path here.</source>
+        <source>Please type the file path here.</source>
         <translation>Proszę podać żądaną ścieżkę do pliku.</translation>
     </message>
 </context>
@@ -1950,7 +1950,7 @@ p, li { white-space: pre-wrap; }
         <translation>Klawisz &amp;gospodarza:</translation>
     </message>
     <message>
-        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used as a Host Key.</source>
+        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
         <translation>Określa aktualnie zdefiniowany klawisz gospodarza używany w oknie maszyny wirtualnej. W celu ustawienia należy aktywować pole, a następnie wciśnąć wybrany klawisz klawiatury. Uwaga: klawisze alfanumeryczne, strzałki kursora i klawisze edycji nie mogą być zdefiniowane jako klawisz gospodarza.</translation>
     </message>
     <message>
@@ -3309,7 +3309,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">[nazwa]</translation>
     </message>
     <message>
-        <source>&lt;i&gt;Select a settings category from the list on the left side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
+        <source>&lt;i&gt;Select a settings category from the list on the left-hand side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
         <translation type="obsolete">&lt;i&gt;Proszę wybrać kategorię ustawień z listy po lewej i przesunąć kursor myszy nad wybraną pozycję, aby uzyskać więcej informacji&lt;i&gt;.</translation>
     </message>
     <message>
@@ -3425,7 +3425,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">VirtualBox - Ustawienia</translation>
     </message>
     <message>
-        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used as a Host Key.</source>
+        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
         <translation type="obsolete">Określa aktualnie zdefiniowany klawisz gospodarza używany w oknie maszyny wirtualnej. W celu ustawienia należy aktywować pole, a następnie wcisnąć wybrany klawisz klawiatury. Uwaga: klawisze alfanumeryczne, strzałki kursora i klawisze edycji nie mogą być zdefiniowane jako klawisz gospodarza.</translation>
     </message>
     <message>
@@ -3825,7 +3825,7 @@ p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;This wizard will guide you through importing an appliance. &lt;/p&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Use the &lt;span style=&quot; font-weight:600;&quot;&gt;Next&lt;/span&gt; button to go the next page of the wizard and the &lt;span style=&quot; font-weight:600;&quot;&gt;Back&lt;/span&gt; button to return to the previous page.&lt;/p&gt;
-&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;In order to import an appliance, you have to select a file describing the appliance first. Currently VirtualBox supports the Open Virtualization Format (OVF). To continue, select the file to import below:&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;VirtualBox currently supports importing appliances saved in the Open Virtualization Format (OVF). To continue, select the file to import below:&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
@@ -3851,7 +3851,7 @@ p, li { white-space: pre-wrap; }
         <translation>Ustawienia importu urządzenia programowego</translation>
     </message>
     <message>
-        <source>These are the virtual machines as described in the appliance with their suggested mappings for importing into VirtualBox. You can change many of the shown properties by double-clicking on the items and disable others by using the check boxes below.</source>
+        <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>To są maszyny wirtualne opisane w urządzeniu programowym, wraz z sugerowanym mapowaniem dla importu do VirtualBox. Większość właściwości można zmieniać klikając dwukrotnie na dostępnych elementach, jak również wyłączać inne korzystając z przycisków opcji.</translation>
     </message>
     <message>
@@ -4786,11 +4786,11 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;p&gt;Usunąć trwale maszynę wirtualną &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;&lt;b&gt;Uwaga:&lt;/b&gt; tej czynności nie da się cofnąć!&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to unregister the inaccessible virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;You will no longer be able to register it back from GUI.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Are you sure you want to unregister the inaccessible virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;You will not be able to register it again from GUI.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Wyrejestrować niedostępną maszynę wirtualną &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;Nie będzie można ponownie zarejestrować jej przy pomocy interfejsu użytkownika.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to discard the saved state of the virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;This operation is equivalent to resetting or powering off the machine without doing a proper shutdown by means of the guest OS.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Are you sure you want to discard the saved state of the virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;This operation is equivalent to resetting or powering off the machine without doing a proper shutdown of the guest OS.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Odrzucić zapisany stan maszyny wirtualnej &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;Ta operacja jest jednoznaczna ze zresetowaniem lub wyłączeniem maszyny bez wykonania poprawnego zamknięcia przez goszczony system operacyjny.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4858,7 +4858,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się otworzyć sesji dla maszyny wirtualnej &lt;b&gt;%1&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>Failed to get the accessibility state of the media &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;. Some of the registered media may become inaccessible.</source>
+        <source>Failed to determine the accessibility state of the media &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;. Some of the registered media may become inaccessible.</source>
         <translation type="obsolete">Nie udało się uzyskać stanu dostępności nośnika &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;. Niektóre z zarejestrowanych nośników mogą być niedostępne.</translation>
     </message>
     <message>
@@ -4878,7 +4878,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się odłączyć urządzenia USB &lt;b&gt;%1&lt;/b&gt; od maszyny wirtualnej &lt;b&gt;%2&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>Failed to create a shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) for the virtual machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to create the shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) for the virtual machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Nie udało się utworzyć współdzielonego katalogu &lt;b&gt;%1&lt;/b&gt; (wskazującego na &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) dla maszyny wirtualnej &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
@@ -4902,7 +4902,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;p&gt;Maszyna wirtualna informuje, że goszczony system operacyjny nie obsługuje funkcji &lt;b&gt;integracji kursora myszy&lt;/b&gt; w bieżącym trybie graficznym. Trzeba ręcznie przechwycić kursor myszy (klikając przyciskiem myszy nad oknem maszyny wirtualnej lub wciskając klawisz gospodarza), aby móc używać myszy w goszczonym systemie operacyjnym.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The Virtual Machine is currently in the &lt;b&gt;Paused&lt;/b&gt; state and therefore does not accept any keyboard or mouse input. If you want to continue to work inside the VM, you need to resume it by selecting the corresponding action from the menu bar.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The Virtual Machine is currently in the &lt;b&gt;Paused&lt;/b&gt; state and not able to see any keyboard or mouse input. If you want to continue to work inside the VM, you need to resume it by selecting the corresponding action from the menu bar.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Maszyna Wirtualna jest aktualnie w stanie &lt;b&gt;Wstrzymania&lt;/b&gt; i tym samym nie obsłuży żadnych danych wejściowych pochodzących od klawiatury lub myszy. Aby kontynuować pracę w maszynie wirtualnej, należy ją najpierw wznowić poprzez wybranie odpowiedniej opcji z menu &lt;i&gt;Maszyna&lt;/i&gt; w oknie maszyny.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4938,7 +4938,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Sytuacja: </translation>
     </message>
     <message>
-        <source>&lt;p&gt;The virtual machine execution may run into an error condition as described below. You may ignore this message, but it is suggested to perform an appropriate action to make sure the described error will not happen.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The virtual machine execution may run into an error condition as described below. We suggest that you take an appropriate action to avert the error.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Dalsza praca maszyny wirtualnej może doprowadzić do błędu opisanego poniżej. Można zignorować tę wiadomość, ale sugerowane jest przeprowadzenie odpowiednich działań, aby upewnić się, że błąd nie zajdzie.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4980,23 +4980,23 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;nobr&gt;ID błędu: &lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;A fatal error has occurred during virtual machine execution! The virtual machine will be powered off. It is suggested to use the clipboard to copy the following error message for further examination:&lt;/p&gt;</source>
+        <source>&lt;p&gt;A fatal error has occurred during virtual machine execution! The virtual machine will be powered off. Please copy the following error message using the clipboard to help diagnose the problem:&lt;/p&gt;</source>
         <translation>&lt;p&gt;Wystąpił błąd krytyczny podczas pracy maszyny wirtualnej! Maszyna wirtualna zostanie zamknięta. Sugerujemy skopiowanie następujących informacji do schowka w celu dalszej analizy:&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;An error has occurred during virtual machine execution! The error details are shown below. You can try to correct the described error and resume the virtual machine execution.&lt;/p&gt;</source>
+        <source>&lt;p&gt;An error has occurred during virtual machine execution! The error details are shown below. You may try to correct the error and resume the virtual machine execution.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Wystąpił błąd podczas pracy maszyny wirtualnej! Więcej informacji o błędzie znajduje się poniżej. Można spróbować usunąć przyczynę błędu i wznowić pracę maszyny wirtualnej.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Dodatki VirtualBox (Guest Additions) zainstalowane w goszczonym systemie operacyjnym są zbyt stare: zainstalowana wersja to %1, a wersja wymagana - %2. Niektóre z funkcji wymagające do pracy Dodatków (jak np. integracja myszy, automatyczne skalowanie ekranu gościa) najprawdopodobniej przestaną pracować poprawnie.&lt;/p&gt;&lt;p&gt;Proszę uaktualnić Dodatki do wymaganej wersji poprzez wybranie opcji &lt;b&gt;Zainstaluj Dodatki (Guest Additions)...&lt;/b&gt; z menu &lt;b&gt;Urządzenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Dodatki VirtualBox (Guest Additions) zainstalowane w goszczonym systemie operacyjnym są zbyt stare: zainstalowana wersja to %1, a wersja wymagana - %2. Niektóre z funkcji wymagające do pracy Dodatków (jak np. integracja myszy, auto-skalowanie ekranu gościa) mogą pracować niezgodnie z oczekiwaniami.&lt;/p&gt;&lt;p&gt;Zalecane jest uaktualnienie Dodatków do wymaganej wersji poprzez wybranie opcji &lt;b&gt;Zainstaluj Dodatki (Guest Additions)...&lt;/b&gt; z menu &lt;b&gt;Urządzenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Dodatki VirtualBox (Guest Additions) zainstalowane w goszczonym systemie operacyjnym są zbyt nowe dla tej wersji programu VirtualBox: zainstalowana wersja to %1, a wersja wymagana - %2. Używanie nowszej wersji Dodatków wraz ze starsza wersją programu VirtualBox nie jest wspierane. Proszę zainstalować wymaganą wersję Dodatków poprzez wybranie opcji &lt;b&gt;Zainstaluj Dodatki (Guest Additions)...&lt;/b&gt; z menu &lt;b&gt;Urządzenia&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5012,7 +5012,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się usunąć współdzielonego katalogu &lt;b&gt;%1&lt;/b&gt; (wskazującego na &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) z maszyny wirtualnej &lt;b&gt;%3&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Proszę zamknąć wszystkie programy uruchomione w systemie operacyjnym gościa, które mogą korzystać z tego katalogu i spróbować ponownie.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions CD image file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; or &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you want to download this CD image from the Internet?&lt;/p&gt;</source>
+        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions CD image file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; or &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this CD image from the Internet?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Nie udało się odnaleźć pliku obrazu CD z Dodatkami (VirtualBox Guest Additions) &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; lub &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Pobrać go teraz przez Internet?&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5024,7 +5024,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;p&gt;Pobrać obraz CD z Dodatkami (VirtualBox Guest Additions) z &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; (o rozmiarze %3 bajtów)?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions CD image has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you want to register this CD image and mount it on the virtual CD/DVD drive?&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions CD image has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to register this CD image and mount it on the virtual CD/DVD drive?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Obraz CD z Dodatkami (VirtualBox Guest Additions) został pobrany z &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; i zapisany lokalnie jako &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Zarejestrować go i zamontować w wirtualnym napędzie CD/DVD?&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5036,7 +5036,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation type="obsolete">&lt;p&gt;Okno maszyny wirtualnej zostanie teraz przełączone w tryb &lt;b&gt;zintegrowany&lt;/b&gt;. W każdej chwili można ponownie powrócić do trybu zwykłego okna poprzez wciśnięcie &lt;b&gt;%1&lt;/b&gt;. Uwaga 1: &lt;i&gt;klawisz gospodarza&lt;/i&gt; jest aktualnie zdefiniowany jako &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Uwaga 2: w trybie zintegrowanym pasek menu będzie ukryty. Można uzyskać do niego dostęp poprzez wciśnięcie kombinacji &lt;b&gt;klawisz gospodarza+Home&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The virtual machine window is optimized to work in &lt;b&gt;%1&amp;nbsp;bit&lt;/b&gt; color mode but the color quality of the virtual display is currently set to &lt;b&gt;%2&amp;nbsp;bit&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please open the display properties dialog of the guest OS and select a &lt;b&gt;%3&amp;nbsp;bit&lt;/b&gt; color mode, if it is available, for best possible performance of the virtual video subsystem.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note&lt;/b&gt;. Some operating systems, like OS/2, may actually work in 32&amp;nbsp;bit mode but report it as 24&amp;nbsp;bit (16 million colors). You may try to select a different color quality to see if this message disappears or you can simply disable the message now if you are sure the required color quality (%4&amp;nbsp;bit) is not available in the given guest OS.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The virtual machine window is optimized to work in &lt;b&gt;%1&amp;nbsp;bit&lt;/b&gt; color mode but the virtual display is currently set to &lt;b&gt;%2&amp;nbsp;bit&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please open the display properties dialog of the guest OS and select a &lt;b&gt;%3&amp;nbsp;bit&lt;/b&gt; color mode, if it is available, for best possible performance of the virtual video subsystem.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note&lt;/b&gt;. Some operating systems, like OS/2, may actually work in 32&amp;nbsp;bit mode but report it as 24&amp;nbsp;bit (16 million colors). You may try to select a different color mode to see if this message disappears or you can simply disable the message now if you are sure the required color mode (%4&amp;nbsp;bit) is not available in the guest OS.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Okno maszyny wirtualnej jest zoptymalizowane do pracy w &lt;b&gt;%1&amp;nbsp;bitowym&lt;/b&gt; trybie kolorów, natomiast w goszczonym systemie operacyjnym ustawiony jest aktualnie tryb &lt;b&gt;%2&amp;nbsp;bitowy&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Proszę otworzyć okno ustawień ekranu w goszczonym sytemie i jeśli to możliwe, wybrać tryb &lt;b&gt;%3&amp;nbsp;bitowego&lt;/b&gt; koloru, aby uzyskać najlepszą wydajność wirtualnego podsystemu wideo.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Uwaga&lt;/b&gt;: niektóre systemy operacyjne, jak np. OS/2, mogą błędnie informować o pracy w trybie 24&amp;nbsp;bitowym (16 milionów kolorów) pomimo faktycznego używania trybu 32&amp;nbsp;bitowego. Proszę spróbować wybrać inny tryb z listy i sprawdzić, czy komunikat ten nie będzie się już pojawiał lub po prostu wyłączyć go teraz, jeśli wiadomo, że wymagany tryb kolorów (%4&amp;nbsp;bitów) nie jest dostępny w systemie operacyjnym gościa.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5044,7 +5044,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation type="obsolete">&lt;p&gt;Wystąpił błąd krytyczny podczas pracy maszyny wirtualnej i została ona zatrzymana.&lt;/p&gt;&lt;p&gt;Pomoc można uzyskać korzystając z forum na stronie &lt;a href=http://www.virtualbox.org&gt;http://www.virtualbox.org&lt;/a&gt; (sekcja Community) lub kontaktując się bezpośrednio z nami. Proszę pamiętać, aby do opisu problemu dołączyć zawartość pliku z logiem &lt;tt&gt;VBox.log&lt;/tt&gt; oraz plik obrazu &lt;tt&gt;VBox.png&lt;/tt&gt;, które można znaleźć w katalogu &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;, jak również informację o tym co było robione bezpośrednio przed wystąpieniem błędu. Dostęp do powyższych plików można także uzyskać wybierając opcję &lt;b&gt;Pokaż log&lt;/b&gt; z menu &lt;b&gt;Maszyna&lt;/b&gt; w oknie głównym programu VirualBox.&lt;/p&gt;&lt;p&gt;Proszę wcisnąć &lt;b&gt;OK&lt;/b&gt;, aby wyłączyć maszynę lub &lt;b&gt;Ignoruj&lt;/b&gt;, jeśli należy pozostawić ją nienaruszoną w celu debugowania. &lt;b&gt;Uwaga&lt;/b&gt;: debugowanie wymaga odpowiedniej wiedzy i narzędzi, zalecane więc jest wciśnięcie &lt;b&gt;OK&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings dialog or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you want to continue?&lt;/p&gt;</source>
+        <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings dialog or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you wish to continue?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Nie podłączono dysku twardego do maszyny wirtualnej. Maszyna nie będzie mogła wystartować, dopóki nie zostanie podłączony dysk twardy z zainstalowanym systemem operacyjnym lub inny uruchamialny nośnik, poprzez okno ustawień maszyny lub przy pomocy Asystenta pierwszego uruchomienia.&lt;/p&gt;&lt;p&gt;Kontynuować?&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5201,7 +5201,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Przełącz</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Do you really want to reset the virtual machine?&lt;/p&gt;&lt;p&gt;When the machine is reset, unsaved data of all applications running inside it will be lost.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Do you really want to reset the virtual machine?&lt;/p&gt;&lt;p&gt;This will cause any unsaved data in applications running inside it to be lost.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Zresetować maszynę wirtualną?&lt;/p&gt;&lt;p&gt;Po zresetowaniu wszystkie niezapisane dane aplikacji uruchomionych w maszynie zostaną utracone.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5224,7 +5224,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się skopiować pliku &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; do &lt;b&gt;&lt;nobr&gt;%2&lt;/nobr&gt;&lt;/b&gt; (%3).</translation>
     </message>
     <message>
-        <source>&lt;p&gt;There are no unused hard disks available for the newly created attachment.&lt;/p&gt;&lt;p&gt;Press the &lt;b&gt;Create&lt;/b&gt; button to start the &lt;i&gt;New Virtual Disk&lt;/i&gt; wizard and create a new hard disk, or press the &lt;b&gt;Select&lt;/b&gt; button to open the &lt;i&gt;Virtual Disk Manager&lt;/i&gt; and select what to do.&lt;/p&gt;</source>
+        <source>&lt;p&gt;There are no unused hard disks available for the newly created attachment.&lt;/p&gt;&lt;p&gt;Press the &lt;b&gt;Create&lt;/b&gt; button to start the &lt;i&gt;New Virtual Disk&lt;/i&gt; wizard and create a new hard disk, or press the &lt;b&gt;Select&lt;/b&gt; if you wish to open the &lt;i&gt;Virtual Disk Manager&lt;/i&gt;.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Nie ma wolnych dysków twardych dostępnych dla tego podłączenia. &lt;/p&gt;&lt;p&gt;Proszę wcisnąć przycisk &lt;b&gt;Stwórz&lt;/b&gt;, aby uruchomić asystenta tworzenia &lt;i&gt;Nowego dysku wirtualnego&lt;/i&gt; i utworzyć nowy dysk lub &lt;b&gt;Wybierz&lt;/b&gt;, aby otworzyć &lt;i&gt;Menedżera dysków wirtualnych&lt;/i&gt; i tam dokonać wyboru.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5246,7 +5246,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;p&gt;Nie udało się włączyć trybu pełnokranowego z powodu niewystarczającej ilości pamięci wideo.&lt;/p&gt;&lt;p&gt;Należy skonfigurować maszynę wirtualną tak, aby miała przynajmniej &lt;b&gt;%1&lt;/b&gt; pamięci wideo.&lt;/p&gt;&lt;p&gt;Proszę wcisnąć &lt;b&gt;Ignoruj&lt;/b&gt;, aby mimo to przełączyć do trybu pełnoekranowego lub &lt;b&gt;Anuluj&lt;/b&gt;, aby anulować tę operację.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>You have already installed the latest VirtualBox version. Please repeat the version check later.</source>
+        <source>You are already running the most recent version of VirtualBox.</source>
         <translation>Najnowsza wersja VirtualBox jest już zainstalowana. Proszę powtórzyć sprawdzanie wersji później.</translation>
     </message>
     <message>
@@ -5290,7 +5290,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Z&amp;resetuj wszystkie ostrzeżenia</translation>
     </message>
     <message>
-        <source>Cause all suppressed warnings and messages to be shown again</source>
+        <source>Go back to showing all suppressed warnings and messages</source>
         <translation>Powoduje, że wszystkie wyłączone typy ostrzeżeń i wiadomości będą pokazywane ponownie</translation>
     </message>
     <message>
@@ -5318,7 +5318,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Pokazuje okno z informacjami o produkcie</translation>
     </message>
     <message>
-        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version from this direct link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
+        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version using the link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
         <translation>&lt;p&gt;Została wydana nowa wersja VirtualBox! Wersja &lt;b&gt;%1&lt;/b&gt; jest dostępna na &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;Można pobrać tę wersję bezpośrednio spod adresu:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5335,7 +5335,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;p&gt;Usunąć %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; z listy znanych nośników?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>Note that this hard disk is inaccessible so that its storage unit cannot be deleted right now.</source>
+        <source>Note that as this hard disk is inaccessible its storage unit cannot be deleted right now.</source>
         <translation>Uwaga: ten dysk twardy jest niedostępny, więc aktualnie jego obraz nie może być usunięty.</translation>
     </message>
     <message>
@@ -5343,7 +5343,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Następne okno pozwala wybrać czy należy usunąć obraz tego dysku twardego, czy zachować w celu późniejszego użycia.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and therefore it will be possible to add it to the list later again.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and that it will be possible to add it to the list later again.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Uwaga: obraz tego nośnika nie zostanie usunięty, więc będzie później możliwe ponowne dodanie go do listy.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5374,7 +5374,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się usunąć obrazu dysku twardego &lt;b&gt;%1&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;There are no unused hard disks available for the newly created attachment.&lt;/p&gt;&lt;p&gt;Press the &lt;b&gt;Create&lt;/b&gt; button to start the &lt;i&gt;New Virtual Disk&lt;/i&gt; wizard and create a new hard disk, or press the &lt;b&gt;Select&lt;/b&gt; button to open the &lt;i&gt;Virtual Media Manager&lt;/i&gt; and select what to do.&lt;/p&gt;</source>
+        <source>&lt;p&gt;There are no unused hard disks available for the newly created attachment.&lt;/p&gt;&lt;p&gt;Press the &lt;b&gt;Create&lt;/b&gt; button to start the &lt;i&gt;New Virtual Disk&lt;/i&gt; wizard and create a new hard disk, or press the &lt;b&gt;Select&lt;/b&gt; if you wish to open the &lt;i&gt;Virtual Media Manager&lt;/i&gt;.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Nie ma wolnych dysków twardych dostępnych dla tego podłączenia. &lt;/p&gt;&lt;p&gt;Proszę wcisnąć przycisk &lt;b&gt;Stwórz&lt;/b&gt;, aby uruchomić asystenta tworzenia &lt;i&gt;Nowego dysku wirtualnego&lt;/i&gt; i utworzyć nowy dysk lub &lt;b&gt;Wybierz&lt;/b&gt;, aby otworzyć &lt;i&gt;Menedżera nośników wirtualnych&lt;/i&gt; i tam dokonać wyboru.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5382,15 +5382,15 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się utworzyć obrazu dysku twardego &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;.&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>Failed to attach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; to the slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to attach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; to slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Nie udało się podłączyć dysku twardego &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; do slotu %2 maszyny &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>Failed to detach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to detach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Nie udało się odłączyć dysku twardego &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; od slotu %2 maszyny &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>Failed to mount the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; to the machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to mount the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; on the machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Nie udało się zamontować %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; w maszynie &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
@@ -5406,7 +5406,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się zamknąć %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</translation>
     </message>
     <message>
-        <source>Failed to get the accessibility state of the medium &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <source>Failed to determine the accessibility state of the medium &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
         <translation>Nie udało się uzyskać stanu dostępności nośnika &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</translation>
     </message>
     <message>
@@ -5422,7 +5422,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&lt;p&gt;Jeden lub więcej z zarejestrowanych wirtualnych twardych dysków, nośników CD/DVD lub dyskietek nie jest w tej chwili dostępny. W wyniku tego nie będzie można używać maszyn wirtualnych korzystających z tych nośników, dopóki dostęp do nich nie zostanie uzyskany ponownie.&lt;/p&gt;&lt;p&gt;Proszę wcisnąć &lt;b&gt;Sprawdź&lt;/b&gt;, aby otworzyć Menedżera nośników wirtualnych i sprawdzić które z nośników są niedostępne lub &lt;b&gt;Ignoruj&lt;/b&gt;, aby zignorować tę wiadomość.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Your existing VirtualBox settings files were automatically converted from the old format to a new format necessary for the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;More&lt;/b&gt; if you want to get more information about what files were converted and access additional actions.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Exit&lt;/b&gt; to terminate the VirtualBox application without saving the results of the conversion to disk.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Your existing VirtualBox settings files were automatically converted from the old format to a new format required by the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;More&lt;/b&gt; if you want to get more information about what files were converted and access additional actions.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Exit&lt;/b&gt; to terminate the VirtualBox application without saving the results of the conversion to disk.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Istniejące pliki ustawień VirtualBox zostały automatycznie przekonwertowane ze starego formatu do nowego, wymaganego przez nową wersję VirtualBox.&lt;/p&gt;&lt;p&gt;Proszę wcisnąć &lt;b&gt;OK&lt;/b&gt;, aby uruchomić VirtualBox lub &lt;b&gt;Więcej&lt;/b&gt;, aby uzyskać więcej informacji o konwertowanych plikach i uzyskać dostęp do dodatkowych operacji.&lt;/p&gt;&lt;p&gt;Wciśnięcie &lt;b&gt;Wyjdź&lt;/b&gt; pozwala zakończyć aplikację bez zapisywania wyników konwersji na dysku.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5488,7 +5488,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się uzyskać dostępu do USB w systemie operacyjnym gospodarza, ponieważ system plików USB (usbfs) jak również usługi DBus i hal nie są aktualnie dostępne. Jeśli potrzebne jest użycie urządzeń USB wewnątrz goszczonych systemów, należy to naprawić i uruchomić ponownie VirtualBox.</translation>
     </message>
     <message>
-        <source>You are trying to shut down the guest with the ACPI power button. This is currently not possible because the guest does not use the ACPI subsystem.</source>
+        <source>You are trying to shut down the guest with the ACPI power button. This is currently not possible because the guest does not support software shutdown.</source>
         <translation>Podjęto próbę zamknięcia goszczonego systemu z użyciem przycisku zasilania ACPI. Nie jest to teraz możliwe, ponieważ goszczony system nie używa podsystemu ACPI.</translation>
     </message>
     <message>
@@ -5537,7 +5537,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się utworzyć interfejsu sieci izolowanej.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Your existing VirtualBox settings files will be automatically converted from the old format to a new format necessary for the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;Exit&lt;/b&gt; if you want to terminate the VirtualBox application without any further actions.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Your existing VirtualBox settings files will be automatically converted from the old format to a new format required by the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;Exit&lt;/b&gt; if you want to terminate the VirtualBox application without any further actions.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Istniejące pliki ustawień VirtualBox zostaną automatycznie przekonwertowane ze starego formatu do nowego, wymaganego przez nową wersję VirtualBox.&lt;/p&gt;&lt;p&gt;Proszę wcisnąć przycisk &lt;b&gt;OK&lt;/b&gt;, aby uruchomić teraz VirtualBox lub przycisk &lt;b&gt;Zakończ&lt;/b&gt;, aby zamknąć program VirtualBox bez podejmowania żadnych dalszych akcji.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5569,7 +5569,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się wyeksportować urządzenia programowego &lt;b&gt;%1&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Deleting this host-only network will lead to the deleting of the host-only interface this network is based on. Do you want to remove the (host-only network) interface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; this interface may be in use by one or more virtual network adapters belonging to one of your VMs. After it is removed, these adapters will no longer be usable until you correct their settings by either choosing a different interface name or a different adapter attachment type.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Deleting this host-only network will remove the host-only interface this network is based on. Do you want to remove the (host-only network) interface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; this interface may be in use by one or more virtual network adapters belonging to one of your VMs. After it is removed, these adapters will no longer be usable until you correct their settings by either choosing a different interface name or a different adapter attachment type.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5631,7 +5631,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation type="obsolete">&amp;Adres e-mail</translation>
     </message>
     <message>
-        <source>Enter your valid e-mail address.</source>
+        <source>Enter your e-mail address. Please use a valid address here.</source>
         <translation>Wprowadź swój adres e-mail.</translation>
     </message>
     <message>
@@ -5663,7 +5663,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Nie udało się ustanowić połączenia.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Enter your full name using Latin characters and your e-mail address to the fields below. Please note that Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Enter your full name using Latin characters and your e-mail address to the fields below. Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Wypełnij ten formularz w celu poinformowania nas, że korzystasz z programu VirtualBox oraz, opcjonalnie, aby być informowanym o jego uaktualnieniach i nowościach.&lt;/p&gt;&lt;p&gt;Wprowadź poniżej swoje imię i nazwisko używając znaków alfabetu łacińskiego oraz swój adres e-mail. Uwaga: firma Sun Microsystems będzie używała tych danych tylko w celu gromadzenia statystyk popularności programu i wysyłania biuletynów. W szczególności, Sun Microsystems nigdy nie przekaże Twoich danych osobowych podmiotom trzecim. Szczegółowe informacje na temat tego jak korzystamy z Twoich danych osobowych można znaleźć w sekcji &lt;b&gt;Privacy Policy&lt;/b&gt; instrukcji obsługi programu VirtualBox lub na podstronie &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; strony internetowej programu VirtualBox.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5683,11 +5683,11 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Please use the Latin characters to fill the fields below. Please note that Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Please use Latin characters only to fill in  the fields below. Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>I &amp;have a Sun Online account already:</source>
+        <source>I &amp;already have a Sun Online account:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5699,7 +5699,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>I &amp;would like to register creating a new Sun Online account:</source>
+        <source>I &amp;would like to create a new Sun Online account:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5878,7 +5878,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation type="obsolete">Z&amp;resetuj wszystkie ostrzeżenia</translation>
     </message>
     <message>
-        <source>Cause all suppressed warnings and messages to be shown again</source>
+        <source>Go back to showing all suppressed warnings and messages</source>
         <translation type="obsolete">Powoduje, że wszystkie wyłączone typy ostrzeżeń i wiadomości będą pokazywane ponownie</translation>
     </message>
     <message>
@@ -5926,7 +5926,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Uruchamia wybraną maszynę wirtualną</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;Welcome to VirtualBox!&lt;/h3&gt;&lt;p&gt;The left part of this window is intended to display a list of all virtual machines on your computer. The list is empty now because you haven&apos;t created any virtual machines yet.&lt;img src=welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;In order to create a new virtual machine, press the &lt;b&gt;New&lt;/b&gt; button in the main tool bar located at the top of the window.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;%1&lt;/b&gt; key to get instant help, or visit &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt; for the latest information and news.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Welcome to VirtualBox!&lt;/h3&gt;&lt;p&gt;The left part of this window is  a list of all virtual machines on your computer. The list is empty now because you haven&apos;t created any virtual machines yet.&lt;img src=welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;In order to create a new virtual machine, press the &lt;b&gt;New&lt;/b&gt; button in the main tool bar located at the top of the window.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;%1&lt;/b&gt; key to get instant help, or visit &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt; for the latest information and news.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;h3&gt;Witamy w VirtualBox!&lt;/h3&gt;&lt;p&gt;Lewa część tego okna przeznaczona jest do wyświetlania listy maszyn wirtualnych dostępnych na tym komputerze. Lista jest teraz pusta, ponieważ nie utworzono jeszcze żadnej maszyny.&lt;img src=welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;Aby utworzyć nową wirtualną maszynę, proszę wcisnąć przycisk &lt;b&gt;Nowa&lt;/b&gt; na głównym pasku narzędziowym, umieszczonym na górze okna.&lt;/p&gt;&lt;p&gt;Można także wcisnąć klawisz &lt;b&gt;%1&lt;/b&gt;, aby uzyskać natychmiastową pomoc lub odwiedzić stronę &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt;, aby uzyskać więcej informacji i wiadomości.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5982,7 +5982,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>Wstrzymuje pracę maszyny wirtualnej</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;Welcome to VirtualBox!&lt;/h3&gt;&lt;p&gt;The left part of this window is intended to display a list of all virtual machines on your computer. The list is empty now because you haven&apos;t created any virtual machines yet.&lt;img src=:/welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;In order to create a new virtual machine, press the &lt;b&gt;New&lt;/b&gt; button in the main tool bar located at the top of the window.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;%1&lt;/b&gt; key to get instant help, or visit &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt; for the latest information and news.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Welcome to VirtualBox!&lt;/h3&gt;&lt;p&gt;The left part of this window is  a list of all virtual machines on your computer. The list is empty now because you haven&apos;t created any virtual machines yet.&lt;img src=:/welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;In order to create a new virtual machine, press the &lt;b&gt;New&lt;/b&gt; button in the main tool bar located at the top of the window.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;%1&lt;/b&gt; key to get instant help, or visit &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt; for the latest information and news.&lt;/p&gt;</source>
         <translation>&lt;h3&gt;Witamy w VirtualBox!&lt;/h3&gt;&lt;p&gt;Lewa część tego okna przeznaczona jest do wyświetlania listy maszyn wirtualnych dostępnych na tym komputerze. Lista jest teraz pusta, ponieważ nie utworzono jeszcze żadnej maszyny.&lt;img src=:/welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;Aby utworzyć nową wirtualną maszynę, proszę wcisnąć przycisk &lt;b&gt;Nowa&lt;/b&gt; na głównym pasku narzędziowym, umieszczonym na górze okna.&lt;/p&gt;&lt;p&gt;Można także wcisnąć klawisz &lt;b&gt;%1&lt;/b&gt;, aby uzyskać natychmiastową pomoc lub odwiedzić stronę &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt;, aby uzyskać więcej informacji i wiadomości.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6015,7 +6015,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
         <translation>&amp;Eksportuj urządzenie programowe...</translation>
     </message>
     <message>
-        <source>Export an appliance out of VM&apos;s from VirtualBox</source>
+        <source>Export one or more VirtualBox virtual machines as an appliance</source>
         <translation>Eksportuje urządzenie programowe (appliance) składające się z maszyn VirtualBox</translation>
     </message>
     <message>
@@ -6026,7 +6026,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
 <context>
     <name>VBoxSettingsDialog</name>
     <message>
-        <source>&lt;i&gt;Select a settings category from the list on the left side and move the mouse over a settings item to get more information&lt;/i&gt;.</source>
+        <source>&lt;i&gt;Select a settings category from the list on the left-hand side and move the mouse over a settings item to get more information&lt;/i&gt;.</source>
         <translation>&lt;i&gt;Proszę wybrać kategorię ustawień z listy po lewej i przesunąć kursor myszy nad wybraną pozycję, aby uzyskać więcej informacji&lt;i&gt;.</translation>
     </message>
     <message>
@@ -6335,7 +6335,7 @@ Uwaga: funkcja ta wymaga zainstalowania Dodatków (Guest Additions).&lt;/qt&gt;<
         <translation>Odrzuca aktualną migawkę i przywraca stan maszyny do stanu sprzed wykonania migawki</translation>
     </message>
     <message>
-        <source>Show details of the selected snapshot</source>
+        <source>Show the details of the selected snapshot</source>
         <translation>Pokazuje szczegóły wybranej migawki</translation>
     </message>
     <message>
@@ -6392,7 +6392,7 @@ Uwaga: funkcja ta wymaga zainstalowania Dodatków (Guest Additions).&lt;/qt&gt;<
         <translation>&amp;Zastąp...</translation>
     </message>
     <message>
-        <source>Replaces the current text with the content of a given file.</source>
+        <source>Replaces the current text with the content of a file.</source>
         <translation>Zastępuje bieżący tekst zawartością wybranego pliku.</translation>
     </message>
     <message>
@@ -6577,7 +6577,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
 <context>
     <name>VBoxUSBMenu</name>
     <message>
-        <source>&lt;no available devices&gt;</source>
+        <source>&lt;no devices available&gt;</source>
         <comment>USB devices</comment>
         <translation>&lt;brak dostępnych urządzeń&gt;</translation>
     </message>
@@ -6662,7 +6662,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
         <translation>Podsumowanie</translation>
     </message>
     <message>
-        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version from this direct link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
+        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version using the link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
         <translation>&lt;p&gt;Została wydana nowa wersja VirtualBox! Wersja &lt;b&gt;%1&lt;/b&gt; jest dostępna na &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;Można pobrać tę wersję bezpośrednio spod adresu:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6670,7 +6670,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
         <translation>&lt;p&gt;Nie udało się uzyskać informacji o nowej wersji programu z powodu następującego błędu sieci:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>You have already installed the latest VirtualBox version. Please repeat the version check later.</source>
+        <source>You are already running the most recent version of VirtualBox.</source>
         <translation>Najnowsza wersja VirtualBox jest już zainstalowana. Proszę powtórzyć sprawdzanie wersji później.</translation>
     </message>
     <message>
@@ -6707,7 +6707,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
         <translation>Asystent pierwszego uruchomienia</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for installing an operating system of your choice onto this virtual machine.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel execution of this wizard.&lt;/p&gt;</source>
+        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for installing an operating system of your choice onto this virtual machine.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel the execution of this wizard.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Właśnie po raz pierwszy uruchomiono stworzoną maszynę wirtualną. Ten asystent pomaga w przeprowadzeniu kroków koniecznych do zainstalowania na niej wybranego systemu operacyjnego.&lt;/p&gt;&lt;p&gt;Proszę użyć przycisku &lt;b&gt;Dalej&lt;/b&gt;, aby przejść do następnego kroku lub przycisku &lt;b&gt;Wstecz&lt;/b&gt;, aby powrócić do kroku poprzedniego. Można również użyć &lt;b&gt;Anuluj&lt;/b&gt;, aby przerwać pracę asystenta.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6715,7 +6715,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
         <translation>Asystent pierwszego uruchomienia</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Select the type of the media you would like to use for installation purposes below.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Select the type of media you would like to use for installation.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Proszę wybrać typ nośnika jaki ma zostać użyty w celu instalacji systemu operacyjnego.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6799,11 +6799,11 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
         <translation type="obsolete">&lt;table&gt;&lt;tr&gt;&lt;td&gt;Typ:&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Źródło:&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for booting an operating system of your choice on the virtual machine.&lt;/p&gt;&lt;p&gt;Note that you will not be able to install an operating system into this virtual machine right now because you did not attach any hard disk to it. If this is not what you want, you can cancel execution of this wizard, select &lt;b&gt;Settings&lt;/b&gt; from the &lt;b&gt;Machine&lt;/b&gt; menu of the main VirtualBox window to access the settings dialog of this machine and change the hard disk configuration.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel execution of this wizard.&lt;/p&gt;</source>
+        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for booting an operating system of your choice on the virtual machine.&lt;/p&gt;&lt;p&gt;Note that you will not be able to install an operating system into this virtual machine right now because you did not attach any hard disk to it. If this is not what you want, you can cancel the execution of this wizard, select &lt;b&gt;Settings&lt;/b&gt; from the &lt;b&gt;Machine&lt;/b&gt; menu of the main VirtualBox window to access the settings dialog of this machine and change the hard disk configuration.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel the execution of this wizard.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Właśnie po raz pierwszy uruchomiono stworzoną maszynę wirtualną. Ten asystent pomaga w przeprowadzeniu kroków koniecznych do wystartowania na niej wybranego systemu operacyjnego.&lt;/p&gt;&lt;p&gt;Uwaga: aktualnie nie będzie można zainstalować systemu operacyjnego w tej maszynie, ponieważ nie podłączono do niej żadnego dysku twardego. Można poprawić to teraz, zamykając asystenta i wybierając opcję &lt;b&gt;Ustawienia&lt;/b&gt; z menu &lt;b&gt;Maszyna&lt;/b&gt; w oknie głównym VirtualBox, a następnie zmieniając konfigurację dysków twardych bieżącej maszyny.&lt;/p&gt;&lt;p&gt;Proszę użyć przycisku &lt;b&gt;Dalej&lt;/b&gt;, aby przejść do następnego kroku lub przycisku &lt;b&gt;Wstecz&lt;/b&gt;, aby powrócić do kroku poprzedniego. Można również użyć &lt;b&gt;Anuluj&lt;/b&gt;, aby przerwać pracę asystenta.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Select the type of the media you would like to use for booting an operating system.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Select the type of media you would like to use for booting an operating system.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Proszę wybrać typ nośnika jaki ma zostać użyty w celu uruchomienia systemu operacyjnego.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -7409,7 +7409,7 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>VBoxVMSettingsAudio</name>
     <message>
-        <source>When checked, the virtual PCI audio card is plugged into the virtual machine that uses the specified driver to communicate to the host audio card.</source>
+        <source>When checked, a virtual PCI audio card will be plugged into the virtual machine and will communicate with the host audio system using the specified driver.</source>
         <translation>Podłącza wirtualną kartę dźwiękową PCI do maszyny wirtualnej przy użyciu wybranego z listy sterownika, umożliwiającego komunikację z kartą dźwiękową gospodarza.</translation>
     </message>
     <message>
@@ -7495,7 +7495,7 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>VBoxVMSettingsDisplay</name>
     <message>
-        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; for video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
+        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7523,7 +7523,7 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished">Rozszerzone właściwości:</translation>
     </message>
     <message>
-        <source>When checked, the virtual machine will get access to the 3D graphics capabilities available on the host.</source>
+        <source>When checked, the virtual machine will be given access to the 3D graphics capabilities available on the host.</source>
         <translation type="unfinished">Udostępnia maszynie wirtualnej funkcje grafiki 3D dostępne w systemie operacyjnym gospodarza.</translation>
     </message>
     <message>
@@ -7578,7 +7578,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">[nazwa]</translation>
     </message>
     <message>
-        <source>&lt;i&gt;Select a settings category from the list on the left side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
+        <source>&lt;i&gt;Select a settings category from the list on the left-hand side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
         <translation type="obsolete">&lt;i&gt;Proszę wybrać kategorię ustawień z listy po lewej i przesunąć kursor myszy nad wybraną pozycję, aby uzyskać więcej informacji&lt;i&gt;.</translation>
     </message>
     <message>
@@ -7906,7 +7906,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">Określa nazwę pliku obrazu do zamontowania w wirtualnym napędzie dyskietek i pozwala szybko wybrać inny obraz.</translation>
     </message>
     <message>
-        <source>When checked, the virtual PCI audio card is plugged into the virtual machine that uses the specified driver to communicate to the host audio card.</source>
+        <source>When checked, a virtual PCI audio card will be plugged into the virtual machine and will communicate with the host audio system using the specified driver.</source>
         <translation type="obsolete">Zaznaczenie tej opcji podłącza wirtualną kartę dźwiękową PCI do maszyny wirtualnej przy użyciu wybranego z listy sterownika, umożliwiającego komunikację z kartą dźwiękową gospodarza.</translation>
     </message>
     <message>
@@ -8718,7 +8718,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
         <translation type="obsolete">maszynie wirtualnej przydzielono więcej niż &lt;b&gt;75%&lt;/b&gt; pamięci (&lt;b&gt;%1&lt;/b&gt;) tego komputera. Nie pozostało dość pamięci dla systemu operacyjnego gospodarza. Proszę wybrać mniejszy rozmiar.</translation>
     </message>
     <message>
-        <source>When checked, the virtual machine will get access to the 3D graphics capabilities available on the host.</source>
+        <source>When checked, the virtual machine will be given access to the 3D graphics capabilities available on the host.</source>
         <translation type="obsolete">Udostępnia maszynie wirtualnej funkcje grafiki 3D dostępne w systemie operacyjnym gospodarza.</translation>
     </message>
     <message>

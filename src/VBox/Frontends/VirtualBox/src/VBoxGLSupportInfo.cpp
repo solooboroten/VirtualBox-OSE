@@ -524,6 +524,7 @@ bool VBoxVHWAInfo::isVHWASupported() const
     if(mglInfo.getGLVersion() <= 0)
     {
         /* error occurred while gl info initialization */
+        VBOXQGLLOGREL(("2D not supported: gl version info not initialized properly\n"));
         return false;
     }
 
@@ -531,17 +532,27 @@ bool VBoxVHWAInfo::isVHWASupported() const
     /* in case we do not support shaders & multitexturing we can not supprt dst colorkey,
      * no sense to report Video Acceleration supported */
     if(!mglInfo.isFragmentShaderSupported())
+    {
+        VBOXQGLLOGREL(("2D not supported: fragment shader unsupported\n"));
         return false;
+    }
 #endif
     if(mglInfo.getMultiTexNumSupported() < 2)
+    {
+        VBOXQGLLOGREL(("2D not supported: multitexture unsupported\n"));
         return false;
+    }
 
     /* color conversion now supported only GL_TEXTURE_RECTANGLE
      * in this case only stretching is accelerated
      * report as unsupported, TODO: probably should report as supported for stretch acceleration */
     if(!mglInfo.isTextureRectangleSupported())
+    {
+        VBOXQGLLOGREL(("2D not supported: texture rectangle unsupported\n"));
         return false;
+    }
 
+    VBOXQGLLOGREL(("2D is supported!\n"));
     return true;
 }
 
@@ -559,15 +570,25 @@ bool VBoxVHWAInfo::checkVHWASupport()
     rc = RTPathExecDir(pszVBoxPath, RTPATH_MAX); AssertRCReturn(rc, false);
 #if defined(RT_OS_WINDOWS) || defined(RT_OS_OS2)
     rc = RTPathAppend(pszVBoxPath, RTPATH_MAX, "VBoxTestOGL.exe");
+    static char pszVBoxPathArg[RTPATH_MAX];
+    pszVBoxPathArg[0] = '"';
+    strcpy(pszVBoxPathArg+1, pszVBoxPath);
+    char *pszPathEnd = (char *)memchr(pszVBoxPathArg, '\0', RTPATH_MAX);
+    pszPathEnd[0] = '"';
+    pszPathEnd[1] = '\0';
+    papszArgs[0] = pszVBoxPathArg;         /* argv[0] */
 #else
     rc = RTPathAppend(pszVBoxPath, RTPATH_MAX, "VBoxTestOGL");
+    papszArgs[0] = pszVBoxPath;         /* argv[0] */
 #endif
     AssertRCReturn(rc, false);
-    papszArgs[0] = pszVBoxPath;         /* argv[0] */
 
     rc = RTProcCreate(pszVBoxPath, papszArgs, RTENV_DEFAULT, 0, &Process);
     if (RT_FAILURE(rc))
+    {
+        VBOXQGLLOGREL(("2D support test failed: failed to create a test process\n"));
         return false;
+    }
 
     StartTS = RTTimeMilliTS();
 
@@ -582,6 +603,7 @@ bool VBoxVHWAInfo::checkVHWASupport()
             RTProcTerminate(Process);
             RTThreadSleep(100);
             RTProcWait(Process, RTPROCWAIT_FLAGS_NOBLOCK, &ProcStatus);
+            VBOXQGLLOGREL(("2D support test failed: the test did not complete within 30 sec\n"));
             return false;
         }
         RTThreadSleep(100);
@@ -591,9 +613,12 @@ bool VBoxVHWAInfo::checkVHWASupport()
     {
         if ((ProcStatus.enmReason==RTPROCEXITREASON_NORMAL) && (ProcStatus.iStatus==0))
         {
+            VBOXQGLLOGREL(("2D support test succeeded\n"));
             return true;
         }
     }
+
+    VBOXQGLLOGREL(("2D support test failed: err code (%Rra)\n", rc));
 
     return false;
 #else

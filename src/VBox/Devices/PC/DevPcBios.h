@@ -28,18 +28,6 @@
 #define VBOX_DMI_TABLE_ENTR          5
 #define VBOX_DMI_TABLE_SIZE          0x100
 
-
-/** @def VBOX_MPS_TABLE_BASE
- *
- * Must be located in the same page as the DMI table.
- */
-#define VBOX_MPS_TABLE_BASE          0xe1100
-
-#define VBOX_SMBIOS_MAJOR_VER        2
-#define VBOX_SMBIOS_MINOR_VER        5
-#define VBOX_SMBIOS_MAXSS            0xff   /* Not very accurate */
-
-
 /** @def VBOX_VMI_BIOS_BASE
  *
  * Must be located between 0xC0000 and 0xDEFFF, otherwise it will not be
@@ -52,5 +40,8 @@
  */
 #define VBOX_LANBOOT_SEG             0xe200
 
-#endif
+#define VBOX_SMBIOS_MAJOR_VER        2
+#define VBOX_SMBIOS_MINOR_VER        5
+#define VBOX_SMBIOS_MAXSS            0xff   /* Not very accurate */
 
+#endif

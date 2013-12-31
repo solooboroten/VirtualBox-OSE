@@ -22,13 +22,13 @@
 #ifndef ___PDMInternal_h
 #define ___PDMInternal_h
 
-#include <VBox/cdefs.h>
 #include <VBox/types.h>
 #include <VBox/param.h>
 #include <VBox/cfgm.h>
 #include <VBox/stam.h>
 #include <VBox/vusb.h>
 #include <VBox/pdmasynccompletion.h>
+#include <VBox/pdmcommon.h>
 #include <iprt/assert.h>
 #include <iprt/critsect.h>
 #ifdef IN_RING3
@@ -100,6 +100,9 @@ typedef struct PDMDEVINSINT
     R3PTRTYPE(PPDMDEV)              pDevR3;
     /** Pointer to the list of logical units associated with the device. (FIFO) */
     R3PTRTYPE(PPDMLUN)              pLunsR3;
+    /** Pointer to the asynchronous notification callback set while in
+     * FNPDMDEVSUSPEND or FNPDMDEVPOWEROFF. */
+    R3PTRTYPE(PFNPDMDEVASYNCNOTIFY) pfnAsyncNotify;
     /** Configuration handle to the instance node. */
     R3PTRTYPE(PCFGMNODE)            pCfgHandle;
 
@@ -116,8 +119,6 @@ typedef struct PDMDEVINSINT
     R0PTRTYPE(struct PCIDevice *)   pPciDeviceR0;
     /** R0 pointer to associated PCI bus structure. */
     R0PTRTYPE(PPDMPCIBUS)           pPciBusR0;
-    /** Alignment padding. */
-    RTR0PTR                         Alignment0;
 
     /** RC pointer to the VM this instance was created for. */
     PVMRC                           pVMRC;
@@ -134,6 +135,14 @@ typedef struct PDMDEVINSINT
  * @{ */
 /** Used by pdmR3Load to mark device instances it found in the saved state. */
 #define PDMDEVINSINT_FLAGS_FOUND         RT_BIT_32(0)
+/** Indicates that the device hasn't been powered on or resumed.
+ * This is used by PDMR3PowerOn, PDMR3Resume, PDMR3Suspend and PDMR3PowerOff
+ * to make sure each device gets exactly one notification for each of those
+ * events.  PDMR3Resume and PDMR3PowerOn also makes use of it to bail out on
+ * a failure (already resumed/powered-on devices are suspended). */
+#define PDMDEVINSINT_FLAGS_SUSPENDED     RT_BIT_32(1)
+/** Indicates that the device has been reset already.  Used by PDMR3Reset. */
+#define PDMDEVINSINT_FLAGS_RESET         RT_BIT_32(2)
 /** @} */
 
 
@@ -170,9 +179,14 @@ typedef struct PDMUSBINSINT
     R3PTRTYPE(PPDMUSBHUB)           pHub;
     /** The port number that we're connected to. */
     uint32_t                        iPort;
-#if HC_ARCH_BITS == 64
-    uint32_t                        Alignment0;
-#endif
+    /** Indicates that the USB device hasn't been powered on or resumed.
+     * See PDMDEVINSINT_FLAGS_SUSPENDED. */
+    bool                            fVMSuspended;
+    /** Indicates that the USB device has been reset. */
+    bool                            fVMReset;
+    /** Pointer to the asynchronous notification callback set while in
+     * FNPDMDEVSUSPEND or FNPDMDEVPOWEROFF. */
+    R3PTRTYPE(PFNPDMUSBASYNCNOTIFY) pfnAsyncNotify;
 } PDMUSBINSINT;
 
 
@@ -196,6 +210,14 @@ typedef struct PDMDRVINSINT
     /** Flag indicating that the driver is being detached and destroyed.
      * (Helps detect potential recursive detaching.) */
     bool                            fDetaching;
+    /** Indicates that the driver hasn't been powered on or resumed.
+     * See PDMDEVINSINT_FLAGS_SUSPENDED. */
+    bool                            fVMSuspended;
+    /** Indicates that the driver has been reset already. */
+    bool                            fVMReset;
+    /** Pointer to the asynchronous notification callback set while in
+     * PDMUSBREG::pfnVMSuspend or PDMUSBREG::pfnVMPowerOff. */
+    R3PTRTYPE(PFNPDMDRVASYNCNOTIFY) pfnAsyncNotify;
     /** Configuration handle to the instance node. */
     PCFGMNODE                       pCfgHandle;
 

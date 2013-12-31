@@ -786,6 +786,12 @@ VMMDECL(uint64_t)  CPUMGetGuestMsr(PVMCPU pVCpu, unsigned idMsr)
             u64 = pVCpu->cpum.s.GuestMsr.msr.tscAux;
             break;
 
+        case MSR_IA32_PERF_STATUS:
+            /** @todo: could really be not exactly correct, maybe use host's values */
+            u64 =     (1000ULL                /* TSC increment by tick */)
+                    | (((uint64_t)4ULL) << 40 /* CPU multiplier */       );
+            break;
+
         /* fs & gs base skipped on purpose as the current context might not be up-to-date. */
         default:
             AssertFailed();
@@ -1083,9 +1089,10 @@ VMMDECL(void) CPUMGetGuestCpuId(PVMCPU pVCpu, uint32_t iLeaf, uint32_t *pEax, ui
         &&  fHasMoreCaches
         &&  pVM->cpum.s.enmGuestCpuVendor == CPUMCPUVENDOR_INTEL)
     {
-        /* Report unified L0 cache, Linux'es num_cpu_cores() requires
+        /* Report L0 data cache, Linux'es num_cpu_cores() requires
          * that to be non-0 to detect core count correctly. */
-        *pEax |= (1 << 5) | 3;
+        *pEax |= (1 << 5) /* level 1 */ | 1 /* 1 - data cache, 2 - i-cache, 3 - unified */ ;
+        *pEbx = 63 /* linesize 64 */ ;
     }
 
     Log2(("CPUMGetGuestCpuId: iLeaf=%#010x %RX32 %RX32 %RX32 %RX32\n", iLeaf, *pEax, *pEbx, *pEcx, *pEdx));

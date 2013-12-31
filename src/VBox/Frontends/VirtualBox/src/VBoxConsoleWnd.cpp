@@ -212,6 +212,27 @@ struct MountTarget
 };
 Q_DECLARE_METATYPE (MountTarget);
 
+int searchMaxSnapshotIndex (const CMachine &aMachine, const CSnapshot &aSnapshot, const QString &aNameTemplate)
+{
+    int maxIndex = 0;
+    QRegExp regExp (QString ("^") + aNameTemplate.arg ("([0-9]+)") + QString ("$"));
+    if (!aSnapshot.isNull())
+    {
+        /* Check the current snapshot name */
+        QString name = aSnapshot.GetName();
+        int pos = regExp.indexIn (name);
+        if (pos != -1)
+            maxIndex = regExp.cap (1).toInt() > maxIndex ? regExp.cap (1).toInt() : maxIndex;
+        /* Traversing all the snapshot children */
+        foreach (const CSnapshot &child, aSnapshot.GetChildren())
+        {
+            int maxIndexOfChildren = searchMaxSnapshotIndex (aMachine, child, aNameTemplate);
+            maxIndex = maxIndexOfChildren > maxIndex ? maxIndexOfChildren : maxIndex;
+        }
+    }
+    return maxIndex;
+}
+
 /** \class VBoxConsoleWnd
  *
  *  The VBoxConsoleWnd class is a VM console window, one of two main VBox
@@ -1340,6 +1361,8 @@ void VBoxConsoleWnd::closeEvent (QCloseEvent *aEvent)
 
                 /* Make the Discard checkbox invisible if there are no snapshots */
                 dlg.mCbDiscardCurState->setVisible (machine.GetSnapshotCount() > 0);
+                if (!machine.GetCurrentSnapshot().isNull())
+                    dlg.mCbDiscardCurState->setText (dlg.mCbDiscardCurState->text().arg (machine.GetCurrentSnapshot().GetName()));
 
                 if (mMachineState != KMachineState_Stuck)
                 {
@@ -2009,26 +2032,9 @@ void VBoxConsoleWnd::vmTakeSnapshot()
     dlg.mLbIcon->setPixmap (vboxGlobal().vmGuestOSTypeIcon (typeId));
 
     /* search for the max available filter index */
-    int maxSnapShotIndex = 0;
-    QString snapShotName = tr ("Snapshot %1");
-    QRegExp regExp (QString ("^") + snapShotName.arg ("([0-9]+)") + QString ("$"));
-    CSnapshot index = machine.GetSnapshot (QString::null);
-    while (!index.isNull())
-    {
-        /* Check the current snapshot name */
-        QString name = index.GetName();
-        int pos = regExp.indexIn (name);
-        if (pos != -1)
-            maxSnapShotIndex = regExp.cap (1).toInt() > maxSnapShotIndex ?
-                               regExp.cap (1).toInt() : maxSnapShotIndex;
-        /* Traversing to the next child */
-        CSnapshotVector c = index.GetChildren();
-        if (c.size() > 0)
-            index = c [0];
-        else
-            break;
-    }
-    dlg.mLeName->setText (snapShotName.arg (maxSnapShotIndex + 1));
+    QString nameTemplate = tr ("Snapshot %1");
+    int maxSnapshotIndex = searchMaxSnapshotIndex (machine, machine.GetSnapshot (QString()), nameTemplate);
+    dlg.mLeName->setText (nameTemplate.arg (++ maxSnapshotIndex));
 
     if (dlg.exec() == QDialog::Accepted)
     {
@@ -2898,7 +2904,7 @@ void VBoxConsoleWnd::updateAppearanceOf (int aElement)
     if (aElement & HardDiskStuff)
     {
         QString tip = tr ("<p style='white-space:pre'><nobr>Indicates the activity "
-                          "of virtual hard disks:</nobr>%1</p>", "HDD tooltip");
+                          "of the virtual hard disks:</nobr>%1</p>", "HDD tooltip");
         QString data;
         bool attachmentsPresent = false;
 
@@ -3073,7 +3079,7 @@ void VBoxConsoleWnd::updateAppearanceOf (int aElement)
                               "is enabled (<img src=:/vrdp_16px.png/>) or not "
                               "(<img src=:/vrdp_disabled_16px.png/>).");
             if (vrdpsrv.GetEnabled())
-                tip += tr ("<hr>VRDP Server is listening on port %1").arg (vrdpsrv.GetPort());
+                tip += tr ("<hr>The VRDP Server is listening on port %1").arg (vrdpsrv.GetPort());
             mVrdpLed->setToolTip (tip);
 #endif
         }
@@ -3081,7 +3087,7 @@ void VBoxConsoleWnd::updateAppearanceOf (int aElement)
     if (aElement & SharedFolderStuff)
     {
         QString tip = tr ("<p style='white-space:pre'><nobr>Indicates the activity of "
-                          "shared folders:</nobr>%1</p>", "Shared folders tooltip");
+                          "the machine's shared folders:</nobr>%1</p>", "Shared folders tooltip");
 
         QString data;
         QMap <QString, QString> sfs;

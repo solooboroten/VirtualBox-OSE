@@ -1186,6 +1186,7 @@ VMMR3DECL(int) PGMR3Init(PVM pVM)
      * Assert alignment and sizes.
      */
     AssertCompile(sizeof(pVM->pgm.s) <= sizeof(pVM->pgm.padding));
+    AssertCompile(sizeof(pVM->aCpus[0].pgm.s) <= sizeof(pVM->aCpus[0].pgm.padding));
     AssertCompileMemberAlignment(PGM, CritSect, sizeof(uintptr_t));
 
     /*
@@ -1288,9 +1289,7 @@ VMMR3DECL(int) PGMR3Init(PVM pVM)
     AssertRCReturn(rc, rc);
 
     PGMR3PhysChunkInvalidateTLB(pVM);
-    PGMPhysInvalidatePageR3MapTLB(pVM);
-    PGMPhysInvalidatePageR0MapTLB(pVM);
-    PGMPhysInvalidatePageGCMapTLB(pVM);
+    PGMPhysInvalidatePageMapTLB(pVM);
 
     /*
      * For the time being we sport a full set of handy pages in addition to the base
@@ -1563,18 +1562,36 @@ static void pgmR3InitStats(PVM pVM)
     int  rc;
 
     /* Common - misc variables */
-    STAM_REL_REG(pVM, &pPGM->cAllPages,                     STAMTYPE_U32,     "/PGM/Page/cAllPages",                STAMUNIT_OCCURENCES,     "The total number of pages.");
-    STAM_REL_REG(pVM, &pPGM->cPrivatePages,                 STAMTYPE_U32,     "/PGM/Page/cPrivatePages",            STAMUNIT_OCCURENCES,     "The number of private pages.");
-    STAM_REL_REG(pVM, &pPGM->cSharedPages,                  STAMTYPE_U32,     "/PGM/Page/cSharedPages",             STAMUNIT_OCCURENCES,     "The number of shared pages.");
-    STAM_REL_REG(pVM, &pPGM->cZeroPages,                    STAMTYPE_U32,     "/PGM/Page/cZeroPages",               STAMUNIT_OCCURENCES,     "The number of zero backed pages.");
-    STAM_REL_REG(pVM, &pPGM->cMonitoredPages,               STAMTYPE_U32,     "/PGM/Page/cMonitoredPages",          STAMUNIT_OCCURENCES,     "The number of write monitored pages.");
-    STAM_REL_REG(pVM, &pPGM->cWrittenToPages,               STAMTYPE_U32,     "/PGM/Page/cWrittenToPages",          STAMUNIT_OCCURENCES,     "The number of previously write monitored pages that have been written to.");
-    STAM_REL_REG(pVM, &pPGM->cWriteLockedPages,             STAMTYPE_U32,     "/PGM/Page/cWriteLockedPages",        STAMUNIT_OCCURENCES,     "The number of write(/read) locked pages.");
-    STAM_REL_REG(pVM, &pPGM->cReadLockedPages,              STAMTYPE_U32,     "/PGM/Page/cReadLockedPages",         STAMUNIT_OCCURENCES,     "The number of read (only) locked pages.");
-    STAM_REL_REG(pVM, &pPGM->cHandyPages,                   STAMTYPE_U32,     "/PGM/Page/cHandyPages",              STAMUNIT_OCCURENCES,     "The number of handy pages (not included in cAllPages).");
-    STAM_REL_REG(pVM, &pPGM->cRelocations,                  STAMTYPE_COUNTER, "/PGM/cRelocations",                  STAMUNIT_OCCURENCES,     "Number of hypervisor relocations.");
-    STAM_REL_REG(pVM, &pPGM->ChunkR3Map.c,                  STAMTYPE_U32,     "/PGM/ChunkR3Map/c",                  STAMUNIT_OCCURENCES,     "Number of mapped chunks.");
-    STAM_REL_REG(pVM, &pPGM->ChunkR3Map.cMax,               STAMTYPE_U32,     "/PGM/ChunkR3Map/cMax",               STAMUNIT_OCCURENCES,     "Maximum number of mapped chunks.");
+    STAM_REL_REG(pVM, &pPGM->cAllPages,                          STAMTYPE_U32,     "/PGM/Page/cAllPages",                STAMUNIT_COUNT,     "The total number of pages.");
+    STAM_REL_REG(pVM, &pPGM->cPrivatePages,                      STAMTYPE_U32,     "/PGM/Page/cPrivatePages",            STAMUNIT_COUNT,     "The number of private pages.");
+    STAM_REL_REG(pVM, &pPGM->cSharedPages,                       STAMTYPE_U32,     "/PGM/Page/cSharedPages",             STAMUNIT_COUNT,     "The number of shared pages.");
+    STAM_REL_REG(pVM, &pPGM->cZeroPages,                         STAMTYPE_U32,     "/PGM/Page/cZeroPages",               STAMUNIT_COUNT,     "The number of zero backed pages.");
+    STAM_REL_REG(pVM, &pPGM->cMonitoredPages,                    STAMTYPE_U32,     "/PGM/Page/cMonitoredPages",          STAMUNIT_COUNT,     "The number of write monitored pages.");
+    STAM_REL_REG(pVM, &pPGM->cWrittenToPages,                    STAMTYPE_U32,     "/PGM/Page/cWrittenToPages",          STAMUNIT_COUNT,     "The number of previously write monitored pages that have been written to.");
+    STAM_REL_REG(pVM, &pPGM->cWriteLockedPages,                  STAMTYPE_U32,     "/PGM/Page/cWriteLockedPages",        STAMUNIT_COUNT,     "The number of write(/read) locked pages.");
+    STAM_REL_REG(pVM, &pPGM->cReadLockedPages,                   STAMTYPE_U32,     "/PGM/Page/cReadLockedPages",         STAMUNIT_COUNT,     "The number of read (only) locked pages.");
+    STAM_REL_REG(pVM, &pPGM->cHandyPages,                        STAMTYPE_U32,     "/PGM/Page/cHandyPages",              STAMUNIT_COUNT,     "The number of handy pages (not included in cAllPages).");
+    STAM_REL_REG(pVM, &pPGM->cRelocations,                       STAMTYPE_COUNTER, "/PGM/cRelocations",                  STAMUNIT_OCCURENCES,"Number of hypervisor relocations.");
+    STAM_REL_REG(pVM, &pPGM->ChunkR3Map.c,                       STAMTYPE_U32,     "/PGM/ChunkR3Map/c",                  STAMUNIT_COUNT,     "Number of mapped chunks.");
+    STAM_REL_REG(pVM, &pPGM->ChunkR3Map.cMax,                    STAMTYPE_U32,     "/PGM/ChunkR3Map/cMax",               STAMUNIT_COUNT,     "Maximum number of mapped chunks.");
+
+    /* Live save */
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.fActive,              STAMTYPE_U8,      "/PGM/LiveSave/fActive",              STAMUNIT_COUNT,     "Active or not.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.cIgnoredPages,        STAMTYPE_U32,     "/PGM/LiveSave/cIgnoredPages",        STAMUNIT_COUNT,     "The number of ignored pages in the RAM ranges (i.e. MMIO, MMIO2 and ROM).");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.cDirtyPagesLong,      STAMTYPE_U32,     "/PGM/LiveSave/cDirtyPagesLong",      STAMUNIT_COUNT,     "Longer term dirty page average.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.cDirtyPagesShort,     STAMTYPE_U32,     "/PGM/LiveSave/cDirtyPagesShort",     STAMUNIT_COUNT,     "Short term dirty page average.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Ram.cReadyPages,      STAMTYPE_U32,     "/PGM/LiveSave/Ram/cReadPages",       STAMUNIT_COUNT,     "RAM: Ready pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Ram.cDirtyPages,      STAMTYPE_U32,     "/PGM/LiveSave/Ram/cDirtyPages",      STAMUNIT_COUNT,     "RAM: Dirty pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Ram.cZeroPages,       STAMTYPE_U32,     "/PGM/LiveSave/Ram/cZeroPages",       STAMUNIT_COUNT,     "RAM: Ready zero pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Ram.cMonitoredPages,  STAMTYPE_U32,     "/PGM/LiveSave/Ram/cMonitoredPages",  STAMUNIT_COUNT,     "RAM: Write monitored pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Rom.cReadyPages,      STAMTYPE_U32,     "/PGM/LiveSave/Rom/cReadPages",       STAMUNIT_COUNT,     "ROM: Ready pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Rom.cDirtyPages,      STAMTYPE_U32,     "/PGM/LiveSave/Rom/cDirtyPages",      STAMUNIT_COUNT,     "ROM: Dirty pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Rom.cZeroPages,       STAMTYPE_U32,     "/PGM/LiveSave/Rom/cZeroPages",       STAMUNIT_COUNT,     "ROM: Ready zero pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Rom.cMonitoredPages,  STAMTYPE_U32,     "/PGM/LiveSave/Rom/cMonitoredPages",  STAMUNIT_COUNT,     "ROM: Write monitored pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Mmio2.cReadyPages,    STAMTYPE_U32,     "/PGM/LiveSave/Mmio2/cReadPages",     STAMUNIT_COUNT,     "MMIO2: Ready pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Mmio2.cDirtyPages,    STAMTYPE_U32,     "/PGM/LiveSave/Mmio2/cDirtyPages",    STAMUNIT_COUNT,     "MMIO2: Dirty pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Mmio2.cZeroPages,     STAMTYPE_U32,     "/PGM/LiveSave/Mmio2/cZeroPages",     STAMUNIT_COUNT,     "MMIO2: Ready zero pages.");
+    STAM_REL_REG_USED(pVM, &pPGM->LiveSave.Mmio2.cMonitoredPages,STAMTYPE_U32,     "/PGM/LiveSave/Mmio2/cMonitoredPages",STAMUNIT_COUNT,     "MMIO2: Write monitored pages.");
 
 #ifdef VBOX_WITH_STATISTICS
 
@@ -1609,6 +1626,8 @@ static void pgmR3InitStats(PVM pVM)
     PGM_REG_COUNTER(&pPGM->StatR3ChunkR3MapTlbMisses,         "/PGM/ChunkR3Map/TlbMissesR3",        "TLB misses.");
     PGM_REG_COUNTER(&pPGM->StatR3PageMapTlbHits,              "/PGM/R3/Page/MapTlbHits",            "TLB hits.");
     PGM_REG_COUNTER(&pPGM->StatR3PageMapTlbMisses,            "/PGM/R3/Page/MapTlbMisses",          "TLB misses.");
+    PGM_REG_COUNTER(&pPGM->StatPageMapTlbFlushes,             "/PGM/R3/Page/MapTlbFlushes",         "TLB flushes (all contexts).");
+    PGM_REG_COUNTER(&pPGM->StatPageMapTlbFlushEntry,          "/PGM/R3/Page/MapTlbFlushEntry",      "TLB entry flushes (all contexts).");
 
     PGM_REG_PROFILE(&pPGM->StatRZSyncCR3HandlerVirtualUpdate, "/PGM/RZ/SyncCR3/Handlers/VirtualUpdate", "Profiling of the virtual handler updates.");
     PGM_REG_PROFILE(&pPGM->StatRZSyncCR3HandlerVirtualReset,  "/PGM/RZ/SyncCR3/Handlers/VirtualReset",  "Profiling of the virtual handler resets.");

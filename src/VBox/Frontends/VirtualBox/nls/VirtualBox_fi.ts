@@ -81,7 +81,7 @@
         <translation>Tämä virhe tarkoittaa, että ytimen ajuri ei voinut varata tarpeeksi muistia  tai että joku muistin kartoitustoiminto epäonnistui.&lt;br/&gt;&lt;br/&gt;Ydintä 2.6.29 käytettäessä on tunnettuja käyttöongelmia. Jos käytät tätä ydintä,  muokkaa tiedostoja /usr/src/vboxdrv-*/Makefile ja aseta arvo &lt;i&gt;VBOX_USE_INSERT_PAGE = 1&lt;/i&gt;. Tämän jälkeen sinun täytyy kääntää ytimen moduli uudestaan komennolla &lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt; root-käyttäjän oikeuksilla.</translation>
     </message>
     <message>
-        <source>The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or there is a permission problem with /dev/vboxdrv. Re-setup the kernel module by executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;as root. Users of Ubuntu, Fedora or Mandriva should install the DKMS package first. This package keeps track of Linux kernel changes and recompiles the vboxdrv kernel module if necessary.</source>
+        <source>The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or there is a permission problem with /dev/vboxdrv. Please reinstall the kernel module by executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;as root. Users of Ubuntu, Fedora or Mandriva should install the DKMS package first. This package keeps track of Linux kernel changes and recompiles the vboxdrv kernel module if necessary.</source>
         <translation>VirtualBoxin Linux-ytimen ajuri (vboxdrv) ei ole joko ladattu tai laitetiedoston /dev/vboxdrv oikeudet ovat väärin. Määrittele ytimen moduulin asetukset uudestaan root-käyttäjänä komennolla &lt;br/&gt;&lt;br/&gt;&lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;. Ubuntun, fedoran ja mandrivan käyttäjien tulisi ensin asentaa paketti dkms. Tämä paketti pitää kirjaa ytimen muutoksista ja kääntää moduulit automaattisesti tarvittaessa.</translation>
     </message>
     <message>
@@ -109,7 +109,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Unknown %2 error during initialization of the Runtime</source>
+        <source>Unknown error %2 during initialization of the Runtime</source>
         <translation>Tuntematon %2-virhe alustettaessa suoritusjärjestelmää</translation>
     </message>
     <message>
@@ -121,15 +121,15 @@
         <translation>&lt;html&gt;&lt;b&gt;%1 (rc=%2)&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;</translation>
     </message>
     <message>
-        <source>It may help to reinstall VirtualBox.</source>
+        <source>Please try reinstalling VirtualBox.</source>
         <translation>VirtualBoxin uudestaan saattaa auttaa.</translation>
     </message>
     <message>
-        <source>The VirtualBox kernel modules do not fit to this version of VirtualBox. The installation of VirtualBox was apparently not successful. It may help to completely uninstall and re-install VirtualBox.</source>
+        <source>The VirtualBox kernel modules do not match this version of VirtualBox. The installation of VirtualBox was apparently not successful. Please try completely uninstalling and reinstalling VirtualBox.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>The VirtualBox kernel modules do not fit to this version of VirtualBox. The installation of VirtualBox was apparently not successful. Executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;should fix that problem. Make sure that you don&apos;t mix the OSE version and the PUEL version of VirtualBox.</source>
+        <source>The VirtualBox kernel modules do not match this version of VirtualBox. The installation of VirtualBox was apparently not successful. Executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;may correct this. Make sure that you do not mix the OSE version and the PUEL version of VirtualBox.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -410,7 +410,7 @@
         <translation>virheellinen</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;Value of the &lt;b&gt;%1&lt;/b&gt; field on the &lt;b&gt;%2&lt;/b&gt; page is %3.&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;The value of the &lt;b&gt;%1&lt;/b&gt; field on the &lt;b&gt;%2&lt;/b&gt; page is %3.&lt;/qt&gt;</source>
         <translation>&lt;qt&gt; Kentän &lt;b&gt;%1&lt;/b&gt; arvo sivulla &lt;b&gt;%2&lt;/b&gt; on %3&gt;&lt;/qt&gt;</translation>
     </message>
     <message>
@@ -591,15 +591,15 @@ Version %1</source>
         <translation>RAM</translation>
     </message>
     <message>
-        <source>Hard Disk Controller IDE</source>
+        <source>Hard Disk Controller (IDE)</source>
         <translation>Kiintolevyohjain (IDE)</translation>
     </message>
     <message>
-        <source>Hard Disk Controller SATA</source>
+        <source>Hard Disk Controller (SATA)</source>
         <translation>Kiintolevyohjain (SATA)</translation>
     </message>
     <message>
-        <source>Hard Disk Controller SCSI</source>
+        <source>Hard Disk Controller (SCSI)</source>
         <translation>Kiintolevyohjain (SCSI)</translation>
     </message>
     <message>
@@ -710,7 +710,7 @@ Version %1</source>
         <translation>Läh&amp;etä sammuta-signaali</translation>
     </message>
     <message>
-        <source>&lt;p&gt;When checked, the machine state will be restored from the state stored in the current snapshot right after it is turned off. This is useful if you are sure that you want to discard the results of your last sessions and go back to the current snapshot.&lt;/p&gt;</source>
+        <source>&lt;p&gt;When checked, the machine will be returned to the state stored in the current snapshot after it is turned off. This is useful if you are sure that you want to discard the results of your last sessions and start again at that snapshot.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Kun tämä on asetettu, virtuaalikoneen tila palautetaan tämänhetkisestä palautuspisteeseen sammutuksen jälkeeen. Tämä on näppärää, jos olet varma että haluat hylätä viimeisten istuntojen muutokset ja vaihtaa takaisin viimeisimpään palautuspisteeseen.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -967,7 +967,7 @@ Version %1</source>
         <translation type="obsolete">&lt;br&gt;[&lt;b&gt;ei liitetty&lt;/b&gt;]</translation>
     </message>
     <message>
-        <source>&lt;hr&gt;VRDP Server is listening on port %1</source>
+        <source>&lt;hr&gt;The VRDP Server is listening on port %1</source>
         <translation>&lt;hr&gt;VRDP-palvelin kuuntelee porttissa %1</translation>
     </message>
     <message>
@@ -1109,7 +1109,7 @@ Version %1</source>
         <translation>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Mediaa ei ole liitetty&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>HDD tooltip</comment>
         <translation>&lt;qt&gt;&lt;nobr&gt;Näyttää virtuaalikiintolevyjen käytön:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
@@ -1159,7 +1159,7 @@ Version %1</source>
         <translation>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;USB-ohjain ei ole käytössä&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of shared folders:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the machineof the machine'sapos;s shared folders: shared folders:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>Shared folders tooltip</comment>
         <translation>&lt;qt&gt;&lt;nobr&gt;Ilmaisee aktiiviset jaetut kansiot:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
@@ -1532,7 +1532,7 @@ p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;This wizard will guide you through the process of exporting an appliance. &lt;/p&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Use the &lt;span style=&quot; font-weight:600;&quot;&gt;Next&lt;/span&gt; button to go the next page of the wizard and the &lt;span style=&quot; font-weight:600;&quot;&gt;Back&lt;/span&gt; button to return to the previous page.&lt;/p&gt;
-&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Please select the virtual machines that should be exported to the appliance. You can select more than one. Please note that these machines have to be turned off before they can be exported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Please select the virtual machines that you wish to the appliance. You can select more than one. Please note that these machines have to be turned off before they can be exported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;p, li { white-space: pre-wrap; }&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Tämä apulainen ohjaa sinua laitekuvan viennissä. &lt;/p&gt;&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Siirry apulaisen seuraavalle sivulle &lt;span style=&quot; font-weight:600;&quot;&gt;Seuraava&lt;/span&gt;-napista ja edelliselle sivulle &lt;span style=&quot; font-weight:600;&quot;&gt;Takaisin&lt;/span&gt;-napista.&lt;/p&gt;&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Valitse virtuaalikoneet, jotka haluat viedä uuteen laitekuvaan. Voit valita useamman kuin yhden virtuaalikoneen. Huomaa, että virtuaalikoneiden täytyy olla sammutettu ennen vientiä.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
@@ -1552,7 +1552,7 @@ p, li { white-space: pre-wrap; }
         <translation>Laitteistokuvan viennin asetukset</translation>
     </message>
     <message>
-        <source>Here you can change additional configuration values of the selected virtual machines. You can modify most of the shown properties by double-clicking on the items.</source>
+        <source>Here you can change additional configuration values of the selected virtual machines. You can modify most of the properties shown by double-clicking on the items.</source>
         <translation>Tästä voit valita valituille virtuaalikoneille ylimääräisiä asetusarvoja. Voit muokata useimpia ylläolevista ominaisuuksista kaksoisnapsauttamalla kyseistä kohtaa.</translation>
     </message>
     <message>
@@ -1576,15 +1576,15 @@ p, li { white-space: pre-wrap; }
         <translation>&amp;Vie &gt;</translation>
     </message>
     <message>
-        <source>Please choose a filename to export the OVF in.</source>
+        <source>Please choose a filename to export the OVF to.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please complete the additionally fields like the username, password and the bucket. Finally you have to provide a filename for the OVF target.</source>
+        <source>Please complete the additional fields like the username, password and the bucket, and provide a filename for the OVF target.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please complete the additionally fields like the username, password, hostname and the bucket. Finally you have to provide a filename for the OVF target.</source>
+        <source>Please complete the additional fields like the username, password, hostname and the bucket, and provide a filename for the OVF target.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1596,7 +1596,7 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please specify the target for the OVF export. You can choose between a local file system export, the uploading of the OVF to the Sun Cloud service or an S3 storage server.</source>
+        <source>Please specify the target for the OVF export. You can choose between a local file system export, uploading the OVF to the Sun Cloud service or an S3 storage server.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1647,7 +1647,7 @@ p, li { white-space: pre-wrap; }
         <translation>&lt;ei valintaa&gt;</translation>
     </message>
     <message>
-        <source>Please use the &lt;b&gt;Other...&lt;/b&gt; item from the drop-down list to select a desired path.</source>
+        <source>Please use the &lt;b&gt;Other...&lt;/b&gt; item from the drop-down list to select a path.</source>
         <translation>Käytä valintaa &lt;b&gt;Muu...&lt;/b&gt; pudotusvalikosta, jos haluat valita haluamasi polun.</translation>
     </message>
     <message>
@@ -1679,11 +1679,11 @@ p, li { white-space: pre-wrap; }
         <translation>K&amp;opioi</translation>
     </message>
     <message>
-        <source>Please type the desired folder path here.</source>
+        <source>Please type the folder path here.</source>
         <translation>Syötä haluttu kansion polku tähän.</translation>
     </message>
     <message>
-        <source>Please type the desired file path here.</source>
+        <source>Please type the file path here.</source>
         <translation>Syötä haluttu tiedoston polku tähän.</translation>
     </message>
 </context>
@@ -1768,7 +1768,7 @@ p, li { white-space: pre-wrap; }
         <translation>&amp;Isäntänäppäin:</translation>
     </message>
     <message>
-        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used as a Host Key.</source>
+        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
         <translation>Näyttää virtuaalikoneen ikkunassa käytettävän isäntänäppäimen. Kohdista syötekohtaan ja syötä uusi isäntänäppäin. Huomaa, ettei numeroita, kirjaimia, kursori- tai muokkausnäppäimiä voi käyttää isäntänäppäimenä.</translation>
     </message>
     <message>
@@ -3125,7 +3125,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">[nimi]</translation>
     </message>
     <message>
-        <source>&lt;i&gt;Select a settings category from the list on the left side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
+        <source>&lt;i&gt;Select a settings category from the list on the left-hand side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
         <translation type="obsolete">&lt;i&gt;Valitse asetusryhmä vasemmalla puolella olevasta luettelosta, ja siirrä hiiren osoitinta asetusten yli saadaksesi lisää tietoja&lt;i&gt;.</translation>
     </message>
     <message>
@@ -3437,7 +3437,7 @@ p, li { white-space: pre-wrap; }
 &lt;/style&gt;&lt;/head&gt;&lt;body&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;This wizard will guide you through importing an appliance. &lt;/p&gt;
 &lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;Use the &lt;span style=&quot; font-weight:600;&quot;&gt;Next&lt;/span&gt; button to go the next page of the wizard and the &lt;span style=&quot; font-weight:600;&quot;&gt;Back&lt;/span&gt; button to return to the previous page.&lt;/p&gt;
-&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;In order to import an appliance, you have to select a file describing the appliance first. Currently VirtualBox supports the Open Virtualization Format (OVF). To continue, select the file to import below:&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+&lt;p style=&quot; margin-top:12px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;VirtualBox currently supports importing appliances saved in the Open Virtualization Format (OVF). To continue, select the file to import below:&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
         <translation>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
@@ -3463,7 +3463,7 @@ p, li { white-space: pre-wrap; }
         <translation>Laitteistokuvan tuontiasetukset</translation>
     </message>
     <message>
-        <source>These are the virtual machines as described in the appliance with their suggested mappings for importing into VirtualBox. You can change many of the shown properties by double-clicking on the items and disable others by using the check boxes below.</source>
+        <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
         <translation>Seuraavat virtuaalikoneet on määritelty laitteistokuvassa, mukaanlukien ehdotetut kartoitukset tuotaessa niitä VirtualBoxiin. Voit muuttaa monia näytetyistä ominaisuuksista kaksoisnapsauttamalla ja poistaa toisia käytöstä alla olevista radionapeista.</translation>
     </message>
     <message>
@@ -4283,7 +4283,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Virtuaalikoneen &lt;b&gt;%1&lt;/b&gt; tallennettua tilaa ei voitu hylätä.</translation>
     </message>
     <message>
-        <source>You are trying to shut down the guest with the ACPI power button. This is currently not possible because the guest does not use the ACPI subsystem.</source>
+        <source>You are trying to shut down the guest with the ACPI power button. This is currently not possible because the guest does not support software shutdown.</source>
         <translation>Yritit sammuttaa virtuaalikonene ACPI-virtanapilla. Tämä ei ole juuri nyt mahdollista, koska tämä virtuaalikone ei käytä ACPI-järjestelmää.</translation>
     </message>
     <message>
@@ -4331,11 +4331,11 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Haluatko varmasti poistaa pysyvästi virtuaalikoneen &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;Tätä toimintoa ei voi perua.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to unregister the inaccessible virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;You will no longer be able to register it back from GUI.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Are you sure you want to unregister the inaccessible virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;You will not be able to register it again from GUI.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Haluatko varmasti perua saavuttamattomissa olevan virtuaalikoneen &lt;b&gt;%1&lt;/b&gt; rekisteröinnin?&lt;/p&gt;&lt;p&gt;Et voi enää lisätä sitä takaisin graafisesta käyttöliittymästä.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to discard the saved state of the virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;This operation is equivalent to resetting or powering off the machine without doing a proper shutdown by means of the guest OS.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Are you sure you want to discard the saved state of the virtual machine &lt;b&gt;%1&lt;/b&gt;?&lt;/p&gt;&lt;p&gt;This operation is equivalent to resetting or powering off the machine without doing a proper shutdown of the guest OS.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Haluatko varmasti hylätä virtuaalikoneen &lt;b&gt;%1&lt;/b&gt; tallennetun tilan?&lt;/p&gt;&lt;p&gt;Tämä toiminto vastaa virtuaalikoneen nollaamista tai sammuttamista ilman käyttöjärjestelmän normaalia alasajoa.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4375,7 +4375,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>USB-laitteen &lt;b&gt;%1&lt;/b&gt; irrotus virtuaalikoneesta &lt;b&gt;%2&lt;/b&gt; ei onnistunut.</translation>
     </message>
     <message>
-        <source>Failed to create a shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) for the virtual machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to create the shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) for the virtual machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Jaettua kansiota &lt;b&gt;%1&lt;/b&gt; (osoittaa kohteeseen &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) ei voitu luoda virtuaalikoneeseen &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
@@ -4387,7 +4387,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Virtuaalikone kertoi, ettei asiakasvirtuaalikone tue &lt;b&gt;hiirikohdistimen integrointia&lt;/b&gt; tässä videotilassa. Hiiri täytyy kaapata, joko napsauttamalla virtuaalikonetta tai painamalla isäntänäppäintä, jotta voit käyttää hiirtä tässä virtuaalikoneessa.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The Virtual Machine is currently in the &lt;b&gt;Paused&lt;/b&gt; state and therefore does not accept any keyboard or mouse input. If you want to continue to work inside the VM, you need to resume it by selecting the corresponding action from the menu bar.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The Virtual Machine is currently in the &lt;b&gt;Paused&lt;/b&gt; state and not able to see any keyboard or mouse input. If you want to continue to work inside the VM, you need to resume it by selecting the corresponding action from the menu bar.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Virtuaalikone on nyt &lt;b&gt;Pysäytetty&lt;/b&gt; eikä se hyväksy näppäimistösyötteitä tai hiiriohjausta. Jos haluat jatkaa virtuaalikoneen käyttöä, palauta se valitsemalla tämä toiminto valikkopalkista.&lt;/b&gt;</translation>
     </message>
     <message>
@@ -4448,15 +4448,15 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Vakavuus: </translation>
     </message>
     <message>
-        <source>&lt;p&gt;A fatal error has occurred during virtual machine execution! The virtual machine will be powered off. It is suggested to use the clipboard to copy the following error message for further examination:&lt;/p&gt;</source>
+        <source>&lt;p&gt;A fatal error has occurred during virtual machine execution! The virtual machine will be powered off. Please copy the following error message using the clipboard to help diagnose the problem:&lt;/p&gt;</source>
         <translation>&lt;p&gt;Tapahtui kriittinen virhe suoritettaesa virtuaalikonetta! Virtuaalikone sammutetaan nyt. On suositeltavaa kopioida seuraava virheviesti leikepöydälle jatkotoimenpiteiden varalta:&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;An error has occurred during virtual machine execution! The error details are shown below. You can try to correct the described error and resume the virtual machine execution.&lt;/p&gt;</source>
+        <source>&lt;p&gt;An error has occurred during virtual machine execution! The error details are shown below. You may try to correct the error and resume the virtual machine execution.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Tapahtui kriittinen virhe suoritettaesa virtuaalikonetta! Virheen yksityiskohdat näytetään alla.Voit yrittää korjata kuvatun virheen ja jatkaa virtuaalikoneen suorittamista.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The virtual machine execution may run into an error condition as described below. You may ignore this message, but it is suggested to perform an appropriate action to make sure the described error will not happen.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The virtual machine execution may run into an error condition as described below. We suggest that you take an appropriate action to avert the error.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Virtuaalikoneen suoritus saattaa päätyä alla kuvattuun virhetilaan. Voit jättää tämän viestin huomioimatta, mutta on suositeltavaa suorittaa tarvitut toimenpiteet, ettei alla kuvattu virhe pääse tapahtumaan.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4493,15 +4493,15 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Kielitiedostoa &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; ei voitu ladata.&lt;/p&gt;&lt;p&gt;Kieli on väliaikaisesti asetettu oletusarvoon Englanti. Siirry VirtualBoxin pääikkunan &lt;b&gt;File&lt;/b&gt;-valikon kohtaan &lt;b&gt;Preferences&lt;/b&gt;, josta voit valita jonkun olemassaolevista kielistä &lt;b&gt;Language&lt;/b&gt;-sivulta.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Virtuaalikoneeseen asennetut VirtualBoxin asiakaslisäosat ovat liian vanhoja: asennettu versio on %1, ja vaadittu versio on %2. Jotkut ominaisuudet, jotka vaativat lisäosien toiminnan,kuten hiiren integrointi ja näytön koon automaattinen vaihto, lakkaavat luultavasti toimimasta oikein.&lt;/p&gt;&lt;p&gt;Päivitä asiakslisäosat uusimpaan versioon valitsemalla &lt;b&gt;Laitteet&lt;/b&gt;-valikosta kohta &lt;b&gt;Asenna asiakaslisäosat...&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are outdated: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) may not work as expected.&lt;/p&gt;&lt;p&gt;It is recommended to update the Guest Additions to the current version  by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Virtuaalikoneeseen asennetut VirtualBoxin asiakaslisäosat ovat vanhentuneet: asennettu versio on %1, ja vaadittu versio on %2. Jotkut ominaisuudet, jotka vaativat lisäosien toiminnan,kuten hiiren integrointi ja näytön koon automaattinen vaihto, lakkaavat luultavasti toimimasta oikein.&lt;/p&gt;&lt;p&gt;Päivitä asiakslisäosat uusimpaan versioon valitsemalla &lt;b&gt;Laitteet&lt;/b&gt;-valikosta kohta &lt;b&gt;Asenna asiakaslisäosat...&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too recent for this version of VirtualBox: the installed version is %1, the expected version is %2.&lt;/p&gt;&lt;p&gt;Using a newer version of Additions with an older version of VirtualBox is not supported. Please install the current version of the Guest Additions by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Virtuaalikoneeseen asennetut VirtualBoxin asiakaslisäosat ovat liian uusia tälle VirtualBoxin versiolle: asennettu versio on %1, ja vaadittu versio on %2. Uudempien lisäosien version käyttäminen vanhemman VirtualBoxin kanssa ei ole tuettu.&lt;/p&gt;&lt;p&gt;Asenna asiakslisäosat tähän versioon valitsemalla &lt;b&gt;Laitteet&lt;/b&gt;-valikosta kohta &lt;b&gt;Asenna asiakaslisäosat...&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4509,7 +4509,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Palautuspisteiden kansion polun vaihto virtuaalikoneelle &lt;b&gt;%1&lt;b&gt; arvoon &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; epäonnistui.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Deleting this host-only network will lead to the deleting of the host-only interface this network is based on. Do you want to remove the (host-only network) interface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; this interface may be in use by one or more virtual network adapters belonging to one of your VMs. After it is removed, these adapters will no longer be usable until you correct their settings by either choosing a different interface name or a different adapter attachment type.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Deleting this host-only network will remove the host-only interface this network is based on. Do you want to remove the (host-only network) interface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; this interface may be in use by one or more virtual network adapters belonging to one of your VMs. After it is removed, these adapters will no longer be usable until you correct their settings by either choosing a different interface name or a different adapter attachment type.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4517,7 +4517,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Jaettua kansiota &lt;b&gt;%1&lt;/b&gt; (osoittaa kohteeseen &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) ei voitu poistaa virtuaalikoneesta &lt;b&gt;%3&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Sulje virtuaalikoneen ohjelmat, jotka käyttävät jaettua kansiota ja yritä uudestaan.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions CD image file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; or &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you want to download this CD image from the Internet?&lt;/p&gt;</source>
+        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions CD image file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; or &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this CD image from the Internet?&lt;/p&gt;</source>
         <translation>&lt;p&gt;VirtualBoxin asiakaslisäosien CD-levykuvaa &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; tai &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt; ei löytynyt. Haluatko noutaa tämän CD-levykuvan internetistä?&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4529,15 +4529,15 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Haluatko varmasti noutaa VirtualBoxin asiakaslisäosien CD-levykuvan osoitteesta &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; (koko %3 tavua)?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions CD image has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you want to register this CD image and mount it on the virtual CD/DVD drive?&lt;/p&gt;</source>
+        <source>&lt;p&gt;The VirtualBox Guest Additions CD image has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to register this CD image and mount it on the virtual CD/DVD drive?&lt;/p&gt;</source>
         <translation>&lt;p&gt;VirtualBoxin asiakaslisäosien CD-levykuvan nouto osoitteesta &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; onnistui ja se on tallennettu paikallisesti nimelle &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Haluatko rekisteröidä tämän CD-levykuvan ja liittää sen virtuaalisena CD/DVD-asemana?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The virtual machine window is optimized to work in &lt;b&gt;%1&amp;nbsp;bit&lt;/b&gt; color mode but the color quality of the virtual display is currently set to &lt;b&gt;%2&amp;nbsp;bit&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please open the display properties dialog of the guest OS and select a &lt;b&gt;%3&amp;nbsp;bit&lt;/b&gt; color mode, if it is available, for best possible performance of the virtual video subsystem.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note&lt;/b&gt;. Some operating systems, like OS/2, may actually work in 32&amp;nbsp;bit mode but report it as 24&amp;nbsp;bit (16 million colors). You may try to select a different color quality to see if this message disappears or you can simply disable the message now if you are sure the required color quality (%4&amp;nbsp;bit) is not available in the given guest OS.&lt;/p&gt;</source>
+        <source>&lt;p&gt;The virtual machine window is optimized to work in &lt;b&gt;%1&amp;nbsp;bit&lt;/b&gt; color mode but the virtual display is currently set to &lt;b&gt;%2&amp;nbsp;bit&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please open the display properties dialog of the guest OS and select a &lt;b&gt;%3&amp;nbsp;bit&lt;/b&gt; color mode, if it is available, for best possible performance of the virtual video subsystem.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note&lt;/b&gt;. Some operating systems, like OS/2, may actually work in 32&amp;nbsp;bit mode but report it as 24&amp;nbsp;bit (16 million colors). You may try to select a different color mode to see if this message disappears or you can simply disable the message now if you are sure the required color mode (%4&amp;nbsp;bit) is not available in the guest OS.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Virtuaalikoneen ikkuna on optimoitu toimimaan &lt;b&gt;%1&amp;nbsp;bittisessä&lt;/b&gt; väritilassa, mutta virtuaalinäytön värimäärä on asetettu nyt arvoon &lt;b&gt;%2&amp;nbsp;bittiä&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Avaa virtuaalikoneen näyttöasetukset ja valitse värien määräksi &lt;b&gt;%3&amp;nbsp;bittinen&lt;/b&gt; tila, jos saatavilla, jotta saat parhaan laatuisen videokuvan virtuaalikoneestasi.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Huomautus:&lt;/b&gt; joissain käyttöjärjestelmissä kuten OS/2, värien bittisyvyys saattaa todellisuudessa olla 32&amp;nbsp;bittiä mutta ne raportoivat tämän 24&amp;nbsp;bittisenä (16 miljoonaa väriä). Voit yrittää valita toisen värimäärän nähdäksesi häipyykö tämä varoitus, tai voit vain estää tämän viestin näyttämisen jos olet varma että vaadittu värisyvyys (%4&amp;nbsp;bittiä) ei ole saatavilla virtuaalikoneen käyttöjärjestelmässä.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings dialog or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you want to continue?&lt;/p&gt;</source>
+        <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings dialog or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you wish to continue?&lt;/p&gt;</source>
         <translation>&lt;p&gt;Et liittänyt uuteen virtuaalikoneeseen kiintolevyä. Virtuaalikone ei voi käynnistyä, jollet liitä siihen kiintolevyä, jolla on asiakaskäyttöjärjestelmä, tai jotain muuta käynnistettävää mediaa myöhemmin käyttäen virtuaalikoneen asetuksia tai ensimmäisen käyttökerran asetusapulaista.&lt;/p&gt;&lt;p&gt;Haluatko varmasti jatkaa?&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4670,7 +4670,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Vaihda</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Do you really want to reset the virtual machine?&lt;/p&gt;&lt;p&gt;When the machine is reset, unsaved data of all applications running inside it will be lost.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Do you really want to reset the virtual machine?&lt;/p&gt;&lt;p&gt;This will cause any unsaved data in applications running inside it to be lost.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Haluatko varmasti nollata virtuaalikoneen?&lt;/p&gt;&lt;p&gt;Kun virtuaalikone nollataan, hukataan pysyvästi kaikki tallentamattomat tiedostot virtuaalikoneessa käynnissä olevista ohjelmista.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4711,7 +4711,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Virtuaalikoneen näyttöä ei voitu siirtää kokoruututilaan, koska virtuaalikoneen näyttömuisti ei riitä.&lt;/p&gt;&lt;p&gt;Muuta virtuaalikoneen asetuksista näyttömuistin määräksi vähintään &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Valitse &lt;p&gt;Älä huomioi&lt;/p&gt;, jos haluat joka tapauksessa siirtyä kokoruututilaan ta valitse &lt;b&gt;Peru&lt;/b&gt;, jos haluat perua toiminnon.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>You have already installed the latest VirtualBox version. Please repeat the version check later.</source>
+        <source>You are already running the most recent version of VirtualBox.</source>
         <translation>Olet jo asentanut uusimman VirtualBoxin version. Etsi uutta versiota joskus myöhemmin.</translation>
     </message>
     <message>
@@ -4755,7 +4755,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&amp;Nollaa kaikki varoitukset</translation>
     </message>
     <message>
-        <source>Cause all suppressed warnings and messages to be shown again</source>
+        <source>Go back to showing all suppressed warnings and messages</source>
         <translation>Peru kaikkien piilotettujen varoitusten ja viestien piilotus</translation>
     </message>
     <message>
@@ -4783,7 +4783,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Näytä tietoja tuotteesta ikkunassa</translation>
     </message>
     <message>
-        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version from this direct link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
+        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version using the link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
         <translation>&lt;p&gt;Uusi versio VirtualBoxista on julkaistu! Versio &lt;b&gt;%1&lt;/b&gt; on saatavilla sivulta &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;Voit noutaa tämän version seuraavasta linkistä: &lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4801,7 +4801,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Haluatko varmasti poistaa %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; tunnettujen medioiden listalta?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>Note that this hard disk is inaccessible so that its storage unit cannot be deleted right now.</source>
+        <source>Note that as this hard disk is inaccessible its storage unit cannot be deleted right now.</source>
         <translation>Huomaa, että tämä kiintolevy ei ole saatavilla, joten siihen liittyvää levykuvaa ei voi poistaa juuri nyt.</translation>
     </message>
     <message>
@@ -4809,7 +4809,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Seuraavasta ikkunasta voit valita, haluatko poistaa myös kiintolevyyn liittyvän levykuvan vai haluatko säilyttää sen myöhempää käyttöä varten.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and therefore it will be possible to add it to the list later again.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Note that the storage unit of this medium will not be deleted and that it will be possible to add it to the list later again.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Huomaa, että tämän taltion levykuvaa ei poisteta ja voit siten lisätä sen takaisin luetteloon myöhemmin.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4853,7 +4853,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Muuta</translation>
     </message>
     <message>
-        <source>&lt;p&gt;There are no unused hard disks available for the newly created attachment.&lt;/p&gt;&lt;p&gt;Press the &lt;b&gt;Create&lt;/b&gt; button to start the &lt;i&gt;New Virtual Disk&lt;/i&gt; wizard and create a new hard disk, or press the &lt;b&gt;Select&lt;/b&gt; button to open the &lt;i&gt;Virtual Media Manager&lt;/i&gt; and select what to do.&lt;/p&gt;</source>
+        <source>&lt;p&gt;There are no unused hard disks available for the newly created attachment.&lt;/p&gt;&lt;p&gt;Press the &lt;b&gt;Create&lt;/b&gt; button to start the &lt;i&gt;New Virtual Disk&lt;/i&gt; wizard and create a new hard disk, or press the &lt;b&gt;Select&lt;/b&gt; if you wish to open the &lt;i&gt;Virtual Media Manager&lt;/i&gt;.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Käyttämättömiä kiintolevyjä ei ole saatavilla luodulle uudelle liitokselle.&lt;/p&gt;&lt;p&gt;Paina nappia &lt;b&gt;Luo&lt;/b&gt;, jos haluat käynnistää &lt;i&gt;uusi virtuaalilevy&lt;/i&gt;-apulaisen uuden kiintolevyn luontia varten, tai paina nappia &lt;b&gt;Valitse&lt;/b&gt;, jos haluat avata &lt;i&gt;virtuaalimedioiden hallinnan&lt;/i&gt; ja valita itse mitä tehdä.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -4861,15 +4861,15 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Kiintolevyn levykuvaa &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; ei voitu luoda.&lt;nobr&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>Failed to attach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; to the slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to attach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; to slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Kiintolevyä &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; ei voitu liittää paikkaan &lt;i&gt;%2&lt;/i&gt; virtuaalikoneessa &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>Failed to detach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to detach the hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from slot &lt;i&gt;%2&lt;/i&gt; of the machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Kiintolevyä &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; ei voitu irrottaa paikasta &lt;i&gt;%2&lt;/i&gt;  virtuaalikoneessa &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
-        <source>Failed to mount the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; to the machine &lt;b&gt;%3&lt;/b&gt;.</source>
+        <source>Failed to mount the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; on the machine &lt;b&gt;%3&lt;/b&gt;.</source>
         <translation>Kohdetta %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; ei voitu liittää virtuaalikoneeseen &lt;b&gt;%3&lt;/b&gt;.</translation>
     </message>
     <message>
@@ -4885,7 +4885,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Kohdetta %1 ei voitu suljea  &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</translation>
     </message>
     <message>
-        <source>Failed to get the accessibility state of the medium &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <source>Failed to determine the accessibility state of the medium &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
         <translation>Ei voitu selvittää median &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; saatavuutta.</translation>
     </message>
     <message>
@@ -4909,11 +4909,11 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&lt;p&gt;Yksi tai useampi kiintolevyistä, CD/DVD- tai levykemedioista ei ole tällä hetkellä saatavilla. Tästä johtuen et voi käyttää virtuaalikoneita, jotka käyttävät näitä taltioita, kunnes ne ovat taas saatavilla&lt;/p&gt;&lt;p&gt;Paina nappia &lt;b&gt;Tarkista&lt;/b&gt;, jos haluat avata virtuaalimedioiden hallinnan ja selvittää mitkä taltiot eivät ole saatavilla, tai paina nappia &lt;b&gt;Älä huomioi&lt;/b&gt; jos haluat jättää tämän viestin huomioimatta.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Your existing VirtualBox settings files will be automatically converted from the old format to a new format necessary for the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;Exit&lt;/b&gt; if you want to terminate the VirtualBox application without any further actions.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Your existing VirtualBox settings files will be automatically converted from the old format to a new format required by the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;Exit&lt;/b&gt; if you want to terminate the VirtualBox application without any further actions.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Olemassaoleva VirtualBoxin asetustiedosto muunnetaan automaattisesti vanhasta tiedostomuodosta uuden VirtualBoxin vaatimaan muotoon.&lt;/p&gt;&lt;p&gt;Valiste &lt;b&gt;OK&lt;/b&gt;, jos haluat käynnistää VirtualBoxin nyt, tai valitse &lt;b&gt;Lopeta&lt;/b&gt;, jos haluat keskeyttää VirtualBoxin käynnistyksen nyt.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Your existing VirtualBox settings files were automatically converted from the old format to a new format necessary for the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;More&lt;/b&gt; if you want to get more information about what files were converted and access additional actions.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Exit&lt;/b&gt; to terminate the VirtualBox application without saving the results of the conversion to disk.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Your existing VirtualBox settings files were automatically converted from the old format to a new format required by the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;More&lt;/b&gt; if you want to get more information about what files were converted and access additional actions.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Exit&lt;/b&gt; to terminate the VirtualBox application without saving the results of the conversion to disk.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Aikaisemmat VirtualBoxin asetuksesi on muunnettu automaattisesti uuden VirtualBoxin vaatimaan uuteen muotoon.&lt;/p&gt;&lt;p&gt;Paina nappia &lt;b&gt;OK&lt;/b&gt; käynnistääksesi VirtualBox heti, tai paina nappia &lt;b&gt;Lisätietoja&lt;/b&gt;, jos haluat tietää lisää muunnetuista tiedostoista ja päästä käsiksi muihin valintoihin.&lt;/p&gt;&lt;p&gt;Paina nappia &lt;b&gt;Sulje&lt;/b&gt;, jos haluat keskeyttää VirtualBoxin tallentamatta muunnoksen tuloksia levylle.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5013,7 +5013,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation type="obsolete">&amp;Sähköposti</translation>
     </message>
     <message>
-        <source>Enter your valid e-mail address.</source>
+        <source>Enter your e-mail address. Please use a valid address here.</source>
         <translation>Syötä kelvollinen sähköpostiosoite.</translation>
     </message>
     <message>
@@ -5029,7 +5029,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Yhteyden kättely ei onnistunut.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Enter your full name using Latin characters and your e-mail address to the fields below. Please note that Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Enter your full name using Latin characters and your e-mail address to the fields below. Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Täytä tämä rekisteröintikaavake, jolla kerrot meille käyttäväsi VirtualBoxia ja jolla voit lisäksi halutessasi rekisteröityä vastaanottamaan uutisia ja päivityksiä VirtualBoxiin liittyen.&lt;/p&gt;&lt;p&gt;Anna koko nimesi, käyttäen vain ASCII-merkistöä, sekä sähköpostiosoitteesi alla oleviin kenttiin. Huomaa, että Sun Microsystems käyttää näitä tietoja vain kerätäkseen tuoteen käyttötilastoja ja VirtualBoxin uutiskirjeen lähettämiseen. Sun Microsystems ei koskaan tule kertomaan näitä tietojasi kolmansille osapuolille. Tarkat tiedot tietojesi käytöstä voit luokea VirtualBoxin ohjeen osiosta &lt;p&gt;Privacy Policy&lt;/p&gt;, tai &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt;-sivulta VirtualBoxin www-sivuilta.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5049,11 +5049,11 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Please use the Latin characters to fill the fields below. Please note that Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Please use Latin characters only to fill in  the fields below. Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>I &amp;have a Sun Online account already:</source>
+        <source>I &amp;already have a Sun Online account:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5065,7 +5065,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>I &amp;would like to register creating a new Sun Online account:</source>
+        <source>I &amp;would like to create a new Sun Online account:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5368,7 +5368,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>Keskeytä virtuaalikoneen suoritus</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;Welcome to VirtualBox!&lt;/h3&gt;&lt;p&gt;The left part of this window is intended to display a list of all virtual machines on your computer. The list is empty now because you haven&apos;t created any virtual machines yet.&lt;img src=:/welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;In order to create a new virtual machine, press the &lt;b&gt;New&lt;/b&gt; button in the main tool bar located at the top of the window.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;%1&lt;/b&gt; key to get instant help, or visit &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt; for the latest information and news.&lt;/p&gt;</source>
+        <source>&lt;h3&gt;Welcome to VirtualBox!&lt;/h3&gt;&lt;p&gt;The left part of this window is  a list of all virtual machines on your computer. The list is empty now because you haven&apos;t created any virtual machines yet.&lt;img src=:/welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;In order to create a new virtual machine, press the &lt;b&gt;New&lt;/b&gt; button in the main tool bar located at the top of the window.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;%1&lt;/b&gt; key to get instant help, or visit &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt; for the latest information and news.&lt;/p&gt;</source>
         <translation>&lt;h3&gt;Tervetuloa VirtualBoxiin!&lt;/h3&gt;&lt;p&gt;Oikealla olevasta tilasta näet kaikki tällä tietokoneella olevat virtuaalikoneet. Luettelo on nyt tyhjä, koska et ole vielä luonut yhtäkään virtuaalikonetta.&lt;img src=:/welcome.png align=right/&gt;&lt;/p&gt;&lt;p&gt;Jos haluat luoda uuden virtuaalikoneen, napsauta nappia &lt;b&gt;Uusi&lt;/b&gt; ikkunan yläosassa olevasta työkalupalkista.&lt;/p&gt;&lt;p&gt;Voit lukea ohjeita painamalla &lt;b&gt;%1&lt;/b&gt; tai lukea viimeisimmät tiedot ja uutiset sivulta &lt;a href=http://www.virtualbox.org&gt;www.virtualbox.org&lt;/a&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5396,7 +5396,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
         <translation>&amp;Vie laitteistokuva...</translation>
     </message>
     <message>
-        <source>Export an appliance out of VM&apos;s from VirtualBox</source>
+        <source>Export one or more VirtualBox virtual machines as an appliance</source>
         <translation>Vie virtuaalikoneista koostuva laitteisto VirtualBoxista</translation>
     </message>
     <message>
@@ -5412,7 +5412,7 @@ Kaikki VirtualBoxin komponentit käyttävät sitä koneen tunnistukseen.&lt;/p&g
 <context>
     <name>VBoxSettingsDialog</name>
     <message>
-        <source>&lt;i&gt;Select a settings category from the list on the left side and move the mouse over a settings item to get more information&lt;/i&gt;.</source>
+        <source>&lt;i&gt;Select a settings category from the list on the left-hand side and move the mouse over a settings item to get more information&lt;/i&gt;.</source>
         <translation>&lt;i&gt;Valitse vasemmalla olevasta luettelosta asetusluokka ja siirrä hiiren kohdistin asetuksen päälle saadaksesi lisätietoja&lt;/i&gt;.</translation>
     </message>
     <message>
@@ -5707,7 +5707,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>&amp;Palauta nykyiseen palautuspisteeseen</translation>
     </message>
     <message>
-        <source>Show details of the selected snapshot</source>
+        <source>Show the details of the selected snapshot</source>
         <translation>Näytä valitun palautuspisteen tiedot</translation>
     </message>
     <message>
@@ -5796,7 +5796,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>&amp;Korvaa...</translation>
     </message>
     <message>
-        <source>Replaces the current text with the content of a given file.</source>
+        <source>Replaces the current text with the content of a file.</source>
         <translation>Korvaa tämänhetkisen tekstin annetun tiedoston sisällöllä.</translation>
     </message>
     <message>
@@ -5893,7 +5893,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
 <context>
     <name>VBoxUSBMenu</name>
     <message>
-        <source>&lt;no available devices&gt;</source>
+        <source>&lt;no devices available&gt;</source>
         <comment>USB devices</comment>
         <translation>&lt;ei laitteita saatavilla&gt;</translation>
     </message>
@@ -5974,7 +5974,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>Yhteenveto</translation>
     </message>
     <message>
-        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version from this direct link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
+        <source>&lt;p&gt;A new version of VirtualBox has been released! Version &lt;b&gt;%1&lt;/b&gt; is available at &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;You can download this version using the link:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</source>
         <translation>&lt;p&gt;Uusi versio VirtualBoxista on julkaistu! Versio &lt;b&gt;%1&lt;/b&gt; on saatavilla osoitteesta &lt;a href=&quot;http://www.virtualbox.org/&quot;&gt;virtualbox.org&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;Voit noutaa uuden version seuraavasta linkistä:&lt;/p&gt;&lt;p&gt;&lt;a href=%2&gt;%3&lt;/a&gt;&lt;/p&gt;</translation>
     </message>
     <message>
@@ -5982,7 +5982,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>&lt;p&gt;Tietoja uudesta versiosta ei voitu hakea seuraavan verkkovirheen takia:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>You have already installed the latest VirtualBox version. Please repeat the version check later.</source>
+        <source>You are already running the most recent version of VirtualBox.</source>
         <translation>Asentamasi VirtualBoxin versio on viimeisin julkaistu versio. Voit toistaa versiotarkistuksen myöhemmin uudestaan.</translation>
     </message>
     <message>
@@ -6023,7 +6023,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>Ensimmäisen suorituskerran ohjattu toiminto</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for installing an operating system of your choice onto this virtual machine.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel execution of this wizard.&lt;/p&gt;</source>
+        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for installing an operating system of your choice onto this virtual machine.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel the execution of this wizard.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Olet käynnistänyt uuden virtuaalikoneen ensimmäistä kertaa. Tämä apulainen auttaa sinua tehtävissä, jotka vaaditaan uuden käyttöjärjestelmän asentamiseksi tähän virtuaalikoneeseen.&lt;/p&gt;&lt;p&gt;Voit siirtyä apulaisen seuraavalle sivulle napista &lt;b&gt;Seuraava&lt;/b&gt; ja edelliselle sivulle napista &lt;b&gt;Takaisin&lt;/b&gt;. Voit myös painaa nappia &lt;b&gt;Peru&lt;/b&gt;, jos haluat keskeyttää tämän apulaisen suorittamisen.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6031,7 +6031,7 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>Tervetuloa ensimmäisen suorituskerran ohjattuun toimintoon!</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Select the type of the media you would like to use for installation purposes below.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Select the type of media you would like to use for installation.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Valitse media, jota haluat käyttää asennukseen allaolevasta luettelosta.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6095,11 +6095,11 @@ to access it from a Linux OS. This feature requires Guest Additions.&lt;/qt&gt;<
         <translation>Isäntäkoneen asema %1</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for booting an operating system of your choice on the virtual machine.&lt;/p&gt;&lt;p&gt;Note that you will not be able to install an operating system into this virtual machine right now because you did not attach any hard disk to it. If this is not what you want, you can cancel execution of this wizard, select &lt;b&gt;Settings&lt;/b&gt; from the &lt;b&gt;Machine&lt;/b&gt; menu of the main VirtualBox window to access the settings dialog of this machine and change the hard disk configuration.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel execution of this wizard.&lt;/p&gt;</source>
+        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for booting an operating system of your choice on the virtual machine.&lt;/p&gt;&lt;p&gt;Note that you will not be able to install an operating system into this virtual machine right now because you did not attach any hard disk to it. If this is not what you want, you can cancel the execution of this wizard, select &lt;b&gt;Settings&lt;/b&gt; from the &lt;b&gt;Machine&lt;/b&gt; menu of the main VirtualBox window to access the settings dialog of this machine and change the hard disk configuration.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel the execution of this wizard.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Olet käynnistänyt uuden virtuaalikoneen ensimmäistä kertaa. Tämä apulainen auttaa sinua tehtävissä, jotka vaaditaan uuden käyttöjärjestelmän käynnistämisessä virtuaalikoneessa.&lt;/p&gt;&lt;p&gt;Huomaa ettet voi asentaa nyt käyttöjärjestelmää tähän virtuaalikoneeseen, koska et ole liittänyt siihen kiintolevyä. Jos haluat kuitenkin asentaa käyttöjärjestelmän, keskeytä tämän apulaisen suoritus, avaa tämän virtuaalikoneen asetuset valitsemalla &lt;b&gt;Asetukset&lt;/b&gt; VirtualBoxin pääikkunan &lt;b&gt;Kone&lt;/b&gt;-valikosta ja muuta kiintolevyjen asetuksia.&lt;/p&gt;&lt;p&gt;Voit siirtyä apulaisen seuraavalle sivulle napista &lt;b&gt;Seuraava&lt;/b&gt; ja edelliselle sivulle napista &lt;b&gt;Takaisin&lt;/b&gt;. Voit myös painaa nappia &lt;b&gt;Peru&lt;/b&gt;, jos haluat keskeyttää tämän apulaisen suorittamisen.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Select the type of the media you would like to use for booting an operating system.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Select the type of media you would like to use for booting an operating system.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Valitse käyttöjärjestelmän käynnistämiseen käytettävän median tyyppi.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -6456,7 +6456,7 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>VBoxVMSettingsAudio</name>
     <message>
-        <source>When checked, the virtual PCI audio card is plugged into the virtual machine that uses the specified driver to communicate to the host audio card.</source>
+        <source>When checked, a virtual PCI audio card will be plugged into the virtual machine and will communicate with the host audio system using the specified driver.</source>
         <translation>Jos asetettu, liitetään virtuaalinen PCI-äänikortti virtuaalikoneeseen, joka käyttää annettua ajuria isäntäkoneen äänikortin käsittelyyn.</translation>
     </message>
     <message>
@@ -6538,7 +6538,7 @@ p, li { white-space: pre-wrap; }
 <context>
     <name>VBoxVMSettingsDisplay</name>
     <message>
-        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; for video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
+        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
         <translation type="unfinished">Olet määrittänyt vähemmän kuin &lt;b&gt;%1&lt;/b&gt; videomuistia. Tämä on vähemmän kuin minimmäismäärä, joka vaaditaan virtuaalikoneen kokoruututilaan tai saumattomaan tilaan.</translation>
     </message>
     <message>
@@ -6566,7 +6566,7 @@ p, li { white-space: pre-wrap; }
         <translation type="unfinished">Laajennetut ominaisuudet:</translation>
     </message>
     <message>
-        <source>When checked, the virtual machine will get access to the 3D graphics capabilities available on the host.</source>
+        <source>When checked, the virtual machine will be given access to the 3D graphics capabilities available on the host.</source>
         <translation type="unfinished">Jos asetettu, virtuaalikone voi käyttää isäntäkoneen 3D-grafiikkaominaisuuksia.</translation>
     </message>
     <message>
@@ -6629,7 +6629,7 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">[nimi]</translation>
     </message>
     <message>
-        <source>&lt;i&gt;Select a settings category from the list on the left side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
+        <source>&lt;i&gt;Select a settings category from the list on the left-hand side and move the mouse over a settings item to get more information&lt;i&gt;.</source>
         <translation type="obsolete">&lt;i&gt;Valitse asetusryhmä vasemmalla puolella olevasta luettelosta, ja siirrä hiiren osoitinta asetusten yli saadaksesi lisää tietoja&lt;i&gt;.</translation>
     </message>
     <message>
@@ -7536,11 +7536,11 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">Olet määrittänyt enemmän kuin &lt;b&gt;50%&lt;/b&gt; isäntäkoneen muistista (&lt;b&gt;%1&lt;/b&gt;) virtuaalikoneelle. Isäntäkoneen käyttöjärjestelmälle ei välttämättä jää tarpeeksi muistia käyttöön. Jatka näin omalla riskilläsi.</translation>
     </message>
     <message>
-        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; for video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
+        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
         <translation type="obsolete">Olet määrittänyt vähemmän kuin &lt;b&gt;%1&lt;/b&gt; videomuistia. Tämä on vähemmän kuin minimmäismäärä, joka vaaditaan virtuaalikoneen kokoruututilaan tai saumattomaan tilaan.</translation>
     </message>
     <message>
-        <source>When checked, the virtual machine will get access to the 3D graphics capabilities available on the host.</source>
+        <source>When checked, the virtual machine will be given access to the 3D graphics capabilities available on the host.</source>
         <translation type="obsolete">Jos asetettu, virtuaalikone voi käyttää isäntäkoneen 3D-grafiikkaominaisuuksia.</translation>
     </message>
     <message>

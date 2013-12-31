@@ -810,6 +810,9 @@ static int vmR3InitRing3(PVM pVM, PUVM pUVM)
         STAM_REG(pVM, &pUVM->vm.s.StatReqAllocRecycled, STAMTYPE_COUNTER,  "/VM/Req/AllocRecycled",  STAMUNIT_OCCURENCES,        "Number of VMR3ReqAlloc returning a recycled packet.");
         STAM_REG(pVM, &pUVM->vm.s.StatReqFree,       STAMTYPE_COUNTER,     "/VM/Req/Free",           STAMUNIT_OCCURENCES,        "Number of VMR3ReqFree calls.");
         STAM_REG(pVM, &pUVM->vm.s.StatReqFreeOverflow, STAMTYPE_COUNTER,   "/VM/Req/FreeOverflow",   STAMUNIT_OCCURENCES,        "Number of times the request was actually freed.");
+        STAM_REG(pVM, &pUVM->vm.s.StatReqProcessed,  STAMTYPE_COUNTER,     "/VM/Req/Processed",      STAMUNIT_OCCURENCES,        "Number of processed requests (any queue).");
+        STAM_REG(pVM, &pUVM->vm.s.StatReqMoreThan1,  STAMTYPE_COUNTER,     "/VM/Req/MoreThan1",      STAMUNIT_OCCURENCES,        "Number of times there are more than one request on the queue when processing it.");
+        STAM_REG(pVM, &pUVM->vm.s.StatReqPushBackRaces, STAMTYPE_COUNTER,  "/VM/Req/PushBackRaces",  STAMUNIT_OCCURENCES,        "Number of push back races.");
 
         rc = CPUMR3Init(pVM);
         if (RT_SUCCESS(rc))
@@ -1209,7 +1212,7 @@ VMMR3DECL(int) VMR3PowerOn(PVM pVM)
      */
     int rc = VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_DESCENDING | VMMEMTRENDEZVOUS_FLAGS_STOP_ON_ERROR,
                                 vmR3PowerOn, NULL);
-    LogFlow(("VMR3Suspend: returns %Rrc\n", rc));
+    LogFlow(("VMR3PowerOn: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -2690,6 +2693,14 @@ static DECLCALLBACK(VBOXSTRICTRC) vmR3Reset(PVM pVM, PVMCPU pVCpu, void *pvUser)
         CSAMR3Reset(pVM);
         PGMR3Reset(pVM);                    /* We clear VM RAM in PGMR3Reset. It's vital PDMR3Reset is executed
                                              * _afterwards_. E.g. ACPI sets up RAM tables during init/reset. */
+/** @todo PGMR3Reset should be called after PDMR3Reset really, because we'll trash OS <-> hardware
+ * communication structures residing in RAM when done in the other order.  I.e. the device must be
+ * quiesced first, then we clear the memory and plan tables. Probably have to make these things
+ * explicit in some way, some memory setup pass or something.
+ * (Example: DevAHCI may assert if memory is zeroed before it've read the FIS.)
+ *
+ * @bugref{4467}
+ */
         MMR3Reset(pVM);
         PDMR3Reset(pVM);
         SELMR3Reset(pVM);
@@ -3577,11 +3588,15 @@ static int vmR3SetErrorU(PUVM pUVM, int rc, RT_SRC_POS_DECL, const char *pszForm
  */
 DECLCALLBACK(void) vmR3SetErrorUV(PUVM pUVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list *pArgs)
 {
-#ifdef LOG_ENABLED
     /*
      * Log the error.
      */
     va_list va3;
+    va_copy(va3, *pArgs);
+    RTLogRelPrintf("VMSetError: %s(%d) %s\nVMSetError: %N\n", pszFile, iLine, pszFunction, pszFormat, &va3);
+    va_end(va3);
+
+#ifdef LOG_ENABLED
     va_copy(va3, *pArgs);
     RTLogPrintf("VMSetError: %s(%d) %s\n%N\n", pszFile, iLine, pszFunction, pszFormat, &va3);
     va_end(va3);
@@ -3608,17 +3623,6 @@ DECLCALLBACK(void) vmR3SetErrorUV(PUVM pUVM, int rc, RT_SRC_POS_DECL, const char
         fCalledSomeone = true;
     }
     RTCritSectLeave(&pUVM->vm.s.AtErrorCritSect);
-
-    /*
-     * Write the error to the release log if there weren't anyone to callback.
-     */
-    if (!fCalledSomeone)
-    {
-        va_list va3;
-        va_copy(va3, *pArgs);
-        RTLogRelPrintf("VMSetError: %s(%d) %s\nVMSetError: %N\n", pszFile, iLine, pszFunction, pszFormat, &va3);
-        va_end(va3);
-    }
 }
 
 

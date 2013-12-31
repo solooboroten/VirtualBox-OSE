@@ -27,6 +27,7 @@
 
 #include <iprt/assert.h>
 #include <iprt/string.h>
+#include <VBox/err.h>
 
 /* static */
 const Global::OSType Global::sOSTypes[SchemaDefs::OSTypeId_COUNT] =
@@ -45,31 +46,31 @@ const Global::OSType Global::sOSTypes[SchemaDefs::OSTypeId_COUNT] =
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsMe,       "Windows Me",
       VBOXOSTYPE_WinMe,           VBOXOSHINT_NONE,  64,   4,  4 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsNT4,      "Windows NT 4",
-      VBOXOSTYPE_WinNT4,          VBOXOSHINT_NONE, 128,   4,  2 * _1K, NetworkAdapterType_Am79C973, 0 },
+      VBOXOSTYPE_WinNT4,          VBOXOSHINT_NONE, 128,  16,  2 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows2000,     "Windows 2000",
-      VBOXOSTYPE_Win2k,           VBOXOSHINT_NONE, 168,  12,  4 * _1K, NetworkAdapterType_Am79C973, 0 },
+      VBOXOSTYPE_Win2k,           VBOXOSHINT_NONE, 168,  16,  4 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsXP,       "Windows XP",
-      VBOXOSTYPE_WinXP,           VBOXOSHINT_NONE, 192,  12, 10 * _1K, NetworkAdapterType_Am79C973, 0 },
+      VBOXOSTYPE_WinXP,           VBOXOSHINT_NONE, 192,  16, 10 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsXP_64,    "Windows XP (64 bit)",
-      VBOXOSTYPE_WinXP_x64,       VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  192,  12, 10 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_WinXP_x64,       VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  192,  16, 10 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows2003,     "Windows 2003",
-      VBOXOSTYPE_Win2k3,          VBOXOSHINT_NONE, 256,  12, 20 * _1K, NetworkAdapterType_Am79C973, 0 },
+      VBOXOSTYPE_Win2k3,          VBOXOSHINT_NONE, 256,  16, 20 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows2003_64,  "Windows 2003 (64 bit)",
-      VBOXOSTYPE_Win2k3_x64,      VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  256,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_Win2k3_x64,      VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  256,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsVista,    "Windows Vista",
-      VBOXOSTYPE_WinVista,        VBOXOSHINT_NONE, 512,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_WinVista,        VBOXOSHINT_NONE, 512,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsVista_64, "Windows Vista (64 bit)",
-      VBOXOSTYPE_WinVista_x64,    VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  512,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_WinVista_x64,    VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  512,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows2008,     "Windows 2008",
-      VBOXOSTYPE_Win2k8,          VBOXOSHINT_NONE, 512,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_Win2k8,          VBOXOSHINT_NONE, 512,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows2008_64,  "Windows 2008 (64 bit)",
-      VBOXOSTYPE_Win2k8_x64,      VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  512,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_Win2k8_x64,      VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  512,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows7,        "Windows 7",
-      VBOXOSTYPE_Win7,            VBOXOSHINT_NONE, 512,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_Win7,            VBOXOSHINT_NONE, 512,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_Windows7_64,  "Windows 7 (64 bit)",
-      VBOXOSTYPE_Win7_x64,        VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  512,  12, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
+      VBOXOSTYPE_Win7_x64,        VBOXOSHINT_64BIT | VBOXOSHINT_HWVIRTEX | VBOXOSHINT_IOAPIC,  512,  16, 20 * _1K, NetworkAdapterType_I82540EM, 0 },
     { "Windows", "Microsoft Windows", SchemaDefs_OSTypeId_WindowsNT,       "Other Windows",
-      VBOXOSTYPE_WinNT,           VBOXOSHINT_NONE, 512,  12, 20 * _1K, NetworkAdapterType_Am79C973, 0 },
+      VBOXOSTYPE_WinNT,           VBOXOSHINT_NONE, 512,  16, 20 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Linux",   "Linux",             SchemaDefs_OSTypeId_Linux22,         "Linux 2.2",
       VBOXOSTYPE_Linux22,         VBOXOSHINT_NONE,  64,   4,  2 * _1K, NetworkAdapterType_Am79C973, 0 },
     { "Linux",   "Linux",             SchemaDefs_OSTypeId_Linux24,         "Linux 2.4",
@@ -235,5 +236,80 @@ Global::stringifySessionState(SessionState_T aState)
 
     }
 }
+
+/*static*/ int
+Global::vboxStatusCodeFromCOM(HRESULT aComStatus)
+{
+    switch (aComStatus)
+    {
+        case S_OK:                              return VINF_SUCCESS;
+        case E_FAIL:                            return VERR_GENERAL_FAILURE;
+        case E_INVALIDARG:                      return VERR_INVALID_PARAMETER;
+        case E_POINTER:                         return VERR_INVALID_POINTER;
+
+        case VBOX_E_OBJECT_NOT_FOUND:           return VERR_COM_OBJECT_NOT_FOUND;
+        case VBOX_E_INVALID_VM_STATE:           return VERR_COM_INVALID_VM_STATE;
+        case VBOX_E_VM_ERROR:                   return VERR_COM_VM_ERROR;
+        case VBOX_E_FILE_ERROR:                 return VERR_COM_FILE_ERROR;
+        case VBOX_E_IPRT_ERROR:                 return VERR_COM_IPRT_ERROR;
+        case VBOX_E_PDM_ERROR:                  return VERR_COM_PDM_ERROR;
+        case VBOX_E_INVALID_OBJECT_STATE:       return VERR_COM_INVALID_OBJECT_STATE;
+        case VBOX_E_HOST_ERROR:                 return VERR_COM_HOST_ERROR;
+        case VBOX_E_NOT_SUPPORTED:              return VERR_COM_NOT_SUPPORTED;
+        case VBOX_E_XML_ERROR:                  return VERR_COM_XML_ERROR;
+        case VBOX_E_INVALID_SESSION_STATE:      return VERR_COM_INVALID_SESSION_STATE;
+        case VBOX_E_OBJECT_IN_USE:              return VERR_COM_OBJECT_IN_USE;
+
+        default:
+            if (SUCCEEDED(aComStatus))
+                return VINF_SUCCESS;
+            return VERR_UNRESOLVED_ERROR;
+    }
+}
+
+
+/*static*/ HRESULT
+Global::vboxStatusCodeToCOM(int aVBoxStatus)
+{
+    switch (aVBoxStatus)
+    {
+        case VINF_SUCCESS:                      return S_OK;
+        case VERR_GENERAL_FAILURE:              return E_FAIL;
+        case VERR_UNRESOLVED_ERROR:             return E_FAIL;
+        case VERR_INVALID_PARAMETER:            return E_INVALIDARG;
+        case VERR_INVALID_POINTER:              return E_POINTER;
+
+        case VERR_COM_OBJECT_NOT_FOUND:         return VBOX_E_OBJECT_NOT_FOUND;
+        case VERR_COM_INVALID_VM_STATE:         return VBOX_E_INVALID_VM_STATE;
+        case VERR_COM_VM_ERROR:                 return VBOX_E_VM_ERROR;
+        case VERR_COM_FILE_ERROR:               return VBOX_E_FILE_ERROR;
+        case VERR_COM_IPRT_ERROR:               return VBOX_E_IPRT_ERROR;
+        case VERR_COM_PDM_ERROR:                return VBOX_E_PDM_ERROR;
+        case VERR_COM_INVALID_OBJECT_STATE:     return VBOX_E_INVALID_OBJECT_STATE;
+        case VERR_COM_HOST_ERROR:               return VBOX_E_HOST_ERROR;
+        case VERR_COM_NOT_SUPPORTED:            return VBOX_E_NOT_SUPPORTED;
+        case VERR_COM_XML_ERROR:                return VBOX_E_XML_ERROR;
+        case VERR_COM_INVALID_SESSION_STATE:    return VBOX_E_INVALID_SESSION_STATE;
+        case VERR_COM_OBJECT_IN_USE:            return VBOX_E_OBJECT_IN_USE;
+
+        default:
+            AssertMsgFailed(("%Rrc\n", aVBoxStatus));
+            if (RT_SUCCESS(aVBoxStatus))
+                return S_OK;
+
+            /* try categorize it */
+            if (aVBoxStatus < 0 && aVBoxStatus > -1000)
+                return VBOX_E_IPRT_ERROR;
+            if (    aVBoxStatus <  VERR_PDM_NO_SUCH_LUN / 100 * 10
+                &&  aVBoxStatus >  VERR_PDM_NO_SUCH_LUN / 100 * 10 - 100)
+                return VBOX_E_PDM_ERROR;
+            if (    aVBoxStatus <= -1000
+                &&  aVBoxStatus >  -5000 /* wrong, but so what... */)
+                return VBOX_E_VM_ERROR;
+
+            return E_FAIL;
+    }
+}
+
 
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

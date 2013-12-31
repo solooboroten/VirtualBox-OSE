@@ -843,6 +843,7 @@ VMMDECL(int)  PGMHandlerPhysicalReset(PVM pVM, RTGCPHYS GCPhys)
                         Assert(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_MMIO);
                         pPage++;
                     }
+                    PGMPhysInvalidatePageMapTLB(pVM);
                 }
                 else
                 {
@@ -1041,8 +1042,9 @@ VMMDECL(int)  PGMHandlerPhysicalPageAlias(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCP
             PGM_PAGE_SET_STATE(pPage, PGM_PAGE_STATE_ALLOCATED);
             PGM_PAGE_SET_PAGEID(pPage, PGM_PAGE_GET_PAGEID(pPageRemap));
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
-            LogFlow(("PGMHandlerPhysicalPageAlias: => %R[pgmpage]\n", pPage));
+            PGMPhysInvalidatePageMapTLB(pVM);
 
+            LogFlow(("PGMHandlerPhysicalPageAlias: => %R[pgmpage]\n", pPage));
             pgmUnlock(pVM);
             return VINF_SUCCESS;
         }
@@ -1141,6 +1143,7 @@ VMMDECL(int)  PGMHandlerPhysicalPageAliasHC(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
              */
             PGM_PAGE_SET_PAGEID(pPage, NIL_GMM_PAGEID);
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
+            PGMPhysInvalidatePageMapTLB(pVM);
             LogFlow(("PGMHandlerPhysicalPageAliasHC: => %R[pgmpage]\n", pPage));
             pgmUnlock(pVM);
             return VINF_SUCCESS;

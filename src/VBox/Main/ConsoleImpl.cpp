@@ -104,6 +104,7 @@
 #include <algorithm>
 #include <memory> // for auto_ptr
 #include <vector>
+#include <typeinfo>
 
 
 // VMTask and friends
@@ -506,6 +507,7 @@ void Console::uninit()
 }
 
 #ifdef VBOX_WITH_GUEST_PROPS
+
 bool Console::enabledGuestPropertiesVRDP(void)
 {
     Bstr value;
@@ -606,6 +608,7 @@ void Console::updateGuestPropertiesVRDPDisconnect(uint32_t u32ClientId)
 
     return;
 }
+
 #endif /* VBOX_WITH_GUEST_PROPS */
 
 
@@ -1161,45 +1164,51 @@ Console::loadStateFileExecInternal(PSSMHANDLE pSSM, uint32_t u32Version)
 }
 
 #ifdef VBOX_WITH_GUEST_PROPS
+
 // static
 DECLCALLBACK(int)
-Console::doGuestPropNotification(void *pvExtension, uint32_t,
+Console::doGuestPropNotification(void *pvExtension, uint32_t u32Function,
                                  void *pvParms, uint32_t cbParms)
 {
     using namespace guestProp;
 
-//     LogFlowFunc(("pvExtension=%p, pvParms=%p, cbParms=%u\n", pvExtension, pvParms, cbParms));
-    int rc = VINF_SUCCESS;
-    /* No locking, as this is purely a notification which does not make any
-     * changes to the object state. */
-    PHOSTCALLBACKDATA pCBData = reinterpret_cast<PHOSTCALLBACKDATA>(pvParms);
+    Assert(u32Function == 0); NOREF(u32Function);
+
+    /*
+     * No locking, as this is purely a notification which does not make any
+     * changes to the object state.
+     */
+    PHOSTCALLBACKDATA   pCBData = reinterpret_cast<PHOSTCALLBACKDATA>(pvParms);
     AssertReturn(sizeof(HOSTCALLBACKDATA) == cbParms, VERR_INVALID_PARAMETER);
     AssertReturn(HOSTCALLBACKMAGIC == pCBData->u32Magic, VERR_INVALID_PARAMETER);
-    ComObjPtr<Console> pConsole = reinterpret_cast<Console *>(pvExtension);
-//     LogFlowFunc(("pCBData->pcszName=%s, pCBData->pcszValue=%s, pCBData->pcszFlags=%s\n", pCBData->pcszName, pCBData->pcszValue, pCBData->pcszFlags));
+    Log5(("Console::doGuestPropNotification: pCBData={.pcszName=%s, .pcszValue=%s, .pcszFlags=%s}\n",
+          pCBData->pcszName, pCBData->pcszValue, pCBData->pcszFlags));
+
+    int  rc;
     Bstr name(pCBData->pcszName);
     Bstr value(pCBData->pcszValue);
     Bstr flags(pCBData->pcszFlags);
-    if (   name.isNull()
-        || (value.isNull() && (pCBData->pcszValue != NULL))
-        || (flags.isNull() && (pCBData->pcszFlags != NULL))
+    if (   !name.isNull()
+        && (!value.isNull() || pCBData->pcszValue == NULL)
+        && (!flags.isNull() || pCBData->pcszFlags == NULL)
        )
-        rc = VERR_NO_MEMORY;
-    else
     {
-        HRESULT hrc = pConsole->mControl->PushGuestProperty(name, value,
-                                                            pCBData->u64Timestamp,
-                                                            flags);
-        if (FAILED(hrc))
+        ComObjPtr<Console> ptrConsole = reinterpret_cast<Console *>(pvExtension);
+        HRESULT hrc = ptrConsole->mControl->PushGuestProperty(name,
+                                                              value,
+                                                              pCBData->u64Timestamp,
+                                                              flags);
+        if (SUCCEEDED(hrc))
+            rc = VINF_SUCCESS;
+        else
         {
-//             LogFunc(("pConsole->mControl->PushGuestProperty failed, hrc=0x%x\n", hrc));
-//             LogFunc(("pCBData->pcszName=%s\n", pCBData->pcszName));
-//             LogFunc(("pCBData->pcszValue=%s\n", pCBData->pcszValue));
-//             LogFunc(("pCBData->pcszFlags=%s\n", pCBData->pcszFlags));
-            rc = VERR_UNRESOLVED_ERROR;  /** @todo translate error code */
+            LogFunc(("Console::doGuestPropNotification: hrc=%Rhrc pCBData={.pcszName=%s, .pcszValue=%s, .pcszFlags=%s}\n",
+                     pCBData->pcszName, pCBData->pcszValue, pCBData->pcszFlags));
+            rc = Global::vboxStatusCodeFromCOM(hrc);
         }
     }
-//     LogFlowFunc(("rc=%Rrc\n", rc));
+    else
+        rc = VERR_NO_MEMORY;
     return rc;
 }
 
@@ -1299,7 +1308,91 @@ HRESULT Console::doEnumerateGuestProperties(CBSTR aPatterns,
     flags.detachTo(ComSafeArrayOutArg(aFlags));
     return S_OK;
 }
-#endif
+
+/**
+ * Helper that is used by powerDown to move the guest properties to VBoxSVC.
+ *
+ * @param   fSaving         Whether we're saving a machine state and should
+ *                          therefore save transient properties as well.
+ *
+ * @returns COM status code.
+ *
+ * @remarks This is called without holding the console lock.
+ */
+HRESULT Console::doMoveGuestPropertiesOnPowerOff(bool fSaving)
+{
+    /*
+     * First, flush any pending notifications.
+     */
+    VBOXHGCMSVCPARM parm[1];
+    parm[0].setUInt32(20*1000/*ms*/);
+    int vrc = mVMMDev->hgcmHostCall("VBoxGuestPropSvc", guestProp::FLUSH_NOTIFICATIONS_HOST, 1, &parm[0]);
+    if (RT_FAILURE(vrc))
+        LogRelFunc(("Flushing notifications failed with rc=%Rrc\n", vrc));
+
+    /*
+     * Enumerate the properties and
+     */
+    HRESULT                 hrc;
+    com::SafeArray<BSTR>    namesOut;
+    com::SafeArray<BSTR>    valuesOut;
+    com::SafeArray<ULONG64> timestampsOut;
+    com::SafeArray<BSTR>    flagsOut;
+    try
+    {
+        Bstr                pattern("");
+        hrc = doEnumerateGuestProperties(pattern, ComSafeArrayAsOutParam(namesOut),
+                                         ComSafeArrayAsOutParam(valuesOut),
+                                         ComSafeArrayAsOutParam(timestampsOut),
+                                         ComSafeArrayAsOutParam(flagsOut));
+        if (SUCCEEDED(hrc))
+        {
+            std::vector <BSTR>      names;
+            std::vector <BSTR>      values;
+            std::vector <ULONG64>   timestamps;
+            std::vector <BSTR>      flags;
+            for (size_t i = 0; i < namesOut.size(); ++i)
+            {
+                uint32_t fFlags = guestProp::NILFLAG;
+                vrc = guestProp::validateFlags(Utf8Str(flagsOut[i]).raw(), &fFlags); AssertRC(vrc);
+                if (   fSaving
+                    || !(fFlags & guestProp::TRANSIENT))
+                {
+                    names.push_back(namesOut[i]);
+                    values.push_back(valuesOut[i]);
+                    timestamps.push_back(timestampsOut[i]);
+                    flags.push_back(flagsOut[i]);
+                }
+            }
+            com::SafeArray<BSTR>    namesIn(names);
+            com::SafeArray<BSTR>    valuesIn(values);
+            com::SafeArray<ULONG64> timestampsIn(timestamps);
+            com::SafeArray<BSTR>    flagsIn(flags);
+            if (   namesIn.isNull()
+                || valuesIn.isNull()
+                || timestampsIn.isNull()
+                || flagsIn.isNull()
+               )
+                throw std::bad_alloc();
+            /* PushGuestProperties() calls DiscardSettings(), which calls us back */
+            mControl->PushGuestProperties(ComSafeArrayAsInParam(namesIn),
+                                          ComSafeArrayAsInParam(valuesIn),
+                                          ComSafeArrayAsInParam(timestampsIn),
+                                          ComSafeArrayAsInParam(flagsIn));
+        }
+    }
+    catch (...)
+    {
+        hrc = Console::handleUnexpectedExceptions(RT_SRC_POS);
+    }
+    if (FAILED(hrc))
+        LogRelFunc(("Failed with hrc=%Rhrc\n", hrc));
+    return hrc;
+}
+
+
+
+#endif /* VBOX_WITH_GUEST_PROPS */
 
 
 // IConsole properties
@@ -2694,8 +2787,36 @@ STDMETHODIMP Console::UnregisterCallback(IConsoleCallback *aCallback)
 // Non-interface public methods
 /////////////////////////////////////////////////////////////////////////////
 
+/**
+ * @copydoc VirtualBox::handleUnexpectedExceptions
+ */
+/* static */
+HRESULT Console::handleUnexpectedExceptions(RT_SRC_POS_DECL)
+{
+    try
+    {
+        /* re-throw the current exception */
+        throw;
+    }
+    catch (const std::exception &err)
+    {
+        return setError(E_FAIL, tr("Unexpected exception: %s [%s]\n%s[%d] (%s)"),
+                                err.what(), typeid(err).name(),
+                                pszFile, iLine, pszFunction);
+    }
+    catch (...)
+    {
+        return setError(E_FAIL, tr("Unknown exception\n%s[%d] (%s)"),
+                                pszFile, iLine, pszFunction);
+    }
 
-const char *Console::controllerTypeToDev(StorageControllerType_T enmCtrlType)
+    /* should not get here */
+    AssertFailed();
+    return E_FAIL;
+}
+
+/* static */
+const char *Console::convertControllerTypeToDev(StorageControllerType_T enmCtrlType)
 {
     switch (enmCtrlType)
     {
@@ -2739,6 +2860,9 @@ HRESULT Console::convertBusPortDeviceToLun(StorageBus_T enmBus, LONG port, LONG 
             AssertMsgFailedReturn(("%d\n", enmBus), E_INVALIDARG);
     }
 }
+
+// private methods
+/////////////////////////////////////////////////////////////////////////////
 
 /**
  * Process a medium change.
@@ -2791,7 +2915,7 @@ HRESULT Console::doMediumChange(IMediumAttachment *aMediumAttachment, bool fForc
     StorageControllerType_T enmCtrlType;
     rc = ctrl->COMGETTER(ControllerType)(&enmCtrlType);
     AssertComRC(rc);
-    pszDevice = controllerTypeToDev(enmCtrlType);
+    pszDevice = convertControllerTypeToDev(enmCtrlType);
 
     /** @todo support multiple instances of a controller */
     uInstance = 0;
@@ -3895,7 +4019,7 @@ HRESULT Console::getGuestProperty(IN_BSTR aName, BSTR *aValue,
 {
 #ifndef VBOX_WITH_GUEST_PROPS
     ReturnComNotImplemented();
-#else
+#else  /* VBOX_WITH_GUEST_PROPS */
     if (!VALID_PTR(aName))
         return E_INVALIDARG;
     if (!VALID_PTR(aValue))
@@ -3972,7 +4096,7 @@ HRESULT Console::setGuestProperty(IN_BSTR aName, IN_BSTR aValue, IN_BSTR aFlags)
 {
 #ifndef VBOX_WITH_GUEST_PROPS
     ReturnComNotImplemented();
-#else
+#else /* VBOX_WITH_GUEST_PROPS */
     if (!VALID_PTR(aName))
         return E_INVALIDARG;
     if ((aValue != NULL) && !VALID_PTR(aValue))
@@ -4048,7 +4172,7 @@ HRESULT Console::enumerateGuestProperties(IN_BSTR aPatterns,
 {
 #ifndef VBOX_WITH_GUEST_PROPS
     ReturnComNotImplemented();
-#else
+#else /* VBOX_WITH_GUEST_PROPS */
     if (!VALID_PTR(aPatterns) && (aPatterns != NULL))
         return E_POINTER;
     if (ComSafeArrayOutIsNull(aNames))
@@ -4681,11 +4805,13 @@ HRESULT Console::powerUp(IProgress **aProgress, bool aPaused)
     BOOL fTeleporterEnabled;
     rc = mMachine->COMGETTER(TeleporterEnabled)(&fTeleporterEnabled);
     CheckComRCReturnRC(rc);
+#if 0 /** @todo we should save it afterwards, but that isn't necessarily a good idea. Find a better place for this (VBoxSVC).  */
     if (fTeleporterEnabled)
     {
         rc = mMachine->COMSETTER(TeleporterEnabled)(FALSE);
         CheckComRCReturnRC(rc);
     }
+#endif
 
     /* create a progress object to track progress of this operation */
     ComObjPtr<Progress> powerupProgress;
@@ -4865,7 +4991,7 @@ HRESULT Console::powerDown(Progress *aProgress /*= NULL*/)
               || mMachineState == MachineState_Saving
               || mMachineState == MachineState_Restoring
               || mMachineState == MachineState_TeleportingPausedVM
-              || mMachineState == MachineState_TeleportingIn         /** @todo Teleportation ???*/
+              || mMachineState == MachineState_TeleportingIn
               , ("Invalid machine state: %s\n", Global::stringifyMachineState(mMachineState)));
 
     LogRel(("Console::powerDown(): A request to power off the VM has been issued (mMachineState=%s, InUninit=%d)\n",
@@ -4883,11 +5009,15 @@ HRESULT Console::powerDown(Progress *aProgress /*= NULL*/)
        )
         mVMPoweredOff = true;
 
-    /* go to Stopping state if not already there. Note that we don't go from
-     * Saving/Restoring to Stopping because vmstateChangeCallback() needs it to
-     * set the state to Saved on VMSTATE_TERMINATED. In terms of protecting from
-     * inappropriate operations while leaving the lock below, Saving or
-     * Restoring should be fine too.  Ditto for Teleporting* -> Teleported. */
+    /*
+     * Go to Stopping state if not already there.
+     *
+     * Note that we don't go from Saving/Restoring to Stopping because
+     * vmstateChangeCallback() needs it to set the state to Saved on
+     * VMSTATE_TERMINATED. In terms of protecting from inappropriate operations
+     * while leaving the lock below, Saving or Restoring should be fine too.
+     * Ditto for TeleportingPausedVM -> Teleported.
+     */
     if (   mMachineState != MachineState_Saving
         && mMachineState != MachineState_Restoring
         && mMachineState != MachineState_Stopping
@@ -4920,95 +5050,6 @@ HRESULT Console::powerDown(Progress *aProgress /*= NULL*/)
     if (aProgress)
         aProgress->SetCurrentOperationProgress(99 * (++ step) / StepCount );
 
-#ifdef VBOX_WITH_HGCM
-
-# ifdef VBOX_WITH_GUEST_PROPS  /** @todo r=bird: This may be premature, the VM may still be running at this point! */
-
-    /* Save all guest property store entries to the machine XML file */
-    com::SafeArray<BSTR> namesOut;
-    com::SafeArray<BSTR> valuesOut;
-    com::SafeArray<ULONG64> timestampsOut;
-    com::SafeArray<BSTR> flagsOut;
-    Bstr pattern("");
-    if (pattern.isNull()) /** @todo r=bird: What is pattern actually used for?  And, again, what's is the out-of-memory policy in main? */
-        rc = E_OUTOFMEMORY;
-    else
-        rc = doEnumerateGuestProperties(Bstr(""), ComSafeArrayAsOutParam(namesOut),
-                                        ComSafeArrayAsOutParam(valuesOut),
-                                        ComSafeArrayAsOutParam(timestampsOut),
-                                        ComSafeArrayAsOutParam(flagsOut));
-    if (SUCCEEDED(rc))
-    {
-        try
-        {
-            std::vector <BSTR> names;
-            std::vector <BSTR> values;
-            std::vector <ULONG64> timestamps;
-            std::vector <BSTR> flags;
-            for (unsigned i = 0; i < namesOut.size(); ++i)
-            {
-                uint32_t fFlags;
-                guestProp::validateFlags(Utf8Str(flagsOut[i]).raw(), &fFlags);
-                if (   !(fFlags & guestProp::TRANSIENT)
-                    || mMachineState == MachineState_Saving
-                    || mMachineState == MachineState_LiveSnapshotting
-                  )
-                {
-                    names.push_back(namesOut[i]);
-                    values.push_back(valuesOut[i]);
-                    timestamps.push_back(timestampsOut[i]);
-                    flags.push_back(flagsOut[i]);
-                }
-            }
-            com::SafeArray<BSTR> namesIn(names);
-            com::SafeArray<BSTR> valuesIn(values);
-            com::SafeArray<ULONG64> timestampsIn(timestamps);
-            com::SafeArray<BSTR> flagsIn(flags);
-            if (   namesIn.isNull()
-                || valuesIn.isNull()
-                || timestampsIn.isNull()
-                || flagsIn.isNull()
-                )
-                throw std::bad_alloc();
-            /* PushGuestProperties() calls DiscardSettings(), which calls us back */
-            alock.leave();
-            mControl->PushGuestProperties(ComSafeArrayAsInParam(namesIn),
-                                          ComSafeArrayAsInParam(valuesIn),
-                                          ComSafeArrayAsInParam(timestampsIn),
-                                          ComSafeArrayAsInParam(flagsIn));
-            alock.enter();
-        }
-        catch (std::bad_alloc)
-        {
-            rc = E_OUTOFMEMORY;
-        }
-    }
-
-    /* advance percent count */
-    if (aProgress)
-        aProgress->SetCurrentOperationProgress(99 * (++ step) / StepCount );
-
-# endif /* VBOX_WITH_GUEST_PROPS defined */
-
-    /* Shutdown HGCM services before stopping the guest, because they might
-     * need a cleanup. */
-    if (mVMMDev)
-    {
-        LogFlowThisFunc(("Shutdown HGCM...\n"));
-
-        /* Leave the lock since EMT will call us back as addVMCaller() */
-        alock.leave();
-
-        mVMMDev->hgcmShutdown();
-
-        alock.enter();
-    }
-
-    /* advance percent count */
-    if (aProgress)
-        aProgress->SetCurrentOperationProgress(99 * (++ step) / StepCount );
-
-#endif /* VBOX_WITH_HGCM */
 
     /* ----------------------------------------------------------------------
      * Now, wait for all mpVM callers to finish their work if there are still
@@ -5041,26 +5082,26 @@ HRESULT Console::powerDown(Progress *aProgress /*= NULL*/)
 
     vrc = VINF_SUCCESS;
 
-    /* Power off the VM if not already done that */
+    /*
+     * Power off the VM if not already done that.
+     * Leave the lock since EMT will call vmstateChangeCallback.
+     *
+     * Note that VMR3PowerOff() may fail here (invalid VMSTATE) if the
+     * VM-(guest-)initiated power off happened in parallel a ms before this
+     * call. So far, we let this error pop up on the user's side.
+     */
     if (!mVMPoweredOff)
     {
         LogFlowThisFunc(("Powering off the VM...\n"));
-
-        /* Leave the lock since EMT will call us back on VMR3PowerOff() */
         alock.leave();
-
         vrc = VMR3PowerOff(mpVM);
-
-        /* Note that VMR3PowerOff() may fail here (invalid VMSTATE) if the
-         * VM-(guest-)initiated power off happened in parallel a ms before this
-         * call. So far, we let this error pop up on the user's side. */
-
         alock.enter();
-
     }
     else
     {
-        /* reset the flag for further re-use */
+        /** @todo r=bird: Doesn't make sense. Please remove after 3.1 has been branched
+         *        off. */
+        /* reset the flag for future re-use */
         mVMPoweredOff = false;
     }
 
@@ -5068,13 +5109,51 @@ HRESULT Console::powerDown(Progress *aProgress /*= NULL*/)
     if (aProgress)
         aProgress->SetCurrentOperationProgress(99 * (++ step) / StepCount );
 
+#ifdef VBOX_WITH_HGCM
+# ifdef VBOX_WITH_GUEST_PROPS
+    /*
+     * Save all guest property store entries to the machine XML file
+     * and hand controll over to VBoxSVC.  Ignoring failure for now.
+     */
+    LogFlowThisFunc(("Moving Guest Properties to XML/VBoxSVC...\n"));
+    bool fIsSaving = mMachineState == MachineState_Saving
+                  || mMachineState == MachineState_LiveSnapshotting;
+    alock.leave();
+    doMoveGuestPropertiesOnPowerOff(fIsSaving);
+    alock.enter();
+
+    /* advance percent count */
+    if (aProgress)
+        aProgress->SetCurrentOperationProgress(99 * (++ step) / StepCount );
+
+# endif /* VBOX_WITH_GUEST_PROPS defined */
+
+    /* Shutdown HGCM services before destroying the VM. */
+    if (mVMMDev)
+    {
+        LogFlowThisFunc(("Shutdown HGCM...\n"));
+
+        /* Leave the lock since EMT will call us back as addVMCaller() */
+        alock.leave();
+
+        mVMMDev->hgcmShutdown();
+
+        alock.enter();
+    }
+
+    /* advance percent count */
+    if (aProgress)
+        aProgress->SetCurrentOperationProgress(99 * (++ step) / StepCount );
+
+#endif /* VBOX_WITH_HGCM */
+
     LogFlowThisFunc(("Ready for VM destruction.\n"));
 
     /* If we are called from Console::uninit(), then try to destroy the VM even
      * on failure (this will most likely fail too, but what to do?..) */
     if (RT_SUCCESS(vrc) || autoCaller.state() == InUninit)
     {
-        /* If the machine has an USB comtroller, release all USB devices
+        /* If the machine has an USB controller, release all USB devices
          * (symmetric to the code in captureUSBDevices()) */
         bool fHasUSBController = false;
         {
@@ -5699,6 +5778,7 @@ DECLCALLBACK(void) Console::vmstateChangeCallback(PVM aVM,
                     break;
 
                 /* Change the machine state from Running to Paused. */
+/** @todo Live Migration: Deal with Pause happening before VMR3Teleport! */
                 AssertBreak(that->mMachineState == MachineState_Running);
                 that->setMachineState(MachineState_Paused);
             }
@@ -6999,21 +7079,23 @@ DECLCALLBACK(int) Console::powerUpThread(RTTHREAD Thread, void *pvUser)
 
 
 /**
- * Reconfigures a VDI.
+ * Reconfigures a medium attachment (part of taking an online snapshot).
  *
  * @param   pVM           The VM handle.
  * @param   lInstance     The instance of the controller.
  * @param   enmController The type of the controller.
- * @param   hda           The harddisk attachment.
+ * @param   enmBus        The storage bus type of the controller.
+ * @param   aMediumAtt    The medium attachment.
  * @param   phrc          Where to store com error - only valid if we return VERR_GENERAL_FAILURE.
  * @return  VBox status code.
  */
-static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
-                                              StorageControllerType_T enmController,
-                                              IMediumAttachment *hda,
-                                              HRESULT *phrc)
+static DECLCALLBACK(int) reconfigureMedium(PVM pVM, ULONG lInstance,
+                                           StorageControllerType_T enmController,
+                                           StorageBus_T enmBus,
+                                           IMediumAttachment *aMediumAtt,
+                                           HRESULT *phrc)
 {
-    LogFlowFunc(("pVM=%p hda=%p phrc=%p\n", pVM, hda, phrc));
+    LogFlowFunc(("pVM=%p aMediumAtt=%p phrc=%p\n", pVM, aMediumAtt, phrc));
 
     int             rc;
     HRESULT         hrc;
@@ -7023,83 +7105,41 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
 #define H() do { if (FAILED(hrc)) { AssertMsgFailed(("hrc=%Rhrc (%#x)\n", hrc, hrc)); *phrc = hrc; return VERR_GENERAL_FAILURE; } } while (0)
 
     /*
-     * Figure out which IDE device this is.
+     * Figure out medium and other attachment details.
      */
-    ComPtr<IMedium> hardDisk;
-    hrc = hda->COMGETTER(Medium)(hardDisk.asOutParam());                      H();
+    ComPtr<IMedium> medium;
+    hrc = aMediumAtt->COMGETTER(Medium)(medium.asOutParam());                   H();
     LONG lDev;
-    hrc = hda->COMGETTER(Device)(&lDev);                                        H();
+    hrc = aMediumAtt->COMGETTER(Device)(&lDev);                                 H();
     LONG lPort;
-    hrc = hda->COMGETTER(Port)(&lPort);                                         H();
+    hrc = aMediumAtt->COMGETTER(Port)(&lPort);                                  H();
+    DeviceType_T lType;
+    hrc = aMediumAtt->COMGETTER(Type)(&lType);                                  H();
 
-    int         iLUN;
-    const char *pcszDevice = NULL;
-    bool        fSCSI = false;
+    unsigned iLUN;
+    const char *pcszDevice = Console::convertControllerTypeToDev(enmController);
+    AssertMsgReturn(pcszDevice, ("invalid disk controller type: %d\n", enmController), VERR_GENERAL_FAILURE);
+    hrc = Console::convertBusPortDeviceToLun(enmBus, lPort, lDev, iLUN);        H();
 
-    switch (enmController)
-    {
-        case StorageControllerType_PIIX3:
-        case StorageControllerType_PIIX4:
-        case StorageControllerType_ICH6:
-        {
-            if (lPort >= 2 || lPort < 0)
-            {
-                AssertMsgFailed(("invalid controller channel number: %d\n", lPort));
-                return VERR_GENERAL_FAILURE;
-            }
-
-            if (lDev >= 2 || lDev < 0)
-            {
-                AssertMsgFailed(("invalid controller device number: %d\n", lDev));
-                return VERR_GENERAL_FAILURE;
-            }
-
-            iLUN = 2*lPort + lDev;
-            pcszDevice = "piix3ide";
-            break;
-        }
-        case StorageControllerType_IntelAhci:
-        {
-            iLUN = lPort;
-            pcszDevice = "ahci";
-            break;
-        }
-        case StorageControllerType_BusLogic:
-        {
-            iLUN = lPort;
-            pcszDevice = "buslogic";
-            fSCSI = true;
-            break;
-        }
-        case StorageControllerType_LsiLogic:
-        {
-            iLUN = lPort;
-            pcszDevice = "lsilogicscsi";
-            fSCSI = true;
-            break;
-        }
-        default:
-        {
-            AssertMsgFailed(("invalid disk controller type: %d\n", enmController));
-            return VERR_GENERAL_FAILURE;
-        }
-    }
+    /* Ignore attachments other than hard disks, since at the moment they are
+     * not subject to snapshotting in general. */
+    if (lType != DeviceType_HardDisk || medium.isNull())
+        return VINF_SUCCESS;
 
     /** @todo this should be unified with the relevant part of
     * Console::configConstructor to avoid inconsistencies. */
 
     /*
      * Is there an existing LUN? If not create it.
-     * We ASSUME that this will NEVER collide with the DVD.
      */
     PCFGMNODE pCfg;
     PCFGMNODE pLunL1;
 
     /* SCSI has an extra driver between the device and the block driver. */
-    if (fSCSI)
-        pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/LUN#%d/AttachedDriver/AttachedDriver/", pcszDevice, lInstance, iLUN);
+    if (enmBus == StorageBus_SCSI)
+        pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/LUN#%u/AttachedDriver/AttachedDriver/", pcszDevice, lInstance, iLUN);
     else
-        pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/LUN#%d/AttachedDriver/", pcszDevice, lInstance, iLUN);
+        pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/LUN#%u/AttachedDriver/", pcszDevice, lInstance, iLUN);
 
     if (!pLunL1)
     {
@@ -7107,9 +7147,9 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
         AssertReturn(pInst, VERR_INTERNAL_ERROR);
 
         PCFGMNODE pLunL0;
-        rc = CFGMR3InsertNodeF(pInst, &pLunL0, "LUN#%d", iLUN);                     RC_CHECK();
+        rc = CFGMR3InsertNodeF(pInst, &pLunL0, "LUN#%u", iLUN);                     RC_CHECK();
 
-        if (fSCSI)
+        if (enmBus == StorageBus_SCSI)
         {
             rc = CFGMR3InsertString(pLunL0, "Driver",              "SCSI");             RC_CHECK();
             rc = CFGMR3InsertNode(pLunL0,   "Config", &pCfg);                           RC_CHECK();
@@ -7154,20 +7194,20 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
     /*
      * Create the driver configuration.
      */
-    hrc = hardDisk->COMGETTER(Location)(bstr.asOutParam());                     H();
-    LogFlowFunc(("LUN#%d: leaf location '%ls'\n", iLUN, bstr.raw()));
+    hrc = medium->COMGETTER(Location)(bstr.asOutParam());                       H();
+    LogFlowFunc(("LUN#%u: leaf location '%ls'\n", iLUN, bstr.raw()));
     rc = CFGMR3InsertString(pCfg, "Path", Utf8Str(bstr).c_str());                       RC_CHECK();
-    hrc = hardDisk->COMGETTER(Format)(bstr.asOutParam());                       H();
-    LogFlowFunc(("LUN#%d: leaf format '%ls'\n", iLUN, bstr.raw()));
+    hrc = medium->COMGETTER(Format)(bstr.asOutParam());                         H();
+    LogFlowFunc(("LUN#%u: leaf format '%ls'\n", iLUN, bstr.raw()));
     rc = CFGMR3InsertString(pCfg, "Format", Utf8Str(bstr).c_str());                     RC_CHECK();
 
     /* Pass all custom parameters. */
     bool fHostIP = true;
     SafeArray<BSTR> names;
     SafeArray<BSTR> values;
-    hrc = hardDisk->GetProperties(NULL,
-                                  ComSafeArrayAsOutParam(names),
-                                  ComSafeArrayAsOutParam(values));      H();
+    hrc = medium->GetProperties(NULL,
+                                ComSafeArrayAsOutParam(names),
+                                ComSafeArrayAsOutParam(values));        H();
 
     if (names.size() != 0)
     {
@@ -7188,27 +7228,27 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
     }
 
     /* Create an inversed tree of parents. */
-    ComPtr<IMedium> parentHardDisk = hardDisk;
+    ComPtr<IMedium> parentMedium = medium;
     for (PCFGMNODE pParent = pCfg;;)
     {
-        hrc = parentHardDisk->COMGETTER(Parent)(hardDisk.asOutParam());     H();
-        if (hardDisk.isNull())
+        hrc = parentMedium->COMGETTER(Parent)(medium.asOutParam());             H();
+        if (medium.isNull())
             break;
 
         PCFGMNODE pCur;
         rc = CFGMR3InsertNode(pParent, "Parent", &pCur);                        RC_CHECK();
-        hrc = hardDisk->COMGETTER(Location)(bstr.asOutParam());                 H();
+        hrc = medium->COMGETTER(Location)(bstr.asOutParam());                   H();
         rc = CFGMR3InsertString(pCur,  "Path", Utf8Str(bstr).c_str());          RC_CHECK();
 
-        hrc = hardDisk->COMGETTER(Format)(bstr.asOutParam());                   H();
+        hrc = medium->COMGETTER(Format)(bstr.asOutParam());                     H();
         rc = CFGMR3InsertString(pCur,  "Format", Utf8Str(bstr).c_str());        RC_CHECK();
 
         /* Pass all custom parameters. */
         SafeArray<BSTR> names;
         SafeArray<BSTR> values;
-        hrc = hardDisk->GetProperties(NULL,
-                                      ComSafeArrayAsOutParam(names),
-                                      ComSafeArrayAsOutParam(values));  H();
+        hrc = medium->GetProperties(NULL,
+                                    ComSafeArrayAsOutParam(names),
+                                    ComSafeArrayAsOutParam(values));            H();
 
         if (names.size() != 0)
         {
@@ -7228,7 +7268,6 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
             }
         }
 
-
         /* Custom code: put marker to not use host IP stack to driver
         * configuration node. Simplifies life of DrvVD a bit. */
         if (!fHostIP)
@@ -7239,7 +7278,7 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
 
         /* next */
         pParent = pCur;
-        parentHardDisk = hardDisk;
+        parentMedium = medium;
     }
 
     CFGMR3Dump(CFGMR3GetRoot(pVM));
@@ -7336,7 +7375,7 @@ DECLCALLBACK(int) Console::fntTakeSnapshotWorker(RTTHREAD Thread, void *pvUser)
             // STEP 4: reattach hard disks
             LogFlowFunc(("Reattaching new differencing hard disks...\n"));
 
-            pTask->mProgress->SetNextOperation(Bstr(tr("Reconfiguring hard disks")),
+            pTask->mProgress->SetNextOperation(Bstr(tr("Reconfiguring medium attachments")),
                                                1);       // operation weight, same as computed when setting up progress object
 
             com::SafeIfaceArray<IMediumAttachment> atts;
@@ -7351,6 +7390,7 @@ DECLCALLBACK(int) Console::fntTakeSnapshotWorker(RTTHREAD Thread, void *pvUser)
                 BSTR controllerName;
                 ULONG lInstance;
                 StorageControllerType_T enmController;
+                StorageBus_T enmBus;
 
                 /*
                 * We can't pass a storage controller object directly
@@ -7358,34 +7398,35 @@ DECLCALLBACK(int) Console::fntTakeSnapshotWorker(RTTHREAD Thread, void *pvUser)
                 * so we have to query needed values here and pass them.
                 */
                 rc = atts[i]->COMGETTER(Controller)(&controllerName);
-                if (FAILED(rc))
-                    break;
+                if (FAILED(rc)) throw rc;
 
                 rc = that->mMachine->GetStorageControllerByName(controllerName, controller.asOutParam());
                 if (FAILED(rc)) throw rc;
 
                 rc = controller->COMGETTER(ControllerType)(&enmController);
+                if (FAILED(rc)) throw rc;
                 rc = controller->COMGETTER(Instance)(&lInstance);
+                if (FAILED(rc)) throw rc;
+                rc = controller->COMGETTER(Bus)(&enmBus);
+                if (FAILED(rc)) throw rc;
 
                 /*
-                 * don't leave the lock since reconfigureHardDisks isn't going
+                 * don't leave the lock since reconfigureMedium isn't going
                  * to access Console.
                  */
                 int vrc = VMR3ReqCallWait(that->mpVM,
                                           VMCPUID_ANY,
-                                          (PFNRT)reconfigureHardDisks,
-                                          5,
+                                          (PFNRT)reconfigureMedium,
+                                          6,
                                           that->mpVM,
                                           lInstance,
                                           enmController,
+                                          enmBus,
                                           atts[i],
                                           &rc);
                 if (RT_FAILURE(vrc))
                     throw setError(E_FAIL, Console::tr("%Rrc"), vrc);
                 if (FAILED(rc)) throw rc;
-                    break;
-                if (FAILED(rc))
-                    break;
             }
         }
 

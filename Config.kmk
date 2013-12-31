@@ -156,7 +156,7 @@ VBOX_VERSION_MINOR = 1
 # will be published, odd numbers are set during development.
 VBOX_VERSION_BUILD = 0
 # Full version string (may include more than just x.y.z, but no spaces or other problematic chars).
-VBOX_VERSION_STRING = $(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_VERSION_BUILD)_BETA1
+VBOX_VERSION_STRING = $(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_VERSION_BUILD)_BETA2
 # Force the additions.sh script to get an exact additions build when we're doing the release.
 
 ifeq ($(int-mod $(VBOX_VERSION_BUILD),2),0)
@@ -323,8 +323,8 @@ VBOX_WITH_VIRTIO = 1
 VBOX_WITH_ALSA = 1
 # Enable Pulse support for Linux.
 VBOX_WITH_PULSE = 1
-# Enable statically linked dbus support for Linux.
-ifeq ($(KBUILD_TARGET),linux)
+# Enable statically linked dbus support
+if1of ($(KBUILD_TARGET),linux solaris)
  VBOX_WITH_DBUS = 1
 endif
 # Disable WINMM support for Windows (not implemented).
@@ -397,7 +397,9 @@ VBOX_WITH_NEW_USB_CODE_ON_SOLARIS=1
 endif
 # Enable the hal/sysfs USB code on Linux.  This depends on VBOX_WITH_DBUS.
 ifdef VBOX_WITH_DBUS
- VBOX_USB_WITH_SYSFS=1
+ ifeq ($(KBUILD_TARGET),linux)
+  VBOX_USB_WITH_SYSFS=1
+ endif
 endif
 # Use the new VBI module on Solaris.
 #VBOX_WITH_SOLARIS_VBI = 1
@@ -423,6 +425,8 @@ VBOX_WITH_LPC = 1
 VBOX_WITH_EFI = 1
 # Fetch EFI firmware image from the build server
 # VBOX_WITH_EFIFW_FROM_BUILD_SERVER = 1
+# Include the EFI firmware into the package
+VBOX_WITH_EFIFW_PACKING = 1
 # Enable SCSI drivers
 VBOX_WITH_SCSI = 1
 # Enable changing network attachments dynamically.
@@ -511,9 +515,9 @@ if1of ($(KBUILD_TARGET), darwin linux solaris win freebsd)
  endif
 endif
 # Enable the new I/O path
-#if1of ($(KBUILD_TARGET), linux solaris win freebsd darwin)
-# VBOX_WITH_NEW_IO_CODE = 1
-#endif
+if1of ($(KBUILD_TARGET), linux solaris win freebsd darwin)
+ VBOX_WITH_NEW_IO_CODE = 1
+endif
 
 #
 # Config items for enabling work in progress.

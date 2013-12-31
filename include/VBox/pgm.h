@@ -355,10 +355,8 @@ VMMDECL(bool)       PGMPhysIsGCPhysNormal(PVM pVM, RTGCPHYS GCPhys);
 VMMDECL(int)        PGMPhysGCPhys2HCPhys(PVM pVM, RTGCPHYS GCPhys, PRTHCPHYS pHCPhys);
 VMMDECL(int)        PGMPhysGCPtr2GCPhys(PVMCPU pVCpu, RTGCPTR GCPtr, PRTGCPHYS pGCPhys);
 VMMDECL(int)        PGMPhysGCPtr2HCPhys(PVMCPU pVCpu, RTGCPTR GCPtr, PRTHCPHYS pHCPhys);
-VMMDECL(void)       PGMPhysInvalidatePageGCMapTLB(PVM pVM);
-VMMDECL(void)       PGMPhysInvalidatePageR0MapTLB(PVM pVM);
-VMMDECL(void)       PGMPhysInvalidatePageR3MapTLB(PVM pVM);
-
+VMMDECL(void)       PGMPhysInvalidatePageMapTLB(PVM pVM);
+VMMDECL(void)       PGMPhysInvalidatePageMapTLBEntry(PVM pVM, RTGCPHYS GCPhys);
 VMMDECL(int)        PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEMAPLOCK pLock);
 VMMDECL(int)        PGMPhysGCPhys2CCPtrReadOnly(PVM pVM, RTGCPHYS GCPhys, void const **ppv, PPGMPAGEMAPLOCK pLock);
 VMMDECL(int)        PGMPhysGCPtr2CCPtr(PVMCPU pVCpu, RTGCPTR GCPtr, void **ppv, PPGMPAGEMAPLOCK pLock);

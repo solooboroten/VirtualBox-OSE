@@ -863,11 +863,13 @@ static uint8_t const    g_abZero[_1K] = {0};
 /*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
+#ifndef SSM_STANDALONE
 static int                  ssmR3LazyInit(PVM pVM);
 static DECLCALLBACK(int)    ssmR3SelfLiveExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uPass);
 static DECLCALLBACK(int)    ssmR3SelfSaveExec(PVM pVM, PSSMHANDLE pSSM);
 static DECLCALLBACK(int)    ssmR3SelfLoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass);
 static int                  ssmR3Register(PVM pVM, const char *pszName, uint32_t uInstance, uint32_t uVersion, size_t cbGuess, const char *pszBefore, PSSMUNIT *ppUnit);
+#endif
 
 static int                  ssmR3StrmWriteBuffers(PSSMSTRM pStrm);
 static int                  ssmR3StrmReadMore(PSSMSTRM pStrm);
@@ -876,6 +878,7 @@ static int                  ssmR3DataFlushBuffer(PSSMHANDLE pSSM);
 static int                  ssmR3DataReadRecHdrV2(PSSMHANDLE pSSM);
 
 
+#ifndef SSM_STANDALONE
 
 /**
  * Cleans up resources allocated by SSM on VM termination.
@@ -1467,12 +1470,10 @@ VMMR3_INT_DECL(int) SSMR3DeregisterDriver(PVM pVM, PPDMDRVINS pDrvIns, const cha
                 rc = VINF_SUCCESS;
                 continue;
             }
-            else if (pszName)
-            {
-                AssertMsgFailed(("Caller is not owner! Owner=%p Caller=%p %s\n",
-                                 pUnit->u.Drv.pDrvIns, pDrvIns, pszName));
-                return VERR_SSM_UNIT_NOT_OWNER;
-            }
+
+            AssertMsgReturn(!pszName,
+                            ("Caller is not owner! Owner=%p Caller=%p %s\n", pUnit->u.Drv.pDrvIns, pDrvIns, pszName),
+                            VERR_SSM_UNIT_NOT_OWNER);
         }
 
         /* next */
@@ -1567,6 +1568,8 @@ VMMR3DECL(int) SSMR3DeregisterExternal(PVM pVM, const char *pszName)
 {
     return ssmR3DeregisterByNameAndType(pVM, pszName, SSMUNITTYPE_EXTERNAL);
 }
+
+#endif /* !SSM_STANDALONE */
 
 
 /**
@@ -2898,6 +2901,7 @@ DECLINLINE(bool) ssmR3IsHostMsc32(PSSMHANDLE pSSM)
     return SSM_HOST_IS_MSC_32;
 }
 
+#ifndef SSM_STANDALONE
 
 /**
  * Finishes a data unit.
@@ -4706,16 +4710,16 @@ static int ssmR3LiveDoVoteRun(PVM pVM, PSSMHANDLE pSSM, uint32_t uPass)
             switch (pUnit->enmType)
             {
                 case SSMUNITTYPE_DEV:
-                    rc = pUnit->u.Dev.pfnLiveVote(pUnit->u.Dev.pDevIns, pSSM);
+                    rc = pUnit->u.Dev.pfnLiveVote(pUnit->u.Dev.pDevIns, pSSM, uPass);
                     break;
                 case SSMUNITTYPE_DRV:
-                    rc = pUnit->u.Drv.pfnLiveVote(pUnit->u.Drv.pDrvIns, pSSM);
+                    rc = pUnit->u.Drv.pfnLiveVote(pUnit->u.Drv.pDrvIns, pSSM, uPass);
                     break;
                 case SSMUNITTYPE_INTERNAL:
-                    rc = pUnit->u.Internal.pfnLiveVote(pVM, pSSM);
+                    rc = pUnit->u.Internal.pfnLiveVote(pVM, pSSM, uPass);
                     break;
                 case SSMUNITTYPE_EXTERNAL:
-                    rc = pUnit->u.External.pfnLiveVote(pSSM, pUnit->u.External.pvUser);
+                    rc = pUnit->u.External.pfnLiveVote(pSSM, pUnit->u.External.pvUser, uPass);
                     break;
                 default:
                     rc = VERR_INTERNAL_ERROR;
@@ -5157,6 +5161,7 @@ VMMR3_INT_DECL(int) SSMR3LiveSave(PVM pVM, const char *pszFilename, PCSSMSTRMOPS
     return rc;
 }
 
+#endif /* !SSM_STANDALONE */
 
 
 /* ... Loading and reading starts here ... */
@@ -6842,106 +6847,6 @@ VMMR3DECL(int) SSMR3SkipToEndOfUnit(PSSMHANDLE pSSM)
 
 
 /**
- * VMSetError wrapper for load errors that inserts the saved state details.
- *
- * @returns rc.
- * @param   pSSM                The saved state handle.
- * @param   rc                  The status code of the error. Use RT_SRC_POS.
- * @param   RT_SRC_POS_DECL     The source location.
- * @param   pszFormat           The message format string.
- * @param   ...                 Variable argument list.
- */
-VMMR3DECL(int) SSMR3SetLoadError(PSSMHANDLE pSSM, int rc, RT_SRC_POS_DECL, const char *pszFormat, ...)
-{
-    va_list va;
-    va_start(va, pszFormat);
-    rc = SSMR3SetLoadErrorV(pSSM, rc, RT_SRC_POS_ARGS, pszFormat, va);
-    va_end(va);
-    return rc;
-}
-
-
-/**
- * VMSetError wrapper for load errors that inserts the saved state details.
- *
- * @returns rc.
- * @param   pSSM                The saved state handle.
- * @param   rc                  The status code of the error.
- * @param   RT_SRC_POS_DECL     The error location, use RT_SRC_POS.
- * @param   pszFormat           The message format string.
- * @param   va                  Variable argument list.
- */
-VMMR3DECL(int) SSMR3SetLoadErrorV(PSSMHANDLE pSSM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list va)
-{
-    /*
-     * Input validations.
-     */
-    SSM_ASSERT_READABLE_RET(pSSM);
-    AssertPtr(pszFormat);
-    Assert(RT_FAILURE_NP(rc));
-
-    /*
-     * Format the incoming error.
-     */
-    char *pszMsg;
-    RTStrAPrintfV(&pszMsg, pszFormat, va);
-    if (!pszMsg)
-    {
-        VMSetError(pSSM->pVM, VERR_NO_MEMORY, RT_SRC_POS,
-                   N_("SSMR3SetLoadErrorV ran out of memory formatting: %s\n"), pszFormat);
-        return rc;
-    }
-
-    /*
-     * Forward to VMSetError with the additional info.
-     */
-    PSSMUNIT    pUnit       = pSSM->u.Read.pCurUnit;
-    const char *pszName     = pUnit ? pUnit->szName      : "unknown";
-    uint32_t    uInstance   = pUnit ? pUnit->u32Instance : 0;
-    if (   pSSM->enmOp == SSMSTATE_LOAD_EXEC
-        && pSSM->u.Read.uCurUnitPass == SSM_PASS_FINAL)
-        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [ver=%u pass=final]"),
-                        pszName, uInstance, pszMsg, pSSM->u.Read.uCurUnitVer);
-    else if (pSSM->enmOp == SSMSTATE_LOAD_EXEC)
-        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [ver=%u pass=#%u]"),
-                        pszName, uInstance, pszMsg, pSSM->u.Read.uCurUnitVer, pSSM->u.Read.uCurUnitPass);
-    else if (pSSM->enmOp == SSMSTATE_LOAD_PREP)
-        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [prep]"),
-                        pszName, uInstance, pszMsg);
-    else if (pSSM->enmOp == SSMSTATE_LOAD_DONE)
-        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [done]"),
-                        pszName, uInstance, pszMsg);
-    else if (pSSM->enmOp == SSMSTATE_OPEN_READ)
-        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [read]"),
-                        pszName, uInstance, pszMsg);
-    else
-        AssertFailed();
-    pSSM->u.Read.fHaveSetError = true;
-    RTStrFree(pszMsg);
-    return rc;
-}
-
-
-/**
- * SSMR3SetLoadError wrapper that returns VERR_SSM_LOAD_CONFIG_MISMATCH.
- *
- * @returns VERR_SSM_LOAD_CONFIG_MISMATCH.
- * @param   pSSM                The saved state handle.
- * @param   RT_SRC_POS_DECL     The error location, use RT_SRC_POS.
- * @param   pszFormat           The message format string.
- * @param   va                  Variable argument list.
- */
-VMMR3DECL(int) SSMR3SetCfgError(PSSMHANDLE pSSM, RT_SRC_POS_DECL, const char *pszFormat, ...)
-{
-    va_list va;
-    va_start(va, pszFormat);
-    int rc = SSMR3SetLoadErrorV(pSSM, VERR_SSM_LOAD_CONFIG_MISMATCH, RT_SRC_POS_ARGS, pszFormat, va);
-    va_end(va);
-    return rc;
-}
-
-
-/**
  * Calculate the checksum of a file portion.
  *
  * @returns VBox status.
@@ -7482,6 +7387,42 @@ static int ssmR3OpenFile(PVM pVM, const char *pszFilename, PCSSMSTRMOPS pStreamO
 
 
 /**
+ * Verifies the directory.
+ *
+ * @returns VBox status code.
+ *
+ * @param   pDir        The full directory.
+ * @param   cbDir       The size of the directory.
+ * @param   offDir      The directory stream offset.
+ * @param   cDirEntries The directory entry count from the footer.
+ * @param   cbHdr       The header size.
+ * @param   uSvnRev     The SVN revision that saved the state. Bug detection.
+ */
+static int ssmR3ValidateDirectory(PSSMFILEDIR pDir, size_t cbDir, uint64_t offDir, uint32_t cDirEntries,
+                                  uint32_t cbHdr, uint32_t uSvnRev)
+{
+    AssertLogRelReturn(!memcmp(pDir->szMagic, SSMFILEDIR_MAGIC, sizeof(pDir->szMagic)), VERR_SSM_INTEGRITY_DIR_MAGIC);
+    SSM_CHECK_CRC32_RET(pDir, cbDir, ("Bad directory CRC: %08x, actual %08x\n", u32CRC, u32ActualCRC));
+    AssertLogRelMsgReturn(pDir->cEntries == cDirEntries,
+                          ("Bad directory entry count: %#x, expected %#x (from the footer)\n", pDir->cEntries, cDirEntries),
+                           VERR_SSM_INTEGRITY_DIR);
+    AssertLogRelReturn(RT_UOFFSETOF(SSMFILEDIR, aEntries[pDir->cEntries]) == cbDir, VERR_SSM_INTEGRITY_DIR);
+
+    for (uint32_t i = 0; i < pDir->cEntries; i++)
+    {
+        AssertLogRelMsgReturn(  (   pDir->aEntries[i].off >= cbHdr
+                                 && pDir->aEntries[i].off <  offDir)
+                              || (   pDir->aEntries[i].off == 0 /* bug in unreleased code */
+                                  && uSvnRev < 53365),
+                              ("off=%#llx cbHdr=%#x offDir=%#llx\n", pDir->aEntries[i].off, cbHdr, offDir),
+                              VERR_SSM_INTEGRITY_DIR);
+    }
+    return VINF_SUCCESS;
+}
+
+#ifndef SSM_STANDALONE
+
+/**
  * Find a data unit by name.
  *
  * @returns Pointer to the unit.
@@ -7648,12 +7589,14 @@ static int ssmR3LoadExecV1(PVM pVM, PSSMHANDLE pSSM)
                             LogRel(("SSM: Load exec failed for '%s' instance #%u ! (version %u)\n",
                                     pszName, UnitHdr.u32Instance, UnitHdr.u32Version));
                             if (!ASMAtomicXchgBool(&pSSM->u.Read.fHaveSetError, true))
+                            {
                                 if (rc == VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION)
                                     VMSetError(pVM, rc, RT_SRC_POS, N_("Unsupported version %u of data unit '%s' (instance #%u)"),
                                                UnitHdr.u32Version, UnitHdr.szName, UnitHdr.u32Instance);
                                 else
                                     VMSetError(pVM, rc, RT_SRC_POS, N_("Load exec failed for '%s' instance #%u (version %u)"),
                                                pszName, UnitHdr.u32Instance, UnitHdr.u32Version);
+                            }
                             break;
                         }
 
@@ -7702,41 +7645,6 @@ static int ssmR3LoadExecV1(PVM pVM, PSSMHANDLE pSSM)
 
     RTMemTmpFree(pszName);
     return rc;
-}
-
-
-/**
- * Verifies the directory.
- *
- * @returns VBox status code.
- *
- * @param   pDir        The full directory.
- * @param   cbDir       The size of the directory.
- * @param   offDir      The directory stream offset.
- * @param   cDirEntries The directory entry count from the footer.
- * @param   cbHdr       The header size.
- * @param   uSvnRev     The SVN revision that saved the state. Bug detection.
- */
-static int ssmR3ValidateDirectory(PSSMFILEDIR pDir, size_t cbDir, uint64_t offDir, uint32_t cDirEntries,
-                                  uint32_t cbHdr, uint32_t uSvnRev)
-{
-    AssertLogRelReturn(!memcmp(pDir->szMagic, SSMFILEDIR_MAGIC, sizeof(pDir->szMagic)), VERR_SSM_INTEGRITY_DIR_MAGIC);
-    SSM_CHECK_CRC32_RET(pDir, cbDir, ("Bad directory CRC: %08x, actual %08x\n", u32CRC, u32ActualCRC));
-    AssertLogRelMsgReturn(pDir->cEntries == cDirEntries,
-                          ("Bad directory entry count: %#x, expected %#x (from the footer)\n", pDir->cEntries, cDirEntries),
-                           VERR_SSM_INTEGRITY_DIR);
-    AssertLogRelReturn(RT_UOFFSETOF(SSMFILEDIR, aEntries[pDir->cEntries]) == cbDir, VERR_SSM_INTEGRITY_DIR);
-
-    for (uint32_t i = 0; i < pDir->cEntries; i++)
-    {
-        AssertLogRelMsgReturn(  (   pDir->aEntries[i].off >= cbHdr
-                                 && pDir->aEntries[i].off <  offDir)
-                              || (   pDir->aEntries[i].off == 0 /* bug in unreleased code */
-                                  && uSvnRev < 53365),
-                              ("off=%#llx cbHdr=%#x offDir=%#llx\n", pDir->aEntries[i].off, cbHdr, offDir),
-                              VERR_SSM_INTEGRITY_DIR);
-    }
-    return VINF_SUCCESS;
 }
 
 
@@ -7913,11 +7821,13 @@ static int ssmR3LoadExecV2(PVM pVM, PSSMHANDLE pSSM)
                 LogRel(("SSM: LoadExec failed for '%s' instance #%u (version %u, pass %#x): %Rrc\n",
                         UnitHdr.szName, UnitHdr.u32Instance, UnitHdr.u32Version, UnitHdr.u32Pass, rc));
                 if (!ASMAtomicXchgBool(&pSSM->u.Read.fHaveSetError, true))
+                {
                     if (rc == VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION)
                         rc = VMSetError(pVM, rc, RT_SRC_POS, N_("Unsupported version %u of data unit '%s' (instance #%u, pass %#x)"),
                                         UnitHdr.u32Version, UnitHdr.szName, UnitHdr.u32Instance, UnitHdr.u32Pass);
                     else
                         rc = VMSetError(pVM, rc, RT_SRC_POS, N_("Failed to load unit '%s'"), UnitHdr.szName);
+                }
                 return rc;
             }
         }
@@ -8173,6 +8083,107 @@ VMMR3DECL(int) SSMR3Load(PVM pVM, const char *pszFilename, PCSSMSTRMOPS pStreamO
     return rc;
 }
 
+
+/**
+ * VMSetError wrapper for load errors that inserts the saved state details.
+ *
+ * @returns rc.
+ * @param   pSSM                The saved state handle.
+ * @param   rc                  The status code of the error. Use RT_SRC_POS.
+ * @param   RT_SRC_POS_DECL     The source location.
+ * @param   pszFormat           The message format string.
+ * @param   ...                 Variable argument list.
+ */
+VMMR3DECL(int) SSMR3SetLoadError(PSSMHANDLE pSSM, int rc, RT_SRC_POS_DECL, const char *pszFormat, ...)
+{
+    va_list va;
+    va_start(va, pszFormat);
+    rc = SSMR3SetLoadErrorV(pSSM, rc, RT_SRC_POS_ARGS, pszFormat, va);
+    va_end(va);
+    return rc;
+}
+
+
+/**
+ * VMSetError wrapper for load errors that inserts the saved state details.
+ *
+ * @returns rc.
+ * @param   pSSM                The saved state handle.
+ * @param   rc                  The status code of the error.
+ * @param   RT_SRC_POS_DECL     The error location, use RT_SRC_POS.
+ * @param   pszFormat           The message format string.
+ * @param   va                  Variable argument list.
+ */
+VMMR3DECL(int) SSMR3SetLoadErrorV(PSSMHANDLE pSSM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list va)
+{
+    /*
+     * Input validations.
+     */
+    SSM_ASSERT_READABLE_RET(pSSM);
+    AssertPtr(pszFormat);
+    Assert(RT_FAILURE_NP(rc));
+
+    /*
+     * Format the incoming error.
+     */
+    char *pszMsg;
+    RTStrAPrintfV(&pszMsg, pszFormat, va);
+    if (!pszMsg)
+    {
+        VMSetError(pSSM->pVM, VERR_NO_MEMORY, RT_SRC_POS,
+                   N_("SSMR3SetLoadErrorV ran out of memory formatting: %s\n"), pszFormat);
+        return rc;
+    }
+
+    /*
+     * Forward to VMSetError with the additional info.
+     */
+    PSSMUNIT    pUnit       = pSSM->u.Read.pCurUnit;
+    const char *pszName     = pUnit ? pUnit->szName      : "unknown";
+    uint32_t    uInstance   = pUnit ? pUnit->u32Instance : 0;
+    if (   pSSM->enmOp == SSMSTATE_LOAD_EXEC
+        && pSSM->u.Read.uCurUnitPass == SSM_PASS_FINAL)
+        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [ver=%u pass=final]"),
+                        pszName, uInstance, pszMsg, pSSM->u.Read.uCurUnitVer);
+    else if (pSSM->enmOp == SSMSTATE_LOAD_EXEC)
+        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [ver=%u pass=#%u]"),
+                        pszName, uInstance, pszMsg, pSSM->u.Read.uCurUnitVer, pSSM->u.Read.uCurUnitPass);
+    else if (pSSM->enmOp == SSMSTATE_LOAD_PREP)
+        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [prep]"),
+                        pszName, uInstance, pszMsg);
+    else if (pSSM->enmOp == SSMSTATE_LOAD_DONE)
+        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [done]"),
+                        pszName, uInstance, pszMsg);
+    else if (pSSM->enmOp == SSMSTATE_OPEN_READ)
+        rc = VMSetError(pSSM->pVM, rc, RT_SRC_POS_ARGS, N_("%s#%u: %s [read]"),
+                        pszName, uInstance, pszMsg);
+    else
+        AssertFailed();
+    pSSM->u.Read.fHaveSetError = true;
+    RTStrFree(pszMsg);
+    return rc;
+}
+
+
+/**
+ * SSMR3SetLoadError wrapper that returns VERR_SSM_LOAD_CONFIG_MISMATCH.
+ *
+ * @returns VERR_SSM_LOAD_CONFIG_MISMATCH.
+ * @param   pSSM                The saved state handle.
+ * @param   RT_SRC_POS_DECL     The error location, use RT_SRC_POS.
+ * @param   pszFormat           The message format string.
+ * @param   va                  Variable argument list.
+ */
+VMMR3DECL(int) SSMR3SetCfgError(PSSMHANDLE pSSM, RT_SRC_POS_DECL, const char *pszFormat, ...)
+{
+    va_list va;
+    va_start(va, pszFormat);
+    int rc = SSMR3SetLoadErrorV(pSSM, VERR_SSM_LOAD_CONFIG_MISMATCH, RT_SRC_POS_ARGS, pszFormat, va);
+    va_end(va);
+    return rc;
+}
+
+#endif /* !SSM_STANDALONE */
 
 /**
  * Validates a file as a validate SSM saved state.
@@ -8629,6 +8640,7 @@ VMMR3DECL(uint32_t) SSMR3HandleHostBits(PSSMHANDLE pSSM)
 }
 
 
+#ifndef SSM_STANDALONE
 /**
  * Asynchronously cancels the current SSM operation ASAP.
  *
@@ -8673,4 +8685,5 @@ VMMR3DECL(int) SSMR3Cancel(PVM pVM)
     RTCritSectLeave(&pVM->ssm.s.CancelCritSect);
     return rc;
 }
+#endif /* !SSM_STANDALONE */
 

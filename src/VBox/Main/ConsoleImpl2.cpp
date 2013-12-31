@@ -44,6 +44,7 @@
 #if 0 /* enable to play with lots of memory. */
 # include <iprt/env.h>
 #endif
+#include <iprt/file.h>
 
 #include <VBox/vmapi.h>
 #include <VBox/err.h>
@@ -62,6 +63,7 @@
 #endif /* VBOX_WITH_GUEST_PROPS */
 #include <VBox/intnet.h>
 
+#include <VBox/com/com.h>
 #include <VBox/com/string.h>
 #include <VBox/com/array.h>
 
@@ -129,6 +131,65 @@ const char* controllerString(StorageControllerType_T enmType)
 #if defined(_MSC_VER) && defined(RT_ARCH_AMD64)
 # pragma optimize("g", off)
 #endif
+
+static int findEfiRom(FirmwareType_T aFirmwareType, Utf8Str& aEfiRomFile)
+{
+    /** @todo: combine with similar table in VirtualBox::CheckFirmwarePresent */
+    static const struct {
+        FirmwareType_T type;
+        const char*    fileName;
+    } firmwareDesc[] = {
+        {
+            /* compiled-in firmware */
+            FirmwareType_BIOS,    NULL,
+        },
+        {
+            FirmwareType_EFI,     "vboxefi.fv"
+        },
+        {
+            FirmwareType_EFI64,   "vboxefi64.fv"
+        },
+        {
+            FirmwareType_EFIDUAL, "vboxefidual.fv"
+        }
+    };
+
+
+     for (size_t i = 0; i < sizeof(firmwareDesc) / sizeof(firmwareDesc[0]); i++)
+    {
+        if (aFirmwareType != firmwareDesc[i].type)
+            continue;
+
+        AssertRCReturn(firmwareDesc[i].fileName != NULL, E_INVALIDARG);
+
+        /* Search in ~/.VirtualBox/Firmware and RTPathAppPrivateArch() */
+        char pszVBoxPath[RTPATH_MAX];
+        int rc;
+
+        rc = com::GetVBoxUserHomeDirectory(pszVBoxPath, sizeof(pszVBoxPath)); AssertRCReturn(rc, rc);
+        aEfiRomFile = Utf8StrFmt("%s%cFirmware%c%s",
+                                 pszVBoxPath,
+                                 RTPATH_DELIMITER,
+                                 RTPATH_DELIMITER,
+                                 firmwareDesc[i].fileName);
+        if (RTFileExists(aEfiRomFile.raw()))
+            return S_OK;
+
+        rc = RTPathExecDir(pszVBoxPath, RTPATH_MAX); AssertRCReturn(rc, rc);
+        aEfiRomFile = Utf8StrFmt("%s%c%s",
+                              pszVBoxPath,
+                              RTPATH_DELIMITER,
+                              firmwareDesc[i].fileName);
+
+        if (RTFileExists(aEfiRomFile.raw()))
+            return S_OK;
+
+        aEfiRomFile = "";
+        return VERR_FILE_NOT_FOUND;
+    }
+
+     return E_INVALIDARG;
+}
 
 /**
  *  Construct the VM configuration tree (CFGM).
@@ -694,21 +755,11 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     /*
      * Firmware.
      */
-#ifdef VBOX_WITH_EFI
-    Bstr tmpStr1;
-    hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/UseEFI"), tmpStr1.asOutParam());    H();
-    BOOL fEfiEnabled = !tmpStr1.isEmpty();
+    FirmwareType_T eFwType =  FirmwareType_BIOS;
+    hrc = pMachine->COMGETTER(FirmwareType)(&eFwType);                                H();
 
-    /**
-     * @todo: VBoxInternal2/UseEFI extradata will go away soon, and we'll
-     *        just use this code
-     */
-    if (!fEfiEnabled)
-    {
-      FirmwareType_T eType =  FirmwareType_BIOS;
-      hrc = pMachine->COMGETTER(FirmwareType)(&eType);                                H();
-      fEfiEnabled = (eType == FirmwareType_EFI);
-    }
+#ifdef VBOX_WITH_EFI
+    BOOL fEfiEnabled = (eFwType >= FirmwareType_EFI) && (eFwType <= FirmwareType_EFIDUAL);
 #else
     BOOL fEfiEnabled = false;
 #endif
@@ -773,6 +824,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     }
     else
     {
+        Utf8Str efiRomFile;
+
+        rc = findEfiRom(eFwType, efiRomFile);                                       RC_CHECK();
         /*
          * EFI.
          */
@@ -783,6 +837,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertInteger(pCfg,  "RamSize",          cbRam);                 RC_CHECK();
         rc = CFGMR3InsertInteger(pCfg,  "RamHoleSize",      cbRamHole);             RC_CHECK();
         rc = CFGMR3InsertInteger(pCfg,  "NumCPUs",          cCpus);                 RC_CHECK();
+        rc = CFGMR3InsertString(pCfg,   "EfiRom",           efiRomFile.raw());      RC_CHECK();
+        rc = CFGMR3InsertInteger(pCfg,  "IOAPIC",               fIOAPIC);           RC_CHECK();
+        rc = CFGMR3InsertBytes(pCfg,    "UUID", &HardwareUuid,sizeof(HardwareUuid));RC_CHECK();
     }
 
     /*
@@ -808,7 +865,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = ctrls[i]->COMGETTER(Instance)(&ulInstance);                                        H();
 
         /* /Devices/<ctrldev>/ */
-        const char *pszCtrlDev = pConsole->controllerTypeToDev(enmCtrlType);
+        const char *pszCtrlDev = pConsole->convertControllerTypeToDev(enmCtrlType);
         pDev = aCtrlNodes[enmCtrlType];
         if (!pDev)
         {
@@ -824,7 +881,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertInteger(pCtlInst, "Trusted",   1);                                     RC_CHECK();
         rc = CFGMR3InsertNode(pCtlInst,    "Config",    &pCfg);                                 RC_CHECK();
 
-        bool fSCSI = false;
         switch (enmCtrlType)
         {
             case StorageControllerType_LsiLogic:
@@ -833,7 +889,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 Assert(!afPciDeviceNo[20]);
                 afPciDeviceNo[20] = true;
                 rc = CFGMR3InsertInteger(pCtlInst, "PCIFunctionNo",        0);                  RC_CHECK();
-                fSCSI = true;
 
                 /* Attach the status driver */
                 rc = CFGMR3InsertNode(pCtlInst, "LUN#999", &pLunL0);                            RC_CHECK();
@@ -851,7 +906,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 Assert(!afPciDeviceNo[21]);
                 afPciDeviceNo[21] = true;
                 rc = CFGMR3InsertInteger(pCtlInst, "PCIFunctionNo",        0);                  RC_CHECK();
-                fSCSI = true;
 
                 /* Attach the status driver */
                 rc = CFGMR3InsertNode(pCtlInst, "LUN#999", &pLunL0);                            RC_CHECK();
@@ -960,7 +1014,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 AssertMsgFailedReturn(("invalid storage controller type: %d\n", enmCtrlType), VERR_GENERAL_FAILURE);
         }
 
-        /* Attach the hard disks. */
+        /* Attach the media to the storage controllers. */
         com::SafeIfaceArray<IMediumAttachment> atts;
         hrc = pMachine->GetMediumAttachmentsOfController(controllerName,
                                                          ComSafeArrayAsOutParam(atts));         H();
@@ -981,7 +1035,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
             rc = CFGMR3InsertNodeF(pCtlInst, &pLunL0, "LUN#%u", uLUN);                          RC_CHECK();
 
             /* SCSI has a another driver between device and block. */
-            if (fSCSI)
+            if (enmBus == StorageBus_SCSI)
             {
                 rc = CFGMR3InsertString(pLunL0, "Driver", "SCSI");                              RC_CHECK();
                 rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                                 RC_CHECK();
@@ -1059,6 +1113,19 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                     if (lType == DeviceType_DVD)
                     {
                         rc = CFGMR3InsertInteger(pCfg, "ReadOnly", 1);                          RC_CHECK();
+                    }
+                    /* Start without exclusive write access to the images. */
+                    /** @todo Live Migration: I don't quite like this, we risk screwing up when
+                     *        we're resuming the VM if some 3rd dude have any of the VDIs open
+                     *        with write sharing denied.  However, if the two VMs are sharing a
+                     *        image it really is necessary....
+                     *
+                     *        So, on the "lock-media" command, the target teleporter should also
+                     *        make DrvVD undo TempReadOnly.  It gets interesting if we fail after
+                     *        that. Grumble. */
+                    else if (pConsole->mMachineState == MachineState_TeleportingIn)
+                    {
+                        rc = CFGMR3InsertInteger(pCfg, "TempReadOnly", 1);                      RC_CHECK();
                     }
 
                     /* Pass all custom parameters. */

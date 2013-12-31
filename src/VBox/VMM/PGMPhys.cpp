@@ -271,17 +271,25 @@ VMMDECL(int) PGMR3PhysWriteExternal(PVM pVM, RTGCPHYS GCPhys, const void *pvBuf,
                 PPGMPAGE    pPage = &pRam->aPages[iPage];
 
                 /*
-                 * It the page is in any way problematic, we have to
-                 * do the work on the EMT. Anything that needs to be made
-                 * writable or involves access handlers is problematic.
+                 * Is the page problematic, we have to do the work on the EMT.
+                 *
+                 * Allocating writable pages and access handlers are
+                 * problematic, write monitored pages are simple and can be
+                 * dealth with here.
                  */
                 if (    PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage)
                     ||  PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED)
                 {
-                    pgmUnlock(pVM);
+                    if (    PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_WRITE_MONITORED
+                        && !PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage))
+                        pgmPhysPageMakeWriteMonitoredWritable(pVM, pPage);
+                    else
+                    {
+                        pgmUnlock(pVM);
 
-                    return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)pgmR3PhysWriteExternalEMT, 4,
-                                           pVM, &GCPhys, pvBuf, cbWrite);
+                        return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)pgmR3PhysWriteExternalEMT, 4,
+                                               pVM, &GCPhys, pvBuf, cbWrite);
+                    }
                 }
                 Assert(!PGM_PAGE_IS_MMIO(pPage));
 
@@ -436,18 +444,30 @@ VMMR3DECL(int) PGMR3PhysGCPhys2CCPtrExternal(PVM pVM, RTGCPHYS GCPhys, void **pp
             /*
              * If the page is shared, the zero page, or being write monitored
              * it must be converted to an page that's writable if possible.
-             * This has to be done on an EMT.
+             * We can only deal with write monitored pages here, the rest have
+             * to be on an EMT.
              */
             if (    PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage)
+                ||  PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED
 #ifdef PGMPOOL_WITH_OPTIMIZED_DIRTY_PT
                 ||  pgmPoolIsDirtyPage(pVM, GCPhys)
 #endif
-                ||  RT_UNLIKELY(PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED))
+               )
             {
-                pgmUnlock(pVM);
+                if (    PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_WRITE_MONITORED
+                    &&  !PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage)
+#ifdef PGMPOOL_WITH_OPTIMIZED_DIRTY_PT
+                    &&  !pgmPoolIsDirtyPage(pVM, GCPhys)
+#endif
+                   )
+                    pgmPhysPageMakeWriteMonitoredWritable(pVM, pPage);
+                else
+                {
+                    pgmUnlock(pVM);
 
-                return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)pgmR3PhysGCPhys2CCPtrDelegated, 4,
-                                       pVM, &GCPhys, ppv, pLock);
+                    return VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)pgmR3PhysGCPhys2CCPtrDelegated, 4,
+                                           pVM, &GCPhys, ppv, pLock);
+                }
             }
 
             /*
@@ -644,7 +664,6 @@ static void pgmR3PhysLinkRamRange(PVM pVM, PPGMRAMRANGE pNew, PPGMRAMRANGE pPrev
         pVM->pgm.s.pRamRangesRC = pNew->pSelfRC;
     }
     ASMAtomicIncU32(&pVM->pgm.s.idRamRangesGen);
-
     pgmUnlock(pVM);
 }
 
@@ -679,7 +698,6 @@ static void pgmR3PhysUnlinkRamRange2(PVM pVM, PPGMRAMRANGE pRam, PPGMRAMRANGE pP
         pVM->pgm.s.pRamRangesRC = pNext ? pNext->pSelfRC : NIL_RTRCPTR;
     }
     ASMAtomicIncU32(&pVM->pgm.s.idRamRangesGen);
-
     pgmUnlock(pVM);
 }
 
@@ -705,7 +723,6 @@ static void pgmR3PhysUnlinkRamRange(PVM pVM, PPGMRAMRANGE pRam)
     AssertFatal(pCur);
 
     pgmR3PhysUnlinkRamRange2(pVM, pRam, pPrev);
-
     pgmUnlock(pVM);
 }
 
@@ -1033,6 +1050,7 @@ VMMR3DECL(int) PGMR3PhysRegisterRam(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb, const
 
         pgmR3PhysInitAndLinkRamRange(pVM, pNew, GCPhys, GCPhysLast, NIL_RTRCPTR, NIL_RTR0PTR, pszDesc, pPrev);
     }
+    PGMPhysInvalidatePageMapTLB(pVM);
     pgmUnlock(pVM);
 
     /*
@@ -1386,6 +1404,7 @@ VMMR3DECL(int) PGMR3PhysMMIORegister(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb,
         pNew->cb = pNew->GCPhys = pNew->GCPhysLast = NIL_RTGCPHYS;
         MMHyperFree(pVM, pRam);
     }
+    PGMPhysInvalidatePageMapTLB(pVM);
 
     return rc;
 }
@@ -1493,6 +1512,7 @@ VMMR3DECL(int) PGMR3PhysMMIODeregister(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb)
         }
     }
 
+    PGMPhysInvalidatePageMapTLB(pVM);
     return rc;
 }
 
@@ -1640,6 +1660,7 @@ VMMR3DECL(int) PGMR3PhysMMIO2Register(PVM pVM, PPDMDEVINS pDevIns, uint32_t iReg
 
                 *ppv = pvPages;
                 RTMemTmpFree(paPages);
+                PGMPhysInvalidatePageMapTLB(pVM);
                 return VINF_SUCCESS;
             }
 
@@ -1751,6 +1772,7 @@ VMMR3DECL(int) PGMR3PhysMMIO2Deregister(PVM pVM, PPDMDEVINS pDevIns, uint32_t iR
             pCur = pCur->pNextR3;
         }
     }
+    PGMPhysInvalidatePageMapTLB(pVM);
     pgmUnlock(pVM);
     return !cFound && iRegion != UINT32_MAX ? VERR_NOT_FOUND : rc;
 }
@@ -1889,6 +1911,7 @@ VMMR3DECL(int) PGMR3PhysMMIO2Map(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion, 
         REMR3NotifyPhysRamRegister(pVM, GCPhys, cb, REM_NOTIFY_PHYS_RAM_FLAGS_MMIO2);
     }
 
+    PGMPhysInvalidatePageMapTLB(pVM);
     return VINF_SUCCESS;
 }
 
@@ -1969,6 +1992,7 @@ VMMR3DECL(int) PGMR3PhysMMIO2Unmap(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion
     pCur->fOverlapping = false;
     pCur->fMapped = false;
 
+    PGMPhysInvalidatePageMapTLB(pVM);
     pgmUnlock(pVM);
 
     if (fInformREM)
@@ -2405,6 +2429,7 @@ VMMR3DECL(int) PGMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
                         pVM->pgm.s.pRomRangesRC = MMHyperCCToRC(pVM, pRomNew);
                     }
 
+                    PGMPhysInvalidatePageMapTLB(pVM);
                     GMMR3AllocatePagesCleanup(pReq);
                     pgmUnlock(pVM);
                     return VINF_SUCCESS;

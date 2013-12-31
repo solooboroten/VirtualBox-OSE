@@ -161,7 +161,12 @@
 
 /** @def VBOX_WITH_NEW_LAZY_PAGE_ALLOC
  * Enables the experimental lazy page allocation code. */
-/*# define VBOX_WITH_NEW_LAZY_PAGE_ALLOC */
+/*#define VBOX_WITH_NEW_LAZY_PAGE_ALLOC */
+
+/** @def VBOX_WITH_REAL_WRITE_MONITORED_PAGES
+ * Enables real write monitoring of pages, i.e. mapping them read-only and
+ * only making them writable when getting a write access #PF. */
+/*#define VBOX_WITH_REAL_WRITE_MONITORED_PAGES */
 
 /** @} */
 
@@ -1425,7 +1430,7 @@ typedef PGMCHUNKR3MAPTLBE *PPGMCHUNKR3MAPTLBE;
 
 /** The number of TLB entries in PGMCHUNKR3MAPTLB.
  * @remark Must be a power of two value. */
-#define PGM_CHUNKR3MAPTLB_ENTRIES   32
+#define PGM_CHUNKR3MAPTLB_ENTRIES   64
 
 /**
  * Allocation chunk ring-3 mapping TLB.
@@ -1493,7 +1498,7 @@ typedef PGMPAGER3MAPTLBE *PPGMPAGER3MAPTLBE;
 
 /** The number of entries in the ring-3 guest page mapping TLB.
  * @remarks The value must be a power of two. */
-#define PGM_PAGER3MAPTLB_ENTRIES 64
+#define PGM_PAGER3MAPTLB_ENTRIES 256
 
 /**
  * Ring-3 guest page mapping TLB.
@@ -1558,9 +1563,7 @@ typedef struct PGMMAPSET
     uint32_t                    iSubset;
     /** The index of the current CPU, only valid if the set is open. */
     int32_t                     iCpu;
-#if HC_ARCH_BITS == 64
     uint32_t                    alignment;
-#endif
     /** The entries. */
     PGMMAPSETENTRY              aEntries[64];
     /** HCPhys -> iEntry fast lookup table.
@@ -1568,6 +1571,7 @@ typedef struct PGMMAPSET
      * The entries may or may not be valid, check against cEntries. */
     uint8_t                     aiHashTable[128];
 } PGMMAPSET;
+AssertCompileSizeAlignment(PGMMAPSET, 8);
 /** Pointer to the mapping cache set. */
 typedef PGMMAPSET *PPGMMAPSET;
 
@@ -2740,7 +2744,15 @@ typedef struct PGM
         /** Indicates that a live save operation is active.  */
         bool                        fActive;
         /** Padding. */
-        bool                        afReserved[3];
+        bool                        afReserved[2];
+        /** The next history index. */
+        uint8_t                     iDirtyPagesHistory;
+        /** History of the total amount of dirty pages. */
+        uint32_t                    acDirtyPagesHistory[64];
+        /** Short term dirty page average. */
+        uint32_t                    cDirtyPagesShort;
+        /** Long term dirty page average. */
+        uint32_t                    cDirtyPagesLong;
     } LiveSave;
 
     /** @name   Error injection.
@@ -2776,6 +2788,8 @@ typedef struct PGM
     STAMCOUNTER StatRZChunkR3MapTlbMisses;          /**< RC/R0: Ring-3/0 chunk mapper TLB misses. */
     STAMCOUNTER StatRZPageMapTlbHits;               /**< RC/R0: Ring-3/0 page mapper TLB hits. */
     STAMCOUNTER StatRZPageMapTlbMisses;             /**< RC/R0: Ring-3/0 page mapper TLB misses. */
+    STAMCOUNTER StatPageMapTlbFlushes;              /**< ALL: Ring-3/0 page mapper TLB flushes. */
+    STAMCOUNTER StatPageMapTlbFlushEntry;           /**< ALL: Ring-3/0 page mapper TLB flushes. */
     STAMCOUNTER StatR3ChunkR3MapTlbHits;            /**< R3: Ring-3/0 chunk mapper TLB hits. */
     STAMCOUNTER StatR3ChunkR3MapTlbMisses;          /**< R3: Ring-3/0 chunk mapper TLB misses. */
     STAMCOUNTER StatR3PageMapTlbHits;               /**< R3: Ring-3/0 page mapper TLB hits. */
@@ -2956,6 +2970,8 @@ typedef struct PGMCPU
 #ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
     /** The guest's page directory pointer table, R0 pointer. */
     R0PTRTYPE(PX86PML4)             pGstAmd64Pml4R0;
+#else
+    RTR0PTR                         alignment6b; /**< alignment equalizer. */
 #endif
     /** @} */
 
@@ -3306,6 +3322,7 @@ int             pgmR3InitSavedState(PVM pVM, uint64_t cbRam);
 int             pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys);
 int             pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys);
 int             pgmPhysPageLoadIntoTlbWithPage(PPGM pPGM, PPGMPAGE pPage, RTGCPHYS GCPhys);
+void            pgmPhysPageMakeWriteMonitoredWritable(PVM pVM, PPGMPAGE pPage);
 int             pgmPhysPageMakeWritable(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys);
 int             pgmPhysPageMakeWritableUnlocked(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys);
 int             pgmPhysPageMakeWritableAndMap(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void **ppv);
