@@ -39,7 +39,7 @@ class VBoxMediaManagerDlg : public QIWithRetranslateUI2<QIMainDialog>,
 
     enum TabIndex { HDTab = 0, CDTab, FDTab };
     enum ItemAction { ItemAction_Added, ItemAction_Updated, ItemAction_Removed };
-    enum Action { Action_Select, Action_Edit, Action_Copy, Action_Remove, Action_Release };
+    enum Action { Action_Select, Action_Edit, Action_Copy, Action_Modify, Action_Remove, Action_Release };
 
 public:
 
@@ -69,7 +69,6 @@ public slots:
 protected:
 
     void retranslateUi();
-    void repopulateMediumTypeCombo();
     virtual void closeEvent (QCloseEvent *aEvent);
     virtual bool eventFilter (QObject *aObject, QEvent *aEvent);
 
@@ -86,6 +85,7 @@ private slots:
     void doNewMedium();
     void doAddMedium();
     void doCopyMedium();
+    void doModifyMedium();
     void doRemoveMedium();
     void doReleaseMedium();
 
@@ -100,8 +100,6 @@ private slots:
 
     void makeRequestForAdjustTable();
     void performTablesAdjustment();
-
-    void sltCurrentMediumTypeChanged();
 
 private:
 
@@ -147,10 +145,6 @@ private:
     bool mShowDiffs : 1;
     bool mSetupMode : 1;
 
-    /* Medium type related variables: */
-    KMediumType m_previousMediumType;
-    bool m_fParentMediumType;
-
     /* Icon definitions */
     QIcon mHardDiskIcon;
     QIcon mDVDImageIcon;
@@ -163,6 +157,7 @@ private:
     QAction     *mNewAction;
     QAction     *mAddAction;
     QAction     *mCopyAction;
+    QAction     *mModifyAction;
     QAction     *mRemoveAction;
     QAction     *mReleaseAction;
     QAction     *mRefreshAction;

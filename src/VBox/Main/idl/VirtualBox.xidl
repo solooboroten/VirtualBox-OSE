@@ -1926,11 +1926,11 @@
         a "DVD" device type, this is ignored and read-only mode is always assumed.</desc>
       </param>
       <param name="forceNewUuid" type="boolean" dir="in">
-        <desc>Allows the caller to request a completely new medium UUID for
-        the image which is to be opened. Useful if one intends to open an exact
-        copy of a previously opened image, as this would normally fail due to
-        the duplicate UUID.</desc>
-      </param>
+         <desc>Allows the caller to request a completely new medium UUID for
+           the image which is to be opened. Useful if one intends to open an exact
+           copy of a previously opened image, as this would normally fail due to
+           the duplicate UUID.</desc>
+         </param>
       <param name="medium" type="IMedium" dir="return">
         <desc>Opened medium object.</desc>
       </param>
@@ -2355,6 +2355,25 @@
 
   </interface>
 
+  <enum
+    name="ImportOptions" extends="$unknown"
+    uuid="0a981523-3b20-4004-8ee3-dfd322202ace"
+    >
+
+    <desc>
+    Import options, used with <link to="IAppliance::importMachines" />.
+    </desc>
+
+    <const name="KeepAllMACs"        value="1">
+      <desc>Don't generate new MAC addresses of the attached network adapters.</desc>
+    </const>
+    <const name="KeepNATMACs"        value="2">
+      <desc>Don't generate new MAC addresses of the attached network adapters when they are using NAT.</desc>
+    </const>
+
+  </enum>
+
+
   <!--
   // IAppliance
   /////////////////////////////////////////////////////////////////////////
@@ -2362,7 +2381,7 @@
 
   <interface
     name="IAppliance" extends="$unknown"
-    uuid="7b148032-4124-4f46-b56a-b48ac1273f5a"
+    uuid="3059cf9e-25c7-4f0b-9fa5-3c42e441670b"
     wsmap="managed"
     >
     <desc>
@@ -2558,6 +2577,10 @@
         retrieved from the <link to="#machines" /> array attribute.
       </desc>
 
+      <param name="options" type="ImportOptions" dir="in" safearray="yes">
+        <desc>Options for the importing operation.</desc>
+      </param>
+
       <param name="aProgress" type="IProgress" dir="return">
         <desc>Progress object to track the operation completion.</desc>
       </param>
@@ -2621,7 +2644,7 @@
 
   <enum
     name="VirtualSystemDescriptionType"
-    uuid="c0f8f135-3a1d-417d-afa6-b38b95a91f90"
+    uuid="303c0900-a746-4612-8c67-79003e91f459"
     >
     <desc>Used with <link to="IVirtualSystemDescription" /> to describe the type of
     a configuration value.</desc>
@@ -2649,7 +2672,9 @@
     <const name="NetworkAdapter" value="21" />
     <const name="USBController" value="22" />
     <const name="SoundCard" value="23" />
-
+    <const name="SettingsFile" value="24">
+      <desc>Not used/implemented right now, will be added later in 4.1.x.</desc>
+    </const>
   </enum>
 
   <enum
@@ -2932,7 +2957,7 @@
 
   <interface
     name="IInternalMachineControl" extends="$unknown"
-    uuid="31de448d-ef5e-4f79-9206-a8e830cbf9ea"
+    uuid="2087906d-bb92-43a0-8014-4cab009e4888"
     internal="yes"
     wsmap="suppress"
     >
@@ -3223,18 +3248,23 @@
 
     <method name="deleteSnapshot">
       <desc>
-        Gets called by <link to="IConsole::deleteSnapshot"/> and
-        <link to="IConsole::deleteSnapshotAndAllChildren"/>.
+        Gets called by <link to="IConsole::deleteSnapshot"/>,
+        <link to="IConsole::deleteSnapshotAndAllChildren"/> and
+        <link to="IConsole::deleteSnapshotRange"/>.
         <result name="VBOX_E_INVALID_OBJECT_STATE">
           Snapshot has more than one child snapshot. Only possible if the
-          delete operation does not delete all children.
+          delete operation does not delete all children or the range does
+          not meet the linearity condition.
         </result>
       </desc>
       <param name="initiator" type="IConsole" dir="in">
         <desc>The console object that initiated this call.</desc>
       </param>
-      <param name="id" type="uuid" mod="string" dir="in">
-        <desc>UUID of the snapshot to delete.</desc>
+      <param name="startId" type="uuid" mod="string" dir="in">
+        <desc>UUID of the first snapshot to delete.</desc>
+      </param>
+      <param name="endId" type="uuid" mod="string" dir="in">
+        <desc>UUID of the last snapshot to delete.</desc>
       </param>
       <param name="deleteAllChildren" type="boolean" dir="in">
         <desc>Whether all children should be deleted.</desc>
@@ -3571,7 +3601,7 @@
 
   <enum
     name="CloneOptions" extends="$unknown"
-    uuid="1be61ee1-c0ea-4942-b733-7496f27d4f28"
+    uuid="22243f8e-96ab-497c-8cf0-f40a566c630b"
     >
 
     <desc>
@@ -3586,6 +3616,9 @@
     </const>
     <const name="KeepNATMACs"        value="3">
       <desc>Don't generate new MAC addresses of the attached network adapters when they are using NAT.</desc>
+    </const>
+    <const name="KeepDiskNames"      value="4">
+      <desc>Don't change the disk names.</desc>
     </const>
 
   </enum>
@@ -6243,7 +6276,7 @@
 
   <interface
     name="IConsole" extends="$unknown"
-    uuid="7fcaa74a-5d69-4c83-a357-404a60664e47"
+    uuid="1968b7d3-e3bf-4ceb-99e0-cb7c913317bb"
     wsmap="managed"
     >
     <desc>
@@ -6936,6 +6969,44 @@
       </desc>
       <param name="id" type="uuid" mod="string" dir="in">
         <desc>UUID of the snapshot to delete, including all its children.</desc>
+      </param>
+      <param name="progress" type="IProgress" dir="return">
+        <desc>Progress object to track the operation completion.</desc>
+      </param>
+    </method>
+
+    <method name="deleteSnapshotRange">
+      <desc>
+        Starts deleting the specified snapshot range. This is limited to
+        linear snapshot lists, which means there may not be any other child
+        snapshots other than the direct sequence between the start and end
+        snapshot. If the start and end snapshot point to the same snapshot this
+        method is completely equivalent to <link to="#deleteSnapshot"/>. See
+        <link to="ISnapshot" /> for an introduction to snapshots. The
+        conditions and many details are the same as with
+        <link to="#deleteSnapshot"/>.
+
+        This operation is generally faster than deleting snapshots one by one
+        and often also needs less extra disk space before freeing up disk space
+        by deleting the removed disk images corresponding to the snapshot.
+
+        <note>This API method is right now not implemented!</note>
+
+        <result name="VBOX_E_INVALID_VM_STATE">
+          The running virtual machine prevents deleting this snapshot. This
+          happens only in very specific situations, usually snapshots can be
+          deleted without trouble while a VM is running. The error message
+          text explains the reason for the failure.
+        </result>
+        <result name="E_NOTIMPL">
+          The method is not implemented yet.
+        </result>
+      </desc>
+      <param name="startId" type="uuid" mod="string" dir="in">
+        <desc>UUID of the first snapshot to delete.</desc>
+      </param>
+      <param name="endId" type="uuid" mod="string" dir="in">
+        <desc>UUID of the last snapshot to delete.</desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
         <desc>Progress object to track the operation completion.</desc>
@@ -8330,9 +8401,9 @@
     <const name="Hidden"                  value="4">
       <desc>Don't show the started process according to the guest OS guidelines.</desc>
     </const>
-    <const name="NoProfile"               value="8"> 
-      <desc>Do not use the user's profile data when exeuting a process.</desc> 
-    </const> 
+    <const name="NoProfile"               value="8">
+      <desc>Do not use the user's profile data when exeuting a process.</desc>
+    </const>
   </enum>
 
   <enum
@@ -8494,7 +8565,7 @@
 
   <interface
     name="IGuest" extends="$unknown"
-    uuid="af2766d9-ebff-455f-b5ce-c6f855b8f584"
+    uuid="ed109b6e-0578-4b17-8ace-52646789f1a0"
     wsmap="managed"
     >
     <desc>
@@ -9023,6 +9094,39 @@
       </param>
     </method>
 
+    <method name="fileQuerySize">
+      <desc>
+        Queries the size of a file, given the path to it.
+
+        <result name="VBOX_E_IPRT_ERROR">
+          Error while looking up information.
+        </result>
+
+      </desc>
+      <param name="file" type="wstring" dir="in">
+        <desc>
+          Full path of file to query file size for.
+        </desc>
+      </param>
+      <param name="userName" type="wstring" dir="in">
+        <desc>
+          User name under which the lookup will be performed; the
+          user has to exist and have the appropriate rights to access / read the
+          desired directory.
+        </desc>
+      </param>
+      <param name="password" type="wstring" dir="in">
+        <desc>
+          Password of the user account specified.
+        </desc>
+      </param>
+      <param name="size" type="long long" dir="return">
+        <desc>
+          Size (in bytes) of file specified.
+        </desc>
+      </param>
+    </method>
+
     <method name="setProcessInput">
       <desc>
         Sends input into a formerly started process.
@@ -9297,10 +9401,10 @@
           sub-operations) and forward all changes from the other progress to
           this progress. This means sub-operation number, description, percent
           and so on.
-          
+
           You have to take care on setting up at least the same count on
           sub-operations in this progress object like there are in the other
-          progress object. 
+          progress object.
 
           If the other progress object supports cancel and this object gets any
           cancel request (when here enabled as well), it will be forwarded to
@@ -16576,12 +16680,19 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IMachineDataChangedEvent" extends="IMachineEvent"
-    uuid="6AA70A6C-0DCA-4810-8C5C-457B278E3D49"
+    uuid="abe94809-2e88-4436-83d7-50f3e64d0503"
     wsmap="managed" autogen="VBoxEvent" id="OnMachineDataChanged"
     >
     <desc>
       Any of the settings of the given machine has changed.
     </desc>
+
+    <attribute name="temporary" readonly="yes" type="boolean">
+      <desc>@c true if the settings change is temporary. All permanent
+        settings changes will trigger an event, and only temporary settings
+        changes for running VMs will trigger an event. Note: sending events
+        for temporary changes is NOT IMPLEMENTED.</desc>
+    </attribute>
   </interface>
 
   <interface

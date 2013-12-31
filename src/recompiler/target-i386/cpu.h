@@ -781,12 +781,15 @@ typedef struct CPUX86State {
     uint64_t xcr0;
 #else  /* VBOX */
 
-/* see 641 line to consult current alignments for darwin 32-bit host. */
-# if HC_ARCH_BITS == 64 || (defined(RT_OS_DARWIN) && HC_ARCH_BITS == 32)
-    uint32_t alignment2[3];
-# else
-    uint32_t alignmnt2[2];
+    /** Alignment padding. */
+# if HC_ARCH_BITS == 64 \
+  || (   HC_ARCH_BITS == 32 \
+      && !defined(RT_OS_WINDOWS) \
+      && (   (!defined(VBOX_ENABLE_VBOXREM64) && !defined(RT_OS_SOLARIS)) \
+          || (defined(VBOX_ENABLE_VBOXREM64) && defined(RT_OS_SOLARIS)) ) )
+    uint32_t alignment2[1];
 # endif
+
     /** Profiling tb_flush. */
     STAMPROFILE StatTbFlush;
 

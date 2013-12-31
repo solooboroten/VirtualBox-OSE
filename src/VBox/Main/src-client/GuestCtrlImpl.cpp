@@ -2388,7 +2388,7 @@ HRESULT Guest::executeProcessInternal(IN_BSTR aCommand, ULONG aFlags,
 
             if (RT_SUCCESS(vrc))
             {
-                LogFlowFunc(("Waiting for HGCM callback (timeout=%ldms) ...\n", aTimeoutMS));
+                LogFlowFunc(("Waiting for HGCM callback (timeout=%dms) ...\n", aTimeoutMS));
 
                 /*
                  * Wait for the HGCM low level callback until the process
@@ -2756,7 +2756,7 @@ STDMETHODIMP Guest::GetProcessOutput(ULONG aPID, ULONG aFlags, ULONG aTimeoutMS,
 
             if (RT_SUCCESS(vrc))
             {
-                LogFlowFunc(("Waiting for HGCM callback (timeout=%ldms) ...\n", aTimeoutMS));
+                LogFlowFunc(("Waiting for HGCM callback (timeout=%dms) ...\n", aTimeoutMS));
 
                 /*
                  * Wait for the HGCM low level callback until the process
@@ -3099,6 +3099,17 @@ STDMETHODIMP Guest::DirectoryRead(ULONG aHandle, IGuestDirEntry **aDirEntry)
 }
 
 STDMETHODIMP Guest::FileExists(IN_BSTR aFile, IN_BSTR aUserName, IN_BSTR aPassword, BOOL *aExists)
+{
+#ifndef VBOX_WITH_GUEST_CONTROL
+    ReturnComNotImplemented();
+#else /* VBOX_WITH_GUEST_CONTROL */
+    using namespace guestControl;
+
+    return VBOX_E_NOT_SUPPORTED;
+#endif
+}
+
+STDMETHODIMP Guest::FileQuerySize(IN_BSTR aFile, IN_BSTR aUserName, IN_BSTR aPassword, LONG64 *aSize)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();

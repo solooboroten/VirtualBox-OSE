@@ -308,8 +308,11 @@ static int parseCloneOptions(const char *psz, com::SafeArray<CloneOptions_T> *op
                 options->push_back(CloneOptions_KeepAllMACs);
             else if (!RTStrNICmp(psz, "KeepNATMACs", len))
                 options->push_back(CloneOptions_KeepNATMACs);
-//            else if (!RTStrNICmp(psz, "Link", len))
-//                *options.push_back(CloneOptions_Link)
+            else if (!RTStrNICmp(psz, "KeepDiskNames", len))
+                options->push_back(CloneOptions_KeepDiskNames);
+            else if (   !RTStrNICmp(psz, "Link", len)
+                     || !RTStrNICmp(psz, "Linked", len))
+                options->push_back(CloneOptions_Link);
             else
                 rc = VERR_PARSE_ERROR;
         }
@@ -621,6 +624,14 @@ int handleAdoptState(HandlerArg *a)
                                            machine.asOutParam()));
     if (machine)
     {
+        char szStateFileAbs[RTPATH_MAX] = "";
+        int vrc = RTPathAbs(a->argv[1], szStateFileAbs, sizeof(szStateFileAbs));
+        if (RT_FAILURE(vrc))
+        {
+            RTMsgError("Cannot convert filename \"%s\" to absolute path", a->argv[0]);
+            return 1;
+        }
+
         do
         {
             /* we have to open a session for this task */
@@ -629,7 +640,7 @@ int handleAdoptState(HandlerArg *a)
             {
                 ComPtr<IConsole> console;
                 CHECK_ERROR_BREAK(a->session, COMGETTER(Console)(console.asOutParam()));
-                CHECK_ERROR_BREAK(console, AdoptSavedState(Bstr(a->argv[1]).raw()));
+                CHECK_ERROR_BREAK(console, AdoptSavedState(Bstr(szStateFileAbs).raw()));
             } while (0);
             CHECK_ERROR_BREAK(a->session, UnlockMachine());
         } while (0);

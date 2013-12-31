@@ -793,6 +793,11 @@ void Machine::uninit()
 
     // uninit media from this machine's media registry, if they're still there
     Guid uuidMachine(getId());
+
+    /* XXX This will fail with
+     *   "cannot be closed because it is still attached to 1 virtual machines"
+     * because at this point we did not call uninitDataAndChildObjects() yet
+     * and therefore also removeBackReference() for all these mediums was not called! */
     if (!uuidMachine.isEmpty())     // can be empty if we're called from a failure of Machine::init
         mParent->unregisterMachineMedia(uuidMachine);
 
@@ -1841,7 +1846,7 @@ STDMETHODIMP Machine::GetCPUIDLeaf(ULONG aId, ULONG *aValEax, ULONG *aValEbx, UL
         case 0x9:
         case 0xA:
             if (mHWData->mCpuIdStdLeafs[aId].ulId != aId)
-                return setError(E_INVALIDARG, tr("CpuId override leaf %#x is not set"), aId);
+                return E_INVALIDARG;
 
             *aValEax = mHWData->mCpuIdStdLeafs[aId].ulEax;
             *aValEbx = mHWData->mCpuIdStdLeafs[aId].ulEbx;
@@ -1861,7 +1866,7 @@ STDMETHODIMP Machine::GetCPUIDLeaf(ULONG aId, ULONG *aValEax, ULONG *aValEbx, UL
         case 0x80000009:
         case 0x8000000A:
             if (mHWData->mCpuIdExtLeafs[aId - 0x80000000].ulId != aId)
-                return setError(E_INVALIDARG, tr("CpuId override leaf %#x is not set"), aId);
+                return E_INVALIDARG;
 
             *aValEax = mHWData->mCpuIdExtLeafs[aId - 0x80000000].ulEax;
             *aValEbx = mHWData->mCpuIdExtLeafs[aId - 0x80000000].ulEbx;
@@ -3841,7 +3846,7 @@ STDMETHODIMP Machine::DetachDevice(IN_BSTR aControllerName, LONG aControllerPort
 {
     CheckComArgStrNotEmptyOrNull(aControllerName);
 
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d\n",
                      aControllerName, aControllerPort, aDevice));
 
     AutoCaller autoCaller(this);
@@ -3919,7 +3924,7 @@ STDMETHODIMP Machine::PassthroughDevice(IN_BSTR aControllerName, LONG aControlle
 {
     CheckComArgStrNotEmptyOrNull(aControllerName);
 
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld aPassthrough=%d\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d aPassthrough=%d\n",
                      aControllerName, aControllerPort, aDevice, aPassthrough));
 
     AutoCaller autoCaller(this);
@@ -3966,7 +3971,7 @@ STDMETHODIMP Machine::TemporaryEjectDevice(IN_BSTR aControllerName, LONG aContro
 {
     CheckComArgStrNotEmptyOrNull(aControllerName);
 
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld aTemporaryEject=%d\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d aTemporaryEject=%d\n",
                      aControllerName, aControllerPort, aDevice, aTemporaryEject));
 
     AutoCaller autoCaller(this);
@@ -4006,7 +4011,7 @@ STDMETHODIMP Machine::NonRotationalDevice(IN_BSTR aControllerName, LONG aControl
 {
     CheckComArgStrNotEmptyOrNull(aControllerName);
 
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld aNonRotational=%d\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d aNonRotational=%d\n",
                      aControllerName, aControllerPort, aDevice, aNonRotational));
 
     AutoCaller autoCaller(this);
@@ -4053,7 +4058,7 @@ STDMETHODIMP Machine::SetBandwidthGroupForDevice(IN_BSTR aControllerName, LONG a
 {
     CheckComArgStrNotEmptyOrNull(aControllerName);
 
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d\n",
                      aControllerName, aControllerPort, aDevice));
 
     AutoCaller autoCaller(this);
@@ -4119,7 +4124,7 @@ STDMETHODIMP Machine::MountMedium(IN_BSTR aControllerName,
                                   BOOL aForce)
 {
     int rc = S_OK;
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld aForce=%d\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d aForce=%d\n",
                      aControllerName, aControllerPort, aDevice, aForce));
 
     CheckComArgStrNotEmptyOrNull(aControllerName);
@@ -4237,7 +4242,7 @@ STDMETHODIMP Machine::GetMedium(IN_BSTR aControllerName,
                                 LONG aDevice,
                                 IMedium **aMedium)
 {
-    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%ld aDevice=%ld\n",
+    LogFlowThisFunc(("aControllerName=\"%ls\" aControllerPort=%d aDevice=%d\n",
                      aControllerName, aControllerPort, aDevice));
 
     CheckComArgStrNotEmptyOrNull(aControllerName);
@@ -6254,11 +6259,12 @@ STDMETHODIMP Machine::CloneTo(IMachine *pTarget, CloneMode_T mode, ComSafeArrayI
     if (options != NULL)
         optList = com::SafeArray<CloneOptions_T>(ComSafeArrayInArg(options)).toList();
 
-    AssertReturn(!optList.contains(CloneOptions_Link), E_NOTIMPL);
+    AssertReturn(!optList.contains(CloneOptions_Link) || (isSnapshotMachine() && mode == CloneMode_MachineState), E_INVALIDARG);
     AssertReturn(!(optList.contains(CloneOptions_KeepAllMACs) && optList.contains(CloneOptions_KeepNATMACs)), E_INVALIDARG);
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
 
     MachineCloneVM *pWorker = new MachineCloneVM(this, static_cast<Machine*>(pTarget), mode, optList);
 
@@ -9449,9 +9455,9 @@ HRESULT Machine::createImplicitDiffs(IProgress *aProgress,
 
 /**
  * Deletes implicit differencing hard disks created either by
- * #createImplicitDiffs() or by #AttachMedium() and rolls back mMediaData.
+ * #createImplicitDiffs() or by #AttachDevice() and rolls back mMediaData.
  *
- * Note that to delete hard disks created by #AttachMedium() this method is
+ * Note that to delete hard disks created by #AttachDevice() this method is
  * called from #fixupMedia() when the changes are rolled back.
  *
  * @param pllRegistriesThatNeedSaving Optional pointer to a list of UUIDs to receive the registry IDs that need saving

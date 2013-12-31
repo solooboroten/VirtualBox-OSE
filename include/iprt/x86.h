@@ -1,11 +1,11 @@
 /** @file
- * X86 (and AMD64) Structures and Definitions (VMM,++).
+ * IPRT - X86 and AMD64 Structures and Definitions.
  *
- * x86.mac is generated from this file by running 'kmk incs' in the root.
+ * @note x86.mac is generated from this file by running 'kmk incs' in the root.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,10 +25,10 @@
  * terms and conditions of either the GPL or the CDDL or both.
  */
 
-#ifndef ___VBox_x86_h
-#define ___VBox_x86_h
+#ifndef ___iprt_x86_h
+#define ___iprt_x86_h
 
-#include <VBox/types.h>
+#include <iprt/types.h>
 #include <iprt/assert.h>
 
 /* Workaround for Solaris sys/regset.h defining CS, DS */
@@ -37,7 +37,8 @@
 # undef DS
 #endif
 
-/** @defgroup grp_x86   x86 Types and Definitions
+/** @defgroup grp_rt_x86   x86 Types and Definitions
+ * @ingroup grp_rt
  * @{
  */
 
@@ -684,6 +685,15 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_CR4_OSXMMEEXCPT                 RT_BIT(10)
 /** Bit 13 - VMXE - VMX mode is enabled. */
 #define X86_CR4_VMXE                        RT_BIT(13)
+/** Bit 14 - SMXE - Safer Mode Extensions Enabled. */
+#define X86_CR4_SMXE                        RT_BIT(14)
+/** Bit 17 - PCIDE - Process-Context Identifiers Enabled. */
+#define X86_CR4_PCIDE                       RT_BIT(17)
+/** Bit 18 - OSXSAVE - Operating System Support for XSAVE and processor
+ * extended states. */
+#define X86_CR4_OSXSAVE                     RT_BIT(18)
+/** Bit 20 - SMEP - Supervisor-mode Execution Prevention enabled. */
+#define X86_CR4_SMEP                        RT_BIT(20)
 /** @} */
 
 

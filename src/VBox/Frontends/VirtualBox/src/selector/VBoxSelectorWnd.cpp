@@ -598,9 +598,18 @@ void VBoxSelectorWnd::fileExportAppliance()
 
 void VBoxSelectorWnd::fileSettings()
 {
+    /* Check that we do NOT handling that already: */
+    if (mFileSettingsAction->data().toBool())
+        return;
+    /* Remember that we handling that already: */
+    mFileSettingsAction->setData(true);
+
     /* Create and execute global settings dialog: */
     UISettingsDialogGlobal dlg(this);
     dlg.execute();
+
+    /* Remember that we do NOT handling that already: */
+    mFileSettingsAction->setData(false);
 }
 
 void VBoxSelectorWnd::fileExit()
@@ -700,6 +709,12 @@ void VBoxSelectorWnd::vmSettings(const QString &strCategoryRef /* = QString::nul
                                  const QString &strControlRef /* = QString::null */,
                                  const QString &strMachineId /* = QString::null */)
 {
+    /* Check that we do NOT handling that already: */
+    if (mVmConfigAction->data().toBool())
+        return;
+    /* Remember that we handling that already: */
+    mVmConfigAction->setData(true);
+
     /* Process href from VM details / description: */
     if (!strCategoryRef.isEmpty() && strCategoryRef[0] != '#')
     {
@@ -731,6 +746,9 @@ void VBoxSelectorWnd::vmSettings(const QString &strCategoryRef /* = QString::nul
     /* Create and execute corresponding VM settings dialog: */
     UISettingsDialogMachine dlg(this, pItem->id(), strCategory, strControl);
     dlg.execute();
+
+    /* Remember that we do NOT handling that already: */
+    mVmConfigAction->setData(false);
 }
 
 void VBoxSelectorWnd::vmClone(const QString &aUuid /* = QString::null */)
@@ -1219,7 +1237,7 @@ void VBoxSelectorWnd::retranslateUi()
     mVmConfigAction->setToolTip(mVmConfigAction->text().remove('&').remove('.') +
         (mVmConfigAction->shortcut().toString().isEmpty() ? "" : QString(" (%1)").arg(mVmConfigAction->shortcut().toString())));
 
-    mVmCloneAction->setText(tr("&Clone..."));
+    mVmCloneAction->setText(tr("Cl&one..."));
     mVmCloneAction->setShortcut(gSS->keySequence(UISelectorShortcuts::CloneVMShortcut));
     mVmCloneAction->setStatusTip(tr("Clone the selected virtual machine"));
 

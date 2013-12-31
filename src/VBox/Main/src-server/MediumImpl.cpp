@@ -1830,7 +1830,7 @@ STDMETHODIMP Medium::COMGETTER(ReadOnly)(BOOL *aReadOnly)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    /* isRadOnly() will do locking */
+    /* isReadOnly() will do locking */
 
     *aReadOnly = isReadOnly();
 
@@ -3639,6 +3639,15 @@ bool Medium::isReadOnly()
     }
 
     AssertFailedReturn(false);
+}
+
+/**
+ * Internal method to return the medium's size. Must have caller + locking!
+ * @return
+ */
+void Medium::updateId(const Guid &id)
+{
+    unconst(m->id) = id;
 }
 
 /**

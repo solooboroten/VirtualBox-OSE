@@ -335,7 +335,8 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "VBoxManage clonevm          <uuid>|<name>\n"
                      "                            [--snapshot <uuid>|<name>]\n"
                      "                            [--mode machine|machineandchilds|all]\n"
-                     "                            [--options keepallmacs|keepnatmacs]\n"
+                     "                            [--options link|keepallmacs|keepnatmacs|\n"
+                     "                                       keepdisknames]\n"
                      "                            [--name <name>]\n"
                      "                            [--basefolder <basefolder>]\n"
                      "                            [--uuid <uuid>]\n"
@@ -344,7 +345,10 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
 
     if (u64Cmd & USAGE_IMPORTAPPLIANCE)
         RTStrmPrintf(pStrm,
-                     "VBoxManage import           <ovf/ova> [--dry-run|-n] [more options]\n"
+                     "VBoxManage import           <ovf/ova>\n"
+                     "                            [--dry-run|-n]\n"
+                     "                            [--options keepallmacs|keepnatmacs]\n"
+                     "                            [more options]\n"
                      "                            (run with -n to have options displayed\n"
                      "                             for a particular OVF)\n\n");
 
@@ -454,8 +458,8 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         RTStrmPrintf(pStrm,
                      "VBoxManage storageattach    <uuid|vmname>\n"
                      "                            --storagectl <name>\n"
-                     "                            --port <number>\n"
-                     "                            --device <number>\n"
+                     "                            [--port <number>]\n"
+                     "                            [--device <number>]\n"
                      "                            [--type dvddrive|hdd|fdd]\n"
                      "                            [--medium none|emptydrive|\n"
                      "                                      <uuid>|<filename>|host:<drive>|iscsi]\n"
@@ -471,7 +475,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            [--forceunmount]\n"
                      "                            [--server <name>|<ip>]\n"
                      "                            [--target <target>]\n"
-                     "                            [--port <port>]\n"
+                     "                            [--tport <port>]\n"
                      "                            [--lun <lun>]\n"
                      "                            [--encodedlun <lun>]\n"
                      "                            [--username <username>]\n"

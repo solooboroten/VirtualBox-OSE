@@ -335,7 +335,7 @@ Statistics update:  disabled
 </screen></para>
   </sect1>
 
-  <sect1>
+  <sect1 id="vboxmanage-registervm">
     <title>VBoxManage registervm / unregistervm</title>
 
     <para>The <computeroutput>registervm</computeroutput> command allows you
@@ -1088,6 +1088,75 @@ Statistics update:  disabled
     </sect2>
   </sect1>
 
+  <sect1 id="vboxmanage-clonevm">
+    <title>VBoxManage clonevm</title>
+
+    <para>This command creates a full or linked copy of an existing virtual
+    machine.</para>
+
+    <para>The <computeroutput>clonevm</computeroutput> subcommand takes at
+    least the name of the virtual machine which should be cloned. The following
+    additional settings can be used to further configure the clone VM
+    operation:</para>
+
+    <itemizedlist>
+       <listitem>
+           <para><computeroutput>--snapshot &lt;uuid&gt;|&lt;name&gt;</computeroutput>: 
+            Select a specific snapshot where the clone operation should refer
+            to. Default is referring to the current state.</para>
+       </listitem>
+       <listitem>
+           <para><computeroutput>--mode machine|machineandchilds|all</computeroutput>: 
+           Selects the cloning mode of the operation. If
+           <computeroutput>machine</computeroutput> is selected (the default),
+           the current state of the VM without any snapshots is cloned. In the
+           <computeroutput>machineandchilds</computeroutput> mode the snapshot
+           provided by <computeroutput>--snapshot</computeroutput> and all
+           child snapshots are cloned. If <computeroutput>all</computeroutput>
+           is the selected mode all snapshots and the current state are cloned.
+           </para>
+       </listitem>
+       <listitem>
+           <para><computeroutput>--options link|keepallmacs|keepnatmacs|keepdisknames</computeroutput>: 
+           Allows additional fine tuning of the clone operation. The first
+           option defines that a linked clone should be created, which is
+           only possible for a machine clone from a snapshot. The next two
+           options allow to define how the MAC addresses of every virtual
+           network card should be handled. They can either be reinitialized
+           (the default), left unchanged
+           (<computeroutput>keepallmacs</computeroutput>) or left unchanged
+           when the network type is NAT
+           (<computeroutput>keepnatmacs</computeroutput>). If you add
+           <computeroutput>keepdisknames</computeroutput> all new disk images
+           are called like the original once, otherwise they are
+           renamed.</para>
+       </listitem>
+       <listitem>
+           <para><computeroutput>--name &lt;name&gt;</computeroutput>: Select a
+           new name for the new virtual machine. Default is "Original Name
+           Clone".</para>
+       </listitem>
+       <listitem>
+           <para><computeroutput>--basefolder &lt;basefolder&gt;</computeroutput>: 
+           Select the folder where the new virtual machine configuration should
+           be saved in.</para>
+       </listitem>
+       <listitem>
+           <para><computeroutput>--uuid &lt;uuid&gt;</computeroutput>: 
+           Select the UUID the new VM should have. This id has to be unique in
+           the VirtualBox instance this clone should be registered. Default is
+           creating a new UUID.</para>
+       </listitem>
+       <listitem>
+           <para><computeroutput>--register</computeroutput>: 
+           Automatically register the new clone in this VirtualBox
+           installation. If you manually want register the new VM later, see
+           <xref linkend="vboxmanage-registervm" /> for instructions how to do
+           so.</para>
+       </listitem>
+    </itemizedlist>
+  </sect1>
+
   <sect1 id="vboxmanage-import">
     <title>VBoxManage import</title>
 
@@ -1499,8 +1568,8 @@ Virtual system 0:
 
     <screen>VBoxManage storageattach    &lt;uuid|vmname&gt;
                             --storagectl &lt;name&gt;
-                            --port &lt;number&gt;
-                            --device &lt;number&gt;
+                            [--port &lt;number&gt;]
+                            [--device &lt;number&gt;]
                             [--type dvddrive|hdd|fdd]
                             [--medium none|emptydrive|
                                       &lt;uuid&gt;|&lt;filename&gt;|host:&lt;drive&gt;|iscsi]
@@ -1514,7 +1583,7 @@ Virtual system 0:
                             [--forceunmount]
                             [--server &lt;name&gt;|&lt;ip&gt;]
                             [--target &lt;target&gt;]
-                            [--port &lt;port&gt;]
+                            [--tport &lt;port&gt;]
                             [--lun &lt;lun&gt;]
                             [--encodedlun &lt;lun&gt;]
                             [--username &lt;username&gt;]
@@ -1550,7 +1619,8 @@ Virtual system 0:
 
           <glossdef>
             <para>The number of the storage controller's port which is to be
-            modified. Mandatory.</para>
+            modified. Mandatory, unless the storage controller has only a
+            single port.</para>
           </glossdef>
         </glossentry>
 
@@ -1559,7 +1629,8 @@ Virtual system 0:
 
           <glossdef>
             <para>The number of the port's device which is to be modified.
-            Mandatory.</para>
+            Mandatory, unless the storage controller has only a single device
+            per port.</para>
           </glossdef>
         </glossentry>
 
@@ -2455,12 +2526,13 @@ Value: 2006.01.01</screen>
           runnable on the guest. This command only works while a VM is up and
           running and has the following syntax:</para>
 
-          <screen>VBoxManage guestcontrol exec[ute] &lt;vmname&gt;|&lt;uuid&gt;
+          <screen>VBoxManage guestcontrol &lt;vmname&gt;|&lt;uuid&gt; exec[ute]
             --image &lt;path to program&gt;
             --username &lt;name&gt; --password &lt;password&gt;
+            [--dos2unix]
             [--environment "&lt;NAME&gt;=&lt;VALUE&gt; [&lt;NAME&gt;=&lt;VALUE&gt;]"]
-            [--flags &lt;flags&gt;] [--timeout &lt;msec&gt;]
-            [--verbose] [--wait-exit] [--wait-stdout] [--wait-stderr]
+            [--timeout &lt;msec&gt;] [--unix2dos] [--verbose]
+            [--wait-exit] [--wait-stdout] [--wait-stderr]
             -- [[&lt;argument1&gt;] ... [&lt;argumentN&gt;]]</screen>
 
           <para>where the parameters mean: <glosslist>
@@ -2483,16 +2555,30 @@ Value: 2006.01.01</screen>
               </glossentry>
 
               <glossentry>
-                <glossterm>--arguments "&lt;arguments&gt;"</glossterm>
+                <glossterm>--username &lt;name&gt;</glossterm>
 
                 <glossdef>
-                  <para>One or more arguments to pass to the process being
-                  executed.</para>
+                  <para>Name of the user the process should run under. This
+                  user must exist on the guest OS.</para>
+                </glossdef>
+              </glossentry>
 
-                  <para>Arguments containing spaces must be enclosed in
-                  quotation marks. More than one
-                  <computeroutput>--arguments</computeroutput> at a time can
-                  be specified to keep the command line tidy.</para>
+              <glossentry>
+                <glossterm>--password &lt;password&gt;</glossterm>
+
+                <glossdef>
+                  <para>Password of the user account specified with
+                  <computeroutput>--username</computeroutput>. If not given,
+                  an empty password is assumed.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>--dos2unix</glossterm>
+
+                <glossdef>
+                  Converts output from DOS/Windows guests to UNIX-compatible
+                  line endings (CR + LF -> LF). Not implemented yet.
                 </glossdef>
               </glossentry>
 
@@ -2521,15 +2607,6 @@ Value: 2006.01.01</screen>
               </glossentry>
 
               <glossentry>
-                <glossterm>--flags &lt;flags&gt;</glossterm>
-
-                <glossdef>
-                  <para>Additional flags to set. This is not used at the
-                  moment.</para>
-                </glossdef>
-              </glossentry>
-
-              <glossentry>
                 <glossterm>--timeout &lt;msec&gt;</glossterm>
 
                 <glossdef>
@@ -2542,21 +2619,11 @@ Value: 2006.01.01</screen>
               </glossentry>
 
               <glossentry>
-                <glossterm>--username &lt;name&gt;</glossterm>
+                <glossterm>--unix2dos</glossterm>
 
                 <glossdef>
-                  <para>Name of the user the process should run under. This
-                  user must exist on the guest OS.</para>
-                </glossdef>
-              </glossentry>
-
-              <glossentry>
-                <glossterm>--password &lt;password&gt;</glossterm>
-
-                <glossdef>
-                  <para>Password of the user account specified with
-                  <computeroutput>--username</computeroutput>. If not given,
-                  an empty password is assumed.</para>
+                  Converts output from a UNIX/Linux guests to DOS-/Windows-compatible
+                  line endings (LF -> CR + LF). Not implemented yet.
                 </glossdef>
               </glossentry>
 
@@ -2597,15 +2664,26 @@ Value: 2006.01.01</screen>
                 </glossdef>
               </glossentry>
 
+              <glossentry>
+                <glossterm>[-- [&lt;argument1s&gt;] ... [&lt;argumentNs&gt;]]</glossterm>
+
+                <glossdef>
+                  <para>One or more arguments to pass to the process being
+                  executed.</para>
+                  <para>Arguments containing spaces must be enclosed in
+                  quotation marks.</para>
+                </glossdef>
+              </glossentry>
+
             </glosslist></para>
 
           <para><note>
               <para>On Windows there are certain limitations for graphical
               applications; please see <xref linkend="KnownIssues" /> for more
               information.</para>
-            </note> Examples: <screen>VBoxManage --nologo guestcontrol execute "My VM" "/bin/ls" --arguments "-l /usr"
-          --username foo --password bar --wait-for stdout</screen> <screen>VBoxManage --nologo guestcontrol execute "My VM" "c:\\windows\\system32\\ipconfig.exe"
-          --username foo --password bar --wait-for stdout</screen> Note that
+            </note> Examples: <screen>VBoxManage --nologo guestcontrol "My VM" execute --image "/bin/ls"
+          --username foo --password bar --wait-exit --wait-stdout -- -l /usr</screen> <screen>VBoxManage --nologo guestcontrol "My VM" execute --image "c:\\windows\\system32\\ipconfig.exe"
+          --username foo --password bar --wait-exit --wait-stdout</screen> Note that
           the double backslashes in the second example are only required on
           Unix hosts.</para>
         </listitem>

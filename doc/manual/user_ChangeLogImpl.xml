@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.1.0 Beta 2 (2011-07-08)</title>
+    <title>Version 4.1.0 Beta 3 (2011-07-14)</title>
 
     <para>This version is a major update. The following major new features
       were added:</para>
@@ -9,7 +9,7 @@
     <itemizedlist>
 
       <listitem>
-        <para>Support for cloning of VMs (bug #5853)</para>
+        <para>Support for cloning of VMs (bug #5853, see <xref linkend="clone"/>)</para>
       </listitem>
 
       <listitem>
@@ -59,7 +59,13 @@
         <para>Experimental support for SATA hotplug added. Currently only supported
           for hard disks and only with VBoxManage.</para>
       </listitem>
-      
+
+      <listitem>
+        <para>Solaris hosts: New Crossbow based bridged networking driver for Solaris 11
+        hosts (build 159 and above).</para>
+      </listitem>
+
+
     </itemizedlist>
 
     <para>In addition, the following items were fixed and/or added:</para>
@@ -102,8 +108,18 @@
       </listitem>
 
       <listitem>
+        <para>GUI: made the number of SATA ports configurable</para>
+      </listitem>
+
+      <listitem>
         <para>GUI: decrease time before showing the VM configuration
           dialog</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: more convenient configuration of storage controller
+          attachments by automatically determining the port or device parameter
+          when a storage controller has only one port or device per port</para>
       </listitem>
 
       <listitem>
@@ -123,7 +139,7 @@
 
       <listitem>
         <para>Settings: provide better diagnostics if a single medium is used
-          twice in a VM config</para>
+          twice in a VM configuration</para>
       </listitem>
 
       <listitem>
@@ -166,6 +182,11 @@
       </listitem>
 
       <listitem>
+        <para>Storage: fixed access to CD/DVD images beyond 4GB when using the SATA
+          controller (bug #8592)</para>
+      </listitem>
+
+      <listitem>
         <para>Floppy: several bugs have been fixed</para>
       </listitem>
 
@@ -183,6 +204,11 @@
 
       <listitem>
         <para>NAT: reduced memory footprint</para>
+      </listitem>
+
+      <listitem>
+        <para>Networking: fixed the problem with segmentation offloading
+          when several VMs are transmitting in parallel</para>
       </listitem>
 
       <listitem>
@@ -235,6 +261,10 @@
       </listitem>
 
       <listitem>
+        <para>Mac OS X hosts: fixed non-VT-x mode on Lion hosts</para>
+      </listitem>
+
+      <listitem>
         <para>Windows hosts: fixed copy'n'paste in the GUI and for the VM
           window (bug #4491)</para>
       </listitem>
@@ -246,6 +276,11 @@
 
       <listitem>
         <para>Windows hosts (64-bit only): enabled live snapshot deletion</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: fixed preemption issue with Solaris 11 hosts (builds
+          166 and above)</para>
       </listitem>
 
       <listitem>
@@ -417,7 +452,7 @@
         <para>NAT: built-in services use the correct Ethernet addresses in
           Ethernet header and in ARP requests</para>
       </listitem>
-      
+
       <listitem>
         <para>Host-only networking: fixed adapter reference counting</para>
       </listitem>
@@ -475,7 +510,7 @@
       </listitem>
 
       <listitem>
-        <para>Linux Additions: check whether gcc and make are installed before  
+        <para>Linux Additions: check whether gcc and make are installed before
           building kernel modules (bug #8795)</para>
       </listitem>
 

@@ -45,6 +45,38 @@ WINE_DECLARE_DEBUG_CHANNEL(d3d);
 
 #define GLINFO_LOCATION (*gl_info)
 
+#ifdef VBOX_WITH_WDDM
+void surface_shrc_lock_surf(IWineD3DSurfaceImpl *This)
+{
+    VBOXSHRC_LOCK(This);
+}
+
+void surface_shrc_unlock_surf(IWineD3DSurfaceImpl *This)
+{
+    VBOXSHRC_UNLOCK(This);
+    if (VBOXSHRC_IS_LOCKED(This))
+        return;
+
+    /* perform data->texture synchronization */
+    IWineD3DSurface_LoadLocation((IWineD3DSurface*)This, SFLAG_INTEXTURE, NULL);
+}
+
+void surface_shrc_lock(IWineD3DSurfaceImpl *This)
+{
+    if (!VBOXSHRC_IS_SHARED(This))
+        return;
+
+    surface_shrc_lock_surf(This);
+}
+
+void surface_shrc_unlock(IWineD3DSurfaceImpl *This)
+{
+    if (!VBOXSHRC_IS_SHARED(This))
+        return;
+    surface_shrc_unlock_surf(This);
+}
+#endif
+
 static void surface_cleanup(IWineD3DSurfaceImpl *This)
 {
     IWineD3DDeviceImpl *device = This->resource.device;
@@ -65,7 +97,11 @@ static void surface_cleanup(IWineD3DSurfaceImpl *This)
 
     ENTER_GL();
 
-    if (This->texture_name)
+    if (This->texture_name
+#ifdef VBOX_WITH_WDDM
+            && !VBOXSHRC_IS_SHARED_OPENED(This)
+#endif
+            )
     {
         /* Release the OpenGL texture. */
         TRACE("Deleting texture %u.\n", This->texture_name);
@@ -409,6 +445,12 @@ HRESULT surface_init(IWineD3DSurfaceImpl *surface, WINED3DSURFTYPE surface_type,
         return hr;
     }
 
+#ifdef VBOX_WITH_WDDM
+    /* this will be a nop for the non-shared resource,
+     * for the shared resource this will ensure the surface is initialized properly */
+    surface_shrc_lock(surface);
+#endif
+
     /* "Standalone" surface. */
     IWineD3DSurface_SetContainer((IWineD3DSurface *)surface, NULL);
 
@@ -486,8 +528,7 @@ HRESULT surface_init(IWineD3DSurfaceImpl *surface, WINED3DSURFTYPE surface_type,
     if (VBOXSHRC_IS_SHARED(surface))
     {
         Assert(shared_handle);
-        VBOXSHRC_SET_INITIALIZED(surface);
-        IWineD3DSurface_LoadLocation((IWineD3DSurface*)surface, SFLAG_INTEXTURE, NULL);
+        surface_shrc_unlock(surface);
         if (!VBOXSHRC_IS_SHARED_OPENED(surface))
         {
             Assert(!(*shared_handle));
@@ -513,7 +554,7 @@ static void surface_force_reload(IWineD3DSurface *iface)
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
 
 #if defined(DEBUG_misha) && defined (VBOX_WITH_WDDM)
-    if (VBOXSHRC_IS_INITIALIZED(This))
+    if (VBOXSHRC_IS_SHARED_UNLOCKED(This))
     {
         Assert(0);
     }
@@ -1369,9 +1410,15 @@ static void WINAPI IWineD3DSurfaceImpl_UnLoad(IWineD3DSurface *iface) {
     IWineD3DSurface_GetContainer(iface, &IID_IWineD3DBaseTexture, (void **) &texture);
     if(!texture) {
         ENTER_GL();
-        glDeleteTextures(1, &This->texture_name);
+#ifdef VBOX_WITH_WDDM
+        if (!VBOXSHRC_IS_SHARED_OPENED(This))
+#endif
+            glDeleteTextures(1, &This->texture_name);
         This->texture_name = 0;
-        glDeleteTextures(1, &This->texture_name_srgb);
+#ifdef VBOX_WITH_WDDM
+        if (!VBOXSHRC_IS_SHARED_OPENED(This))
+#endif
+            glDeleteTextures(1, &This->texture_name_srgb);
         This->texture_name_srgb = 0;
         LEAVE_GL();
     } else {
@@ -1802,6 +1849,7 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_LockRect(IWineD3DSurface *iface, WINED
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
     IWineD3DDeviceImpl *myDevice = This->resource.device;
     const RECT *pass_rect = pRect;
+    HRESULT hr = S_OK;
 
     TRACE("(%p) : rect@%p flags(%08x), output lockedRect@%p, memory@%p\n", This, pRect, Flags, pLockedRect, This->resource.allocatedMemory);
 
@@ -1813,6 +1861,11 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_LockRect(IWineD3DSurface *iface, WINED
         WARN("Surface is already locked, returning D3DERR_INVALIDCALL\n");
         return WINED3DERR_INVALIDCALL;
     }
+
+#ifdef VBOX_WITH_WDDM
+    surface_shrc_lock(This);
+#endif
+
     This->Flags |= SFLAG_LOCKED;
 
     if (!(This->Flags & SFLAG_LOCKABLE))
@@ -1898,7 +1951,16 @@ lock_end:
         }
     }
 
-    return IWineD3DBaseSurfaceImpl_LockRect(iface, pLockedRect, pRect, Flags);
+    hr = IWineD3DBaseSurfaceImpl_LockRect(iface, pLockedRect, pRect, Flags);
+#ifdef VBOX_WITH_WDDM
+    if (FAILED(hr))
+    {
+        WARN("IWineD3DBaseSurfaceImpl_LockRect failed, hr (%d)\n", hr);
+        surface_shrc_unlock(This);
+    }
+    /* if lock succeeded, we keep the shrc locked until unlock */
+#endif
+    return hr;
 }
 
 static void flush_to_framebuffer_drawpixels(IWineD3DSurfaceImpl *This, GLenum fmt, GLenum type, UINT bpp, const BYTE *mem) {
@@ -2107,6 +2169,11 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_UnlockRect(IWineD3DSurface *iface) {
     if(This->overlay_dest) {
         IWineD3DSurface_DrawOverlay(iface);
     }
+
+#ifdef VBOX_WITH_WDDM
+        surface_shrc_unlock(This);
+#endif
+
     return WINED3D_OK;
 }
 
@@ -4145,6 +4212,7 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_Blt(IWineD3DSurface *iface, const RECT
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
     IWineD3DSurfaceImpl *Src = (IWineD3DSurfaceImpl *) SrcSurface;
     IWineD3DDeviceImpl *myDevice = This->resource.device;
+    HRESULT hr = WINED3D_OK;
 
     TRACE("(%p)->(%p,%p,%p,%x,%p)\n", This, DestRect, SrcSurface, SrcRect, Flags, DDBltFx);
     TRACE("(%p): Usage is %s\n", This, debug_d3dusage(This->resource.usage));
@@ -4155,34 +4223,55 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_Blt(IWineD3DSurface *iface, const RECT
         return WINEDDERR_SURFACEBUSY;
     }
 
+#ifdef VBOX_WITH_WDDM
+    surface_shrc_lock(This);
+    surface_shrc_lock(Src);
+#endif
+
     /* Accessing the depth stencil is supposed to fail between a BeginScene and EndScene pair,
      * except depth blits, which seem to work
      */
     if(iface == myDevice->stencilBufferTarget || (SrcSurface && SrcSurface == myDevice->stencilBufferTarget)) {
         if(myDevice->inScene && !(Flags & WINEDDBLT_DEPTHFILL)) {
             TRACE("Attempt to access the depth stencil surface in a BeginScene / EndScene pair, returning WINED3DERR_INVALIDCALL\n");
-            return WINED3DERR_INVALIDCALL;
+            hr = WINED3DERR_INVALIDCALL;
+            goto end;
         } else if(IWineD3DSurfaceImpl_BltZ(This, DestRect, SrcSurface, SrcRect, Flags, DDBltFx) == WINED3D_OK) {
             TRACE("Z Blit override handled the blit\n");
-            return WINED3D_OK;
+            hr = WINED3D_OK;
+            goto end;
         }
     }
 
     /* Special cases for RenderTargets */
     if( (This->resource.usage & WINED3DUSAGE_RENDERTARGET) ||
         ( Src && (Src->resource.usage & WINED3DUSAGE_RENDERTARGET) )) {
-        if(IWineD3DSurfaceImpl_BltOverride(This, DestRect, SrcSurface, SrcRect, Flags, DDBltFx, Filter) == WINED3D_OK) return WINED3D_OK;
+        if(IWineD3DSurfaceImpl_BltOverride(This, DestRect, SrcSurface, SrcRect, Flags, DDBltFx, Filter) == WINED3D_OK)
+        {
+            hr = WINED3D_OK;
+            goto end;
+        }
     }
 
 #ifdef VBOX_WITH_WDDM
-    if (IWineD3DSurfaceImpl_BltSys2Vram(This, DestRect, SrcSurface, SrcRect, Flags, DDBltFx, Filter) == WINED3D_OK) return WINED3D_OK;
+    if (IWineD3DSurfaceImpl_BltSys2Vram(This, DestRect, SrcSurface, SrcRect, Flags, DDBltFx, Filter) == WINED3D_OK)
+    {
+        hr = WINED3D_OK;
+        goto end;
+    }
 #endif
 
     /* For the rest call the X11 surface implementation.
      * For RenderTargets this should be implemented OpenGL accelerated in BltOverride,
      * other Blts are rather rare
      */
-    return IWineD3DBaseSurfaceImpl_Blt(iface, DestRect, SrcSurface, SrcRect, Flags, DDBltFx, Filter);
+    hr = IWineD3DBaseSurfaceImpl_Blt(iface, DestRect, SrcSurface, SrcRect, Flags, DDBltFx, Filter);
+end:
+#ifdef VBOX_WITH_WDDM
+    surface_shrc_unlock(This);
+    surface_shrc_unlock(Src);
+#endif
+    return hr;
 }
 
 static HRESULT WINAPI IWineD3DSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD dstx, DWORD dsty,
@@ -4191,6 +4280,7 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD 
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *) iface;
     IWineD3DSurfaceImpl *srcImpl = (IWineD3DSurfaceImpl *) Source;
     IWineD3DDeviceImpl *myDevice = This->resource.device;
+    HRESULT hr = WINED3D_OK;
 
     TRACE("(%p)->(%d, %d, %p, %p, %08x\n", iface, dstx, dsty, Source, rsrc, trans);
 
@@ -4206,6 +4296,11 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD 
         TRACE("Attempt to access the depth stencil surface in a BeginScene / EndScene pair, returning WINED3DERR_INVALIDCALL\n");
         return WINED3DERR_INVALIDCALL;
     }
+
+#ifdef VBOX_WITH_WDDM
+    surface_shrc_lock(This);
+    surface_shrc_lock(srcImpl);
+#endif
 
     /* Special cases for RenderTargets */
     if( (This->resource.usage & WINED3DUSAGE_RENDERTARGET) ||
@@ -4231,11 +4326,21 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD 
         if(trans & WINEDDBLTFAST_DONOTWAIT)
             Flags |= WINEDDBLT_DONOTWAIT;
 
-        if(IWineD3DSurfaceImpl_BltOverride(This, &DstRect, Source, &SrcRect, Flags, NULL, WINED3DTEXF_POINT) == WINED3D_OK) return WINED3D_OK;
+        if(IWineD3DSurfaceImpl_BltOverride(This, &DstRect, Source, &SrcRect, Flags, NULL, WINED3DTEXF_POINT) == WINED3D_OK)
+        {
+            hr = WINED3D_OK;
+            goto end;
+        }
     }
 
 
-    return IWineD3DBaseSurfaceImpl_BltFast(iface, dstx, dsty, Source, rsrc, trans);
+    hr = IWineD3DBaseSurfaceImpl_BltFast(iface, dstx, dsty, Source, rsrc, trans);
+end:
+#ifdef VBOX_WITH_WDDM
+    surface_shrc_unlock(This);
+    surface_shrc_unlock(srcImpl);
+#endif
+    return hr;
 }
 
 static HRESULT WINAPI IWineD3DSurfaceImpl_RealizePalette(IWineD3DSurface *iface)
@@ -4613,7 +4718,7 @@ static void WINAPI IWineD3DSurfaceImpl_ModifyLocation(IWineD3DSurface *iface, DW
     }
 
 #ifdef VBOX_WITH_WDDM
-    if(VBOXSHRC_IS_INITIALIZED(This)) {
+    if(VBOXSHRC_IS_SHARED_UNLOCKED(This)) {
         /* with the shared resource only texture can be considered valid
          * to make sure changes done to the resource in the other device context are visible
          * because the resource contents is shared via texture.
@@ -4730,7 +4835,11 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_LoadLocation(IWineD3DSurface *iface, D
 
     if(This->Flags & flag) {
         TRACE("Location already up to date\n");
+#ifdef VBOX_WITH_WDDM
+        goto post_process;
+#else
         return WINED3D_OK;
+#endif
     }
 
     if(!(This->Flags & SFLAG_LOCATIONS)) {
@@ -4932,7 +5041,9 @@ static HRESULT WINAPI IWineD3DSurfaceImpl_LoadLocation(IWineD3DSurface *iface, D
     }
 
 #ifdef VBOX_WITH_WDDM
-    if (VBOXSHRC_IS_INITIALIZED(This))
+post_process:
+
+    if (VBOXSHRC_IS_SHARED_UNLOCKED(This))
     {
         /* with the shared resource only texture can be considered valid
          * to make sure changes done to the resource in the other device context are visible
