@@ -43,8 +43,7 @@ bool UIDesktopServices::createMachineShortcut(const QString & /* strSrcFile */, 
             << "Comment=Starts the VirtualBox machine " << strName << endl
             << "Type=Application" << endl
             << "Exec=" << QCoreApplication::applicationFilePath() << " --comment \"" << strName << "\" --startvm \"" << strUuid << "\"" << endl
-            << "Icon=virtualbox-vbox" << endl
-            << "NoDisplay=true" << endl;
+            << "Icon=virtualbox-vbox.png" << endl;
         /* This would be a real file link entry, but then we could also simply
          * use a soft link (on most UNIX fs):
         out << "[Desktop Entry]" << endl
@@ -52,8 +51,9 @@ bool UIDesktopServices::createMachineShortcut(const QString & /* strSrcFile */, 
             << "Version=1.0" << endl
             << "Name=" << strName << endl
             << "Type=Link" << endl
-            << "Icon=virtualbox-vbox" << endl
+            << "Icon=virtualbox-vbox.png" << endl
         */
+        link.setPermissions(link.permissions() | QFile::ExeOwner);
         return true;
     }
     return false;

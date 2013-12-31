@@ -197,6 +197,7 @@ static HRESULT vboxDispCmSessionCmdQueryData(PVBOXDISPCM_SESSION pSession, PVBOX
         }
         else
         {
+            vboxVDbgPrint(("DispD3D: vboxDispCmSessionCmdQueryData, pfnEscapeCb failed hr (0x%x)\n", hr));
             exit(1);
         }
     }
@@ -271,7 +272,7 @@ void vboxDispCmLog(LPCSTR pszMsg)
     {
         PVBOXWDDMDISP_DEVICE pDevice = pContext->pDevice;
         Assert(pDevice);
-        vboxVDbgMpPrint((pDevice, pszMsg));
+        vboxVDbgPrint(("%s", pszMsg));
     }
     LeaveCriticalSection(&pSession->CritSect);
 }

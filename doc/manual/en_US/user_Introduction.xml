@@ -442,7 +442,7 @@
               <para>Ubuntu 6.06 ("Dapper Drake"), 6.10 ("Edgy Eft"), 7.04
               ("Feisty Fawn"), 7.10 ("Gutsy Gibbon"), 8.04 ("Hardy Heron"),
               8.10 ("Intrepid Ibex"), 9.04 ("Jaunty Jackalope"), 9.10 ("Karmic
-              Koala"), 10.04 ("Lucid Lynx").</para>
+              Koala"), 10.04 ("Lucid Lynx"), 10.10 ("Maverick Meerkat).</para>
             </listitem>
 
             <listitem>
@@ -455,7 +455,7 @@
             </listitem>
 
             <listitem>
-              <para>Redhat Enterprise Linux 4 and 5</para>
+              <para>Redhat Enterprise Linux 4, 5 and 6</para>
             </listitem>
 
             <listitem>
@@ -468,7 +468,7 @@
 
             <listitem>
               <para>SUSE Linux 9 and 10, openSUSE 10.3, 11.0, 11.1,
-              11.2</para>
+              11.2, 11.3</para>
             </listitem>
 
             <listitem>
@@ -849,7 +849,7 @@
 
           <para>If your medium is not in the list (especially if you are using
           VirtualBox for the first time), select the small folder icon next to
-          the the drop-down list to bring up a standard file dialog, with with
+          the drop-down list to bring up a standard file dialog, with which
           you can pick the image file on your host disks.</para>
         </listitem>
       </itemizedlist>
@@ -1278,7 +1278,7 @@
           </listitem>
 
           <listitem>
-            <para>The comlete state of all the virtual disks attached to the
+            <para>The complete state of all the virtual disks attached to the
             machine is preserved. Going back to a snapshot means that all
             changes that had been made to the machine's disks -- file by file,
             bit by bit -- will be undone as well. Files that were since
@@ -1379,7 +1379,7 @@
         <para>The OVF standard is complex, and support in VirtualBox is an
         ongoing process. In particular, no guarantee is made that VirtualBox
         supports all appliances created by other virtualization software. For
-        a list of know limitations, please see <xref
+        a list of known limitations, please see <xref
         linkend="KnownIssues" />.</para>
       </note></para>
 

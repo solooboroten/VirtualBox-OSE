@@ -23,7 +23,7 @@ Version:   %BUILDVER%_%BUILDREL%
 Release:   1
 URL:       http://www.virtualbox.org/
 Source:    VirtualBox.tar.bz2
-License:   VirtualBox Personal Use and Evaluation License (PUEL)
+License:   GPLv2
 Group:     Applications/System
 Vendor:    Oracle Corporation
 BuildRoot: %BUILDROOT%
@@ -239,13 +239,13 @@ if [ -d /etc/udev/rules.d -a "$INSTALL_NO_UDEV" != "1" ]; then
   usb_createnode="/usr/share/virtualbox/VBoxCreateUSBNode.sh"
   echo "KERNEL=${udev_fix}\"vboxdrv\", NAME=\"vboxdrv\", OWNER=\"root\", GROUP=\"root\", MODE=\"0600\"" \
     > /etc/udev/rules.d/10-vboxdrv.rules
-  echo "SUBSYSTEM=${udev_fix}\"usb_device\", ACTION=${udev_fix}\"add\", RUN=${usb_createnode} \$major \$minor \$attr{bDeviceClass}\"" \
+  echo "SUBSYSTEM=${udev_fix}\"usb_device\", ACTION=${udev_fix}\"add\", RUN=\"${usb_createnode} \$major \$minor \$attr{bDeviceClass}\"" \
     >> /etc/udev/rules.d/10-vboxdrv.rules
-  echo "SUBSYSTEM=${udev_fix}\"usb\", ACTION=${udev_fix}\"add\", ENV{DEVTYPE}==\"usb_device\", RUN=${usb_createnode} \$major \$minor \$attr{bDeviceClass}\"" \
+  echo "SUBSYSTEM=${udev_fix}\"usb\", ACTION=${udev_fix}\"add\", ENV{DEVTYPE}==\"usb_device\", RUN=\"${usb_createnode} \$major \$minor \$attr{bDeviceClass}\"" \
     >> /etc/udev/rules.d/10-vboxdrv.rules
-  echo "SUBSYSTEM=${udev_fix}\"usb_device\", ACTION=${udev_fix}\"remove\", RUN=${usb_createnode} --remove \$major \$minor\"" \
+  echo "SUBSYSTEM=${udev_fix}\"usb_device\", ACTION=${udev_fix}\"remove\", RUN=\"${usb_createnode} --remove \$major \$minor\"" \
     >> /etc/udev/rules.d/10-vboxdrv.rules
-  echo "SUBSYSTEM=${udev_fix}\"usb\", ACTION=${udev_fix}\"remove\", ENV{DEVTYPE}==\"usb_device\", RUN=${usb_createnode} --remove \$major \$minor\"" \
+  echo "SUBSYSTEM=${udev_fix}\"usb\", ACTION=${udev_fix}\"remove\", ENV{DEVTYPE}==\"usb_device\", RUN=\"${usb_createnode} --remove \$major \$minor\"" \
     >> /etc/udev/rules.d/10-vboxdrv.rules
 fi
 # Remove old udev description file

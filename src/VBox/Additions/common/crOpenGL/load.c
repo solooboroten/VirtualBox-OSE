@@ -341,7 +341,9 @@ static void stubSPUTearDown(void)
     crUnloadOpenGL();
 #endif
 
+#ifndef WINDOWS
     crNetTearDown();
+#endif
 
 #ifdef GLX
     if (stub.xshmSI.shmid>=0)
@@ -384,14 +386,57 @@ static void stubSPUSafeTearDown(void)
 # if defined(WINDOWS)
     if (RTThreadGetState(stub.hSyncThread)!=RTTHREADSTATE_TERMINATED)
     {
+        HANDLE hNative;
+        DWORD ec=0;
+
+        hNative = OpenThread(SYNCHRONIZE|THREAD_QUERY_INFORMATION|THREAD_TERMINATE,
+                             false, RTThreadGetNative(stub.hSyncThread));
+        if (!hNative)
+        {
+            crWarning("Failed to get handle for sync thread(%#x)", GetLastError());
+        }
+        else
+        {
+            crDebug("Got handle %p for thread %#x", hNative, RTThreadGetNative(stub.hSyncThread));
+        }
+
         ASMAtomicWriteBool(&stub.bShutdownSyncThread, true);
+
         if (PostThreadMessage(RTThreadGetNative(stub.hSyncThread), WM_QUIT, 0, 0))
         {
             RTThreadWait(stub.hSyncThread, 1000, NULL);
+
+            /*Same issue as on linux, RTThreadWait exits before system thread is terminated, which leads
+             * to issues as our dll goes to be unloaded.
+             *@todo 
+             *We usually call this function from DllMain which seems to be holding some lock and thus we have to
+             * kill thread via TerminateThread.
+             */
+            if (WaitForSingleObject(hNative, 100)==WAIT_TIMEOUT)
+            {
+                crDebug("Wait failed, terminating");
+                if (!TerminateThread(hNative, 1))
+                {
+                    crDebug("TerminateThread failed");
+                }
+            }
+            if (GetExitCodeThread(hNative, &ec))
+            {
+                crDebug("Thread %p exited with ec=%i", hNative, ec);
+            }
+            else
+            {
+                crDebug("GetExitCodeThread failed(%#x)", GetLastError());
+            }
         }
         else
         {
             crDebug("Sync thread killed before DLL_PROCESS_DETACH");
+        }
+
+        if (hNative)
+        {
+            CloseHandle(hNative);
         }
     }
 #else
@@ -411,7 +456,10 @@ static void stubSPUSafeTearDown(void)
     crLockMutex(mutex);
 #endif
 
+#ifndef WINDOWS
     crNetTearDown();
+#endif
+
 #ifdef CHROMIUM_THREADSAFE
     crUnlockMutex(mutex);
     crFreeMutex(mutex);
@@ -749,44 +797,51 @@ static void stubSyncTrUpdateWindowCB(unsigned long key, void *data1, void *data2
         stub.spu->dispatch_table.WindowShow(pWindow->spuWindow, pWindow->mapped);
     }
 
-    if (pRegions->pRegions->fFlags.bSetVisibleRects && pRegions->pRegions->fFlags.bSetViewRect)
+    if (pRegions->pRegions->fFlags.bSetVisibleRects || pRegions->pRegions->fFlags.bSetViewRect)
     {
-        int winX, winY;
-        unsigned int winW, winH;
+        /* ensure data integrity */
+        Assert(!pRegions->pRegions->fFlags.bAddHiddenRects);
 
-        winX = pRegions->pRegions->RectsInfo.aRects[0].left;
-        winY = pRegions->pRegions->RectsInfo.aRects[0].top;
-        winW = pRegions->pRegions->RectsInfo.aRects[0].right - winX;
-        winH = pRegions->pRegions->RectsInfo.aRects[0].bottom - winY;
-
-        if (stub.trackWindowPos && (winX!=pWindow->x || winY!=pWindow->y))
+        if (pRegions->pRegions->fFlags.bSetViewRect)
         {
-            crDebug("Dispatched WindowPosition (%i)", pWindow->spuWindow);
-            stub.spuDispatch.WindowPosition(pWindow->spuWindow, winX, winY);
-            pWindow->x = winX;
-            pWindow->y = winY;
-            bChanged = true;
-        }
+            int winX, winY;
+            unsigned int winW, winH;
+            BOOL bRc;
 
-        if (stub.trackWindowSize && (winW!=pWindow->width || winH!=pWindow->height))
-        {
-            crDebug("Dispatched WindowSize (%i)", pWindow->spuWindow);
-            stub.spuDispatch.WindowSize(pWindow->spuWindow, winW, winH);
-            pWindow->width = winW;
-            pWindow->height = winH;
-            bChanged = true;
-        }
+            winX = pRegions->pRegions->RectsInfo.aRects[0].left;
+            winY = pRegions->pRegions->RectsInfo.aRects[0].top;
+            winW = pRegions->pRegions->RectsInfo.aRects[0].right - winX;
+            winH = pRegions->pRegions->RectsInfo.aRects[0].bottom - winY;
 
-        hNewRgn = stubMakeRegionFromRects(pRegions->pRegions, 1);
+            if (stub.trackWindowPos && (winX!=pWindow->x || winY!=pWindow->y))
+            {
+                crDebug("Dispatched WindowPosition (%i)", pWindow->spuWindow);
+                stub.spuDispatch.WindowPosition(pWindow->spuWindow, winX, winY);
+                pWindow->x = winX;
+                pWindow->y = winY;
+                bChanged = true;
+            }
 
-        /* ensure the window is in sync to avoid possible incorrect host notifications  */
-        {
-            BOOL bRc = MoveWindow(pRegions->hWnd, winX, winY, winW, winH, FALSE /*BOOL bRepaint*/);
+            if (stub.trackWindowSize && (winW!=pWindow->width || winH!=pWindow->height))
+            {
+                crDebug("Dispatched WindowSize (%i)", pWindow->spuWindow);
+                stub.spuDispatch.WindowSize(pWindow->spuWindow, winW, winH);
+                pWindow->width = winW;
+                pWindow->height = winH;
+                bChanged = true;
+            }
+
+            bRc = MoveWindow(pRegions->hWnd, winX, winY, winW, winH, FALSE /*BOOL bRepaint*/);
             if (!bRc)
             {
                 DWORD winEr = GetLastError();
                 crWarning("stubSyncTrUpdateWindowCB: MoveWindow failed winEr(%d)", winEr);
             }
+        }
+
+        if (pRegions->pRegions->fFlags.bSetVisibleRects)
+        {
+            hNewRgn = stubMakeRegionFromRects(pRegions->pRegions, pRegions->pRegions->fFlags.bSetViewRect ? 1 : 0);
         }
     }
     else if (!pRegions->pRegions->fFlags.bHide)

@@ -7897,7 +7897,8 @@
     uuid="23f79fdf-738a-493d-b80b-42d607c9b916"
     >
     <desc>
-      Host/Guest copy flags.
+      Host/Guest copy flags. At the moment none of these flags
+      are implemented.
     </desc>
 
     <const name="None"                    value="0">
@@ -7909,7 +7910,7 @@
     </const>
 
     <const name="Update"                  value="2">
-      <desc>Copy only when the source file is newer than the destination file or when the destination file is missing.</desc>
+      <desc>Only copy when the source file is newer than the destination file or when the destination file is missing.</desc>
     </const>
 
     <const name="FollowLinks"             value="4">
@@ -11873,7 +11874,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IMachineDebugger" extends="$unknown"
-    uuid="b0b2a2dd-0627-4502-91c2-ddc5e77609e0"
+    uuid="373a5f51-67c1-4a31-be43-1e29ebe8ef85"
     wsmap="suppress"
     >
     <method name="resetStats">
@@ -11913,6 +11914,19 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <desc>
         Inject an NMI into a running VT-x/AMD-V VM.
       </desc>
+    </method>
+
+    <method name="dumpGuestCore">
+      <desc>
+        Takes a core dump of the guest.
+
+        See include/VBox/dbgfcorefmt.h for details on the file format.
+      </desc>
+      <param name="filename" type="wstring" dir="in">
+        <desc>
+          The name of the output file.  The file must not exist.
+        </desc>
+      </param>
     </method>
 
     <attribute name="singlestep" type="boolean">
@@ -14334,7 +14348,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IExtPackBase" extends="$unknown"
-    uuid="58304368-f78a-418c-8fec-d9e4e588d797"
+    uuid="5ffb0b64-0ad6-467d-af62-1157e7dc3c99"
     wsmap="suppress"
     >
     <desc>
@@ -14379,11 +14393,51 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         empty string if usable and always a non-empty string if not usable.
       </desc>
     </attribute>
+    <attribute name="showLicense" type="boolean" readonly="yes">
+      <desc>Whether to show the license before installation</desc>
+    </attribute>
+    <attribute name="license" type="wstring" readonly="yes">
+      <desc>
+        The default HTML license text for the extension pack.  Same as
+        calling <link to="#queryLicense">queryLicense</link> with
+        preferredLocale and preferredLanguage as empty strings and format set
+        to html.
+      </desc>
+    </attribute>
+
+    <method name="queryLicense">
+      <desc>
+        Full feature version of the license attribute.
+      </desc>
+      <param name="preferredLocale" type="wstring" dir="in">
+        <desc>
+          The preferred license locale. Pass an empty string to get the default
+          license.
+        </desc>
+      </param>
+      <param name="preferredLanguage" type="wstring" dir="in">
+        <desc>
+          The preferred license language. Pass an empty string to get the
+          default language for the locale.
+        </desc>
+      </param>
+      <param name="format" type="wstring" dir="in">
+        <desc>
+          The license format: html, rtf or txt. If a license is present there
+          will always be an HTML of it, the rich text format (RTF) and plain
+          text (txt) versions are optional. If
+        </desc>
+      </param>
+      <param name="licenseText" type="wstring" dir="return">
+        <desc>The license text.</desc>
+      </param>
+    </method>
+
   </interface>
 
   <interface
     name="IExtPack" extends="IExtPackBase"
-    uuid="60f0c30f-c773-4d3e-9580-3ffa47c24e95"
+    uuid="431685da-3618-4ebc-b038-833ba829b4b2"
     wsmap="suppress"
     >
     <desc>
@@ -14399,7 +14453,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="objUuid" type="wstring" dir="in">
         <desc>The object ID.  What exactly this is </desc>
       </param>
-      <param name="returnInterface" type="$unknown" dir="out">
+      <param name="returnInterface" type="$unknown" dir="return">
         <desc>The queried interface.</desc>
       </param>
     </method>
@@ -14407,7 +14461,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IExtPackFile" extends="IExtPackBase"
-    uuid="58509cab-f905-4acb-8087-ba0ab80d8038"
+    uuid="e57e5ab7-e0e8-4a55-9241-afa7ad219911"
     wsmap="suppress"
     >
     <desc>
@@ -14431,7 +14485,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IExtPackManager" extends="$unknown"
-    uuid="8104df65-74d6-4e33-b374-50aa062b4afd"
+    uuid="70d808a9-176f-4d45-adad-7c509b8309b3"
     wsmap="suppress"
     >
     <desc>
@@ -14476,19 +14530,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </param>
     </method>
 
-    <method name="install">
-      <desc>
-        Please use openExtPackFile + IExtPackFile::install instead of this
-        interface.   This will be removed later in the beta cycle.
-      </desc>
-      <param name="path" type="wstring" dir="in">
-        <desc>The path of the extension pack tarball.</desc>
-      </param>
-      <param name="name" type="wstring" dir="return">
-        <desc>The name of the installed extension pack.</desc>
-      </param>
-    </method>
-
     <method name="uninstall">
       <desc>Uninstalls an extension pack, removing all related files.</desc>
       <param name="name" type="wstring" dir="in">
@@ -14519,6 +14560,14 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="plugInModules" type="wstring" dir="return" safearray="yes">
         <desc>Array containing the plug-in modules (full paths).</desc>
       </param>
+    </method>
+
+    <method name="IsExtPackUsable">
+      <desc>Check if the given extension pack is loaded and usable.</desc>
+      <param name="name" type="wstring" dir="in">
+        <desc>The name of the extension pack to check for.</desc>
+      </param>
+      <param name="usable" type="boolean" dir="return"/>
     </method>
 
   </interface>
@@ -15111,8 +15160,10 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
     <method name="handleEvent">
       <desc>
-        Handle event callback (called directly by IEventSource in active mode, or could be
-        called by event processor thread in passive mode).
+        Handle event callback for active listeners. It is not called for passive listeners. After
+        calling handleEvent() on all active listeners and having received acknowledgement from all
+        passive listeners via IEventSource::eventProcessed(), the event is marked as processed and
+        IEvent::waitProcessed() will return immediately.
       </desc>
       <param name="event" type="IEvent" dir="in">
         <desc>Event available.</desc>

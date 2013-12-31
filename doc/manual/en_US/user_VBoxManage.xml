@@ -223,9 +223,9 @@ Settings file: '/home/username/.VirtualBox/Machines/SUSE 10.2/SUSE 10.2.xml'
 
         <listitem>
           <para><computeroutput>hddbackends</computeroutput> lists all known
-          hdd backends of VirtualBox. Beside the name of the backend itself,
-          descriptions about the capabilities, configuration and other useful
-          informations are displayed.</para>
+          virtual disk back-ends of VirtualBox. For each such format (such as
+          VDI, VMDK or RAW), this lists the back-end's capabilities and
+          configuration.</para>
         </listitem>
       </itemizedlist></para>
   </sect1>
@@ -481,9 +481,10 @@ Statistics update:  disabled
           </listitem>
 
           <listitem>
-            <para><computeroutput>--cpuexecutioncap &lt;1-100&gt;</computeroutput>: This
-            setting controls how much cpu time a virtual CPU can use. A value of
-            50 implies a single virtual CPU can use up to 50% of a single host CPU.</para>
+            <para><computeroutput>--cpuexecutioncap
+            &lt;1-100&gt;</computeroutput>: This setting controls how much cpu
+            time a virtual CPU can use. A value of 50 implies a single virtual
+            CPU can use up to 50% of a single host CPU.</para>
           </listitem>
 
           <listitem>
@@ -1353,11 +1354,11 @@ Virtual system 0:
       </listitem>
 
       <listitem>
-        <para>The <computeroutput>cpuexecutioncap &lt;1-100&gt;</computeroutput>: This
-        operation controls how much cpu time a virtual CPU can use. A value of
-        50 implies a single virtual CPU can use up to 50% of a single host CPU.</para>
+        <para>The <computeroutput>cpuexecutioncap
+        &lt;1-100&gt;</computeroutput>: This operation controls how much cpu
+        time a virtual CPU can use. A value of 50 implies a single virtual CPU
+        can use up to 50% of a single host CPU.</para>
       </listitem>
-
     </itemizedlist>
   </sect1>
 
@@ -1568,8 +1569,8 @@ Virtual system 0:
           <glossterm>port</glossterm>
 
           <glossdef>
-            <para>The number of the the storage controller's port which is to
-            be modified. Mandatory.</para>
+            <para>The number of the storage controller's port which is to be
+            modified. Mandatory.</para>
           </glossdef>
         </glossentry>
 
@@ -1577,7 +1578,7 @@ Virtual system 0:
           <glossterm>device</glossterm>
 
           <glossdef>
-            <para>The number of the the port's device which is to be modified.
+            <para>The number of the port's device which is to be modified.
             Mandatory.</para>
           </glossdef>
         </glossentry>
@@ -2494,7 +2495,7 @@ Value: 2006.01.01</screen>
           runnable on the guest. This command only works while a VM is up and
           running and has the following syntax:</para>
 
-          <screen>VBoxManage guestcontrol execute &lt;vmname&gt;|&lt;uuid&gt;
+          <screen>VBoxManage guestcontrol exec[ute] &lt;vmname&gt;|&lt;uuid&gt;
             &lt;path to program&gt;
             --username &lt;name&gt; --password &lt;password&gt;
             [--arguments "&lt;arguments&gt;"]
@@ -2544,9 +2545,9 @@ Value: 2006.01.01</screen>
                   unset.</para>
 
                   <para>By default, the new process in the guest will be
-                  created with the the standard environment of the guest OS.
-                  This option allows for modifying that environment. To
-                  set/modify a variable, a pair of
+                  created with the standard environment of the guest OS. This
+                  option allows for modifying that environment. To set/modify
+                  a variable, a pair of
                   <computeroutput>NAME=VALUE</computeroutput> must be
                   specified; to unset a certain variable, the name with no
                   value must set, e.g.
@@ -2603,8 +2604,7 @@ Value: 2006.01.01</screen>
                 <glossterm>--verbose</glossterm>
 
                 <glossdef>
-                  <para>Tells VBoxManage to be more verbose during the
-                  execution.</para>
+                  <para>Tells VBoxManage to be more verbose.</para>
                 </glossdef>
               </glossentry>
 
@@ -2655,10 +2655,10 @@ Value: 2006.01.01</screen>
           files from the host to the guest (only with installed Guest
           Additions 4.0 and later).</para>
 
-          <screen>VBoxManage copyto &lt;vmname&gt;|&lt;uuid&gt;
+          <screen>VBoxManage copyto|cp &lt;vmname&gt;|&lt;uuid&gt;
             &lt;source on host&gt; &lt;destination on guest&gt;
-            [--username "&lt;name&gt;"] [--password "&lt;password&gt;"]
-            [--dryrun] [--recursive] [--verbose] [--flags &lt;flags&gt;]</screen>
+            --username &lt;name&gt; --password &lt;password&gt;
+            [--dryrun] [--follow] [--recursive] [--verbose]</screen>
 
           <para>where the parameters mean: <glosslist>
               <glossentry>
@@ -2719,10 +2719,18 @@ Value: 2006.01.01</screen>
               </glossentry>
 
               <glossentry>
+                <glossterm>--follow</glossterm>
+
+                <glossdef>
+                  <para>Enables following symlinks on the host's source.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
                 <glossterm>--recursive</glossterm>
 
                 <glossdef>
-                  <para>Recursively copies files/directories.</para>
+                  <para>Recursively copies files/directories of the specified source.</para>
                 </glossdef>
               </glossentry>
 
@@ -2730,8 +2738,7 @@ Value: 2006.01.01</screen>
                 <glossterm>--verbose</glossterm>
 
                 <glossdef>
-                  <para>Tells VBoxManage to be more verbose during the copy
-                  operation.</para>
+                  <para>Tells VBoxManage to be more verbose.</para>
                 </glossdef>
               </glossentry>
 
@@ -2743,6 +2750,89 @@ Value: 2006.01.01</screen>
                   moment.</para>
                 </glossdef>
               </glossentry>
+            </glosslist></para>
+        </listitem>
+
+        <listitem>
+          <para><computeroutput>createdirectory</computeroutput>, which allows copying
+          files from the host to the guest (only with installed Guest
+          Additions 4.0 and later).</para>
+
+          <screen>VBoxManage createdir[ectory]|mkdir|md &lt;vmname&gt;|&lt;uuid&gt;
+            &lt;directory to create on guest&gt;
+            [--username "&lt;name&gt;"] [--password "&lt;password&gt;"]
+            [--parents] [--mode &lt;mode&gt;] [--verbose]</screen>
+
+          <para>where the parameters mean: <glosslist>
+              <glossentry>
+                <glossterm>uuid|vmname</glossterm>
+
+                <glossdef>
+                  <para>The VM UUID or VM name. Mandatory.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>directory to create on guest</glossterm>
+
+                <glossdef>
+                  <para>Absolute path of directory/directories to create on guest, e.g.
+                  <computeroutput>D:\Foo\Bar</computeroutput>. Parent directories
+                  need to exist (e.g. in this example <computeroutput>D:\Foo</computeroutput>)
+                  when switch <computeroutput>--parents</computeroutput> is omitted. The
+                  specified user must have appropriate rights to create the specified
+                  directory.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>--username &lt;name&gt;</glossterm>
+
+                <glossdef>
+                  <para>Name of the user the copy process should run under.
+                  This user must exist on the guest OS.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>--password &lt;password&gt;</glossterm>
+
+                <glossdef>
+                  <para>Password of the user account specified with
+                  <computeroutput>--username</computeroutput>. If not given,
+                  an empty password is assumed.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>--parents</glossterm>
+
+                <glossdef>
+                  <para>Also creates not yet existing parent directories of the
+                  specified directory, e.g. if the directory <computeroutput>D:\Foo</computeroutput>
+                  of <computeroutput>D:\Foo\Bar</computeroutput> does not exist yet it will
+                  be created. Without specifying <computeroutput>--parent</computeroutput> the
+                  action would have failed.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>--mode &lt;mode&gt;</glossterm>
+
+                <glossdef>
+                  <para>Sets the permission mode of the specified directory. Only octal
+                  modes (e.g. <computeroutput>0755</computeroutput>) are supported right now.</para>
+                </glossdef>
+              </glossentry>
+
+              <glossentry>
+                <glossterm>--verbose</glossterm>
+
+                <glossdef>
+                  <para>Tells VBoxManage to be more verbose.</para>
+                </glossdef>
+              </glossentry>
+
             </glosslist></para>
         </listitem>
 
@@ -2777,8 +2867,7 @@ Value: 2006.01.01</screen>
                 <glossterm>--verbose</glossterm>
 
                 <glossdef>
-                  <para>Tells VBoxManage to be more verbose during the
-                  update.</para>
+                  <para>Tells VBoxManage to be more verbose.</para>
                 </glossdef>
               </glossentry>
             </glosslist></para>

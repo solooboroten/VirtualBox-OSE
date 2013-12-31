@@ -45,8 +45,9 @@ public:
 
     HRESULT     FinalConstruct();
     void        FinalRelease();
-    HRESULT     initWithFile(const char *a_pszFile);
+    HRESULT     initWithFile(const char *a_pszFile, class ExtPackManager *a_pExtPackMgr);
     void        uninit();
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
     /** @}  */
 
     /** @name IExtPackBase interfaces
@@ -59,6 +60,10 @@ public:
     STDMETHOD(COMGETTER(PlugIns))(ComSafeArrayOut(IExtPackPlugIn *, a_paPlugIns));
     STDMETHOD(COMGETTER(Usable))(BOOL *a_pfUsable);
     STDMETHOD(COMGETTER(WhyUnusable))(BSTR *a_pbstrWhy);
+    STDMETHOD(COMGETTER(ShowLicense))(BOOL *a_pfShowIt);
+    STDMETHOD(COMGETTER(License))(BSTR *a_pbstrHtmlLicense);
+    STDMETHOD(QueryLicense)(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_bstrPreferredLanguage,
+                            IN_BSTR a_bstrFormat, BSTR *a_pbstrLicense);
     /** @}  */
 
     /** @name IExtPackFile interfaces
@@ -66,6 +71,12 @@ public:
     STDMETHOD(COMGETTER(FilePath))(BSTR *a_pbstrPath);
     STDMETHOD(Install)(void);
     /** @}  */
+
+private:
+    /** @name Misc init helpers
+     * @{ */
+    HRESULT     initFailed(const char *a_pszWhyFmt, ...);
+    /** @} */
 
 private:
     struct Data;
@@ -101,6 +112,7 @@ public:
     void        FinalRelease();
     HRESULT     initWithDir(VBOXEXTPACKCTX a_enmContext, const char *a_pszName, const char *a_pszDir);
     void        uninit();
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
     /** @}  */
 
     /** @name IExtPackBase interfaces
@@ -113,6 +125,10 @@ public:
     STDMETHOD(COMGETTER(PlugIns))(ComSafeArrayOut(IExtPackPlugIn *, a_paPlugIns));
     STDMETHOD(COMGETTER(Usable))(BOOL *a_pfUsable);
     STDMETHOD(COMGETTER(WhyUnusable))(BSTR *a_pbstrWhy);
+    STDMETHOD(COMGETTER(ShowLicense))(BOOL *a_pfShowIt);
+    STDMETHOD(COMGETTER(License))(BSTR *a_pbstrHtmlLicense);
+    STDMETHOD(QueryLicense)(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_bstrPreferredLanguage,
+                            IN_BSTR a_bstrFormat, BSTR *a_pbstrLicense);
     /** @}  */
 
     /** @name IExtPack interfaces
@@ -184,9 +200,9 @@ class ATL_NO_VTABLE ExtPackManager :
 
     HRESULT     FinalConstruct();
     void        FinalRelease();
-    HRESULT     init(VirtualBox *a_pVirtualBox, const char *a_pszDropZonePath, bool a_fCheckDropZone,
-                     VBOXEXTPACKCTX a_enmContext);
+    HRESULT     initExtPackManager(VirtualBox *a_pVirtualBox, VBOXEXTPACKCTX a_enmContext);
     void        uninit();
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
     /** @}  */
 
     /** @name IExtPack interfaces
@@ -194,15 +210,15 @@ class ATL_NO_VTABLE ExtPackManager :
     STDMETHOD(COMGETTER(InstalledExtPacks))(ComSafeArrayOut(IExtPack *, a_paExtPacks));
     STDMETHOD(Find)(IN_BSTR a_bstrName, IExtPack **a_pExtPack);
     STDMETHOD(OpenExtPackFile)(IN_BSTR a_bstrTarball, IExtPackFile **a_ppExtPackFile);
-    STDMETHOD(Install)(IN_BSTR a_bstrTarball, BSTR *a_pbstrName);
     STDMETHOD(Uninstall)(IN_BSTR a_bstrName, BOOL a_fForcedRemoval);
     STDMETHOD(Cleanup)(void);
     STDMETHOD(QueryAllPlugInsForFrontend)(IN_BSTR a_bstrFrontend, ComSafeArrayOut(BSTR, a_pabstrPlugInModules));
+    STDMETHOD(IsExtPackUsable(IN_BSTR a_bstrExtPack, BOOL *aUsable));
     /** @}  */
 
     /** @name Internal interfaces used by other Main classes.
      * @{ */
-    void        processDropZone(void);
+    HRESULT     doInstall(ExtPackFile *a_pExtPackFile);
     void        callAllVirtualBoxReadyHooks(void);
     void        callAllConsoleReadyHooks(IConsole *a_pConsole);
     void        callAllVmCreatedHooks(IMachine *a_pMachine);
@@ -212,6 +228,7 @@ class ATL_NO_VTABLE ExtPackManager :
     HRESULT     checkVrdeExtPack(Utf8Str const *a_pstrExtPack);
     int         getVrdeLibraryPathForExtPack(Utf8Str const *a_pstrExtPack, Utf8Str *a_pstrVrdeLibrary);
     HRESULT     getDefaultVrdeExtPack(Utf8Str *a_pstrExtPack);
+    bool        isExtPackUsable(const char *a_pszExtPack);
     /** @}  */
 
 private:

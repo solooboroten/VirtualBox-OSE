@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.4//EN"
-  "http://www.oasis-open.org/docbook/xml/4.4/docbookx.dtd">
-  <para>
+
   <sect1>
-    <title>Version 4.0.0 Beta 1 (2010-12-06)</title>
+    <title>Version 4.0.0 Beta 2 (2010-12-09)</title>
 
     <para>This version is a major update. The following major new features
       were added:</para>
@@ -11,7 +9,36 @@
     <itemizedlist>
 
       <listitem>
+        <para>Reorganization of VirtualBox into a base package and Extension Packs; see <xref linkend="intro-installing" />.</para>
+      </listitem>
+
+      <listitem>
         <para>New settings/disk file layout for VM portability; see <xref linkend="vboxconfigdata" />.</para>
+      </listitem>
+
+      <listitem>
+        <para>Major rework of the GUI (now called "VirtualBox Manager"):
+          <itemizedlist>
+            <listitem>
+              <para>Redesigned user interface with guest window preview (also for screenshots)</para>
+            </listitem>
+            <listitem>
+              <para>New display mode with downscaled guest display</para>
+            </listitem>
+            <listitem>
+              <para>Support for creating and starting .vbox desktop shortcuts (bug #1889)</para>
+            </listitem>
+            <listitem>
+              <para>The VM list is now sortable</para>
+            </listitem>
+            <listitem>
+              <para>Machines can now be deleted easily without a trace including snapshots and saved
+                states, and optionally including attached
+                disk images (bug #5511; also, <computeroutput>VBoxManage unregistervm --delete</computeroutput>
+                can do the same now)</para>
+            </listitem>
+          </itemizedlist>
+        </para>
       </listitem>
 
       <listitem>
@@ -23,33 +50,24 @@
       </listitem>
 
       <listitem>
-        <para>Language bindings: uniform Java bindings for both local
-          (COM/XPCOM) and remote (SOAP) invocation APIs</para>
-      </listitem>
-      
-      <listitem>
-        <para>Chipset: added support for the Intel ICH9 chipset with 3 PCI buses, PCI express
-        and Message Signaled Interrupts (MSI)</para>
-      </listitem>
-
-      <listitem>
-        <para>Audio: Intel HD Audio is now available as guest hardware, for better support
-          with modern guest operating systems (e.g. 64-bit Windows; bug #2785).</para>
-      </listitem>
-      
-      <listitem>
-        <para>GUI: redesigned user interface with guest window preview</para>
+        <para>New virtual hardware:
+          <itemizedlist>
+            <listitem>
+              <para>Intel ICH9 chipset with three PCI buses, PCI Express and Message Signaled Interrupts (MSI)</para>
+            </listitem>
+            <listitem>
+              <para>Intel HD Audio, for better support of modern guest operating systems
+                (e.g. 64-bit Windows; bug #2785).</para>
+            </listitem>
+          </itemizedlist>
+        </para>
       </listitem>
 
-      <listitem>
-        <para>GUI: new display mode with downscaled guest display</para>
-      </listitem>
-      
       <listitem>
         <para>Resource control: added support for limiting a VM's CPU time and IO
         bandwidth.</para>
       </listitem>
-      
+
       <listitem>
         <para>Storage: support asynchronous I/O for iSCSI, VMDK, VHD and
         Parallels images</para>
@@ -60,12 +78,19 @@
       </listitem>
 
       <listitem>
-        <para>Windows Additions: support for automatically updating the Guest Additions
-        (requires installed Windows Guest Additions 4.0 or later)</para>
+        <para>Guest Additions: support for copying files into the guest file system;
+          the Windows Additions can now automatically update themselves  (requires
+          installed Windows Guest Additions 4.0 or later)</para>
       </listitem>
 
       <listitem>
-        <para>Guest Additions: support for copying files into the guest file system</para>
+        <para>Language bindings: uniform Java bindings for both local
+          (COM/XPCOM) and remote (SOAP) invocation APIs</para>
+      </listitem>
+
+     <listitem>
+        <para>Guest Additions: support for multiple virtual screens in Linux
+           and Solaris guests using X.Org server 1.3 and later.</para>
       </listitem>
 
     </itemizedlist>
@@ -81,15 +106,6 @@
 
       <listitem>
         <para>VMM: fixed guru meditation when running Minix (VT-x only; bug #6557)</para>
-      </listitem>
-
-      <listitem>
-        <para>GUI: the guest VM list is now sortable</para>
-      </listitem>
-
-      <listitem>
-        <para>GUI: add the possibility to delete all harddisk attached to an
-          VM, when this VM is deleted (bug #5511)</para>
       </listitem>
 
       <listitem>
@@ -111,17 +127,6 @@
       </listitem>
 
       <listitem>
-        <para>Settings: deleting a machine now automatically deletes all
-        snapshots and saved states as well, it is no longer necessary
-        to manually delete snapshots first; VBoxManage unregistervm --delete
-        can do the same now</para>
-      </listitem>
-
-      <listitem>
-        <para>Snapshots: added screenshots</para>
-      </listitem>
-
-      <listitem>
         <para>3D support: allow use of <emphasis>CR_SYSTEM_GL_PATH</emphasis>
           again (bug #6864)</para>
       </listitem>
@@ -137,11 +142,23 @@
       </listitem>
 
       <listitem>
+        <para>3D support: fixed XPDM Windows Explorer crashes on Windows Vista/Win7 guests</para>
+      </listitem>
+
+      <listitem>
+        <para>3D support: fixed Direct3D 8/9 support on WindowsXP guests</para>
+      </listitem>
+
+      <listitem>
         <para>2D Video acceleration: multimonitor support</para>
       </listitem>
 
       <listitem>
         <para>VRDP: fixed rare crash in multimonitor configuration</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: support for upstream audio</para>
       </listitem>
 
       <listitem>
@@ -177,7 +194,7 @@
         <para>BIOS: reduce the stack usage of the VESA BIOS function
           <emphasis>#4F01</emphasis> (Quake fix)</para>
       </listitem>
-      
+
       <listitem>
         <para>OVF/OVA: significant performance improvements during export and import
         </para>
@@ -5802,7 +5819,4 @@
 
   </sect1>
 
-  <para>In VirtualBox 3.2, changelog information for versions before 2.0 were removed in order to save space.
-  To access this information, please consult the user manual of VirtualBox 3.1 or earlier.</para>
 
-  </para>

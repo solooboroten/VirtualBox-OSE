@@ -20,6 +20,7 @@
 
 #include <iprt/cpp/ministring.h>
 #include <iprt/fs.h>
+#include <iprt/vfs.h>
 
 
 /** @name VBOX_EXTPACK_DESCRIPTION_NAME
@@ -31,6 +32,12 @@
 /** @name VBOX_EXTPACK_SIGNATURE_NAME
  * The name of the signature file in an extension pack.  */
 #define VBOX_EXTPACK_SIGNATURE_NAME     "ExtPack.signature"
+/** @name VBOX_EXTPACK_LICENSE_NAME_PREFIX
+ * The name prefix of a license file in an extension pack. There can be
+ * several license files in a pack, the variations being on locale, language
+ * and format (HTML, RTF, plain text). All extension packages shall include
+ * a  */
+#define VBOX_EXTPACK_LICENSE_NAME_PREFIX "ExtPack.license"
 /** @name VBOX_EXTPACK_SUFFIX
  * The suffix of a extension pack tarball. */
 #define VBOX_EXTPACK_SUFFIX             ".vbox-extpack"
@@ -46,6 +53,10 @@
 /** The architecture-independent application data subdirectory where the
  * certificates are installed.  Relative to RTPathAppPrivateNoArch. */
 #define VBOX_EXTPACK_CERT_DIR           "ExtPackCertificates"
+
+/** The maximum entry name length.
+ * Play short and safe. */
+#define VBOX_EXTPACK_MAX_MEMBER_NAME_LENGTH 128
 
 
 /**
@@ -88,6 +99,8 @@ typedef struct VBOXEXTPACKDESC
     uint32_t                cPlugIns;
     /** Pointer to an array of plug-in descriptors. */
     PVBOXEXTPACKPLUGINDESC  paPlugIns;
+    /** Whether to show the license prior to installation. */
+    bool                    fShowLicense;
 } VBOXEXTPACKDESC;
 
 /** Pointer to a extension pack descriptor. */
@@ -97,6 +110,7 @@ typedef VBOXEXTPACKDESC const *PCVBOXEXTPACKDESC;
 
 
 iprt::MiniString   *VBoxExtPackLoadDesc(const char *a_pszDir, PVBOXEXTPACKDESC a_pExtPackDesc, PRTFSOBJINFO a_pObjInfo);
+iprt::MiniString   *VBoxExtPackLoadDescFromVfsFile(RTVFSFILE hVfsFile, PVBOXEXTPACKDESC a_pExtPackDesc, PRTFSOBJINFO a_pObjInfo);
 iprt::MiniString   *VBoxExtPackExtractNameFromTarballPath(const char *pszTarball);
 void                VBoxExtPackFreeDesc(PVBOXEXTPACKDESC a_pExtPackDesc);
 bool                VBoxExtPackIsValidName(const char *pszName);
@@ -106,6 +120,11 @@ iprt::MiniString   *VBoxExtPackUnmangleName(const char *pszMangledName, size_t c
 int                 VBoxExtPackCalcDir(char *pszExtPackDir, size_t cbExtPackDir, const char *pszParentDir, const char *pszName);
 bool                VBoxExtPackIsValidVersionString(const char *pszName);
 bool                VBoxExtPackIsValidModuleString(const char *pszModule);
+
+int                 VBoxExtPackValidateMember(const char *pszName, RTVFSOBJTYPE enmType, RTVFSOBJ hVfsObj, char *pszError, size_t cbError);
+int                 VBoxExtPackOpenTarFss(RTFILE hTarballFile, char *pszError, size_t cbError, PRTVFSFSSTREAM phTarFss);
+int                 VBoxExtPackValidateTarball(RTFILE hTarballFile, const char *pszExtPackName, const char *pszTarball,
+                                               char *pszError, size_t cbError, PRTMANIFEST phValidManifest, PRTVFSFILE phXmlFile);
 
 
 #endif

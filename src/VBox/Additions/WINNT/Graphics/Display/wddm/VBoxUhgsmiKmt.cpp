@@ -411,7 +411,10 @@ static HRESULT vboxUhgsmiKmtEngineCreate(PVBOXUHGSMI_PRIVATE_KMT pHgsmi, BOOL bD
     if (hr == S_OK)
     {
         hr = vboxDispKmtOpenAdapter(&pHgsmi->Callbacks, &pHgsmi->Adapter);
+#ifdef DEBUG_misha
+        /* may fail with xpdm driver */
         Assert(hr == S_OK);
+#endif
         if (hr == S_OK)
         {
             hr = vboxDispKmtCreateDevice(&pHgsmi->Adapter, &pHgsmi->Device);
@@ -540,7 +543,7 @@ HRESULT vboxDispKmtCallbacksInit(PVBOXDISPKMT_CALLBACKS pCallbacks)
         Log((__FUNCTION__": pfnD3DKMTUnlock = %p\n", pCallbacks->pfnD3DKMTUnlock));
         bSupported &= !!(pCallbacks->pfnD3DKMTUnlock);
 
-        Assert(bSupported);
+        /*Assert(bSupported);*/
         if (bSupported)
         {
             return S_OK;
@@ -624,7 +627,10 @@ HRESULT vboxDispKmtOpenAdapter(PVBOXDISPKMT_CALLBACKS pCallbacks, PVBOXDISPKMT_A
     if (OpenAdapterData.hDc)
     {
         NTSTATUS Status = pCallbacks->pfnD3DKMTOpenAdapterFromHdc(&OpenAdapterData);
+#ifdef DEBUG_misha
+        /* may fail with xpdm driver */
         Assert(!Status);
+#endif
         if (!Status)
         {
             pAdapter->hAdapter = OpenAdapterData.hAdapter;

@@ -159,13 +159,14 @@ VBOX_VERSION_MINOR = 0
 # will be published, odd numbers are set during development.
 VBOX_VERSION_BUILD = 0
 # Full version string (may include more than just x.y.z, but no spaces or other problematic chars).
-VBOX_VERSION_STRING = $(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_VERSION_BUILD)_BETA1
+VBOX_VERSION_STRING = $(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_VERSION_BUILD)_BETA2
 # Force the additions.sh script to get an exact additions build when we're doing the release.
 
 ifeq ($(int-mod $(VBOX_VERSION_BUILD),2),0)
  export VBOX_ADDITIONS_SH_MODE = release
  export VBOX_DOCUMENTATION_SH_MODE = release
  export VBOX_EFI_SH_MODE = release
+ export VBOX_EXTPACKS_SH_MODE = release
 endif
 
 # Some info on the vendor
@@ -1324,6 +1325,9 @@ ifdef VBOX_PATH_APP_DOCS
 endif
 if defined(VBOX_WITH_STRICT_LOCKS) && ($(KBUILD_TYPE) == "debug" || $(KBUILD_TYPE) == "strict")
  DEFS += RT_LOCK_STRICT RT_LOCK_STRICT_ORDER
+endif
+ifdef VBOX_WITH_EF_WRAPS
+ DEFS += RTMEM_WRAP_TO_EF_APIS RTMEM_WRAP_SOME_NEW_AND_DELETE_TO_EF
 endif
 
 #
@@ -4199,7 +4203,7 @@ else # the gcc guys
  TEMPLATE_VBOXGUESTR3EXE_LDFLAGS.linux = $(filter-out $(VBOX_GCC_ORIGIN_OPT),$(TEMPLATE_VBOXR3EXE_LDFLAGS.linux))
 endif
 TEMPLATE_VBOXGUESTR3EXE_INST      = $(INST_ADDITIONS)
-TEMPLATE_VBOXGUESTR3EXE_DEFS     := $(TEMPLATE_VBOXR3EXE_DEFS) IN_GUEST IN_GUEST_R3 IN_RT_R3
+TEMPLATE_VBOXGUESTR3EXE_DEFS     := $(filter-out $(ARCH_BITS_DEFS), $(TEMPLATE_VBOXR3EXE_DEFS)) IN_GUEST IN_GUEST_R3 IN_RT_R3 $(VBOX_GC_ARCH_BITS_DEFS)
 TEMPLATE_VBOXGUESTR3EXE_DEFS.linux := $(TEMPLATE_VBOXR3EXE_DEFS.linux) LOG_USE_C99 RT_WITHOUT_EXEC_ALLOC
 ifeq ($(KBUILD_TARGET),linux) # As few libs as possible on linux.
  TEMPLATE_VBOXGUESTR3EXE_LIBS     = pthread rt m
@@ -4469,6 +4473,13 @@ VBOX_LIB_VBGL_R3_XFREE86         = $(VBOX_PATH_ADDITIONS_LIB)/VBoxGuestR3LibXFre
 VBOX_LIB_VBGL_R3_SHARED          = $(VBOX_PATH_ADDITIONS_LIB)/VBoxGuestR3LibShared$(VBOX_SUFF_LIB)
 VBOX_LIB_VBGL_R0BASE             = $(VBOX_PATH_ADDITIONS_LIB)/VBoxGuestR0LibBase$(VBOX_SUFF_LIB)
 VBOX_LIB_VBGL_R0                 = $(VBOX_PATH_ADDITIONS_LIB)/VBoxGuestR0Lib$(VBOX_SUFF_LIB)
+ifeq ($(KBUILD_TARGET),x86)
+ VBOX_LIB_IPRT_GUEST_R3_X86      = $(VBOX_LIB_IPRT_GUEST_R3)
+ VBOX_LIB_VBGL_R3_X86            = $(VBOX_LIB_VBGL_R3)
+else
+ VBOX_LIB_IPRT_GUEST_R3_X86      = $(VBOX_PATH_ADDITIONS_LIB)/RuntimeGuestR3-x86$(VBOX_SUFF_LIB)
+ VBOX_LIB_VBGL_R3_X86            = $(VBOX_PATH_ADDITIONS_LIB)/VBoxGuestR3Lib-x86$(VBOX_SUFF_LIB)
+endif
 
 
 

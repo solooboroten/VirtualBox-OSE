@@ -44,7 +44,7 @@
 #include "VBox/com/defs.h"
 #include "VBox/com/assert.h"
 
-#include <iprt/alloc.h>
+#include <iprt/mem.h>
 #include <iprt/cpp/ministring.h>
 
 namespace com
@@ -124,6 +124,11 @@ public:
         copyFrom(that);
     }
 
+    Bstr(const char *a_pThat, size_t a_cchMax)
+    {
+        copyFromN(a_pThat, a_cchMax);
+    }
+
     ~Bstr()
     {
         setNull();
@@ -157,6 +162,8 @@ public:
         cleanup();
         return *this;
     }
+
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
 
     /** Case sensitivity selector. */
     enum CaseSensitivity
@@ -386,6 +393,17 @@ protected:
             m_bstr = NULL;
     }
 
+    /**
+     * Variant of copyFrom for sub-string constructors.
+     *
+     * @param   a_pszSrc            The source string.
+     * @param   a_cchMax            The maximum number of chars (not
+     *                              codepoints) to copy.  If you pass RTSTR_MAX
+     *                              it'll be exactly like copyFrom().
+     * @throws  std::bad_alloc
+     */
+    void copyFromN(const char *a_pszSrc, size_t a_cchSrc);
+
     BSTR m_bstr;
 
     friend class Utf8Str; /* to access our raw_copy() */
@@ -478,6 +496,8 @@ public:
         return *this;
     }
 
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
+
 #if defined(VBOX_WITH_XPCOM)
     /**
      * Intended to assign instances to |char *| out parameters from within the
@@ -531,6 +551,11 @@ public:
     Utf8Str& stripExt();
 
     /**
+     * Converts all '\' characters into '/'.
+     */
+    Utf8Str& useForwardSlashes();
+
+    /**
      *  Static immutable empty-string object. May be used for comparison purposes.
      */
     static const Utf8Str Empty;
@@ -575,6 +600,8 @@ public:
         va_end(va);
     }
 
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
+
 protected:
     Utf8StrFmt()
     { }
@@ -603,6 +630,8 @@ public:
         copyFrom(Utf8Str(aFormat, args).c_str());
         va_end(args);
     }
+
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
 };
 
 /**
@@ -623,6 +652,8 @@ public:
     {
         copyFrom(Utf8Str(aFormat, aArgs).c_str());
     }
+
+    RTMEMEF_NEW_AND_DELETE_OPERATORS();
 };
 
 } /* namespace com */

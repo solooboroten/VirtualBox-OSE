@@ -717,26 +717,62 @@ STDMETHODIMP MachineDebugger::GetStats (IN_BSTR aPattern, BOOL aWithDescriptions
 }
 
 /**
- * Set the new patch manager enabled flag.
+ * Injects an NMI.
  *
  * @returns COM status code
- * @param   new patch manager enabled flag
  */
 STDMETHODIMP MachineDebugger::InjectNMI()
 {
     LogFlowThisFunc(("\n"));
 
     AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+        Console::SafeVMPtr ptrVM(mParent);
+        hrc = ptrVM.rc();
+        if (SUCCEEDED(hrc))
+        {
+            int vrc = HWACCMR3InjectNMI(ptrVM);
+            if (RT_SUCCESS(vrc))
+                hrc = S_OK;
+            else
+                hrc = setError(E_FAIL, tr("HWACCMR3InjectNMI failed with %Rrc"), vrc);
+        }
+    }
+    return hrc;
+}
 
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+/**
+ * Triggers a guest core dump.
+ *
+ * @returns COM status code
+ * @param
+ */
+STDMETHODIMP MachineDebugger::DumpGuestCore(IN_BSTR a_bstrFilename)
+{
+    CheckComArgStrNotEmptyOrNull(a_bstrFilename);
+    Utf8Str strFilename(a_bstrFilename);
 
-    Console::SafeVMPtr pVM(mParent);
-    if (FAILED(pVM.rc())) return pVM.rc();
+    AutoCaller autoCaller(this);
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+        Console::SafeVMPtr ptrVM(mParent);
+        hrc = ptrVM.rc();
+        if (SUCCEEDED(hrc))
+        {
+            int vrc = DBGFR3CoreWrite(ptrVM, strFilename.c_str(), false /*fReplaceFile*/);
+            if (RT_SUCCESS(vrc))
+                hrc = S_OK;
+            else
+                hrc = setError(E_FAIL, tr("DBGFR3CoreWrite failed with %Rrc"), vrc);
+        }
+    }
 
-    HWACCMR3InjectNMI(pVM);
-
-    return S_OK;
+    return hrc;
 }
 
 

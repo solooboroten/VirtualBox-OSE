@@ -5998,7 +5998,7 @@ HRESULT Machine::openRemoteSession(IInternalSessionControl *aControl,
 
     /* get the path to the executable */
     char szPath[RTPATH_MAX];
-    RTPathAppPrivateArch(szPath, RTPATH_MAX);
+    RTPathAppPrivateArch(szPath, sizeof(szPath) - 1);
     size_t sz = strlen(szPath);
     szPath[sz++] = RTPATH_DELIMITER;
     szPath[sz] = 0;
@@ -11106,7 +11106,7 @@ HRESULT SessionMachine::onNATRedirectRuleChange(ULONG ulSlot, BOOL aNatRuleRemov
      * instead acting like callback we ask IVirtualBox deliver corresponding event
      */
 
-    mParent->onNatRedirectChange(getId(), ulSlot, aNatRuleRemove, aRuleName, aProto, aHostIp, aHostPort, aGuestIp, aGuestPort);
+    mParent->onNatRedirectChange(getId(), ulSlot, RT_BOOL(aNatRuleRemove), aRuleName, aProto, aHostIp, aHostPort, aGuestIp, aGuestPort);
     return S_OK;
 }
 

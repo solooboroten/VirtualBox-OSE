@@ -43,10 +43,10 @@
 # define VBOXWDDMDISP_DEBUG
 # define VBOXWDDMDISP_DEBUG_FLOW
 # define VBOXWDDMDISP_DEBUG_DUMPSURFDATA
-# define VBOXWDDMDISP_DEBUG_VEHANDLER
+# ifdef DEBUG_misha
+//#  define VBOXWDDMDISP_DEBUG_VEHANDLER
+# endif
 #endif
-
-//#define VBOXWDDMDISP_DEBUG_VEHANDLER
 
 #if defined(VBOXWDDMDISP_DEBUG) || defined(VBOX_WDDMDISP_WITH_PROFILE) || defined(VBOXWDDM_TEST_UHGSMI)
 # define VBOXWDDMDISP_DEBUG_PRINT
@@ -78,15 +78,28 @@ void vboxVDbgVEHandlerRegister();
 void vboxVDbgVEHandlerUnregister();
 #endif
 
+#define vboxVDbgPrint Log
+#define vboxVDbgPrintF LogFlow
+#define vboxVDbgPrintR LogRel
+
+#ifdef VBOXWDDMDISP_DEBUG
+VOID vboxVDbgDoDumpAllocData(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, const RECT *pRect, const char* pSuffix);
+VOID vboxVDbgDoDumpAllocSurfData(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, IDirect3DSurface9 *pSurf, const RECT *pRect, const char* pSuffix);
+VOID vboxVDbgDoDumpSurfData(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const RECT *pRect, IDirect3DSurface9 *pSurf, const char* pSuffix);
+void vboxVDbgDoPrintRect(const char * pPrefix, const RECT *pRect, const char * pSuffix);
+void vboxVDbgDoPrintAlloc(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const char * pSuffix);
+#endif
+
+#if 0
 #ifdef VBOXWDDMDISP_DEBUG
 extern bool g_VDbgTstDumpEnable;
 extern bool g_VDbgTstDumpOnSys2VidSameSizeEnable;
 
-VOID vboxVDbgDoDumpAllocData(const PVBOXWDDMDISP_DEVICE pDevice, const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, const RECT *pRect, const char* pSuffix);
-VOID vboxVDbgDoDumpAllocSurfData(const PVBOXWDDMDISP_DEVICE pDevice, const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, IDirect3DSurface9 *pSurf, const RECT *pRect, const char* pSuffix);
-VOID vboxVDbgDoDumpSurfData(const PVBOXWDDMDISP_DEVICE pDevice, const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const RECT *pRect, IDirect3DSurface9 *pSurf, const char* pSuffix);
-void vboxVDbgDoMpPrintRect(const PVBOXWDDMDISP_DEVICE pDevice, const char * pPrefix, const RECT *pRect, const char * pSuffix);
-void vboxVDbgDoMpPrintAlloc(const PVBOXWDDMDISP_DEVICE pDevice, const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const char * pSuffix);
+VOID vboxVDbgDoDumpAllocData(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, const RECT *pRect, const char* pSuffix);
+VOID vboxVDbgDoDumpAllocSurfData(const char * pPrefix, PVBOXWDDMDISP_ALLOCATION pAlloc, IDirect3DSurface9 *pSurf, const RECT *pRect, const char* pSuffix);
+VOID vboxVDbgDoDumpSurfData(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const RECT *pRect, IDirect3DSurface9 *pSurf, const char* pSuffix);
+void vboxVDbgDoMpPrintRect(const char * pPrefix, const RECT *pRect, const char * pSuffix);
+void vboxVDbgDoMpPrintAlloc(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const char * pSuffix);
 
 #define vboxVDbgBreak() AssertBreakpoint()
 #define vboxVDbgPrint(_m) \
@@ -143,6 +156,7 @@ void vboxVDbgDoMpPrintAlloc(const PVBOXWDDMDISP_DEVICE pDevice, const char * pPr
 #define vboxVDbgPrint(_m)  do {} while (0)
 #define vboxVDbgPrintR vboxVDbgPrint
 #define vboxVDbgPrintF vboxVDbgPrint
+#endif
 #endif
 
 # ifdef VBOXWDDMDISP
