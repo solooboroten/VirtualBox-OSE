@@ -478,7 +478,7 @@ RTDECL(uint32_t)    RTVfsIoStrmRelease(RTVFSIOSTREAM hVfsIos);
  * @param   hVfsIos         The VFS I/O stream handle.
  * @sa      RTVfsFileToIoStream
  */
-RTDECL(RTVFSFILE) RTVfsIoStrmToFile(RTVFSIOSTREAM hVfsIos);
+RTDECL(RTVFSFILE)   RTVfsIoStrmToFile(RTVFSIOSTREAM hVfsIos);
 
 /**
  * Query information about the I/O stream.
@@ -489,7 +489,7 @@ RTDECL(RTVFSFILE) RTVfsIoStrmToFile(RTVFSIOSTREAM hVfsIos);
  * @param   enmAddAttr      Which additional attributes should be retrieved.
  * @sa      RTFileQueryInfo
  */
-RTDECL(int) RTVfsIoStrmQueryInfo(RTVFSIOSTREAM hVfsIos, PRTFSOBJINFO pObjInfo, RTFSOBJATTRADD enmAddAttr);
+RTDECL(int)         RTVfsIoStrmQueryInfo(RTVFSIOSTREAM hVfsIos, PRTFSOBJINFO pObjInfo, RTFSOBJATTRADD enmAddAttr);
 
 /**
  * Read bytes from the I/O stream.
@@ -519,7 +519,7 @@ RTDECL(int) RTVfsIoStrmQueryInfo(RTVFSIOSTREAM hVfsIos, PRTFSOBJINFO pObjInfo, R
  * @sa      RTVfsFileRead, RTFileRead, RTPipeRead, RTPipeReadBlocking,
  *          RTSocketRead
  */
-RTDECL(int) RTVfsIoStrmRead(RTVFSIOSTREAM hVfsIos, void *pvBuf, size_t cbToRead, bool fBlocking, size_t *pcbRead);
+RTDECL(int)         RTVfsIoStrmRead(RTVFSIOSTREAM hVfsIos, void *pvBuf, size_t cbToRead, bool fBlocking, size_t *pcbRead);
 
 /**
  * Write bytes to the I/O stream.
@@ -537,7 +537,7 @@ RTDECL(int) RTVfsIoStrmRead(RTVFSIOSTREAM hVfsIos, void *pvBuf, size_t cbToRead,
  * @sa      RTVfsFileWrite, RTFileWrite, RTPipeWrite, RTPipeWriteBlocking,
  *          RTSocketWrite
  */
-RTDECL(int) RTVfsIoStrmWrite(RTVFSIOSTREAM hVfsIos, const void *pvBuf, size_t cbToWrite, bool fBlocking, size_t *pcbWritten);
+RTDECL(int)         RTVfsIoStrmWrite(RTVFSIOSTREAM hVfsIos, const void *pvBuf, size_t cbToWrite, bool fBlocking, size_t *pcbWritten);
 
 /**
  * Reads bytes from the I/O stream into a scatter buffer.
@@ -609,8 +609,8 @@ RTDECL(int)         RTVfsIoStrmFlush(RTVFSIOSTREAM hVfsIos);
  * @param   pfRetEvents     Where to return the event mask.
  * @sa      RTVfsFilePoll, RTPollSetAdd, RTPoll, RTPollNoResume.
  */
-RTDECL(int)      RTVfsIoStrmPoll(RTVFSIOSTREAM hVfsIos, uint32_t fEvents, RTMSINTERVAL cMillies, bool fIntr,
-                                 uint32_t *pfRetEvents);
+RTDECL(int)         RTVfsIoStrmPoll(RTVFSIOSTREAM hVfsIos, uint32_t fEvents, RTMSINTERVAL cMillies, bool fIntr,
+                                    uint32_t *pfRetEvents);
 /**
  * Tells the current I/O stream position.
  *
@@ -646,6 +646,29 @@ RTDECL(int)         RTVfsIoStrmZeroFill(RTVFSIOSTREAM hVfsIos, RTFOFF cb);
  * @param   hVfsIos         The VFS I/O stream handle.
  */
 RTDECL(bool)        RTVfsIoStrmIsAtEnd(RTVFSIOSTREAM hVfsIos);
+
+/**
+ * Process the rest of the stream, checking if it's all valid UTF-8 encoding.
+ *
+ * @returns VBox status cod.e
+ *
+ * @param   hVfsIos         The VFS I/O stream handle.
+ * @param   fFlags          Flags governing the validation, see
+ *                          RTVFS_VALIDATE_UTF8_XXX.
+ * @param   poffError       Where to return the error offset. Optional.
+ */
+RTDECL(int)        RTVfsIoStrmValidateUtf8Encoding(RTVFSIOSTREAM hVfsIos, uint32_t fFlags, PRTFOFF poffError);
+
+/** @defgroup RTVFS_VALIDATE_UTF8_XXX   RTVfsIoStrmValidateUtf8Encoding flags.
+ * @{ */
+/** The text must not contain any null terminator codepoints. */
+#define RTVFS_VALIDATE_UTF8_NO_NULL         RT_BIT_32(0)
+/** The codepoints must be in the range covered by RTC-3629.  */
+#define RTVFS_VALIDATE_UTF8_BY_RTC_3629     RT_BIT_32(1)
+/** Mask of valid flags. */
+#define RTVFS_VALIDATE_UTF8_VALID_MASK      UINT32_C(0x00000003)
+/** @}  */
+
 /** @} */
 
 

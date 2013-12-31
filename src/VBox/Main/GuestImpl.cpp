@@ -345,6 +345,7 @@ HRESULT Guest::taskCopyFile(TaskGuest *aTask)
                             /* Transfer the current chunk ... */
                             ULONG uBytesWritten;
                             rc = pGuest->SetProcessInput(uPID, uFlags,
+                                                         10 * 1000 /* Wait 10s for getting the input data transfered. */,
                                                          ComSafeArrayAsInParam(aInputData), &uBytesWritten);
                             if (FAILED(rc))
                             {
@@ -459,7 +460,7 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
         if (RT_FAILURE(vrc))
         {
             rc = TaskGuest::setProgressErrorInfo(VBOX_E_FILE_ERROR, aTask->progress,
-                                                 Guest::tr("Invalid installation medium (%s) detected"),
+                                                 Guest::tr("Invalid installation medium detected: \"%s\""),
                                                  aTask->strSource.c_str());
         }
         else
@@ -474,7 +475,8 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                 vrc = RTFileSeek(iso.file, cbOffset, RTFILE_SEEK_BEGIN, NULL);
                 if (RT_FAILURE(vrc))
                     rc = TaskGuest::setProgressErrorInfo(VBOX_E_IPRT_ERROR, aTask->progress,
-                                                         Guest::tr("Could not seek to setup file on installation medium (%Rrc)"), vrc);
+                                                         Guest::tr("Could not seek to setup file on installation medium \"%s\" (%Rrc)"),
+                                                         aTask->strSource.c_str(), vrc);
             }
             else
             {
@@ -482,12 +484,14 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                 {
                     case VERR_FILE_NOT_FOUND:
                         rc = TaskGuest::setProgressErrorInfo(VBOX_E_IPRT_ERROR, aTask->progress,
-                                                             Guest::tr("Setup file was not found on installation medium"));
+                                                             Guest::tr("Setup file was not found on installation medium \"%s\""),
+                                                             aTask->strSource.c_str());
                         break;
 
                     default:
                         rc = TaskGuest::setProgressErrorInfo(VBOX_E_IPRT_ERROR, aTask->progress,
-                                                             Guest::tr("An unknown error occured while retrieving information of setup file (%Rrc)"), vrc);
+                                                             Guest::tr("An unknown error (%Rrc) occured while retrieving information of setup file on installation medium \"%s\""),
+                                                             vrc, aTask->strSource.c_str());
                         break;
                 }
             }
@@ -498,7 +502,6 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
             if (RT_SUCCESS(vrc))
             {
                 /* Okay, we're ready to start our copy routine on the guest! */
-                LogRel(("Automatic update of Guest Additions started\n"));
                 aTask->progress->SetCurrentOperationProgress(15);
 
                 /* Prepare command line args. */
@@ -541,6 +544,7 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                              * is not running (yet) or that the Guest Additions are too old (because VBoxService does not
                              * support the guest execution feature in this version). */
                             case VERR_NOT_FOUND:
+                                LogRel(("Guest Additions seem not to be installed yet\n"));
                                 rc = TaskGuest::setProgressErrorInfo(VBOX_E_NOT_SUPPORTED, aTask->progress,
                                                                      Guest::tr("Guest Additions seem not to be installed or are not ready to update yet"));
                                 break;
@@ -548,6 +552,7 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                             /* Getting back a VERR_INVALID_PARAMETER indicates that the installed Guest Additions are supporting the guest
                              * execution but not the built-in "vbox_cat" tool of VBoxService (< 4.0). */
                             case VERR_INVALID_PARAMETER:
+                                LogRel(("Guest Additions are installed but don't supported automatic updating\n"));
                                 rc = TaskGuest::setProgressErrorInfo(VBOX_E_NOT_SUPPORTED, aTask->progress,
                                                                      Guest::tr("Installed Guest Additions do not support automatic updating"));
                                 break;
@@ -561,7 +566,9 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                     }
                     else
                     {
-                        LogRel(("Copying Guest Additions installer to guest ...\n"));
+                        LogRel(("Automatic update of Guest Additions started, using \"%s\"\n", aTask->strSource.c_str()));
+                        LogRel(("Copying Guest Additions installer \"%s\" to \"%s\" on guest ...\n",
+                                installerImage.c_str(), strInstallerPath.c_str()));
                         aTask->progress->SetCurrentOperationProgress(20);
 
                         /* Wait for process to exit ... */
@@ -600,6 +607,7 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                                 #endif
                                     ULONG uBytesWritten;
                                     rc = pGuest->SetProcessInput(uPID, uFlags,
+                                                                 10 * 1000 /* Wait 10s for getting the input data transfered. */,
                                                                  ComSafeArrayAsInParam(aInputData), &uBytesWritten);
                                     if (FAILED(rc))
                                     {
@@ -616,6 +624,12 @@ HRESULT Guest::taskUpdateGuestAdditions(TaskGuest *aTask)
                                 #endif
                                     Assert(cbLength >= uBytesWritten);
                                     cbLength -= uBytesWritten;
+                                }
+                                else if (RT_FAILURE(vrc))
+                                {
+                                    rc = TaskGuest::setProgressErrorInfo(VBOX_E_IPRT_ERROR, aTask->progress,
+                                                                         Guest::tr("Error while reading setup file \"%s\" (To read: %u, Size: %u) from installation medium (%Rrc)"),
+                                                                         installerImage.c_str(), cbToRead, cbLength, vrc);
                                 }
                             }
 
@@ -2150,7 +2164,7 @@ HRESULT Guest::executeProcessInternal(IN_BSTR aCommand, ULONG aFlags,
 #endif /* VBOX_WITH_GUEST_CONTROL */
 }
 
-STDMETHODIMP Guest::SetProcessInput(ULONG aPID, ULONG aFlags, ComSafeArrayIn(BYTE, aData), ULONG *aBytesWritten)
+STDMETHODIMP Guest::SetProcessInput(ULONG aPID, ULONG aFlags, ULONG aTimeoutMS, ComSafeArrayIn(BYTE, aData), ULONG *aBytesWritten)
 {
 #ifndef VBOX_WITH_GUEST_CONTROL
     ReturnComNotImplemented();
@@ -2210,6 +2224,10 @@ STDMETHODIMP Guest::SetProcessInput(ULONG aPID, ULONG aFlags, ComSafeArrayIn(BYT
                                     TRUE /* Cancelable */);
             }
             if (FAILED(rc)) return rc;
+
+            /* Adjust timeout. */
+            if (aTimeoutMS == 0)
+                aTimeoutMS = UINT32_MAX;
 
             PCALLBACKDATAEXECINSTATUS pData = (PCALLBACKDATAEXECINSTATUS)RTMemAlloc(sizeof(CALLBACKDATAEXECINSTATUS));
             AssertReturn(pData, VBOX_E_IPRT_ERROR);
@@ -2272,7 +2290,7 @@ STDMETHODIMP Guest::SetProcessInput(ULONG aPID, ULONG aFlags, ComSafeArrayIn(BYT
                     ComAssert(!it->second.pProgress.isNull());
 
                     /* Wait until operation completed. */
-                    rc = it->second.pProgress->WaitForCompletion(UINT32_MAX /* Wait forever */);
+                    rc = it->second.pProgress->WaitForCompletion(aTimeoutMS);
                     if (FAILED(rc)) throw rc;
 
                     /* Was the operation canceled by one of the parties? */
@@ -2379,7 +2397,7 @@ STDMETHODIMP Guest::GetProcessOutput(ULONG aPID, ULONG aFlags, ULONG aTimeoutMS,
         }
         if (FAILED(rc)) return rc;
 
-        /* Adjust timeout */
+        /* Adjust timeout. */
         if (aTimeoutMS == 0)
             aTimeoutMS = UINT32_MAX;
 

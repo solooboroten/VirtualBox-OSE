@@ -1645,12 +1645,15 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
                         m->strLocationFull.c_str());
 
     /* Cannot change the type of a medium being in use by more than one VM.
-     * If the change is to Immutable then it must not be attached to any VM,
-     * otherwise assumptions elsewhere are violated and the VM becomes
-     * inaccessible. Attaching an immutable medium triggers the diff creation,
-     * and this is vital for the correct operation. */
+     * If the change is to Immutable or MultiAttach then it must not be
+     * directly attached to any VM, otherwise the assumptions about indirect
+     * attachment elsewhere are violated and the VM becomes inaccessible.
+     * Attaching an immutable medium triggers the diff creation, and this is
+     * vital for the correct operation. */
     if (   m->backRefs.size() > 1
-        || (aType == MediumType_Immutable && m->backRefs.size() > 0))
+        || (   (   aType == MediumType_Immutable
+                || aType == MediumType_MultiAttach)
+            && m->backRefs.size() > 0))
         return setError(VBOX_E_INVALID_OBJECT_STATE,
                         tr("Cannot change the type of medium '%s' because it is attached to %d virtual machines"),
                         m->strLocationFull.c_str(), m->backRefs.size());
@@ -1659,6 +1662,7 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
     {
         case MediumType_Normal:
         case MediumType_Immutable:
+        case MediumType_MultiAttach:
         {
             /* normal can be easily converted to immutable and vice versa even
              * if they have children as long as they are not attached to any
@@ -1696,6 +1700,27 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
         }
         default:
             AssertFailedReturn(E_FAIL);
+    }
+
+    if (    aType == MediumType_MultiAttach
+         || aType == MediumType_Readonly
+       )
+    {
+        // These two types are new with VirtualBox 4.0 and therefore require settings
+        // version 1.11 in the settings backend. Unfortunately it is not enough to do
+        // the usual routine in MachineConfigFile::bumpSettingsVersionIfNeeded() for
+        // two reasons: The medium type is a property of the media registry tree, which
+        // can reside in the global config file (for pre-4.0 media); we would therefore
+        // possibly need to bump the global config version. We don't want to do that though
+        // because that might make downgrading to pre-4.0 impossible.
+        // As a result, we can only use these two new types if the medium is NOT in the
+        // global registry:
+        const Guid &uuidGlobalRegistry = m->pVirtualBox->getGlobalRegistryId();
+        if (isInRegistry(uuidGlobalRegistry))
+            return setError(VBOX_E_INVALID_OBJECT_STATE,
+                            tr("Cannot change type for medium '%s': the media types 'MultiAttach' and 'Readonly' can only be used "
+                               "on media registered with a machine that was created with VirtualBox 4.0 or later"),
+                            m->strLocationFull.c_str());
     }
 
     m->type = aType;
@@ -2955,6 +2980,20 @@ const ComObjPtr<MediumFormat>& Medium::getMediumFormat() const
 }
 
 /**
+ * Internal method that returns true if the medium is represented by a file on the host disk
+ * (and not iSCSI or something).
+ * @return
+ */
+bool Medium::isMediumFormatFile() const
+{
+    if (    m->formatObj
+         && (m->formatObj->getCapabilities() & MediumFormatCapabilities_File)
+       )
+        return true;
+    return false;
+}
+
+/**
  * Internal method to return the medium's size. Must have caller + locking!
  * @return
  */
@@ -3408,6 +3447,7 @@ bool Medium::isReadOnly()
             return false;
         }
         case MediumType_Immutable:
+        case MediumType_MultiAttach:
             return true;
         case MediumType_Writethrough:
         case MediumType_Shareable:
@@ -4222,6 +4262,10 @@ HRESULT Medium::prepareMergeTo(const ComObjPtr<Medium> &pTarget,
                 throw setError(VBOX_E_INVALID_OBJECT_STATE,
                                tr("Medium '%s' is immutable"),
                                m->strLocationFull.c_str());
+            if (m->type == MediumType_MultiAttach)
+                throw setError(VBOX_E_INVALID_OBJECT_STATE,
+                               tr("Medium '%s' is multi-attach"),
+                               m->strLocationFull.c_str());
         }
         else
         {
@@ -4236,6 +4280,10 @@ HRESULT Medium::prepareMergeTo(const ComObjPtr<Medium> &pTarget,
             if (pTarget->m->type == MediumType_Immutable)
                 throw setError(VBOX_E_INVALID_OBJECT_STATE,
                                tr("Medium '%s' is immutable"),
+                               pTarget->m->strLocationFull.c_str());
+            if (pTarget->m->type == MediumType_MultiAttach)
+                throw setError(VBOX_E_INVALID_OBJECT_STATE,
+                               tr("Medium '%s' is multi-attach"),
                                pTarget->m->strLocationFull.c_str());
         }
         ComObjPtr<Medium> pLast(fMergeForward ? (Medium *)pTarget : this);

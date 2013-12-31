@@ -68,8 +68,8 @@
         configurations. For example, installing a complete mail server
         solution on a real machine can be a tedious task. With VirtualBox,
         such a complex setup (then often called an "appliance") can be packed
-        into in a virtual machine. Installing and running a mail server
-        becomes as easy as importing such an appliance into VirtualBox.</para>
+        into a virtual machine. Installing and running a mail server becomes
+        as easy as importing such an appliance into VirtualBox.</para>
       </listitem>
 
       <listitem>
@@ -467,8 +467,8 @@
             </listitem>
 
             <listitem>
-              <para>SUSE Linux 9 and 10, openSUSE 10.3, 11.0, 11.1,
-              11.2, 11.3</para>
+              <para>SUSE Linux 9 and 10, openSUSE 10.3, 11.0, 11.1, 11.2,
+              11.3</para>
             </listitem>
 
             <listitem>
@@ -502,28 +502,29 @@
   </sect1>
 
   <sect1 id="intro-installing">
-    <title>Installing VirtualBox</title>
+    <title>Installing VirtualBox and extension packs</title>
 
     <para>VirtualBox comes in many different packages, and installation
-    depends on your host platform. If you have installed software before,
-    installation should be straightforward: on each host platform, VirtualBox
-    uses the installation method that is most common and easy to use. If you
-    run into trouble or have special requirements, please refer to <xref
-    linkend="installation" /> for details about the various installation
+    depends on your host operating system. If you have installed software
+    before, installation should be straightforward: on each host platform,
+    VirtualBox uses the installation method that is most common and easy to
+    use. If you run into trouble or have special requirements, please refer to
+    <xref linkend="installation" /> for details about the various installation
     methods.</para>
 
     <para>Starting with version 4.0, VirtualBox is split into several
     components.<orderedlist>
         <listitem>
-          <para>The base package consists of all open source components and is
+          <para>The base package consists of all open-source components and is
           licensed under the GNU General Public License V2.</para>
         </listitem>
 
         <listitem>
           <para>Additional extension packs can be downloaded which extend the
           functionality of the VirtualBox base package. Currently, Oracle
-          provides the following extension packs, which can be found at <ulink
-          url="http://www.virtualbox.org">http://www.virtualbox.org</ulink>:<orderedlist>
+          provides the one extension pack, which can be found at <ulink
+          url="http://www.virtualbox.org">http://www.virtualbox.org</ulink>
+          and provides the following added functionality:<orderedlist>
               <listitem>
                 <para>The virtual USB 2.0 (EHCI) device; see <xref
                 linkend="settings-usb" />.</para>
@@ -533,12 +534,28 @@
                 <para>VirtualBox Remote Desktop Protocol (VRDP) support; see
                 <xref linkend="vrdp" />.</para>
               </listitem>
+
+              <listitem>
+                <para>Intel PXE boot ROM with support for the E1000 network
+                card.</para>
+              </listitem>
             </orderedlist></para>
 
           <para>VirtualBox extension packages have a
-          <computeroutput>.vbox-ext</computeroutput> file name extension. To
-          install an extension, simply double-click on package file, and the
-          VirtualBox Manager will guide you through the required steps.</para>
+          <computeroutput>.vbox-extpack</computeroutput> file name extension.
+          To install an extension, simply double-click on the package file,
+          and the VirtualBox Manager will guide you through the required
+          steps. </para>
+
+          <para>To view the extension packs that are currently installed,
+          please start the VirtualBox Manager (see the next section). From the
+          "File" menu, please select "Preferences". In the window that shows
+          up, go to the "Extensions" category which shows you the extensions
+          which are currently installed and allows you to remove a package or
+          add a new one.</para>
+
+          <para>Alternatively you can use VBoxManage on the command line: see
+          <xref linkend="vboxmanage-extpack" /> for details.</para>
         </listitem>
       </orderedlist></para>
   </sect1>
@@ -808,7 +825,7 @@
     however.</para>
 
     <sect2>
-      <title>Starting a VM for the first time</title>
+      <title>Starting a new VM for the first time</title>
 
       <para>When a VM gets started for the first time, another wizard -- the
       <emphasis role="bold">"First Start Wizard"</emphasis> -- will pop up to
@@ -971,7 +988,7 @@
           Windows and Linux intercept this), and pressing this key combination
           will therefore reboot your <emphasis>host</emphasis>.</para>
 
-          <para>Also, on Linux and Solairs hosts, which use the X Window
+          <para>Also, on Linux and Solaris hosts, which use the X Window
           System, the key combination <emphasis
           role="bold">Ctrl+Alt+Backspace</emphasis> normally resets the X
           server (to restart the entire graphical user interface in case it
@@ -1056,6 +1073,50 @@
       host drive to the guest or select a floppy or DVD image using the Disk
       Image Manager, all as described in <xref
       linkend="configbasics" />.</para>
+    </sect2>
+
+    <sect2 id="intro-resize-window">
+      <title>Resizing the machine's window</title>
+
+      <para>You can resize the virtual machine's window when it is running. In
+      that case, one of three things will happen:<orderedlist>
+          <listitem>
+            <para>If you have <emphasis role="bold">"scale mode"</emphasis>
+            enabled, then the virtual machine's screen will be scaled to the
+            size of the window. This can be useful if you have many machines
+            running and want to have a look at one of them while it is running
+            in the background. Alternatively, it might be useful to enlarge a
+            window if the VM's output screen is very small, for example
+            because you are running an old operating system in it.</para>
+
+            <para>To enable scale mode, press the <emphasis role="bold">host
+            key + C</emphasis>, or select "Scale mode" from the "Machine" menu
+            in the VM window. To leave scale mode, press the host key + C
+            again.</para>
+
+            <para>Please see <xref linkend="KnownIssues" /> for additional
+            remarks.</para>
+          </listitem>
+
+          <listitem>
+            <para>If you have the Guest Additions installed and they support
+            automatic <emphasis role="bold">resizing</emphasis>, the Guest
+            Additions will automatically adjust the screen resolution of the
+            guest operating system. For example, if you are running a Windows
+            guest with a resolution of 1024x768 pixels and you then resize the
+            VM window to make it 100 pixels wider, the Guest Additions will
+            change the Windows display resolution to 1124x768.</para>
+
+            <para>Please see <xref linkend="guestadditions" /> for more
+            information about the Guest Additions.</para>
+          </listitem>
+
+          <listitem>
+            <para>Otherwise, if the window is bigger than the VM's screen, the
+            screen will be centered. If it is smaller, then scroll bars will
+            be added to the machine window.</para>
+          </listitem>
+        </orderedlist></para>
     </sect2>
 
     <sect2>
@@ -1206,8 +1267,8 @@
             by right-clicking on any snapshot you have taken in the list of
             snapshots. By restoring a snapshot, you go back (or forward) in
             time: the current state of the machine is lost, and the machine is
-            restored to exactly the same state as it was when then snapshot
-            was taken.<footnote>
+            restored to exactly the same state as it was when the snapshot was
+            taken.<footnote>
                 <para>Both the terminology and the functionality of restoring
                 snapshots has changed with VirtualBox 3.1. Before that
                 version, it was only possible to go back to the very last
@@ -1233,6 +1294,9 @@
               unaltered when a machine is reverted. See <xref
               linkend="hdimagewrites" os="" /> for details.</para>
             </note>
+
+            <para>To avoid losing the current state when restoring a snapshot,
+            you can create a new snapshot before the restore.</para>
 
             <para>By restoring an earlier snapshot and taking more snapshots
             from there, it is even possible to create a kind of alternate
@@ -1401,8 +1465,8 @@
         </listitem>
       </orderedlist></para>
 
-    <para>To <emphasis role="bold">import</emphasis> an appliance one of the
-    above formats, simply double-click on the OVF/OVA file.<footnote>
+    <para>To <emphasis role="bold">import</emphasis> an appliance in one of
+    the above formats, simply double-click on the OVF/OVA file.<footnote>
         <para>Starting with version 4.0, VirtualBox creates file type
         associations for OVF and OVA files on your host operating
         system.</para>

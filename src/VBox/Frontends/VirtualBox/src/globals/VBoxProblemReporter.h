@@ -134,7 +134,8 @@ public:
                           const QString &aCancelText = QString::null) const
     {
         return messageOkCancel (aParent, aType, aMessage, QString::null,
-                                aAutoConfirmId, aOkText, aCancelText); }
+                                aAutoConfirmId, aOkText, aCancelText);
+    }
 
     bool showModalProgressDialog(CProgress &progress, const QString &strTitle,
                                  const QString &strImage = "", QWidget *pParent = 0,
@@ -314,6 +315,7 @@ public:
 
     bool confirmGoingFullscreen (const QString &aHotKey);
     bool confirmGoingSeamless (const QString &aHotKey);
+    bool confirmGoingScale (const QString &aHotKey);
 
     bool remindAboutGuruMeditation (const CConsole &aConsole,
                                     const QString &aLogFolder);
@@ -337,12 +339,15 @@ public:
 
     void cannotUpdateGuestAdditions (const CProgress &aProgress, QWidget *aParent /* = NULL */) const;
 
-    void cannotOpenExtPack(const QString &strFilename, const CExtPackManager &extPackManager, QWidget *pParent = 0);
-    void badExtPackFile(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent = 0);
-    void cannotInstallExtPack(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent = 0);
-    void cannotUninstallExtPack(const QString &strPackName, const CExtPackManager &extPackManager, QWidget *pParent = 0);
-    bool confirmInstallingPackage(const QString &strPackName, const QString &strPackVersion, const QString &strPackDescription, QWidget *pParent = 0);
-    bool confirmRemovingPackage(const QString &strPackName, QWidget *pParent = 0);
+    void cannotOpenExtPack(const QString &strFilename, const CExtPackManager &extPackManager, QWidget *pParent);
+    void badExtPackFile(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent);
+    void cannotInstallExtPack(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent);
+    void cannotUninstallExtPack(const QString &strPackName, const CExtPackManager &extPackManager, QWidget *pParent);
+    bool confirmInstallingPackage(const QString &strPackName, const QString &strPackVersion, const QString &strPackDescription, QWidget *pParent);
+    bool confirmReplacePackage(const QString &strPackName, const QString &strPackVersionNew, const QString &strPackVersionOld,
+                               const QString &strPackDescription, QWidget *pParent);
+    bool confirmRemovingPackage(const QString &strPackName, QWidget *pParent);
+    void notifyAboutExtPackInstalled(const QString &strPackName, QWidget *pParent);
 
     void warnAboutIncorrectPort(QWidget *pParent) const;
     bool confirmCancelingPortForwardingDialog(QWidget *pParent) const;

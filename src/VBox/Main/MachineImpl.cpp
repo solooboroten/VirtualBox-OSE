@@ -3395,6 +3395,33 @@ STDMETHODIMP Machine::AttachDevice(IN_BSTR aControllerName,
                         tr("Medium '%s' is already attached to this virtual machine"),
                         medium->getLocationFull().c_str());
 
+    if (!medium.isNull())
+    {
+        MediumType_T mtype = medium->getType();
+        if (    mtype == MediumType_MultiAttach
+             || mtype == MediumType_Readonly
+           )
+        {
+            // These two types are new with VirtualBox 4.0 and therefore require settings
+            // version 1.11 in the settings backend. Unfortunately it is not enough to do
+            // the usual routine in MachineConfigFile::bumpSettingsVersionIfNeeded() for
+            // two reasons: The medium type is a property of the media registry tree, which
+            // can reside in the global config file (for pre-4.0 media); we would therefore
+            // possibly need to bump the global config version. We don't want to do that though
+            // because that might make downgrading to pre-4.0 impossible.
+            // As a result, we can only use these two new types if the medium is NOT in the
+            // global registry:
+            const Guid &uuidGlobalRegistry = mParent->getGlobalRegistryId();
+            if (    medium->isInRegistry(uuidGlobalRegistry)
+                 || !mData->pMachineConfigFile->canHaveOwnMediaRegistry()
+               )
+                return setError(VBOX_E_INVALID_OBJECT_STATE,
+                                tr("Cannot attach medium '%s': the media types 'MultiAttach' and 'Readonly' can only be attached "
+                                   "to machines that were created with VirtualBox 4.0 or later"),
+                                medium->getLocationFull().c_str());
+        }
+    }
+
     bool fIndirect = false;
     if (!medium.isNull())
         fIndirect = medium->isReadOnly();
@@ -4295,7 +4322,7 @@ STDMETHODIMP Machine::Unregister(CleanupMode_T cleanupMode,
     // 1) media from machine attachments (these have the "leaf" attachments with snapshots
     //    and must be closed first, or closing the parents will fail because they will
     //    children);
-    // 2) media from the youngest snapshots followed those from the parent snapshots until
+    // 2) media from the youngest snapshots followed by those from the parent snapshots until
     //    the root ("first") snapshot of the machine
     // This order allows for closing the media on this list from the beginning to the end
     // without getting "media in use" errors.
@@ -4401,11 +4428,14 @@ STDMETHODIMP Machine::Delete(ComSafeArrayIn(IMedium*, aMedia), IProgress **aProg
         if (FAILED(mediumAutoCaller.rc())) return mediumAutoCaller.rc();
 
         Utf8Str bstrLocation = pMedium->getLocationFull();
+
+        bool fDoesMediumNeedFileDeletion = pMedium->isMediumFormatFile();
+
         // close the medium now; if that succeeds, then that means the medium is no longer
         // in use and we can add it to the list of files to delete
         rc = pMedium->close(&pTask->llRegistriesThatNeedSaving,
                             mediumAutoCaller);
-        if (SUCCEEDED(rc))
+        if (SUCCEEDED(rc) && fDoesMediumNeedFileDeletion)
             pTask->llFilesToDelete.push_back(bstrLocation);
     }
     if (mData->pMachineConfigFile->fileExists())
@@ -7536,6 +7566,26 @@ HRESULT Machine::loadStorageDevices(StorageController *aStorageController,
 
                     return setError(E_FAIL,
                                     tr("Immutable hard disk '%s' with UUID {%RTuuid} cannot be directly attached to the virtual machine '%s' ('%s')"),
+                                    medium->getLocationFull().c_str(),
+                                    dev.uuid.raw(),
+                                    mUserData->s.strName.c_str(),
+                                    mData->m_strConfigFileFull.c_str());
+                }
+
+                if (medium->getType() == MediumType_MultiAttach)
+                {
+                    if (isSnapshotMachine())
+                        return setError(E_FAIL,
+                                        tr("Multi-attach hard disk '%s' with UUID {%RTuuid} cannot be directly attached to snapshot with UUID {%RTuuid} "
+                                           "of the virtual machine '%s' ('%s')"),
+                                        medium->getLocationFull().c_str(),
+                                        dev.uuid.raw(),
+                                        puuidSnapshot->raw(),
+                                        mUserData->s.strName.c_str(),
+                                        mData->m_strConfigFileFull.c_str());
+
+                    return setError(E_FAIL,
+                                    tr("Multi-attach hard disk '%s' with UUID {%RTuuid} cannot be directly attached to the virtual machine '%s' ('%s')"),
                                     medium->getLocationFull().c_str(),
                                     dev.uuid.raw(),
                                     mUserData->s.strName.c_str(),

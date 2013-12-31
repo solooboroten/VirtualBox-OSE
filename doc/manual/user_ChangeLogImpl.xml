@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.0.0 Beta 2 (2010-12-09)</title>
+    <title>Version 4.0.0 Beta 3 (2010-12-14)</title>
 
     <para>This version is a major update. The following major new features
       were added:</para>
@@ -9,11 +9,11 @@
     <itemizedlist>
 
       <listitem>
-        <para>Reorganization of VirtualBox into a base package and Extension Packs; see <xref linkend="intro-installing" />.</para>
+        <para>Reorganization of VirtualBox into a base package and Extension Packs; see <xref linkend="intro-installing" /></para>
       </listitem>
 
       <listitem>
-        <para>New settings/disk file layout for VM portability; see <xref linkend="vboxconfigdata" />.</para>
+        <para>New settings/disk file layout for VM portability; see <xref linkend="vboxconfigdata" /></para>
       </listitem>
 
       <listitem>
@@ -23,7 +23,7 @@
               <para>Redesigned user interface with guest window preview (also for screenshots)</para>
             </listitem>
             <listitem>
-              <para>New display mode with downscaled guest display</para>
+              <para>New "scale" display mode with scaled guest display; see <xref linkend="intro-resize-window" /></para>
             </listitem>
             <listitem>
               <para>Support for creating and starting .vbox desktop shortcuts (bug #1889)</para>
@@ -37,12 +37,16 @@
                 disk images (bug #5511; also, <computeroutput>VBoxManage unregistervm --delete</computeroutput>
                 can do the same now)</para>
             </listitem>
+            <listitem>
+              <para>Built-in creation of desktop file shortcuts to start VMs on double click (bug #2322)</para>
+            </listitem>
+
           </itemizedlist>
         </para>
       </listitem>
 
       <listitem>
-        <para>Open Virtualization Format Archive (OVA) support; see <xref linkend="ovf" />.</para>
+        <para>Open Virtualization Format Archive (OVA) support; see <xref linkend="ovf" /></para>
       </listitem>
 
       <listitem>
@@ -53,11 +57,12 @@
         <para>New virtual hardware:
           <itemizedlist>
             <listitem>
-              <para>Intel ICH9 chipset with three PCI buses, PCI Express and Message Signaled Interrupts (MSI)</para>
+              <para>Intel ICH9 chipset with three PCI buses, PCI Express and Message Signaled Interrupts (MSI);
+                see <xref linkend="settings-motherboard" /></para>
             </listitem>
             <listitem>
               <para>Intel HD Audio, for better support of modern guest operating systems
-                (e.g. 64-bit Windows; bug #2785).</para>
+                (e.g. 64-bit Windows; bug #2785)</para>
             </listitem>
           </itemizedlist>
         </para>
@@ -65,7 +70,7 @@
 
       <listitem>
         <para>Resource control: added support for limiting a VM's CPU time and IO
-        bandwidth.</para>
+          bandwidth; see <xref linkend="storage-bandwidth-limit" /></para>
       </listitem>
 
       <listitem>
@@ -90,7 +95,7 @@
 
      <listitem>
         <para>Guest Additions: support for multiple virtual screens in Linux
-           and Solaris guests using X.Org server 1.3 and later.</para>
+           and Solaris guests using X.Org server 1.3 and later</para>
       </listitem>
 
     </itemizedlist>
@@ -109,11 +114,6 @@
       </listitem>
 
       <listitem>
-        <para>GUI: built-in creation of desktop file shortcuts to start VMs on
-          double click (bug #2322)</para>
-      </listitem>
-
-      <listitem>
         <para>GUI: add configuration dialog for port forwarding in NAT mode
           (bug #1657)</para>
       </listitem>
@@ -124,6 +124,17 @@
 
       <listitem>
         <para>GUI: certain GUI warnings don't stop the VM output anymore</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed black fullscreen minitoolbar on KDE4 hosts
+          (Linux hosts only; bug #5449)</para>
+      </listitem>
+
+      <listitem>
+        <para>Bridged networking: improved throughput by filtering out outgoing
+          packets intended for the host before they reach the physical network
+          (Linux hosts only; bug #7792)</para>
       </listitem>
 
       <listitem>
@@ -142,11 +153,7 @@
       </listitem>
 
       <listitem>
-        <para>3D support: fixed XPDM Windows Explorer crashes on Windows Vista/Win7 guests</para>
-      </listitem>
-
-      <listitem>
-        <para>3D support: fixed Direct3D 8/9 support on WindowsXP guests</para>
+        <para>3D support: fixed OpenGL support for libMesa 7.9</para>
       </listitem>
 
       <listitem>

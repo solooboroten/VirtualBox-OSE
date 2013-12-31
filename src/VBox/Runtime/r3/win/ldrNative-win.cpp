@@ -35,10 +35,11 @@
 #include <iprt/path.h>
 #include <iprt/err.h>
 #include <iprt/alloca.h>
+#include <iprt/string.h>
 #include "internal/ldr.h"
 
 
-int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle)
+int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, char *pszError, size_t cbError)
 {
     Assert(sizeof(*phHandle) >= sizeof(HMODULE));
 
@@ -66,7 +67,14 @@ int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle)
         return VINF_SUCCESS;
     }
 
-    return RTErrConvertFromWin32(GetLastError());
+    /*
+     * Try figure why it failed to load.
+     */
+    DWORD dwErr = GetLastError();
+    int   rc    = RTErrConvertFromWin32(dwErr);
+    if (cbError)
+        RTStrPrintf(pszError, cbError, "GetLastError=%u", dwErr);
+    return rc;
 }
 
 

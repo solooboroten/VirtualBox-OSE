@@ -1063,7 +1063,8 @@ void VBoxMediaManagerDlg::doRemoveMedium()
              * VBoxProblemReporter::confirmRemoveMedium() is aware of that and
              * will give a corresponding hint. Therefore, once the code is
              * changed below, the hint should be re-checked for validity. */
-            if (item->state() != KMediumState_Inaccessible)
+            if (item->state() != KMediumState_Inaccessible &&
+                item->medium().medium().GetMediumFormat().GetCapabilities() & MediumFormatCapabilities_File)
             {
                 int rc = vboxProblem().
                     confirmDeleteHardDiskStorage (this, item->location());
@@ -1079,7 +1080,7 @@ void VBoxMediaManagerDlg::doRemoveMedium()
                 CProgress progress = hardDisk.DeleteStorage();
                 if (hardDisk.isOk())
                 {
-                    vboxProblem().showModalProgressDialog(progress, windowTitle(), ":/progress_delete_90px.png", this, true);
+                    vboxProblem().showModalProgressDialog(progress, windowTitle(), ":/progress_media_delete_90px.png", this, true);
                     if (!(progress.isOk() && progress.GetResultCode() == S_OK))
                     {
                         vboxProblem().cannotDeleteHardDiskStorage(this, hardDisk, progress);

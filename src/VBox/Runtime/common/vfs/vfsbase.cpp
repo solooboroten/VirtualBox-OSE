@@ -2257,7 +2257,6 @@ RTDECL(bool) RTVfsIoStrmIsAtEnd(RTVFSIOSTREAM hVfsIos)
 
 
 
-
 /*
  *
  *  F I L E   F I L E   F I L E

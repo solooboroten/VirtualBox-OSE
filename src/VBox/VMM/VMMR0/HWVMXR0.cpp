@@ -20,6 +20,7 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_HWACCM
+#include <iprt/asm-amd64-x86.h>
 #include <VBox/hwaccm.h>
 #include <VBox/pgm.h>
 #include <VBox/dbgf.h>
@@ -33,7 +34,6 @@
 #include <VBox/pdmapi.h>
 #include <VBox/err.h>
 #include <VBox/log.h>
-#include <iprt/asm-amd64-x86.h>
 #include <iprt/assert.h>
 #include <iprt/param.h>
 #include <iprt/string.h>
@@ -1900,6 +1900,13 @@ VMMR0DECL(int) VMXR0LoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     if (pVM->hwaccm.s.vmx.fUsePreemptTimer)
     {
         uint64_t cTicksToDeadline = TMCpuTickGetDeadlineAndTscOffset(pVCpu, &fOffsettedTsc, &pVCpu->hwaccm.s.vmx.u64TSCOffset);
+
+        /* Make sure the returned values have sane upper and lower boundaries. */
+        uint64_t u64CpuHz = SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage);
+
+        cTicksToDeadline = RT_MIN(cTicksToDeadline, u64CpuHz / 64);   /* 1/64 of a second */
+        cTicksToDeadline = RT_MAX(cTicksToDeadline, u64CpuHz / 2048); /* 1/2048th of a second */
+
         cTicksToDeadline >>= pVM->hwaccm.s.vmx.cPreemptTimerShift;
         uint32_t cPreemptionTickCount = (uint32_t)RT_MIN(cTicksToDeadline, UINT32_MAX - 16);
         rc = VMXWriteVMCS(VMX_VMCS32_GUEST_PREEMPTION_TIMER_VALUE, cPreemptionTickCount);
@@ -3482,6 +3489,23 @@ ResumeExecution:
         rc2 = VMXReadVMCS64(VMX_VMCS_EXIT_PHYS_ADDR_FULL, &GCPhys);
         AssertRC(rc2);
         Log(("VMX_EXIT_EPT_MISCONFIG for %RGp\n", GCPhys));
+
+        /* Shortcut for APIC TPR reads and writes. */
+        if (    (GCPhys & 0xfff) == 0x080
+            &&  GCPhys > 0x1000000   /* to skip VGA frame buffer accesses */
+            &&  fSetupTPRCaching
+            &&  (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls2.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC2_VIRT_APIC))
+        {
+            RTGCPHYS GCPhysApicBase;
+            PDMApicGetBase(pVM, &GCPhysApicBase);   /* @todo cache this */
+            GCPhysApicBase &= PAGE_BASE_GC_MASK;
+            if (GCPhys == GCPhysApicBase + 0x80)
+            {
+                Log(("Enable VT-x virtual APIC access filtering\n"));
+                rc2 = IOMMMIOMapMMIOHCPage(pVM, GCPhysApicBase, pVM->hwaccm.s.vmx.pAPICPhys, X86_PTE_RW | X86_PTE_P);
+                AssertRC(rc2);
+            }
+        }
 
         rc = PGMR0Trap0eHandlerNPMisconfig(pVM, pVCpu, PGMMODE_EPT, CPUMCTX2CORE(pCtx), GCPhys, UINT32_MAX);
         if (rc == VINF_SUCCESS)

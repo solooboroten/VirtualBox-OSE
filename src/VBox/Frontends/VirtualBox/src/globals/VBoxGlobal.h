@@ -573,6 +573,9 @@ public:
     /** Returns true if the media enumeration is in progress. */
     bool isMediaEnumerationStarted() const { return mMediaEnumThread != NULL; }
 
+    VBoxDefs::MediumType mediumTypeToLocal(KDeviceType globalType);
+    KDeviceType mediumTypeToGlobal(VBoxDefs::MediumType localType);
+
     void addMedium (const VBoxMedium &);
     void updateMedium (const VBoxMedium &);
     void removeMedium (VBoxDefs::MediumType, const QString &);
@@ -590,7 +593,8 @@ public:
     }
 
     QString openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType, QWidget *pParent = 0,
-                                         const QString &strDefaultFolder = QString(), bool fUseLastFolder = false) const;
+                                         const QString &strDefaultFolder = QString(), bool fUseLastFolder = false);
+    QString openMedium(VBoxDefs::MediumType mediumType, QString strMediumLocation);
 
     /* Returns the number of current running Fe/Qt4 main windows. */
     int mainWindowCount();

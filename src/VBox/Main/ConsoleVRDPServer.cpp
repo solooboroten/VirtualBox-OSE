@@ -862,7 +862,7 @@ DECLCALLBACK(void) ConsoleVRDPServer::VRDPCallbackClientDisconnect(void *pvCallb
         PPDMIAUDIOSNIFFERPORT pPort = server->mConsole->getAudioSniffer()->getAudioSnifferPort();
         if (pPort)
         {
-             // @todo dynamic filter attach does not yet work pPort->pfnAudioInputIntercept(pPort, false);
+             pPort->pfnAudioInputIntercept(pPort, false);
         }
         else
         {
@@ -919,7 +919,7 @@ DECLCALLBACK(int)  ConsoleVRDPServer::VRDPCallbackIntercept(void *pvCallback, ui
                 PPDMIAUDIOSNIFFERPORT pPort = server->mConsole->getAudioSniffer()->getAudioSnifferPort();
                 if (pPort)
                 {
-                     // @todo dynamic filter attach does not yet work pPort->pfnAudioInputIntercept(pPort, true);
+                     pPort->pfnAudioInputIntercept(pPort, true);
                      if (ppvIntercept)
                      {
                          *ppvIntercept = server;
@@ -1380,7 +1380,7 @@ int ConsoleVRDPServer::Launch(void)
                 /* An older version of VRDE is installed, try version 1. */
                 VRDEENTRYPOINTS_1 *pEntryPoints1;
 
-                VRDECALLBACKS_1 callbacks =
+                static VRDECALLBACKS_1 sCallbacks =
                 {
                     { VRDE_INTERFACE_VERSION_1, sizeof(VRDECALLBACKS_1) },
                     ConsoleVRDPServer::VRDPCallbackQueryProperty,
@@ -1397,7 +1397,7 @@ int ConsoleVRDPServer::Launch(void)
                     ConsoleVRDPServer::VRDPCallbackVideoModeHint
                 };
 
-                vrc = mpfnVRDECreateServer(&callbacks.header, this, (VRDEINTERFACEHDR **)&pEntryPoints1, &mhServer);
+                vrc = mpfnVRDECreateServer(&sCallbacks.header, this, (VRDEINTERFACEHDR **)&pEntryPoints1, &mhServer);
                 if (RT_SUCCESS(vrc))
                 {
                     LogRel(("VRDE: loaded an older version of the server.\n"));
@@ -1662,7 +1662,7 @@ AuthResult ConsoleVRDPServer::Authenticate(const Guid &uuid, AuthGuestJudgement 
             {
                 const char *pszName;
                 void **ppvAddress;
-                
+
             } AuthEntryInfo;
             AuthEntryInfo entries[] =
             {
@@ -2268,7 +2268,7 @@ int ConsoleVRDPServer::SendAudioInputBegin(void **ppvUserCtx,
                                             u32ClientId,
                                             audioFormat,
                                             cSamples);
-            *ppvUserCtx = NULL; /* This is the ConsoleVRDP server context.
+            *ppvUserCtx = NULL; /* This is the ConsoleVRDPServer context.
                                  * Currently not used because only one client is allowed to
                                  * do audio input and the client id is saved by the ConsoleVRDPServer.
                                  */
@@ -2322,7 +2322,7 @@ void ConsoleVRDPServer::QueryInfo(uint32_t index, void *pvBuffer, uint32_t cbBuf
         if (RTPathHavePath(pszLibraryName))
             rc = SUPR3HardenedLdrLoadPlugIn(pszLibraryName, &mVRDPLibrary, szErr, sizeof(szErr));
         else
-            rc = SUPR3HardenedLdrLoadAppPriv(pszLibraryName, &mVRDPLibrary);
+            rc = SUPR3HardenedLdrLoadAppPriv(pszLibraryName, &mVRDPLibrary, szErr, sizeof(szErr));
         if (RT_SUCCESS(rc))
         {
             struct SymbolEntry

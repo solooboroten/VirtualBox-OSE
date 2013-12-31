@@ -1115,7 +1115,8 @@ bool VBoxProblemReporter::confirmRemoveMedium (QWidget *aParent,
             .arg (mediumToAccusative (aMedium.type()))
             .arg (aMedium.location());
 
-    if (aMedium.type() == VBoxDefs::MediumType_HardDisk)
+    if (aMedium.type() == VBoxDefs::MediumType_HardDisk &&
+        aMedium.medium().GetMediumFormat().GetCapabilities() & MediumFormatCapabilities_File)
     {
         if (aMedium.state() == KMediumState_Inaccessible)
             msg +=
@@ -1130,8 +1131,7 @@ bool VBoxProblemReporter::confirmRemoveMedium (QWidget *aParent,
     else
         msg +=
             tr ("<p>Note that the storage unit of this medium will not be "
-                "deleted and that it will be possible to add it to "
-                "the list later again.</p>");
+                "deleted and that it will be possible to use it later again.</p>");
 
     return messageOkCancel (aParent, Question, msg,
         "confirmRemoveMedium", /* aAutoConfirmId */
@@ -1467,7 +1467,7 @@ void VBoxProblemReporter::remindAboutGuestAdditionsAreNotActive(QWidget *pParent
                 "the virtual machine, please install the Guest Additions "
                 "if they are not installed, or re-install them if they are "
                 "not working correctly, by selecting <b>Install Guest Additions</b> "
-                "from the <b>Machine</b> menu. "
+                "from the <b>Devices</b> menu. "
                 "If they are installed but the machine is not yet fully started "
                 "then shared folders will be available once it is.</p>"),
              "remindAboutGuestAdditionsAreNotActive");
@@ -1871,13 +1871,11 @@ int VBoxProblemReporter::warnAboutSettingsAutoConversion (const QString &aFileLi
 bool VBoxProblemReporter::confirmGoingFullscreen (const QString &aHotKey)
 {
     return messageOkCancel (mainMachineWindowShown(), Info,
-        tr ("<p>The virtual machine window will be now switched to "
-            "<b>fullscreen</b> mode. "
-            "You can go back to windowed mode at any time by pressing "
-            "<b>%1</b>. Note that the <i>Host</i> key is currently "
-            "defined as <b>%2</b>.</p>"
-            "<p>Note that the main menu bar is hidden in fullscreen mode. You "
-            "can access it by pressing <b>Host+Home</b>.</p>")
+        tr ("<p>The virtual machine window will be now switched to <b>fullscreen</b> mode. "
+            "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
+            "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
+            "<p>Note that the main menu bar is hidden in fullscreen mode. "
+            "You can access it by pressing <b>Host+Home</b>.</p>")
             .arg (aHotKey)
             .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
         "confirmGoingFullscreen",
@@ -1893,17 +1891,35 @@ bool VBoxProblemReporter::confirmGoingFullscreen (const QString &aHotKey)
 bool VBoxProblemReporter::confirmGoingSeamless (const QString &aHotKey)
 {
     return messageOkCancel (mainMachineWindowShown(), Info,
-        tr ("<p>The virtual machine window will be now switched to "
-            "<b>Seamless</b> mode. "
-            "You can go back to windowed mode at any time by pressing "
-            "<b>%1</b>. Note that the <i>Host</i> key is currently "
-            "defined as <b>%2</b>.</p>"
-            "<p>Note that the main menu bar is hidden in seamless mode. You "
-            "can access it by pressing <b>Host+Home</b>.</p>")
+        tr ("<p>The virtual machine window will be now switched to <b>Seamless</b> mode. "
+            "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
+            "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
+            "<p>Note that the main menu bar is hidden in seamless mode. "
+            "You can access it by pressing <b>Host+Home</b>.</p>")
             .arg (aHotKey)
             .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
         "confirmGoingSeamless",
         tr ("Switch", "seamless"));
+}
+
+/**
+ *  @param aHotKey Scale hot key as defined in the menu.
+ *
+ *  @return @c true if the user has chosen to go scale (this is always
+ *  the case if the dialog was autoconfirmed).
+ */
+bool VBoxProblemReporter::confirmGoingScale (const QString &aHotKey)
+{
+    return messageOkCancel (mainMachineWindowShown(), Info,
+        tr ("<p>The virtual machine window will be now switched to <b>Scale</b> mode. "
+            "You can go back to windowed mode at any time by pressing <b>%1</b>.</p>"
+            "<p>Note that the <i>Host</i> key is currently defined as <b>%2</b>.</p>"
+            "<p>Note that the main menu bar is hidden in scale mode. "
+            "You can access it by pressing <b>Host+Home</b>.</p>")
+            .arg (aHotKey)
+            .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
+        "confirmGoingScale",
+        tr ("Switch", "scale"));
 }
 
 /**
@@ -2109,7 +2125,7 @@ void VBoxProblemReporter::cannotUpdateGuestAdditions (const CProgress &aProgress
              formatErrorInfo (aProgress.GetErrorInfo()));
 }
 
-void VBoxProblemReporter::cannotOpenExtPack(const QString &strFilename, const CExtPackManager &extPackManager, QWidget *pParent /* = 0 */)
+void VBoxProblemReporter::cannotOpenExtPack(const QString &strFilename, const CExtPackManager &extPackManager, QWidget *pParent)
 {
     message (pParent ? pParent : mainWindowShown(),
              Error,
@@ -2117,15 +2133,15 @@ void VBoxProblemReporter::cannotOpenExtPack(const QString &strFilename, const CE
              formatErrorInfo(extPackManager));
 }
 
-void VBoxProblemReporter::badExtPackFile(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent /* = 0 */)
+void VBoxProblemReporter::badExtPackFile(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent)
 {
     message (pParent ? pParent : mainWindowShown(),
              Error,
              tr("Failed to open the Extension Pack <b>%1</b>.").arg(strFilename),
-             extPackFile.GetWhyUnusable());
+             "<!--EOM-->" + extPackFile.GetWhyUnusable());
 }
 
-void VBoxProblemReporter::cannotInstallExtPack(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent /* = 0 */)
+void VBoxProblemReporter::cannotInstallExtPack(const QString &strFilename, const CExtPackFile &extPackFile, QWidget *pParent)
 {
     message (pParent ? pParent : mainWindowShown(),
              Error,
@@ -2133,7 +2149,7 @@ void VBoxProblemReporter::cannotInstallExtPack(const QString &strFilename, const
              formatErrorInfo(extPackFile));
 }
 
-void VBoxProblemReporter::cannotUninstallExtPack(const QString &strPackName, const CExtPackManager &extPackManager, QWidget *pParent /* = 0 */)
+void VBoxProblemReporter::cannotUninstallExtPack(const QString &strPackName, const CExtPackManager &extPackManager, QWidget *pParent)
 {
     message (pParent ? pParent : mainWindowShown(),
              Error,
@@ -2142,7 +2158,7 @@ void VBoxProblemReporter::cannotUninstallExtPack(const QString &strPackName, con
 }
 
 bool VBoxProblemReporter::confirmInstallingPackage(const QString &strPackName, const QString &strPackVersion,
-                                                   const QString &strPackDescription, QWidget *pParent /* = 0 */)
+                                                   const QString &strPackDescription, QWidget *pParent)
 {
     return messageOkCancel (pParent ? pParent : mainWindowShown(),
                             Question,
@@ -2160,7 +2176,68 @@ bool VBoxProblemReporter::confirmInstallingPackage(const QString &strPackName, c
                             tr("&Install"));
 }
 
-bool VBoxProblemReporter::confirmRemovingPackage(const QString &strPackName, QWidget *pParent /* = 0 */)
+bool VBoxProblemReporter::confirmReplacePackage(const QString &strPackName, const QString &strPackVersionNew,
+                                                const QString &strPackVersionOld, const QString &strPackDescription,
+                                                QWidget *pParent)
+{
+    if (!pParent)
+        pParent = pParent ? pParent : mainWindowShown(); /* this is boring stuff that messageOkCancel should do! */
+
+    QString strBelehrung = tr("Extension packs complement the functionality of VirtualBox and can contain "
+                              "system level software that could be potentially harmful to your system. "
+                              "Please review the description below and only proceed if you have obtained "
+                              "the extension pack from a trusted source.");
+
+    QByteArray  ba1     = strPackVersionNew.toUtf8();
+    QByteArray  ba2     = strPackVersionOld.toUtf8();
+    int         iVerCmp = RTStrVersionCompare(ba1.constData(), ba2.constData());
+
+    bool fRc;
+    if (iVerCmp > 0)
+        fRc = messageOkCancel(pParent,
+                              Question,
+                              tr("<p>An older version of the extension pack is already installed, would you like to upgrade? "
+                                 "<p>%1</p>"
+                                 "<p><table cellpadding=0 cellspacing=0>"
+                                 "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                 "<tr><td><b>New Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                 "<tr><td><b>Current Version:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
+                                 "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%5</td></tr>"
+                                 "</table></p>")
+                              .arg(strBelehrung).arg(strPackName).arg(strPackVersionNew).arg(strPackVersionOld).arg(strPackDescription),
+                              0,
+                              tr("&Upgrade"));
+    else if (iVerCmp < 0)
+        fRc = messageOkCancel(pParent,
+                              Question,
+                              tr("<p>An newer version of the extension pack is already installed, would you like to downgrade? "
+                                 "<p>%1</p>"
+                                 "<p><table cellpadding=0 cellspacing=0>"
+                                 "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                 "<tr><td><b>New Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                 "<tr><td><b>Current Version:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
+                                 "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%5</td></tr>"
+                                 "</table></p>")
+                              .arg(strBelehrung).arg(strPackName).arg(strPackVersionNew).arg(strPackVersionOld).arg(strPackDescription),
+                              0,
+                              tr("&Downgrade"));
+    else
+        fRc = messageOkCancel(pParent,
+                              Question,
+                              tr("<p>The extension pack is already installed with the same version, would you like reinstall it? "
+                                 "<p>%1</p>"
+                                 "<p><table cellpadding=0 cellspacing=0>"
+                                 "<tr><td><b>Name:&nbsp;&nbsp;</b></td><td>%2</td></tr>"
+                                 "<tr><td><b>Version:&nbsp;&nbsp;</b></td><td>%3</td></tr>"
+                                 "<tr><td><b>Description:&nbsp;&nbsp;</b></td><td>%4</td></tr>"
+                                 "</table></p>")
+                              .arg(strBelehrung).arg(strPackName).arg(strPackVersionOld).arg(strPackDescription),
+                              0,
+                              tr("&Reinstall"));
+    return fRc;
+}
+
+bool VBoxProblemReporter::confirmRemovingPackage(const QString &strPackName, QWidget *pParent)
 {
     return messageOkCancel (pParent ? pParent : mainWindowShown(),
                             Question,
@@ -2168,6 +2245,13 @@ bool VBoxProblemReporter::confirmRemovingPackage(const QString &strPackName, QWi
                                "<p>Are you sure you want to proceed?</p>").arg(strPackName),
                             0,
                             tr("&Remove"));
+}
+
+void VBoxProblemReporter::notifyAboutExtPackInstalled(const QString &strPackName, QWidget *pParent)
+{
+    message (pParent ? pParent : mainWindowShown(),
+             Info,
+             tr("The extension pack <br><nobr><b>%1</b><nobr><br> was installed successfully.").arg(strPackName));
 }
 
 void VBoxProblemReporter::warnAboutIncorrectPort (QWidget *pParent) const

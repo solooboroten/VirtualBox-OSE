@@ -268,15 +268,19 @@
     <sect2 id="externalkernelmodules">
       <title>The VirtualBox kernel module</title>
 
-      <para>VirtualBox uses a special kernel module to perform physical memory
+      <para>VirtualBox uses a special kernel module called
+      <computeroutput>vboxdrv</computeroutput> to perform physical memory
       allocation and to gain control of the processor for guest system
       execution. Without this kernel module, you can still use the VirtualBox
-      manager to configure virtual machines, but they will not start.</para>
+      manager to configure virtual machines, but they will not start. In addition,
+      there are the network kernel modules <computeroutput>vboxnetflt</computeroutput>
+      and <computeroutput>vboxnetadp</computeroutput> which are required for
+      the move advanced networking features of VirtualBox.</para>
 
       <para>The VirtualBox kernel module is automatically installed on your
       system when you install VirtualBox. To maintain it with future kernel
-      updates, for recent Linux distributions -- for example Fedora Core 5 and
-      later, Ubuntu 7.10 (Gutsy) and later and Mandriva 2007.1 and later --,
+      updates, for most Linux distributions -- for example Fedora Core 11 and
+      later, Ubuntu 8.04 (Hardy) and later and Mandriva 2009.1 and later --,
       generally we recommend installing Dynamic Kernel Module Support
       (DKMS)<footnote>
           <para>See <ulink
@@ -424,14 +428,15 @@
 
         <itemizedlist>
           <listitem>
-            <para>It unpacks the application files to a target directory of
-            choice. By default, <screen>/opt/VirtualBox/</screen> will be
-            used.</para>
+            <para>It unpacks the application files to the target directory,
+            <screen>/opt/VirtualBox/</screen> which cannot be changed.</para>
           </listitem>
 
           <listitem>
-            <para>It builds the VirtualBox kernel module
-            (<computeroutput>vboxdrv</computeroutput>) and installs it.</para>
+            <para>It builds the VirtualBox kernel modules
+            (<computeroutput>vboxdrv</computeroutput>,
+            <computeroutput>vboxnetflt</computeroutput> and
+            <computeroutput>vboxnetadp</computeroutput>) and installs them.</para>
           </listitem>
 
           <listitem>
@@ -446,21 +451,24 @@
           </listitem>
 
           <listitem>
-            <para>It creates symbolic links to
+            <para>It creates symbolic links in
+            <computeroutput>/usr/bin</computeroutput> to
+            the a shell script (<computeroutput>/opt/VirtualBox/VBox</computeroutput>)
+            which does some sanity checks and
+            dispatches to the actual executables,
             <computeroutput>VirtualBox</computeroutput>,
             <computeroutput>VBoxSDL</computeroutput>,
             <computeroutput>VBoxVRDP</computeroutput>,
             <computeroutput>VBoxHeadless</computeroutput> and
-            <computeroutput>VBoxManage</computeroutput> in
-            <computeroutput>/usr/bin</computeroutput>.</para>
+            <computeroutput>VBoxManage</computeroutput></para>
           </listitem>
 
           <listitem>
             <para>It creates
-            <computeroutput>/etc/udev/60-vboxdrv.rules</computeroutput>, a
+            <computeroutput>/etc/udev/rules.d/10-vboxdrv.rules</computeroutput>, a
             description file for udev, if that is present, which makes the
-            module accessible to anyone in the group
-            <computeroutput>vboxusers</computeroutput>.</para>
+            USB devices accessible to all users in the
+            <computeroutput>vboxusers</computeroutput> group.</para>
           </listitem>
 
           <listitem>
@@ -560,18 +568,9 @@ tar jxf ./install/VirtualBox.tar.bz2 -C /opt/VirtualBox</screen></para>
         In general, make sure that the correct Linux kernel sources are used
         for the build process.</para>
 
-        <para>Note that the user who is going to run VirtualBox needs read and
-        write permission on the VirtualBox kernel module device node
-        <computeroutput>/dev/vboxdrv</computeroutput>. You can either define a
-        <computeroutput>vboxusers</computeroutput> group by entering<screen>groupadd vboxusers
-chgrp vboxusers /dev/vboxdrv
-chmod 660 /dev/vboxdrv</screen>or, alternatively, simply give all users access
-        (insecure, not recommended!)<screen>chmod 666 /dev/vboxdrv</screen>You
-        should also add any users who will be allowed to use host USB devices
-        in VirtualBox guests to the appropriate USB users group for your
-        distribution. This group is often called
-        <computeroutput>usb</computeroutput> or
-        <computeroutput>usbusers</computeroutput>.</para>
+        <para>Note that the <computeroutput>/dev/vboxdrv</computeroutput>
+        kernel module device node must be owned by root:root and must be
+        read/writable only for the user.</para>
 
         <para>Next, you will have to install the system initialization script
         for the kernel module:<screen>cp /opt/VirtualBox/vboxdrv.sh /etc/init.d/vboxdrv</screen>(assuming
@@ -584,7 +583,6 @@ echo INSTALL_DIR=/opt/VirtualBox &gt; /etc/vbox/vbox.cfg</screen>and, for
         convenience, create the following symbolic links:</para>
 
         <screen>ln -sf /opt/VirtualBox/VBox.sh /usr/bin/VirtualBox
-ln -sf /opt/VirtualBox/VBox.sh /usr/bin/VBoxSVC
 ln -sf /opt/VirtualBox/VBox.sh /usr/bin/VBoxManage
 ln -sf /opt/VirtualBox/VBox.sh /usr/bin/VBoxHeadless
 ln -sf /opt/VirtualBox/VBox.sh /usr/bin/VBoxSDL</screen>
@@ -640,15 +638,15 @@ virtualbox virtualbox/delete-old-modules boolean true</screen>The first line
         <title id="linux_install_opts">Automatic installation options</title>
 
         <para>To configure the installation process of our .deb and .rpm
-        packages, a file
-        <computeroutput>/etc/default/virtualbox</computeroutput> is
-        interpreted. The automatic generation of the udev rule can be
+        packages, you can create a response file named
+        <computeroutput>/etc/default/virtualbox</computeroutput>.
+        The automatic generation of the udev rule can be
         prevented by the following setting: <screen>INSTALL_NO_UDEV=1</screen>
         The creation of the group vboxusers can be prevented by <screen>INSTALL_NO_GROUP=1</screen>
         If the line <screen>INSTALL_NO_VBOXDRV=1</screen> is specified, the
         package installer will not try to build the
         <computeroutput>vboxdrv</computeroutput> kernel module if no module
-        according to the current kernel was found.</para>
+        fitting the current kernel was found.</para>
       </sect3>
     </sect2>
 

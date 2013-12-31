@@ -198,6 +198,32 @@ static RTEXITCODE RemoveExtPackDir(const char *pszDir, bool fTemporary)
 
 
 /**
+ * Common uninstall worker used by both uninstall and install --replace.
+ *
+ * @returns success or failure, message displayed on failure.
+ * @param   pszExtPackDir   The extension pack directory name.
+ */
+static RTEXITCODE CommonUninstallWorker(const char *pszExtPackDir)
+{
+    /* Rename the extension pack directory before deleting it to prevent new
+       VM processes from picking it up. */
+    char szExtPackUnInstDir[RTPATH_MAX];
+    int rc = RTStrCopy(szExtPackUnInstDir, sizeof(szExtPackUnInstDir), pszExtPackDir);
+    if (RT_SUCCESS(rc))
+        rc = RTStrCat(szExtPackUnInstDir, sizeof(szExtPackUnInstDir), "-_-uninst");
+    if (RT_FAILURE(rc))
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "Failed to construct temporary extension pack path: %Rrc", rc);
+
+    rc = RTDirRename(pszExtPackDir, szExtPackUnInstDir, RTPATHRENAME_FLAGS_NO_REPLACE);
+    if (RT_FAILURE(rc))
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "Failed to rename the extension pack directory: %Rrc", rc);
+
+    /* Recursively delete the directory content. */
+    return RemoveExtPackDir(szExtPackUnInstDir, false /*fTemporary*/);
+}
+
+
+/**
  * Wrapper around VBoxExtPackOpenTarFss.
  *
  * @returns success or failure, message displayed on failure.
@@ -564,10 +590,11 @@ static RTEXITCODE ValidateExtPackTarball(RTFILE hTarballFile, const char *pszExt
  * @param   hTarballFileOpt     The tarball file handle (optional).
  * @param   pszName             The extension pack name.
  * @param   pszMangledName      The mangled extension pack name.
+ * @param   fReplace            Whether to replace any existing ext pack.
  */
 static RTEXITCODE DoInstall2(const char *pszBaseDir, const char *pszCertDir, const char *pszTarball,
                              RTFILE hTarballFile, RTFILE hTarballFileOpt,
-                             const char *pszName, const char *pszMangledName)
+                             const char *pszName, const char *pszMangledName, bool fReplace)
 {
     /*
      * Do some basic validation of the tarball file.
@@ -611,19 +638,23 @@ static RTEXITCODE DoInstall2(const char *pszBaseDir, const char *pszCertDir, con
                               "Failed to construct the path to the temporary extension pack directory: %Rrc", rc);
 
     /*
-     * Check that they don't exist at this point in time.
+     * Check that they don't exist at this point in time, unless fReplace=true.
      */
-    rc = RTPathQueryInfoEx(szFinalPath, &ObjInfo, RTFSOBJATTRADD_NOTHING,  RTPATH_F_ON_LINK);
+    rc = RTPathQueryInfoEx(szFinalPath, &ObjInfo, RTFSOBJATTRADD_NOTHING, RTPATH_F_ON_LINK);
     if (RT_SUCCESS(rc) && RTFS_IS_DIRECTORY(ObjInfo.Attr.fMode))
-        return RTMsgErrorExit(RTEXITCODE_FAILURE, "The extension pack is already installed. You must uninstall the old one first.");
-    if (RT_SUCCESS(rc))
+    {
+        if (!fReplace)
+            return RTMsgErrorExit(RTEXITCODE_FAILURE,
+                                  "The extension pack is already installed. You must uninstall the old one first.");
+    }
+    else if (RT_SUCCESS(rc))
         return RTMsgErrorExit(RTEXITCODE_FAILURE,
                               "Found non-directory file system object where the extension pack would be installed ('%s')",
                               szFinalPath);
-    if (rc != VERR_FILE_NOT_FOUND && rc != VERR_PATH_NOT_FOUND)
+    else if (rc != VERR_FILE_NOT_FOUND && rc != VERR_PATH_NOT_FOUND)
         return RTMsgErrorExit(RTEXITCODE_FAILURE, "Unexpected RTPathQueryInfoEx status code %Rrc for '%s'", rc, szFinalPath);
 
-    rc = RTPathQueryInfoEx(szTmpPath, &ObjInfo, RTFSOBJATTRADD_NOTHING,  RTPATH_F_ON_LINK);
+    rc = RTPathQueryInfoEx(szTmpPath, &ObjInfo, RTFSOBJATTRADD_NOTHING, RTPATH_F_ON_LINK);
     if (rc != VERR_FILE_NOT_FOUND && rc != VERR_PATH_NOT_FOUND)
         return RTMsgErrorExit(RTEXITCODE_FAILURE, "Unexpected RTPathQueryInfoEx status code %Rrc for '%s'", rc, szFinalPath);
 
@@ -649,9 +680,18 @@ static RTEXITCODE DoInstall2(const char *pszBaseDir, const char *pszCertDir, con
     if (rcExit == RTEXITCODE_SUCCESS)
     {
         rc = RTDirRename(szTmpPath, szFinalPath, RTPATHRENAME_FLAGS_NO_REPLACE);
+        if (   RT_FAILURE(rc)
+            && fReplace
+            && RTDirExists(szFinalPath))
+        {
+            /* Automatic uninstall if --replace was given. */
+            rcExit = CommonUninstallWorker(szFinalPath);
+            if (rcExit == RTEXITCODE_SUCCESS)
+                rc = RTDirRename(szTmpPath, szFinalPath, RTPATHRENAME_FLAGS_NO_REPLACE);
+        }
         if (RT_SUCCESS(rc))
             RTMsgInfo("Successfully installed '%s' (%s)", pszName, pszTarball);
-        else
+        else if (rcExit == RTEXITCODE_SUCCESS)
             rcExit = RTMsgErrorExit(RTEXITCODE_FAILURE,
                                     "Failed to rename the temporary directory to the final one: %Rrc ('%s' -> '%s')",
                                     rc, szTmpPath, szFinalPath);
@@ -687,11 +727,12 @@ static RTEXITCODE DoInstall(int argc, char **argv)
      */
     static const RTGETOPTDEF s_aOptions[] =
     {
-        { "--base-dir",     'b',   RTGETOPT_REQ_STRING },
-        { "--cert-dir",     'c',   RTGETOPT_REQ_STRING },
-        { "--name",         'n',   RTGETOPT_REQ_STRING },
-        { "--tarball",      't',   RTGETOPT_REQ_STRING },
-        { "--tarball-fd",   'd',   RTGETOPT_REQ_UINT64 }
+        { "--base-dir",     'b',   RTGETOPT_REQ_STRING  },
+        { "--cert-dir",     'c',   RTGETOPT_REQ_STRING  },
+        { "--name",         'n',   RTGETOPT_REQ_STRING  },
+        { "--tarball",      't',   RTGETOPT_REQ_STRING  },
+        { "--tarball-fd",   'd',   RTGETOPT_REQ_UINT64  },
+        { "--replace",      'r',   RTGETOPT_REQ_NOTHING }
     };
     RTGETOPTSTATE   GetState;
     int rc = RTGetOptInit(&GetState, argc, argv, s_aOptions, RT_ELEMENTS(s_aOptions), 0, 0 /*fFlags*/);
@@ -703,6 +744,7 @@ static RTEXITCODE DoInstall(int argc, char **argv)
     const char     *pszName         = NULL;
     const char     *pszTarball      = NULL;
     RTFILE          hTarballFileOpt = NIL_RTFILE;
+    bool            fReplace        = false;
     RTGETOPTUNION   ValueUnion;
     int             ch;
     while ((ch = RTGetOpt(&GetState, &ValueUnion)))
@@ -752,6 +794,10 @@ static RTEXITCODE DoInstall(int argc, char **argv)
                 break;
             }
 
+            case 'r':
+                fReplace = true;
+                break;
+
             case 'h':
             case 'V':
                 return DoStandardOption(ch);
@@ -782,7 +828,7 @@ static RTEXITCODE DoInstall(int argc, char **argv)
     if (RT_SUCCESS(rc))
     {
         rcExit = DoInstall2(pszBaseDir, pszCertDir, pszTarball, hTarballFile, hTarballFileOpt,
-                            pszName, pstrMangledName->c_str());
+                            pszName, pstrMangledName->c_str(), fReplace);
         RTFileClose(hTarballFile);
     }
     else
@@ -879,21 +925,7 @@ static RTEXITCODE DoUninstall(int argc, char **argv)
         return RTEXITCODE_SUCCESS;
     }
 
-    /* Rename the extension pack directory before deleting it to prevent new
-       VM processes from picking it up. */
-    char szExtPackUnInstDir[RTPATH_MAX];
-    rc = RTPathJoin(szExtPackUnInstDir, sizeof(szExtPackUnInstDir), pszBaseDir, strMangledName.c_str());
-    if (RT_SUCCESS(rc))
-        rc = RTStrCat(szExtPackUnInstDir, sizeof(szExtPackUnInstDir), "-_-uninst");
-    if (RT_FAILURE(rc))
-        return RTMsgErrorExit(RTEXITCODE_FAILURE, "Failed to construct temporary extension pack path: %Rrc", rc);
-
-    rc = RTDirRename(szExtPackDir, szExtPackUnInstDir, RTPATHRENAME_FLAGS_NO_REPLACE);
-    if (RT_FAILURE(rc))
-        return RTMsgErrorExit(RTEXITCODE_FAILURE, "Failed to rename the extension pack directory: %Rrc", rc);
-
-    /* Recursively delete the directory content. */
-    RTEXITCODE rcExit = RemoveExtPackDir(szExtPackUnInstDir, false /*fTemporary*/);
+    RTEXITCODE rcExit = CommonUninstallWorker(szExtPackDir);
     if (rcExit == RTEXITCODE_SUCCESS)
         RTMsgInfo("Successfully removed extension pack '%s'\n", pszName);
 
@@ -1383,12 +1415,11 @@ static RTEXITCODE ElevationCheck(bool *pfElevated)
         rcExit = RTMsgErrorExit(RTEXITCODE_FAILURE, "AllocateAndInitializeSid failed: %u (%#x)", GetLastError(), GetLastError());
     if (fIsAdmin)
     {
-# if 1
         /*
          * Check the integrity level (Vista / UAC).
          */
-#  define MY_SECURITY_MANDATORY_HIGH_RID 0x00003000L
-#  define MY_TokenIntegrityLevel         ((TOKEN_INFORMATION_CLASS)25)
+# define MY_SECURITY_MANDATORY_HIGH_RID 0x00003000L
+# define MY_TokenIntegrityLevel         ((TOKEN_INFORMATION_CLASS)25)
         if (   !GetTokenInformation(hToken, MY_TokenIntegrityLevel, NULL, 0, &cb)
             && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
         {
@@ -1409,36 +1440,6 @@ static RTEXITCODE ElevationCheck(bool *pfElevated)
             *pfElevated = true; /* Older Windows version. */
         else
             rcExit = RTMsgErrorExit(RTEXITCODE_FAILURE, "GetTokenInformation failed: %u (%#x)", GetLastError(), GetLastError());
-
-# else
-        /*
-         * Check elevation (Vista / UAC).
-         */
-        DWORD TokenIsElevated = 0;
-        if (GetTokenInformation(hToken, (TOKEN_INFORMATION_CLASS)/*TokenElevation*/ 20, &TokenIsElevated, sizeof(TokenIsElevated), &cb))
-        {
-            fElevated = TokenIsElevated != 0;
-            if (fElevated)
-            {
-                enum
-                {
-                    MY_TokenElevationTypeDefault = 1,
-                    MY_TokenElevationTypeFull,
-                    MY_TokenElevationTypeLimited
-                } enmType;
-                if (GetTokenInformation(hToken, (TOKEN_INFORMATION_CLASS)/*TokenElevationType*/ 18, &enmType, sizeof(enmType), &cb))
-                     *pfElevated = enmType == MY_TokenElevationTypeFull;
-                else
-                    rcExit = RTMsgErrorExit(RTEXITCODE_FAILURE, "GetTokenInformation failed: %u (%#x)", GetLastError(), GetLastError());
-            }
-        }
-        else if (   GetLastError() == ERROR_INVALID_PARAMETER
-                 && GetLastError() == ERROR_NOT_SUPPORTED)
-            *pfElevated = true; /* Older Windows version. */
-        else if (   GetLastError() != ERROR_INVALID_PARAMETER
-                 && GetLastError() != ERROR_NOT_SUPPORTED)
-            rcExit = RTMsgErrorExit(RTEXITCODE_FAILURE, "GetTokenInformation failed: %u (%#x)", GetLastError(), GetLastError());
-# endif
     }
     else
         rcExit = RTMsgErrorExit(RTEXITCODE_FAILURE, "Membership in the Administrators group is required to perform this action");

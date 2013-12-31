@@ -363,7 +363,7 @@ static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation,
             if (RT_SUCCESS(rc))
             {
                 uint32_t fFlags =    (fOpen & RTFILE_O_ACCESS_MASK) == RTFILE_O_READ
-                                   ? PDMACEP_FILE_FLAGS_READ_ONLY | PDMACEP_FILE_FLAGS_CACHING
+                                   ? PDMACEP_FILE_FLAGS_READ_ONLY
                                    : 0;
                 if (pThis->fShareable)
                 {
@@ -371,10 +371,7 @@ static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation,
 
                     fFlags |= PDMACEP_FILE_FLAGS_DONT_LOCK;
                 }
-#if 0
-                else
-                    fFlags |= PDMACEP_FILE_FLAGS_CACHING;
-#endif
+
                 rc = PDMR3AsyncCompletionEpCreateForFile(&pStorageBackend->pEndpoint,
                                                          pszLocation, fFlags,
                                                          pStorageBackend->pTemplate);
@@ -1883,20 +1880,6 @@ static DECLCALLBACK(int) drvvdLoadDone(PPDMDRVINS pDrvIns, PSSMHANDLE pSSM)
 *   Driver methods                                                             *
 *******************************************************************************/
 
-static DECLCALLBACK(void) drvvdPowerOff(PPDMDRVINS pDrvIns)
-{
-    LogFlowFunc(("\n"));
-    PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
-
-    /*
-     * We must close the disk here to ensure that
-     * the backend closes all files before the
-     * async transport driver is destructed.
-     */
-    int rc = VDCloseAll(pThis->pDisk);
-    AssertRC(rc);
-}
-
 /**
  * VM resume notification that we use to undo what the temporary read-only image
  * mode set by drvvdSuspend.
@@ -2766,7 +2749,7 @@ const PDMDRVREG g_DrvVD =
     /* pfnDetach */
     NULL,
     /* pfnPowerOff */
-    drvvdPowerOff,
+    NULL,
     /* pfnSoftReset */
     NULL,
     /* u32EndVersion */

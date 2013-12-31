@@ -261,7 +261,7 @@ HRESULT ExtPackFile::initWithFile(const char *a_pszFile, ExtPackManager *a_pExtP
 }
 
 /**
- * Protected helper that formats the strExtPackFile value.
+ * Protected helper that formats the strWhyUnusable value.
  *
  * @returns S_OK
  * @param   a_pszWhyFmt         Why it failed, format string.
@@ -271,7 +271,7 @@ HRESULT ExtPackFile::initFailed(const char *a_pszWhyFmt, ...)
 {
     va_list va;
     va_start(va, a_pszWhyFmt);
-    m->strExtPackFile.printfV(a_pszWhyFmt, va);
+    m->strWhyUnusable.printfV(a_pszWhyFmt, va);
     va_end(va);
     return S_OK;
 }
@@ -449,19 +449,20 @@ STDMETHODIMP ExtPackFile::QueryLicense(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_
     /*
      * Combine the options to form a file name before locking down anything.
      */
-    char szName[sizeof("ExtPack-license-de_DE.html") + 2];
+    char szName[sizeof(VBOX_EXTPACK_LICENSE_NAME_PREFIX "-de_DE.html") + 2];
     if (strPreferredLocale.isNotEmpty() && strPreferredLanguage.isNotEmpty())
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license-%s_%s.%s",
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX "-%s_%s.%s",
                     strPreferredLocale.c_str(), strPreferredLanguage.c_str(), strFormat.c_str());
     else if (strPreferredLocale.isNotEmpty())
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license-%s.%s",  strPreferredLocale.c_str(), strFormat.c_str());
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX "-%s.%s",  strPreferredLocale.c_str(), strFormat.c_str());
     else if (strPreferredLanguage.isNotEmpty())
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license-_%s.%s", strPreferredLocale.c_str(), strFormat.c_str());
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX "-_%s.%s", strPreferredLocale.c_str(), strFormat.c_str());
     else
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license.%s",     strFormat.c_str());
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX ".%s",     strFormat.c_str());
 
     /*
-     * Effectuate the query.
+     * Lock the extension pack. We need a write lock here as there must not be
+     * concurrent accesses to the tar file handle.
      */
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
@@ -470,90 +471,99 @@ STDMETHODIMP ExtPackFile::QueryLicense(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_
         AutoWriteLock autoLock(this COMMA_LOCKVAL_SRC_POS);
 
         /*
-         * Look it up in the manifest before scanning the tarball for it
+         * Do not permit this query on a pack that isn't considered usable (could
+         * be marked so because of bad license files).
          */
-        if (RTManifestEntryExists(m->hOurManifest, szName))
+        if (!m->fUsable)
+            hrc = setError(E_FAIL, tr("%s"), m->strWhyUnusable.c_str());
+        else
         {
-            RTVFSFSSTREAM   hTarFss;
-            char            szError[8192];
-            int vrc = VBoxExtPackOpenTarFss(m->hExtPackFile, szError, sizeof(szError), &hTarFss);
-            if (RT_SUCCESS(vrc))
+            /*
+             * Look it up in the manifest before scanning the tarball for it
+             */
+            if (RTManifestEntryExists(m->hOurManifest, szName))
             {
-                for (;;)
+                RTVFSFSSTREAM   hTarFss;
+                char            szError[8192];
+                int vrc = VBoxExtPackOpenTarFss(m->hExtPackFile, szError, sizeof(szError), &hTarFss);
+                if (RT_SUCCESS(vrc))
                 {
-                    /* Get the first/next. */
-                    char           *pszName;
-                    RTVFSOBJ        hVfsObj;
-                    RTVFSOBJTYPE    enmType;
-                    vrc = RTVfsFsStrmNext(hTarFss, &pszName, &enmType, &hVfsObj);
-                    if (RT_FAILURE(vrc))
+                    for (;;)
                     {
-                        if (vrc != VERR_EOF)
-                            hrc = setError(VBOX_E_IPRT_ERROR, tr("RTVfsFsStrmNext failed: %Rrc"), vrc);
-                        else
-                            hrc = setError(E_UNEXPECTED, tr("'%s' was found in the manifest but not in the tarball"), szName);
-                        break;
-                    }
-
-                    /* Is this it? */
-                    const char *pszAdjName = pszName[0] == '.' && pszName[1] == '/' ? &pszName[2] : pszName;
-                    if (   !strcmp(pszAdjName, szName)
-                        && (   enmType == RTVFSOBJTYPE_IO_STREAM
-                            || enmType == RTVFSOBJTYPE_FILE))
-                    {
-                        RTVFSIOSTREAM hVfsIos = RTVfsObjToIoStream(hVfsObj);
-                        RTVfsObjRelease(hVfsObj);
-                        RTStrFree(pszName);
-
-                        /* Load the file into memory. */
-                        RTFSOBJINFO ObjInfo;
-                        vrc = RTVfsIoStrmQueryInfo(hVfsIos, &ObjInfo, RTFSOBJATTRADD_NOTHING);
-                        if (RT_SUCCESS(vrc))
+                        /* Get the first/next. */
+                        char           *pszName;
+                        RTVFSOBJ        hVfsObj;
+                        RTVFSOBJTYPE    enmType;
+                        vrc = RTVfsFsStrmNext(hTarFss, &pszName, &enmType, &hVfsObj);
+                        if (RT_FAILURE(vrc))
                         {
-                            size_t cbFile = (size_t)ObjInfo.cbObject;
-                            void  *pvFile = RTMemAllocZ(cbFile + 1);
-                            if (pvFile)
+                            if (vrc != VERR_EOF)
+                                hrc = setError(VBOX_E_IPRT_ERROR, tr("RTVfsFsStrmNext failed: %Rrc"), vrc);
+                            else
+                                hrc = setError(E_UNEXPECTED, tr("'%s' was found in the manifest but not in the tarball"), szName);
+                            break;
+                        }
+
+                        /* Is this it? */
+                        const char *pszAdjName = pszName[0] == '.' && pszName[1] == '/' ? &pszName[2] : pszName;
+                        if (   !strcmp(pszAdjName, szName)
+                            && (   enmType == RTVFSOBJTYPE_IO_STREAM
+                                || enmType == RTVFSOBJTYPE_FILE))
+                        {
+                            RTVFSIOSTREAM hVfsIos = RTVfsObjToIoStream(hVfsObj);
+                            RTVfsObjRelease(hVfsObj);
+                            RTStrFree(pszName);
+
+                            /* Load the file into memory. */
+                            RTFSOBJINFO ObjInfo;
+                            vrc = RTVfsIoStrmQueryInfo(hVfsIos, &ObjInfo, RTFSOBJATTRADD_NOTHING);
+                            if (RT_SUCCESS(vrc))
                             {
-                                vrc = RTVfsIoStrmRead(hVfsIos, pvFile, cbFile, true /*fBlocking*/, NULL);
-                                if (RT_SUCCESS(vrc))
+                                size_t cbFile = (size_t)ObjInfo.cbObject;
+                                void  *pvFile = RTMemAllocZ(cbFile + 1);
+                                if (pvFile)
                                 {
-                                    /* try translate it into a string we can return. */
-                                    Bstr bstrLicense((const char *)pvFile, cbFile);
-                                    if (bstrLicense.isNotEmpty())
+                                    vrc = RTVfsIoStrmRead(hVfsIos, pvFile, cbFile, true /*fBlocking*/, NULL);
+                                    if (RT_SUCCESS(vrc))
                                     {
-                                        bstrLicense.detachTo(a_pbstrLicense);
-                                        hrc = S_OK;
+                                        /* try translate it into a string we can return. */
+                                        Bstr bstrLicense((const char *)pvFile, cbFile);
+                                        if (bstrLicense.isNotEmpty())
+                                        {
+                                            bstrLicense.detachTo(a_pbstrLicense);
+                                            hrc = S_OK;
+                                        }
+                                        else
+                                            hrc = setError(VBOX_E_IPRT_ERROR,
+                                                           tr("The license file '%s' is empty or contains invalid UTF-8 encoding"),
+                                                           szName);
                                     }
                                     else
-                                        hrc = setError(VBOX_E_IPRT_ERROR,
-                                                       tr("The license file '%s' is empty or contains invalid UTF-8 encoding"),
-                                                       szName);
+                                        hrc = setError(VBOX_E_IPRT_ERROR, tr("Failed to read '%s': %Rrc"), szName, vrc);
+                                    RTMemFree(pvFile);
                                 }
                                 else
-                                    hrc = setError(VBOX_E_IPRT_ERROR, tr("Failed to read '%s': %Rrc"), szName, vrc);
-                                RTMemFree(pvFile);
+                                    hrc = setError(E_OUTOFMEMORY, tr("Failed to allocate %zu bytes for '%s'"), cbFile, szName);
                             }
                             else
-                                hrc = setError(E_OUTOFMEMORY, tr("Failed to allocate %zu bytes for '%s'"), cbFile, szName);
+                                hrc = setError(VBOX_E_IPRT_ERROR, tr("RTVfsIoStrmQueryInfo on '%s': %Rrc"), szName, vrc);
+                            RTVfsIoStrmRelease(hVfsIos);
+                            break;
                         }
-                        else
-                            hrc = setError(VBOX_E_IPRT_ERROR, tr("RTVfsIoStrmQueryInfo on '%s': %Rrc"), szName, vrc);
-                        RTVfsIoStrmRelease(hVfsIos);
-                        break;
-                    }
 
-                    /* Release current. */
-                    RTVfsObjRelease(hVfsObj);
-                    RTStrFree(pszName);
+                        /* Release current. */
+                        RTVfsObjRelease(hVfsObj);
+                        RTStrFree(pszName);
+                    }
+                    RTVfsFsStrmRelease(hTarFss);
                 }
-                RTVfsFsStrmRelease(hTarFss);
+                else
+                    hrc = setError(VBOX_E_OBJECT_NOT_FOUND, tr("%s"), szError);
             }
             else
-                hrc = setError(VBOX_E_OBJECT_NOT_FOUND, tr("%s"), szError);
+                hrc = setError(VBOX_E_OBJECT_NOT_FOUND, tr("The license file '%s' was not found in '%s'"),
+                               szName, m->strExtPackFile.c_str());
         }
-        else
-            hrc = setError(VBOX_E_OBJECT_NOT_FOUND, tr("The license file '%s' was not found in '%s'"),
-                           szName, m->strExtPackFile.c_str());
     }
     return hrc;
 }
@@ -569,14 +579,14 @@ STDMETHODIMP ExtPackFile::COMGETTER(FilePath)(BSTR *a_pbstrPath)
     return hrc;
 }
 
-STDMETHODIMP ExtPackFile::Install(void)
+STDMETHODIMP ExtPackFile::Install(BOOL a_fReplace)
 {
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
     if (SUCCEEDED(hrc))
     {
         if (m->fUsable)
-            hrc = m->ptrExtPackMgr->doInstall(this);
+            hrc = m->ptrExtPackMgr->doInstall(this, RT_BOOL(a_fReplace));
         else
             hrc = setError(E_FAIL, "%s", m->strWhyUnusable.c_str());
     }
@@ -1051,7 +1061,14 @@ HRESULT ExtPack::refresh(bool *a_pfCanDelete)
      */
     if (m->fUsable)
     {
-        /** @todo not important, so it can wait. */
+        if (m->hMainMod == NIL_RTLDRMOD)
+            probeAndLoad();
+        else if (   !objinfoIsEqual(&ObjInfoDesc,    &m->ObjInfoDesc)
+                 || !objinfoIsEqual(&ObjInfoMainMod, &m->ObjInfoMainMod)
+                 || !objinfoIsEqual(&ObjInfoExtPack, &m->ObjInfoExtPack) )
+        {
+            /** @todo not important, so it can wait. */
+        }
     }
     /*
      * Ok, it is currently not usable.  If anything has changed since last time
@@ -1152,12 +1169,13 @@ void ExtPack::probeAndLoad(void)
 
     if (fIsNative)
     {
-        vrc = RTLdrLoad(m->strMainModPath.c_str(), &m->hMainMod);
+        char szError[8192];
+        vrc = RTLdrLoadEx(m->strMainModPath.c_str(), &m->hMainMod, szError, sizeof(szError));
         if (RT_FAILURE(vrc))
         {
             m->hMainMod = NIL_RTLDRMOD;
-            m->strWhyUnusable.printf(tr("Failed to locate load the main module ('%s'): %Rrc"),
-                                           m->strMainModPath.c_str(), vrc);
+            m->strWhyUnusable.printf(tr("Failed to locate load the main module ('%s'): %Rrc - %s"),
+                                           m->strMainModPath.c_str(), vrc, szError);
             return;
         }
     }
@@ -1606,16 +1624,16 @@ STDMETHODIMP ExtPack::QueryLicense(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_bstr
     /*
      * Combine the options to form a file name before locking down anything.
      */
-    char szName[sizeof("ExtPack-license-de_DE.html") + 2];
+    char szName[sizeof(VBOX_EXTPACK_LICENSE_NAME_PREFIX "-de_DE.html") + 2];
     if (strPreferredLocale.isNotEmpty() && strPreferredLanguage.isNotEmpty())
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license-%s_%s.%s",
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX "-%s_%s.%s",
                     strPreferredLocale.c_str(), strPreferredLanguage.c_str(), strFormat.c_str());
     else if (strPreferredLocale.isNotEmpty())
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license-%s.%s",  strPreferredLocale.c_str(), strFormat.c_str());
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX "-%s.%s",  strPreferredLocale.c_str(), strFormat.c_str());
     else if (strPreferredLanguage.isNotEmpty())
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license-_%s.%s", strPreferredLocale.c_str(), strFormat.c_str());
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX "-_%s.%s", strPreferredLocale.c_str(), strFormat.c_str());
     else
-        RTStrPrintf(szName, sizeof(szName), "ExtPack-license.%s",     strFormat.c_str());
+        RTStrPrintf(szName, sizeof(szName), VBOX_EXTPACK_LICENSE_NAME_PREFIX ".%s",     strFormat.c_str());
 
     /*
      * Effectuate the query.
@@ -1626,34 +1644,39 @@ STDMETHODIMP ExtPack::QueryLicense(IN_BSTR a_bstrPreferredLocale, IN_BSTR a_bstr
     {
         AutoReadLock autoLock(this COMMA_LOCKVAL_SRC_POS); /* paranoia */
 
-        char szPath[RTPATH_MAX];
-        int vrc = RTPathJoin(szPath, sizeof(szPath), m->strExtPackPath.c_str(), szName);
-        if (RT_SUCCESS(vrc))
+        if (!m->fUsable)
+            hrc = setError(E_FAIL, tr("%s"), m->strWhyUnusable.c_str());
+        else
         {
-            void   *pvFile;
-            size_t  cbFile;
-            vrc = RTFileReadAllEx(szPath, 0, RTFOFF_MAX, RTFILE_RDALL_O_DENY_READ, &pvFile, &cbFile);
+            char szPath[RTPATH_MAX];
+            int vrc = RTPathJoin(szPath, sizeof(szPath), m->strExtPackPath.c_str(), szName);
             if (RT_SUCCESS(vrc))
             {
-                Bstr bstrLicense((const char *)pvFile, cbFile);
-                if (bstrLicense.isNotEmpty())
+                void   *pvFile;
+                size_t  cbFile;
+                vrc = RTFileReadAllEx(szPath, 0, RTFOFF_MAX, RTFILE_RDALL_O_DENY_READ, &pvFile, &cbFile);
+                if (RT_SUCCESS(vrc))
                 {
-                    bstrLicense.detachTo(a_pbstrLicense);
-                    hrc = S_OK;
+                    Bstr bstrLicense((const char *)pvFile, cbFile);
+                    if (bstrLicense.isNotEmpty())
+                    {
+                        bstrLicense.detachTo(a_pbstrLicense);
+                        hrc = S_OK;
+                    }
+                    else
+                        hrc = setError(VBOX_E_IPRT_ERROR, tr("The license file '%s' is empty or contains invalid UTF-8 encoding"),
+                                       szPath);
+                    RTFileReadAllFree(pvFile, cbFile);
                 }
+                else if (vrc == VERR_FILE_NOT_FOUND || vrc == VERR_PATH_NOT_FOUND)
+                    hrc = setError(VBOX_E_OBJECT_NOT_FOUND, tr("The license file '%s' was not found in extension pack '%s'"),
+                                   szName, m->Desc.strName.c_str());
                 else
-                    hrc = setError(VBOX_E_IPRT_ERROR, tr("The license file '%s' is empty or contains invalid UTF-8 encoding"),
-                                   szPath);
-                RTFileReadAllFree(pvFile, cbFile);
+                    hrc = setError(VBOX_E_FILE_ERROR, tr("Failed to open the license file '%s': %Rrc"), szPath, vrc);
             }
-            else if (vrc == VERR_FILE_NOT_FOUND || vrc == VERR_PATH_NOT_FOUND)
-                hrc = setError(VBOX_E_OBJECT_NOT_FOUND, tr("The license file '%s' was not found in extension pack '%s'"),
-                               szName, m->Desc.strName.c_str());
             else
-                hrc = setError(VBOX_E_FILE_ERROR, tr("Failed to open the license file '%s': %Rrc"), szPath, vrc);
+                hrc = setError(VBOX_E_IPRT_ERROR, tr("RTPathJoin failed: %Rrc"), vrc);
         }
-        else
-            hrc = setError(VBOX_E_IPRT_ERROR, tr("RTPathJoin failed: %Rrc"), vrc);
     }
     return hrc;
 }
@@ -1901,7 +1924,7 @@ STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval
          * stale by direct meddling or some other user.
          */
         ExtPack *pExtPack;
-        hrc = refreshExtPack(strName.c_str(), false /*a_fUnsuableIsError*/, &pExtPack);
+        hrc = refreshExtPack(strName.c_str(), false /*a_fUnusableIsError*/, &pExtPack);
         if (SUCCEEDED(hrc))
         {
             if (!pExtPack)
@@ -1929,10 +1952,10 @@ STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval
                                                 "--base-dir", m->strBaseDir.c_str(),
                                                 "--name",     strName.c_str(),
                                                 pszForcedOpt, /* Last as it may be NULL. */
-                                                NULL);
+                                                (const char *)NULL);
                     if (SUCCEEDED(hrc))
                     {
-                        hrc = refreshExtPack(strName.c_str(), false /*a_fUnsuableIsError*/, &pExtPack);
+                        hrc = refreshExtPack(strName.c_str(), false /*a_fUnusableIsError*/, &pExtPack);
                         if (SUCCEEDED(hrc))
                         {
                             if (!pExtPack)
@@ -1946,7 +1969,7 @@ STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval
                     else
                     {
                         ErrorInfoKeeper Eik;
-                        refreshExtPack(strName.c_str(), false /*a_fUnsuableIsError*/, NULL);
+                        refreshExtPack(strName.c_str(), false /*a_fUnusableIsError*/, NULL);
                     }
                 }
             }
@@ -1983,7 +2006,7 @@ STDMETHODIMP ExtPackManager::Cleanup(void)
         AutoWriteLock autoLock(this COMMA_LOCKVAL_SRC_POS);
         hrc = runSetUidToRootHelper("cleanup",
                                     "--base-dir", m->strBaseDir.c_str(),
-                                    NULL);
+                                    (const char *)NULL);
     }
 
     return hrc;
@@ -2274,7 +2297,7 @@ void ExtPackManager::removeExtPack(const char *a_pszName)
  *          on failure.
  *
  * @param   a_pszName           The extension to update..
- * @param   a_fUnsuableIsError  If @c true, report an unusable extension pack
+ * @param   a_fUnusableIsError  If @c true, report an unusable extension pack
  *                              as an error.
  * @param   a_ppExtPack         Where to store the pointer to the extension
  *                              pack of it is still around after the refresh.
@@ -2283,7 +2306,7 @@ void ExtPackManager::removeExtPack(const char *a_pszName)
  * @remarks Caller holds the extension manager lock.
  * @remarks Only called in VBoxSVC.
  */
-HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnsuableIsError, ExtPack **a_ppExtPack)
+HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnusableIsError, ExtPack **a_ppExtPack)
 {
     Assert(m->pVirtualBox != NULL); /* Only called from VBoxSVC. */
 
@@ -2380,7 +2403,7 @@ HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnsuableIs
      */
     if (   SUCCEEDED(hrc)
         && pExtPack
-        && a_fUnsuableIsError
+        && a_fUnusableIsError
         && !pExtPack->m->fUsable)
         hrc = setError(E_FAIL, "%s", pExtPack->m->strWhyUnusable.c_str());
 
@@ -2395,8 +2418,10 @@ HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnsuableIs
  * @returns COM status code.
  * @param   a_pExtPackFile  The extension pack file, caller checks that it's
  *                          usable.
+ * @param   a_fReplace      Whether to replace any existing extpack or just
+ *                          fail.
  */
-HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile)
+HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace)
 {
     AssertReturn(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON, E_UNEXPECTED);
     iprt::MiniString const * const pStrName     = &a_pExtPackFile->m->Desc.strName;
@@ -2413,24 +2438,35 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile)
          * may be made stale by direct meddling or some other user.
          */
         ExtPack *pExtPack;
-        hrc = refreshExtPack(pStrName->c_str(), false /*a_fUnsuableIsError*/, &pExtPack);
-        if (SUCCEEDED(hrc) && !pExtPack)
+        hrc = refreshExtPack(pStrName->c_str(), false /*a_fUnusableIsError*/, &pExtPack);
+        if (SUCCEEDED(hrc))
+        {
+            if (pExtPack && a_fReplace)
+                hrc = pExtPack->callUninstallHookAndClose(m->pVirtualBox, false /*a_ForcedRemoval*/);
+            else if (pExtPack)
+                hrc = setError(E_FAIL,
+                               tr("Extension pack '%s' is already installed."
+                                  " In case of a reinstallation, please uninstall it first"),
+                               pStrName->c_str());
+        }
+        if (SUCCEEDED(hrc))
         {
             /*
              * Run the privileged helper binary that performs the actual
              * installation.  Then create an object for the packet (we do this
              * even on failure, to be on the safe side).
              */
-/** @todo add a hash (SHA-256) of the tarball or maybe just the manifest. */
+            /** @todo add a hash (SHA-256) of the tarball or maybe just the manifest. */
             hrc = runSetUidToRootHelper("install",
                                         "--base-dir",   m->strBaseDir.c_str(),
                                         "--cert-dir",   m->strCertificatDirPath.c_str(),
                                         "--name",       pStrName->c_str(),
                                         "--tarball",    pStrTarball->c_str(),
-                                        NULL);
+                                        pExtPack ? "--replace" : (const char *)NULL,
+                                        (const char *)NULL);
             if (SUCCEEDED(hrc))
             {
-                hrc = refreshExtPack(pStrName->c_str(), true /*a_fUnsuableIsError*/, &pExtPack);
+                hrc = refreshExtPack(pStrName->c_str(), true /*a_fUnusableIsError*/, &pExtPack);
                 if (SUCCEEDED(hrc))
                 {
                     LogRel(("ExtPackManager: Successfully installed extension pack '%s'.\n", pStrName->c_str()));
@@ -2440,14 +2476,9 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile)
             else
             {
                 ErrorInfoKeeper Eik;
-                refreshExtPack(pStrName->c_str(), false /*a_fUnsuableIsError*/, NULL);
+                refreshExtPack(pStrName->c_str(), false /*a_fUnusableIsError*/, NULL);
             }
         }
-        else if (SUCCEEDED(hrc))
-            hrc = setError(E_FAIL,
-                           tr("Extension pack '%s' is already installed."
-                              " In case of a reinstallation, please uninstall it first"),
-                           pStrName->c_str());
 
         /*
          * Do VirtualBoxReady callbacks now for any freshly installed

@@ -803,89 +803,6 @@ int handleSharedFolder(HandlerArg *a)
     return 0;
 }
 
-int handleVMStatistics(HandlerArg *a)
-{
-    HRESULT rc;
-
-    /* at least one option: the UUID or name of the VM */
-    if (a->argc < 1)
-        return errorSyntax(USAGE_VM_STATISTICS, "Incorrect number of parameters");
-
-    /* try to find the given machine */
-    ComPtr<IMachine> machine;
-    CHECK_ERROR(a->virtualBox, FindMachine(Bstr(a->argv[0]).raw(),
-                                           machine.asOutParam()));
-    if (FAILED(rc))
-        return 1;
-
-    /* parse arguments. */
-    bool fReset = false;
-    bool fWithDescriptions = false;
-    const char *pszPattern = NULL; /* all */
-    for (int i = 1; i < a->argc; i++)
-    {
-        if (   !strcmp(a->argv[i], "--pattern")
-            || !strcmp(a->argv[i], "-pattern"))
-        {
-            if (pszPattern)
-                return errorSyntax(USAGE_VM_STATISTICS, "Multiple --patterns options is not permitted");
-            if (i + 1 >= a->argc)
-                return errorArgument("Missing argument to '%s'", a->argv[i]);
-            pszPattern = a->argv[++i];
-        }
-        else if (   !strcmp(a->argv[i], "--descriptions")
-                 || !strcmp(a->argv[i], "-descriptions"))
-            fWithDescriptions = true;
-        /* add: --file <filename> and --formatted */
-        else if (   !strcmp(a->argv[i], "--reset")
-                 || !strcmp(a->argv[i], "-reset"))
-            fReset = true;
-        else
-            return errorSyntax(USAGE_VM_STATISTICS, "Unknown option '%s'", a->argv[i]);
-    }
-    if (fReset && fWithDescriptions)
-        return errorSyntax(USAGE_VM_STATISTICS, "The --reset and --descriptions options does not mix");
-
-
-    /* open an existing session for the VM. */
-    CHECK_ERROR(machine, LockMachine(a->session, LockType_Shared));
-    if (SUCCEEDED(rc))
-    {
-        /* get the session console. */
-        ComPtr <IConsole> console;
-        CHECK_ERROR(a->session, COMGETTER(Console)(console.asOutParam()));
-        if (SUCCEEDED(rc))
-        {
-            /* get the machine debugger. */
-            ComPtr <IMachineDebugger> debugger;
-            CHECK_ERROR(console, COMGETTER(Debugger)(debugger.asOutParam()));
-            if (SUCCEEDED(rc))
-            {
-                if (fReset)
-                    CHECK_ERROR(debugger, ResetStats(Bstr(pszPattern).raw()));
-                else
-                {
-                    Bstr stats;
-                    CHECK_ERROR(debugger, GetStats(Bstr(pszPattern).raw(),
-                                                   fWithDescriptions,
-                                                   stats.asOutParam()));
-                    if (SUCCEEDED(rc))
-                    {
-                        /* if (fFormatted)
-                         { big mess }
-                         else
-                         */
-                        RTPrintf("%ls\n", stats.raw());
-                    }
-                }
-            }
-            a->session->UnlockMachine();
-        }
-    }
-
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
 int handleExtPack(HandlerArg *a)
 {
     if (a->argc < 1)
@@ -901,8 +818,35 @@ int handleExtPack(HandlerArg *a)
 
     if (!strcmp(a->argv[0], "install"))
     {
-        if (a->argc > 2)
-            return errorSyntax(USAGE_EXTPACK, "Too many parameters given to \"extpack install\"");
+        const char *pszName  = NULL;
+        bool        fReplace = false;
+
+        static const RTGETOPTDEF s_aInstallOptions[] =
+        {
+            { "--replace",  'r', RTGETOPT_REQ_NOTHING },
+        };
+
+        RTGetOptInit(&GetState, a->argc, a->argv, s_aInstallOptions, RT_ELEMENTS(s_aInstallOptions), 1, 0 /*fFlags*/);
+        while ((ch = RTGetOpt(&GetState, &ValueUnion)))
+        {
+            switch (ch)
+            {
+                case 'f':
+                    fReplace = true;
+                    break;
+
+                case VINF_GETOPT_NOT_OPTION:
+                    if (pszName)
+                        return errorSyntax(USAGE_EXTPACK, "Too many extension pack names given to \"extpack uninstall\"");
+                    pszName = ValueUnion.psz;
+                    break;
+
+                default:
+                    return errorGetOpt(USAGE_EXTPACK, ch, &ValueUnion);
+            }
+        }
+        if (!pszName)
+            return errorSyntax(USAGE_EXTPACK, "No extension pack name was given to \"extpack install\"");
 
         char szPath[RTPATH_MAX];
         int vrc = RTPathAbs(a->argv[1], szPath, sizeof(szPath));
@@ -914,7 +858,7 @@ int handleExtPack(HandlerArg *a)
         ComPtr<IExtPackFile> ptrExtPackFile;
         CHECK_ERROR2_RET(ptrExtPackMgr, OpenExtPackFile(bstrTarball.raw(), ptrExtPackFile.asOutParam()), RTEXITCODE_FAILURE);
         CHECK_ERROR2_RET(ptrExtPackFile, COMGETTER(Name)(bstrName.asOutParam()), RTEXITCODE_FAILURE);
-        CHECK_ERROR2_RET(ptrExtPackFile, Install(), RTEXITCODE_FAILURE);
+        CHECK_ERROR2_RET(ptrExtPackFile, Install(fReplace), RTEXITCODE_FAILURE);
         RTPrintf("Successfully installed \"%lS\".\n", bstrName.raw());
     }
     else if (!strcmp(a->argv[0], "uninstall"))
@@ -927,8 +871,7 @@ int handleExtPack(HandlerArg *a)
             { "--forced",  'f', RTGETOPT_REQ_NOTHING },
         };
 
-        RTGetOptInit(&GetState, a->argc, a->argv, s_aUninstallOptions, RT_ELEMENTS(s_aUninstallOptions),
-                     1, RTGETOPTINIT_FLAGS_NO_STD_OPTS);
+        RTGetOptInit(&GetState, a->argc, a->argv, s_aUninstallOptions, RT_ELEMENTS(s_aUninstallOptions), 1, 0);
         while ((ch = RTGetOpt(&GetState, &ValueUnion)))
         {
             switch (ch)
@@ -948,7 +891,7 @@ int handleExtPack(HandlerArg *a)
             }
         }
         if (!pszName)
-            return errorSyntax(USAGE_EXTPACK, "Not extension pack name was given to \"extpack uninstall\"");
+            return errorSyntax(USAGE_EXTPACK, "No extension pack name was given to \"extpack uninstall\"");
 
         Bstr bstrName(pszName);
         CHECK_ERROR2_RET(ptrExtPackMgr, Uninstall(bstrName.raw(), fForced), RTEXITCODE_FAILURE);

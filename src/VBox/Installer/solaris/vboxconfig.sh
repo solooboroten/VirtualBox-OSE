@@ -808,6 +808,19 @@ postinstall()
             fi
         fi
 
+        # Update mime and desktop databases to get the right menu entries
+        # and icons. There is still some delay until the GUI picks it up,
+        # but that cannot be helped.
+        if test -d $PKG_INSTALL_ROOT/usr/share/icons; then
+            infoprint "Installing MIME types and icons"
+            if test "$REMOTEINST" -eq 0; then
+                /usr/bin/update-mime-database /usr/share/mime >/dev/null 2>&1
+                /usr/bin/update-desktop-database -q 2>/dev/null
+            else
+                subprint "Skipped for targetted installs."
+            fi
+        fi
+
         # Install python bindings for non-remote installs
         if test "$REMOTEINST" -eq 0; then
             if test -f "$DIR_VBOXBASE/sdk/installer/vboxapisetup.py" || test -h "$DIR_VBOXBASE/sdk/installer/vboxapisetup.py"; then

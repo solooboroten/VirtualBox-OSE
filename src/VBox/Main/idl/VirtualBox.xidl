@@ -7937,7 +7937,7 @@
 
   <interface
     name="IGuest" extends="$unknown"
-    uuid="1039b0cc-9bc1-4c6d-8d12-864aa48aa5b9"
+    uuid="7ce7e4d8-cdaa-4d83-a0f4-510c8ee70aea"
     wsmap="managed"
     >
     <desc>
@@ -8112,8 +8112,7 @@
       </param>
       <param name="flags" type="unsigned long" dir="in">
         <desc>
-          Execution flags - currently not supported and therefore
-          has to be set to 0.
+          <link to="ExecuteProcessFlag"/> flags.
         </desc>
       </param>
       <param name="arguments" type="wstring" safearray="yes" dir="in">
@@ -8260,7 +8259,7 @@
       </param>
       <param name="flags" type="unsigned long" dir="in">
         <desc>
-          Copy flags. Not used at the moment and must be set to 0.
+          <link to="CopyFileFlag"/> flags. Not used at the moment and should be set to 0.
         </desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
@@ -8301,7 +8300,7 @@
       </param>
       <param name="flags" type="unsigned long" dir="in">
         <desc>
-          Additional flags. Not used at the moment and must be set to 0.
+          <link to="CreateDirectoryFlag"/> flags.
         </desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
@@ -8325,7 +8324,13 @@
       </param>
       <param name="flags" type="unsigned long" dir="in">
         <desc>
-          Not used, must be set to zero.
+          <link to="ProcessInputFlag"/> flags.
+        </desc>
+      </param>
+      <param name="timeoutMS" type="unsigned long" dir="in">
+        <desc>
+          The maximum timeout value (in msec) to wait for getting the
+          data transfered to the guest. Pass 0 for an infinite timeout.
         </desc>
       </param>
       <param name="data" type="octet" dir="in" safearray="yes">
@@ -8357,7 +8362,7 @@
       </param>
       <param name="flags" type="unsigned long" dir="in">
         <desc>
-          Flags for Guest Additions update.
+          <link to="AdditionsUpdateFlag"/> flags.
         </desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
@@ -8792,7 +8797,7 @@
 
   <enum
     name="MediumType"
-    uuid="19388a99-8e70-4bd4-9a95-90cbc513ef6d"
+    uuid="fe663fb5-c244-4e1b-9d81-c628b417dd04"
     >
     <desc>
       Virtual medium type.
@@ -8826,6 +8831,15 @@
     <const name="Readonly"          value="4">
       <desc>
         A readonly medium, which can of course be used by several machines.
+        <note>Present and accepted since VirtualBox 4.0.</note>
+      </desc>
+    </const>
+    <const name="MultiAttach"       value="5">
+      <desc>
+        A medium which is is indirectly attached, so that one base medium can
+        be used for several VMs which have their own differencing medium to
+        store their modifications. In some sense a variant of Immutable
+        with unset AutoReset flag in each differencing medium.
         <note>Present and accepted since VirtualBox 4.0.</note>
       </desc>
     </const>
@@ -12687,7 +12701,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IVRDEServer" extends="$unknown"
-    uuid="444e5d4a-ecd9-4c38-af95-a2fbfd69b486"
+    uuid="b5bd49dc-26ef-42b4-ae7a-0c4b734a7653"
     wsmap="managed"
     >
     <attribute name="enabled" type="boolean">
@@ -12740,6 +12754,12 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <desc>
         Library used for authentication of RDP clients by this VM. Overrides
         <link to="ISystemProperties::VRDEAuthLibrary"/>.
+      </desc>
+    </attribute>
+
+    <attribute name="VRDEProperties" type="wstring" readonly="yes" safearray="yes">
+      <desc>
+        Array of names of properties, which are supported by this VRDE server.
       </desc>
     </attribute>
 
@@ -14461,7 +14481,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IExtPackFile" extends="IExtPackBase"
-    uuid="e57e5ab7-e0e8-4a55-9241-afa7ad219911"
+    uuid="64b65bda-eedf-442c-9fd2-d179a021031a"
     wsmap="suppress"
     >
     <desc>
@@ -14480,6 +14500,12 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <desc>
         Install the extension pack.
       </desc>
+      <param name="replace" type="boolean" dir="in">
+        <desc>
+          Set this to automatically uninstall any existing extension pack with
+          the same name as the one being installed.
+        </desc>
+      </param>
     </method>
   </interface>
 

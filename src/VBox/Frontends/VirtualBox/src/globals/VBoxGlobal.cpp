@@ -2393,6 +2393,38 @@ void VBoxGlobal::startEnumeratingMedia()
     mMediaEnumThread->start();
 }
 
+VBoxDefs::MediumType VBoxGlobal::mediumTypeToLocal(KDeviceType globalType)
+{
+    switch (globalType)
+    {
+        case KDeviceType_HardDisk:
+            return VBoxDefs::MediumType_HardDisk;
+        case KDeviceType_DVD:
+            return VBoxDefs::MediumType_DVD;
+        case KDeviceType_Floppy:
+            return VBoxDefs::MediumType_Floppy;
+        default:
+            break;
+    }
+    return VBoxDefs::MediumType_Invalid;
+}
+
+KDeviceType VBoxGlobal::mediumTypeToGlobal(VBoxDefs::MediumType localType)
+{
+    switch (localType)
+    {
+        case VBoxDefs::MediumType_HardDisk:
+            return KDeviceType_HardDisk;
+        case VBoxDefs::MediumType_DVD:
+            return KDeviceType_DVD;
+        case VBoxDefs::MediumType_Floppy:
+            return KDeviceType_Floppy;
+        default:
+            break;
+    }
+    return KDeviceType_Null;
+}
+
 /**
  * Adds a new medium to the current media list and emits the #mediumAdded()
  * signal.
@@ -2564,19 +2596,17 @@ VBoxMedium VBoxGlobal::findMedium (const QString &aMediumId) const
  * and temporary cache (enumerate) it in GUI inner mediums cache: */
 QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType, QWidget *pParent,
                                                  const QString &strDefaultFolder /* = QString() */,
-                                                 bool fUseLastFolder /* = false */) const
+                                                 bool fUseLastFolder /* = false */)
 {
     /* Initialize variables: */
-    CVirtualBox vbox = vboxGlobal().virtualBox();
     QString strHomeFolder = fUseLastFolder && !m_strLastFolder.isEmpty() ? m_strLastFolder :
-                            strDefaultFolder.isEmpty() ? vbox.GetHomeFolder() : strDefaultFolder;
+                            strDefaultFolder.isEmpty() ? vboxGlobal().virtualBox().GetHomeFolder() : strDefaultFolder;
     QList < QPair <QString, QString> > filters;
     QStringList backends;
     QStringList prefixes;
     QString strFilter;
     QString strTitle;
     QString allType;
-    KDeviceType type;
     switch (mediumType)
     {
         case VBoxDefs::MediumType_HardDisk:
@@ -2584,7 +2614,6 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
             filters = vboxGlobal().HDDBackends();
             strTitle = tr ("Choose a virtual hard disk file");
             allType = tr ("hard disk");
-            type = KDeviceType_HardDisk;
             break;
         }
         case VBoxDefs::MediumType_DVD:
@@ -2592,7 +2621,6 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
             filters = vboxGlobal().DVDBackends();
             strTitle = tr ("Choose a virtual CD/DVD disk file");
             allType = tr ("CD/DVD-ROM disk");
-            type = KDeviceType_DVD;
             break;
         }
         case VBoxDefs::MediumType_Floppy:
@@ -2600,7 +2628,6 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
             filters = vboxGlobal().FloppyBackends();
             strTitle = tr ("Choose a virtual floppy disk file");
             allType = tr ("floppy disk");
-            type = KDeviceType_Floppy;
             break;
         }
         default:
@@ -2624,36 +2651,58 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
 
     /* Create open file dialog: */
     QStringList files = QIFileDialog::getOpenFileNames(strHomeFolder, strFilter, pParent, strTitle, 0, true, true);
+
+    /* If dialog has some result: */
     if (!files.empty() && !files[0].isEmpty())
+        return openMedium(mediumType, files[0]);
+
+    return QString();
+}
+
+QString VBoxGlobal::openMedium(VBoxDefs::MediumType mediumType, QString strMediumLocation)
+{
+    /* Convert to native separators: */
+    strMediumLocation = QDir::toNativeSeparators(strMediumLocation);
+
+    /* Initialize variables: */
+    CVirtualBox vbox = vboxGlobal().virtualBox();
+
+    /* Remember the path of the last chosen medium: */
+    m_strLastFolder = QFileInfo(strMediumLocation).absolutePath();
+
+    /* Update recently used list: */
+    QString strRecentAddress = mediumType == VBoxDefs::MediumType_HardDisk ? VBoxDefs::GUI_RecentListHD :
+                               mediumType == VBoxDefs::MediumType_DVD ? VBoxDefs::GUI_RecentListCD :
+                               mediumType == VBoxDefs::MediumType_Floppy ? VBoxDefs::GUI_RecentListFD :
+                               QString();
+    QStringList recentMediumList = virtualBox().GetExtraData(strRecentAddress).split(';');
+    if (recentMediumList.contains(strMediumLocation))
+        recentMediumList.removeAll(strMediumLocation);
+    recentMediumList.prepend(strMediumLocation);
+    while(recentMediumList.size() > 5) recentMediumList.removeLast();
+    virtualBox().SetExtraData(strRecentAddress, recentMediumList.join(";"));
+
+    /* Open corresponding medium: */
+    CMedium comMedium = vbox.OpenMedium(strMediumLocation, mediumTypeToGlobal(mediumType), KAccessMode_ReadWrite);
+
+    if (vbox.isOk())
     {
-        /* Get location: */
-        QString strLocation = files[0];
+        /* Prepare vbox medium wrapper: */
+        VBoxMedium vboxMedium;
 
-        /* Remember absolute path: */
-        m_strLastFolder = QFileInfo(strLocation).absolutePath();
-
-        /* Open corresponding medium: */
-        CMedium comMedium = vbox.OpenMedium(strLocation, type, KAccessMode_ReadWrite);
-
-        if (vbox.isOk())
+        /* First of all we should test if that medium already opened: */
+        if (!vboxGlobal().findMedium(comMedium, vboxMedium))
         {
-            /* Prepare vbox medium wrapper: */
-            VBoxMedium vboxMedium;
-
-            /* First of all we should test if that medium already opened: */
-            if (!vboxGlobal().findMedium(comMedium, vboxMedium))
-            {
-                /* And create new otherwise: */
-                vboxMedium = VBoxMedium(CMedium(comMedium), mediumType, KMediumState_Created);
-                vboxGlobal().addMedium(vboxMedium);
-            }
-
-            /* Return vboxMedium id: */
-            return vboxMedium.id();
+            /* And create new otherwise: */
+            vboxMedium = VBoxMedium(CMedium(comMedium), mediumType, KMediumState_Created);
+            vboxGlobal().addMedium(vboxMedium);
         }
-        else
-            vboxProblem().cannotOpenMedium(pParent, vbox, mediumType, strLocation);
+
+        /* Return vboxMedium id: */
+        return vboxMedium.id();
     }
+    else
+        vboxProblem().cannotOpenMedium(0, vbox, mediumType, strMediumLocation);
 
     return QString();
 }
@@ -5061,12 +5110,14 @@ void VBoxGlobal::init()
         mDbgEnabled = mDbgAutoShow =  mDbgAutoShowCommandLine = mDbgAutoShowStatistics = false;
     if (mDbgEnabled)
     {
-        int vrc = SUPR3HardenedLdrLoadAppPriv("VBoxDbg", &mhVBoxDbg);
+        char szErr[8192];
+        szErr[0] = '\0';
+        int vrc = SUPR3HardenedLdrLoadAppPriv("VBoxDbg", &mhVBoxDbg, szErr, sizeof(szErr));
         if (RT_FAILURE(vrc))
         {
             mhVBoxDbg = NIL_RTLDRMOD;
             mDbgAutoShow =  mDbgAutoShowCommandLine = mDbgAutoShowStatistics = false;
-            LogRel(("Failed to load VBoxDbg, rc=%Rrc\n", vrc));
+            LogRel(("Failed to load VBoxDbg, rc=%Rrc - %s\n", vrc, szErr));
         }
     }
 #endif

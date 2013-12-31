@@ -111,8 +111,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            bridgedifs|dhcpservers|hostinfo|\n"
 #endif
                      "                            hostcpuids|hddbackends|hdds|dvds|floppies|\n"
-                     "                            usbhost|usbfilters|systemproperties|\n"
-                     "                            extpacks\n"
+                     "                            usbhost|usbfilters|systemproperties|extpacks\n"
                      "\n");
 
     if (u64Cmd & USAGE_SHOWVMINFO)
@@ -365,7 +364,6 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            pause|resume|reset|poweroff|savestate|\n"
                      "                            acpipowerbutton|acpisleepbutton|\n"
                      "                            keyboardputscancode <hex> [<hex> ...]|\n"
-                     "                            injectnmi|\n"
                      "                            setlinkstate<1-N> on|off |\n"
 #if defined(VBOX_WITH_NETFLT)
                      "                            nic<1-N> null|nat|bridged|intnet|hostonly\n"
@@ -438,7 +436,8 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            [--type dvddrive|hdd|fdd]\n"
                      "                            [--medium none|emptydrive|\n"
                      "                                      <uuid>|<filename>|host:<drive>|iscsi]\n"
-                     "                            [--mtype normal|writethrough|immutable|shareable]\n"
+                     "                            [--mtype normal|writethrough|immutable|shareable|\n"
+                     "                                     readonly|multiattach]\n"
                      "                            [--comment <text>]\n"
                      "                            [--passthrough on|off]\n"
                      "                            [--bandwidthgroup <name>]\n"
@@ -492,7 +491,8 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
     if (u64Cmd & USAGE_MODIFYHD)
         RTStrmPrintf(pStrm,
                      "VBoxManage modifyhd         <uuid>|<filename>\n"
-                     "                            [--type normal|writethrough|immutable|shareable]\n"
+                     "                            [--type normal|writethrough|immutable|shareable|\n"
+                     "                                    readonly|multiattach]\n"
                      "                            [--autoreset on|off]\n"
                      "                            [--compact]\n"
                      "                            [--resize <megabytes>|--resizebyte <bytes>]\n"
@@ -503,8 +503,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "VBoxManage clonehd          <uuid>|<filename> <outputfile>\n"
                      "                            [--format VDI|VMDK|VHD|RAW|<other>]\n"
                      "                            [--variant Standard,Fixed,Split2G,Stream,ESX]\n"
-                     "                            [--type normal|writethrough|immutable|shareable]\n"
-                     "                            [--remember] [--existing]\n"
+                     "                            [--existing]\n"
                      "\n");
 
     if (u64Cmd & USAGE_CONVERTFROMRAW)
@@ -594,12 +593,6 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            --name <name> [--transient]\n"
                      "\n");
 
-    if (u64Cmd & USAGE_VM_STATISTICS)
-        RTStrmPrintf(pStrm,
-                     "VBoxManage vmstatistics     <vmname>|<uuid> [--reset]\n"
-                     "                            [--pattern <pattern>] [--descriptions]\n"
-                     "\n");
-
 #ifdef VBOX_WITH_GUEST_PROPS
     if (u64Cmd & USAGE_GUESTPROPERTY)
         usageGuestProperty(pStrm);
@@ -610,6 +603,16 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         usageGuestControl(pStrm);
 #endif /* VBOX_WITH_GUEST_CONTROL defined */
 
+    if (u64Cmd & USAGE_DEBUGVM)
+    {
+        RTStrmPrintf(pStrm,
+                     "VBoxManage debugvm          <uuid>|<name>\n"
+                     "                            dumpguestcore --filename <name> |\n"
+                     "                            injectnmi |\n"
+                     "                            statistics [--reset] [--pattern <pattern>]\n"
+                     "                            [--descriptions]\n"
+                     "\n");
+    }
     if (u64Cmd & USAGE_METRICS)
         RTStrmPrintf(pStrm,
                      "VBoxManage metrics          list [*|host|<vmname> [<metric_list>]]\n"
@@ -657,11 +660,11 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
 #if defined(VBOX_WITH_NETFLT)
                      "                                       --ifname <hostonly_if_name>\n"
 #endif
-                     "                                [--ip <ip_address>\n"
-                     "                                 --netmask <network_mask>\n"
-                     "                                 --lowerip <lower_ip>\n"
-                     "                                 --upperip <upper_ip>]\n"
-                     "                                [--enable | --disable]\n\n"
+                     "                            [--ip <ip_address>\n"
+                     "                            --netmask <network_mask>\n"
+                     "                            --lowerip <lower_ip>\n"
+                     "                            --upperip <upper_ip>]\n"
+                     "                            [--enable | --disable]\n\n"
                      "VBoxManage dhcpserver       remove --netname <network_name> |\n"
 #if defined(VBOX_WITH_NETFLT)
                      "                                   --ifname <hostonly_if_name>\n"
@@ -671,17 +674,9 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
     if (u64Cmd & USAGE_EXTPACK)
     {
         RTStrmPrintf(pStrm,
-                     "VBoxManage extpack          install <tarball>\n"
-                     "VBoxManage extpack          uninstall [--force] <name>\n"
-                     "VBoxManage extpack          cleanup\n"
-                     "\n");
-    }
-    if (u64Cmd & USAGE_DEBUGVM)
-    {
-        RTStrmPrintf(pStrm,
-                     "VBoxManage debugvm          <uuid>|<name>\n"
-                     "                            injectnmi |\n"
-                     "                            dumpguestcore --filename <name>\n"
+                     "VBoxManage extpack          install <tarball> |\n"
+                     "                            uninstall [--force] <name> |\n"
+                     "                            cleanup\n"
                      "\n");
     }
 }
