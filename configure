@@ -55,6 +55,7 @@ TARGET_CPU=""
 WITH_XPCOM=1
 WITH_PYTHON=1
 WITH_LIBIDL=1
+WITH_GSOAP=0
 WITH_QT3=1
 WITH_QT4=1
 WITH_SDL=1
@@ -66,7 +67,6 @@ WITH_DBUS=1
 WITH_KMODS=1
 WITH_HARDENING=1
 CC="gcc"
-CC_COMPAT=""
 CC32=""
 CC64=""
 CXX="g++"
@@ -84,6 +84,7 @@ BUILD_LIBXSLT=
 LIBCRYPTO="-lcrypto"
 LIBPTHREAD="-lpthread"
 LIBCAP="-lcap"
+GSOAP=""
 LIBX11="-L/usr/X11R6/lib -L/usr/X11R6/lib64 -L/usr/local/lib -lXext -lX11"
 INCX11="/usr/local/include"
 LIBXCURSOR="-lXcursor"
@@ -348,28 +349,6 @@ check_environment()
 check_gcc()
 {
   test_header gcc
-  if [ -n "$CC_COMPAT" ]; then
-    if check_avail "$CC_COMPAT" CC_COMPAT really; then
-      cc_compat_ver=`$CC_COMPAT -dumpversion` 2>/dev/null
-      if [ $? -ne 0 ]; then
-        log_failure "cannot execute '$CC_COMPAT -dumpversion'"
-        fail really
-      fi
-      cc_compat_maj=`echo $cc_compat_ver|cut -d. -f1`
-      cc_compat_min=`echo $cc_compat_ver|cut -d. -f2`
-      if [ $cc_compat_maj -lt 3 \
-         -o \( $cc_compat_maj -eq 3 -a $cc_compat_min -lt 2 \) \
-         -o \( $cc_compat_maj -eq 4 -a $cc_compat_min -lt 1 \) \
-         -o \( $cc_compat_maj -eq 4 -a $cc_compat_min -gt 2 \) \
-         -o $cc_compat_maj -gt 4 ]; then
-        log ""
-        log "  ** Version $cc_compat_ver of the compatibility gcc found. Expected gcc 3.x with x>1"
-        log "  ** or gcc 4.x with 0<x<3"
-        fail really
-      fi
-      cnf_append "VBOX_RECOMPILER_OP_GCC" "$CC_COMPAT"
-    fi
-  fi
   if check_avail "$CC" CC really; then
     cc_ver=`$CC -dumpversion` 2>/dev/null
     if [ $? -ne 0 ]; then
@@ -389,16 +368,6 @@ check_gcc()
         fail really
       elif [ $cc_maj -eq 4 -a $cc_min -eq 0 -a "OS" = "darwin" ]; then
         log_success "found version $cc_ver"
-      elif [ $cc_maj -eq 4 -a $cc_min -eq 3 ]; then
-        if [ -z "$CC_COMPAT" ]; then
-          log ""
-          log "  ** There are known problems with gcc version 4.3 when compiling the recompiler"
-          log "  ** stuff. You need to specify a compatibility compiler with version < 4.3. Look"
-          log "  ** for a package compat-gcc-34 on Fedora systems or something similar on other"
-          log "  ** distributions and call configure with parameter --with-gcc-compat=gcc34."
-          fail really
-        fi
-        log_success "found version $cc_ver + compat version $cc_compat_ver"
       # gcc-4.0 is allowed for Darwin only
       elif [ $cc_maj -lt 3 \
              -o \( $cc_maj -eq 3 -a $cc_min -lt 2 \) \
@@ -1008,7 +977,7 @@ check_sdl()
   test_header SDL
   if [ "$OS" = "darwin" ]; then
     if [ -f "/System/Library/Frameworks/SDL.framework/SDL" ]; then
-      PATH_SDK_LIBSDL="/System/Library/Framework/SDL.framework"
+      PATH_SDK_LIBSDL="/System/Library/Frameworks/SDL.framework"
     elif [ -f "/Library/Frameworks/SDL.framework/SDL" ]; then
       PATH_SDK_LIBSDL="/Library/Frameworks/SDL.framework"
     fi
@@ -1725,6 +1694,30 @@ setup_wine()
   log_success "found"
 }
 
+#
+#
+#
+check_gsoap()
+{
+  test_header "GSOAP compiler"
+  if [ -z "$GSOAP" ]; then
+    GSOAP="/usr/bin"
+  fi
+  if which_wrapper "$GSOAP/soapcpp2" > /dev/null; then
+    if which_wrapper "$GSOAP/wsdl2h" > /dev/null; then
+      cnf_append "VBOX_GSOAP_INSTALLED" "1"
+      cnf_append "VBOX_PATH_GSOAP"      "$GSOAP"
+      log_success "found"
+    else
+      log_failure "wsdl2h not found -- disabling webservice"
+      cnf_append "VBOX_WITH_WEBSERVICES" ""
+    fi
+  else
+    log_failure "soapcpp2 not found -- disabling webservice"
+    cnf_append "VBOX_WITH_WEBSERVICES" ""
+  fi
+}
+
 
 #
 # Determines the Darwin version.
@@ -1791,6 +1784,7 @@ Configuration:
   --disable-dbus           don't use DBus and hal for hardware detection
   --disable-kmods          don't build Linux kernel modules (host and guest)
   --disable-hardening      don't be strict about /dev/vboxdrv access
+  --enable-webservice      enable the webservice stuff
   --build-libxml2          build libxml2 from sources
   --build-libxslt          build libxslt from sources
   --setup-wine             setup a Wine directory and register the hhc hack
@@ -1798,13 +1792,13 @@ Configuration:
 Paths:
   --with-gcc=PATH          location of the gcc compiler [$CC]
   --with-g++=PATH          location of the g++ compiler [$CXX]
-  --with-gcc-compat=PATH   location of the gcc compiler for recompiler [$CC]
   --with-kbuild=DIR        kbuild directory [$KBUILDDIR]
   --with-iasl=PATH         location of the iasl compiler [$IASL]
   --with-linux=DIR         Linux kernel source directory [$LINUX]
   --with-mkisofs=PATH      location of mkisofs [$MKISOFS]
   --with-qt-dir=DIR        directory for Qt3 headers/libraries [$QT3DIR]
   --with-qt4-dir=DIR       directory for Qt4 headers/libraries [pkgconfig]
+  --with-gsoap-dir=PATH    directory for SOAP compiler (soapcpp2 and wsdl2h)
 
 Build type:
   -d, --build-debug        build with debugging symbols and assertions
@@ -1837,9 +1831,6 @@ for option in $*; do
     --with-g++=*)
       CXX=`echo $option | cut -d'=' -f2`
       ;;
-    --with-gcc-compat=*)
-      CC_COMPAT=`echo $option | cut -d'=' -f2`
-      ;;
     --with-kbuild=*)
       KBUILDDIR=`echo $option | cut -d'=' -f2`
       if echo $KBUILDDIR|grep -q "$INVALID_CHARS"; then
@@ -1853,6 +1844,9 @@ for option in $*; do
     --with-qt4-dir=*)
       QT4DIR=`echo $option | cut -d'=' -f2`
       QT4DIR_PKGCONFIG=0
+      ;;
+    --with-gsoap-dir=*)
+      GSOAP=`echo $option | cut -d'=' -f2`
       ;;
     --with-iasl=*)
       IASL=`echo $option | cut -d'=' -f2`
@@ -1899,6 +1893,9 @@ for option in $*; do
       ;;
     --enable-hardening)
       WITH_HARDENING=2
+      ;;
+    --enable-webservice)
+      WITH_GSOAP=1
       ;;
     --build-debug|-d)
       BUILD_TYPE=debug
@@ -2028,6 +2025,11 @@ if [ "$OS" = "darwin" ]; then
   BUILD_LIBXML2=1
 fi
 
+if [ "$OS" = "freebsd" ]; then
+  # Qt3 will be gone before the FreeBSD port is completed, so just drop it.
+  WITH_QT3=0
+fi
+
 # emit disable directives corresponding to any --disable-xxx options.
 [ $WITH_XPCOM -eq 0 ]   && cnf_append "VBOX_WITH_MAIN" ""
 [ $WITH_QT3 -eq 0   ]   && cnf_append "VBOX_WITH_QTGUI" ""
@@ -2054,7 +2056,7 @@ check_gcc
 # build openssl on Darwin in every case
 [ "$OS" != "darwin" -a $OSE -eq 0 ] && check_ssl
 [ "$OS" != "darwin"  ] && check_z
-[ "$OS" != "darwin"  ] && check_png
+[ "$OS" != "darwin" -a "$OS" != "freebsd" ] && check_png
 [ $OSE -eq 0 -a "$OS" = "linux" ] && check_pam
 [ $WITH_SDL -eq 1 ]    && check_sdl
 [ $WITH_SDL_TTF -eq 1 -a $OSE -eq 0 ] && check_sdl_ttf
@@ -2096,6 +2098,12 @@ if [ "$OS" = "linux" ]; then
 fi
 
 [ -n "$SETUP_WINE" ] && setup_wine
+
+if [ $WITH_GSOAP -eq 1 ]; then
+  check_gsoap
+else
+  cnf_append "VBOX_WITH_WEBSERVICES" ""
+fi
 
 # Darwin-specific
 if [ "$OS" = "darwin" ]; then

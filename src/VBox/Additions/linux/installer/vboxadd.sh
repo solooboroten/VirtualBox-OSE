@@ -35,7 +35,9 @@ BUILDVBOXADD=`/bin/ls /usr/src/vboxadd*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 BUILDVBOXVFS=`/bin/ls /usr/src/vboxvfs*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 LOG="/var/log/vboxadd-install.log"
 
-if [ -f /etc/redhat-release ]; then
+if [ -f /etc/arch-release ]; then
+    system=arch
+elif [ -f /etc/redhat-release ]; then
     system=redhat
 elif [ -f /etc/SuSE-release ]; then
     system=suse
@@ -45,18 +47,32 @@ else
     system=other
 fi
 
+if [ "$system" = "arch" ]; then
+    USECOLOR=yes
+    . /etc/rc.d/functions
+    fail_msg() {
+        stat_fail
+    }
+
+    succ_msg() {
+        stat_done
+    }
+
+    begin() {
+        stat_busy "$1"
+    }
+fi
+
 if [ "$system" = "redhat" ]; then
     . /etc/init.d/functions
     fail_msg() {
         echo_failure
         echo
     }
-
     succ_msg() {
         echo_success
         echo
     }
-
     begin() {
         echo -n "$1"
     }
@@ -68,31 +84,30 @@ if [ "$system" = "suse" ]; then
         rc_failed 1
         rc_status -v
     }
-
     succ_msg() {
         rc_reset
         rc_status -v
     }
-
     begin() {
         echo -n "$1"
     }
 fi
 
 if [ "$system" = "gentoo" ]; then
-    . /sbin/functions.sh
+    if [ -f /sbin/functions.sh ]; then
+        . /sbin/functions.sh
+    elif [ -f /etc/init.d/functions.sh ]; then
+        . /etc/init.d/functions.sh
+    fi
     fail_msg() {
         eend 1
     }
-
     succ_msg() {
         eend $?
     }
-
     begin() {
         ebegin $1
     }
-
     if [ "`which $0`" = "/sbin/rc" ]; then
         shift
     fi
@@ -102,11 +117,9 @@ if [ "$system" = "other" ]; then
     fail_msg() {
         echo " ...fail!"
     }
-
     succ_msg() {
         echo " ...done."
     }
-
     begin() {
         echo -n $1
     }
@@ -248,8 +261,8 @@ setup()
             fail "Look at $LOG to find out what went wrong"
         fi
     fi
-    start
     succ_msg
+    start
     echo
     echo "You should reboot your guest to make sure the new modules are actually used"
 }

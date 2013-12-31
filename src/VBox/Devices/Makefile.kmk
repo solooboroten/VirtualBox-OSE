@@ -22,8 +22,6 @@
 SUB_DEPTH = ../../..
 include $(KBUILD_PATH)/subheader.kmk
 
-# temporary, we will remove this in some days
-VBOX_WITH_SLIRP_ICMP = 1
 
 VBOX_PATH_DEVICES_SRC := $(PATH_SUB_CURRENT)
 
@@ -264,7 +262,6 @@ DevicesR3_SOURCES       = \
 	Audio/DevSB16.cpp \
 	PC/DevDMA.cpp \
 	Storage/fdc.c \
-	Storage/Debug.cpp \
 	Serial/DevSerial.cpp \
 	Parallel/DevParallel.cpp
 
@@ -328,6 +325,16 @@ ifdef VBOX_WITH_LSILOGIC
 DevicesR3_DEFS	       += VBOX_WITH_LSILOGIC
 DevicesR3_SOURCES      += \
 	Storage/DevLsiLogicSCSI.cpp
+endif
+
+ifdef VBOX_WITH_HPET
+DevicesR3_DEFS          += VBOX_WITH_HPET
+DevicesR3_SOURCES       += PC/DevHPET.cpp
+endif
+
+ifdef VBOX_WITH_SMC
+DevicesR3_DEFS          += VBOX_WITH_SMC
+DevicesR3_SOURCES       += PC/DevSMC.cpp
 endif
 
 ifdef VBOX_WITH_USB
@@ -427,6 +434,11 @@ VBoxDDGC_SOURCES       += \
 	Storage/DevLsiLogicSCSI.cpp
 endif
 
+ifdef VBOX_WITH_HPET
+VBoxDDGC_DEFS          += VBOX_WITH_HPET
+VBoxDDGC_SOURCES       += PC/DevHPET.cpp
+endif
+
 ifeq ($(VBOX_LDR_FMT32),pe)
 VBoxDDGC_LDFLAGS        = -Entry:vgaMMIOWrite
 endif
@@ -497,13 +509,17 @@ VBoxDDR0_SOURCES       += \
 	Storage/DevLsiLogicSCSI.cpp
 endif
 
+ifdef VBOX_WITH_HPET
+VBoxDDR0_DEFS          += VBOX_WITH_HPET
+VBoxDDR0_SOURCES       += PC/DevHPET.cpp
+endif
+
 ifeq ($(VBOX_LDR_FMT32),pe)
 VBoxDDR0_LDFLAGS        = -Entry:vgaMMIOWrite
 endif
 if1of ($(VBOX_LDR_FMT), pe lx)
 VBoxDDR0_LIBS           = $(PATH_LIB)/VMMR0Imp$(VBOX_SUFF_LIB)
 endif
-
 
 #
 # VBoxDD2GC (LGPL sysmod)
@@ -581,6 +597,7 @@ Drivers_SOURCES    = \
 	Storage/DrvHostFloppy.cpp \
 	Storage/DrvMediaISO.cpp \
 	Storage/DrvRawImage.cpp \
+	Storage/Debug.cpp \
 	Storage/DrvVD.cpp \
 	Network/DrvNetSniffer.cpp \
 	Network/Pcap.cpp
@@ -606,13 +623,15 @@ VBOX_SLIRP_SOURCES = \
 	Network/slirp/tftp.c \
 	Network/slirp/udp.c
 
+# some day will be deleted
+VBOX_WITH_SIMPLIFIED_SLIRP_SYNC=1
+
 Drivers_SOURCES += $(VBOX_SLIRP_SOURCES)
 define def_vbox_slirp_cflags
   $(file)_DEFS += \
-      VBOX_WITH_SIMPLIFIED_SLIRP_SYNC \
-      $(if $(VBOX_WITH_SLIRP_MEMORY_CHECK),VBOX_WITH_SLIRP_MEMORY_CHECK,) \
-      $(if $(VBOX_WITH_DEBUG_NAT_SOCKETS),VBOX_WITH_DEBUG_NAT_SOCKETS,) \
-      $(if $(VBOX_WITH_SLIRP_ICMP),VBOX_WITH_SLIRP_ICMP,)
+      $(if $(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC), VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) \
+      $(if $(VBOX_WITH_SLIRP_MEMORY_CHECK),RTMEM_WRAP_TO_EF_APIS,) \
+      $(if $(VBOX_WITH_DEBUG_NAT_SOCKETS),VBOX_WITH_DEBUG_NAT_SOCKETS,)
  ifeq ($(KBUILD_TARGET),win)
   $(file)_CFLAGS = -wd4018
  else
@@ -687,7 +706,8 @@ Drivers_SOURCES.solaris = \
 	Audio/solaudio.c \
 	$(if $(VBOX_SOLARIS_10),,Network/DrvTAP.cpp) \
 	Storage/DrvHostBase.cpp \
-	Storage/DrvHostDVD.cpp
+	Storage/DrvHostDVD.cpp \
+	Serial/DrvHostSerial.cpp
  ifdef VBOX_WITH_CROSSBOW
   Drivers_SOURCES += Network/solaris/vbox-libdlpi.cpp
   Drivers_DEFS += VBOX_WITH_CROSSBOW

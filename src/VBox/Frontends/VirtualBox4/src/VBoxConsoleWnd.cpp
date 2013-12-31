@@ -238,13 +238,6 @@ VBoxConsoleWnd (VBoxConsoleWnd **aSelf, QWidget* aParent,
     , mDbgGui (NULL)
     , mDbgGuiVT (NULL)
 #endif
-#ifdef Q_WS_MAC
-    , dockImgStatePaused (NULL)
-    , dockImgStateSaving (NULL)
-    , dockImgStateRestoring (NULL)
-    , dockImgBack100x75 (NULL)
-    , dockImgOS (NULL)
-#endif
 {
     if (aSelf)
         *aSelf = this;
@@ -257,11 +250,6 @@ VBoxConsoleWnd (VBoxConsoleWnd **aSelf, QWidget* aParent,
      * icon referenced in info.plist is used. */
     setWindowIcon (QIcon (":/VirtualBox_48px.png"));
 #endif
-
-#ifdef Q_WS_MAC
-    /* Enable async resizing. */
-    ::darwinEnableAsyncDragForWindow (this);
-#endif /* Q_WS_MAC */
 
     /* ensure status bar is created */
     setStatusBar (new QIStatusBar (this));
@@ -698,12 +686,6 @@ VBoxConsoleWnd (VBoxConsoleWnd **aSelf, QWidget* aParent,
 //    HIWindowChangeAttributes (window, setAttr, NULL);
     initSharedAVManager();
 # endif
-    /* prepare the dock images */
-    dockImgStatePaused    = ::darwinCreateDockBadge (":/state_paused_16px.png");
-    dockImgStateSaving    = ::darwinCreateDockBadge (":/state_saving_16px.png");
-    dockImgStateRestoring = ::darwinCreateDockBadge (":/state_restoring_16px.png");
-    dockImgBack100x75     = ::darwinCreateDockBadge (":/dock_1.png");
-    SetApplicationDockTileImage (dockImgOS);
 #endif
     mMaskShift.scale (0, 0, Qt::IgnoreAspectRatio);
 }
@@ -711,20 +693,6 @@ VBoxConsoleWnd (VBoxConsoleWnd **aSelf, QWidget* aParent,
 VBoxConsoleWnd::~VBoxConsoleWnd()
 {
     closeView();
-
-#ifdef Q_WS_MAC
-    /* release the dock images */
-    if (dockImgStatePaused)
-        CGImageRelease (dockImgStatePaused);
-    if (dockImgStateSaving)
-        CGImageRelease (dockImgStateSaving);
-    if (dockImgStateRestoring)
-        CGImageRelease (dockImgStateRestoring);
-    if (dockImgBack100x75)
-        CGImageRelease (dockImgBack100x75);
-    if (dockImgOS)
-        CGImageRelease (dockImgOS);
-#endif
 
 #ifdef VBOX_WITH_DEBUGGER_GUI
     /* destroy the debugger gui */
@@ -955,21 +923,7 @@ bool VBoxConsoleWnd::openView (const CSession &session)
     /* Default to true if it is an empty value */
     bool f = (testStr.isEmpty() || testStr == "true");
     console->setDockIconEnabled (f);
-    if (f)
-    {
-        QString osTypeId = cmachine.GetOSTypeId();
-        QImage osImg100x75 = vboxGlobal().vmGuestOSTypeIcon (osTypeId).toImage().scaled (100, 75, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        QImage osImg = QImage (":/dock_1.png");
-        QImage VBoxOverlay = QImage (":/VirtualBox_cube_42px.png");
-        QPainter painter (&osImg);
-        painter.drawImage (QPoint (14, 22), osImg100x75);
-        painter.drawImage (QPoint (osImg.width() - VBoxOverlay.width(), osImg.height() - VBoxOverlay.height()), VBoxOverlay);
-        painter.end();
-        if (dockImgOS)
-            CGImageRelease (dockImgOS);
-        dockImgOS = ::darwinToCGImageRef (&osImg);
-        SetApplicationDockTileImage (dockImgOS);
-    }
+    console->updateDockOverlay();
 #endif
 
     /* set the correct initial machine_state value */
@@ -1188,6 +1142,7 @@ void VBoxConsoleWnd::unlockActionsSwitch()
         CGDisplayFade (mFadeToken, 0.5, kCGDisplayBlendSolidColor, kCGDisplayBlendNormal, 0.0, 0.0, 0.0, false);
         CGReleaseDisplayFadeReservation (mFadeToken);
     }
+    console->setMouseCoalescingEnabled (true);
 #endif
 }
 
@@ -1220,9 +1175,9 @@ void VBoxConsoleWnd::popupMainMenu (bool aCenter)
         pos.setY (pos.y() - mMainMenu->frameGeometry().height());
     }
 
+    mMainMenu->setActiveAction (mMainMenu->actions().first());
     mMainMenu->popup (pos);
     mMainMenu->activateWindow();
-    mMainMenu->setActiveAction (mMainMenu->actions().first());
 }
 
 //
@@ -2452,37 +2407,13 @@ bool VBoxConsoleWnd::toggleFullscreenMode (bool aOn, bool aSeamless)
     return true;
 }
 
-#ifdef Q_WS_MAC
-CGImageRef VBoxConsoleWnd::dockImageState() const
-{
-    CGImageRef img;
-    if (machine_state == KMachineState_Paused)
-        img = dockImgStatePaused;
-    else if (machine_state == KMachineState_Restoring)
-        img = dockImgStateRestoring;
-    else if (machine_state == KMachineState_Saving)
-        img = dockImgStateSaving;
-    else
-        img = NULL;
-    return img;
-}
-#endif
-
 void VBoxConsoleWnd::changeDockIconUpdate (const VBoxChangeDockIconUpdateEvent &e)
 {
 #ifdef Q_WS_MAC
     if (console)
     {
         console->setDockIconEnabled (e.mChanged);
-        if (e.mChanged)
-            console->updateDockIcon();
-        else
-        {
-            RestoreApplicationDockTileImage();
-            CGImageRef img = dockImageState();
-            if (img)
-                OverlayApplicationDockTileImage (img);
-        }
+        console->updateDockOverlay();
     }
 #else
     Q_UNUSED (e);
@@ -2495,6 +2426,9 @@ void VBoxConsoleWnd::changeDockIconUpdate (const VBoxChangeDockIconUpdateEvent &
 void VBoxConsoleWnd::switchToFullscreen (bool aOn, bool aSeamless)
 {
 #ifdef Q_WS_MAC
+    /* setWindowState removes the window group connection somehow. So save it
+     * temporary. */
+    WindowGroupRef g = GetWindowGroup (::darwinToWindowRef (this));
     if (aSeamless)
         if (aOn)
         {
@@ -2515,6 +2449,8 @@ void VBoxConsoleWnd::switchToFullscreen (bool aOn, bool aSeamless)
     else
         /* Here we are going really fullscreen */
         setWindowState (windowState() ^ Qt::WindowFullScreen);
+    /* Reassign the correct window group. */
+    SetWindowGroup (::darwinToWindowRef (this), g);
 #else
     NOREF (aOn);
     NOREF (aSeamless);
@@ -3490,11 +3426,8 @@ void VBoxConsoleWnd::updateMachineState (KMachineState state)
     }
 
 #ifdef Q_WS_MAC
-    CGImageRef img = dockImageState();
-    if (img)
-        OverlayApplicationDockTileImage (img);
-    else
-        RestoreApplicationDockTileImage();
+    if (console)
+        console->updateDockOverlay();
 #endif
 }
 

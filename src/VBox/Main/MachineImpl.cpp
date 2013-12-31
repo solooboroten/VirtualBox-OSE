@@ -101,7 +101,7 @@
  *  @note The template is NOT completely valid according to VBOX_XML_SCHEMA
  *  (when loading a newly created settings file, validation will be turned off)
  */
-static const char DefaultMachineConfig[] =
+static const char gDefaultMachineConfig[] =
 {
     "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>" RTFILE_LINEFEED
     "<!-- Sun xVM VirtualBox Machine Configuration -->" RTFILE_LINEFEED
@@ -669,7 +669,7 @@ void Machine::uninit()
                              "the direct session is still open!\n",
                              (SessionMachine *) mData->mSession.mMachine));
 
-        if (mData->mMachineState >= MachineState_Running)
+        if (Global::IsOnlineOrTransient (mData->mMachineState))
         {
             LogWarningThisFunc (("Setting state to Aborted!\n"));
             /* set machine state using SessionMachine reimplementation */
@@ -1944,7 +1944,7 @@ STDMETHODIMP Machine::AttachHardDisk2 (IN_GUID aId,
 
     AssertReturn (mData->mMachineState != MachineState_Saved, E_FAIL);
 
-    if (mData->mMachineState >= MachineState_Running)
+    if (Global::IsOnlineOrTransient (mData->mMachineState))
         return setError (VBOX_E_INVALID_VM_STATE,
             tr ("Invalid machine state: %d"), mData->mMachineState);
 
@@ -2264,7 +2264,7 @@ STDMETHODIMP Machine::DetachHardDisk2 (StorageBus_T aBus, LONG aChannel,
 
     AssertReturn (mData->mMachineState != MachineState_Saved, E_FAIL);
 
-    if (mData->mMachineState >= MachineState_Running)
+    if (Global::IsOnlineOrTransient (mData->mMachineState))
         return setError (VBOX_E_INVALID_VM_STATE,
             tr ("Invalid machine state: %d"), mData->mMachineState);
 
@@ -2870,14 +2870,6 @@ Machine::CreateSharedFolder (IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable)
     rc = sharedFolder->init (machine(), aName, aHostPath, aWritable);
     CheckComRCReturnRC (rc);
 
-    BOOL accessible = FALSE;
-    rc = sharedFolder->COMGETTER(Accessible) (&accessible);
-    CheckComRCReturnRC (rc);
-
-    if (!accessible)
-        return setWarning (VBOX_E_FILE_ERROR,
-            tr ("Shared folder host path '%ls' is not accessible"), aHostPath);
-
     mHWData.backup();
     mHWData->mSharedFolders.push_back (sharedFolder);
 
@@ -3084,27 +3076,33 @@ STDMETHODIMP Machine::SetGuestProperty (IN_BSTR aName, IN_BSTR aValue, IN_BSTR a
         HWData::GuestProperty property;
         property.mFlags = NILFLAG;
         if (fFlags & TRANSIENT)
-            rc = setError (VBOX_E_INVALID_OBJECT_STATE, tr ("Cannot set a transient property when the machine is not running"));
+            rc = setError (VBOX_E_INVALID_OBJECT_STATE,
+                tr ("Cannot set a transient property when the "
+                    "machine is not running"));
         if (SUCCEEDED (rc))
         {
-            for (HWData::GuestPropertyList::iterator it = mHWData->mGuestProperties.begin();
-                (it != mHWData->mGuestProperties.end()) && !found; ++it)
+            for (HWData::GuestPropertyList::iterator it =
+                    mHWData->mGuestProperties.begin();
+                 it != mHWData->mGuestProperties.end(); ++ it)
                 if (it->mName == aName)
                 {
                     property = *it;
                     if (it->mFlags & (RDONLYHOST))
-                        rc = setError (E_ACCESSDENIED, tr ("The property '%ls' cannot be changed by the host"), aName);
+                        rc = setError (E_ACCESSDENIED,
+                            tr ("The property '%ls' cannot be changed by the host"),
+                            aName);
                     else
                     {
                         mHWData.backup();
-                        /* The backup() operation invalidates our iterator, so get a
-                        * new one. */
+                        /* The backup() operation invalidates our iterator, so
+                         * get a new one. */
                         for (it = mHWData->mGuestProperties.begin();
-                            it->mName != aName; ++it)
+                            it->mName != aName; ++ it)
                             ;
                         mHWData->mGuestProperties.erase (it);
                     }
                     found = true;
+                    break;
                 }
         }
         if (found && SUCCEEDED (rc))
@@ -3171,10 +3169,11 @@ EnumerateGuestProperties (IN_BSTR aPatterns, ComSafeArrayOut (BSTR, aNames),
 #else
     if (!VALID_PTR (aPatterns) && (aPatterns != NULL))
         return E_POINTER;
-    CheckComArgSafeArrayNotNull (aNames);
-    CheckComArgSafeArrayNotNull (aValues);
-    CheckComArgSafeArrayNotNull (aTimestamps);
-    CheckComArgSafeArrayNotNull (aFlags);
+
+    CheckComArgOutSafeArrayPointerValid (aNames);
+    CheckComArgOutSafeArrayPointerValid (aValues);
+    CheckComArgOutSafeArrayPointerValid (aTimestamps);
+    CheckComArgOutSafeArrayPointerValid (aFlags);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -3395,8 +3394,8 @@ HRESULT Machine::openSession (IInternalSessionControl *aControl)
                 "(or being closed)"),
             mUserData->mName.raw());
 
-    /* may not be Running */
-    AssertReturn (mData->mMachineState < MachineState_Running, E_FAIL);
+    /* may not be busy */
+    AssertReturn (!Global::IsOnlineOrTransient (mData->mMachineState), E_FAIL);
 
     /* get the session PID */
     RTPROCESS pid = NIL_RTPROCESS;
@@ -3602,8 +3601,8 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
                 "(or being opened or closed)"),
             mUserData->mName.raw());
 
-    /* may not be Running */
-    AssertReturn (mData->mMachineState < MachineState_Running, E_FAIL);
+    /* may not be busy */
+    AssertReturn (!Global::IsOnlineOrTransient (mData->mMachineState), E_FAIL);
 
     /* get the path to the executable */
     char path [RTPATH_MAX];
@@ -5799,8 +5798,8 @@ HRESULT Machine::prepareSaveSettings (bool &aRenamed, bool &aNew)
         if (RT_SUCCESS (vrc))
         {
             vrc = RTFileWrite (mData->mHandleCfgFile,
-                               (void *) DefaultMachineConfig,
-                               sizeof (DefaultMachineConfig), NULL);
+                               (void *) gDefaultMachineConfig,
+                               strlen (gDefaultMachineConfig), NULL);
         }
         if (RT_FAILURE (vrc))
         {
@@ -7552,8 +7551,7 @@ void Machine::copyFrom (Machine *aThat)
     AssertReturnVoid (mType == IsMachine || mType == IsSessionMachine);
     AssertReturnVoid (aThat->mType == IsSnapshotMachine);
 
-    AssertReturnVoid (mData->mMachineState < MachineState_Running ||
-                      mData->mMachineState >= MachineState_Discarding);
+    AssertReturnVoid (!Global::IsOnline (mData->mMachineState));
 
     mHWData.assignCopy (aThat->mHWData);
 
@@ -7936,8 +7934,8 @@ void SessionMachine::uninit (Uninit::Reason aReason)
 
     if (aReason == Uninit::Abnormal)
     {
-        LogWarningThisFunc (("ABNORMAL client termination! (wasRunning=%d)\n",
-                             lastState >= MachineState_Running));
+        LogWarningThisFunc (("ABNORMAL client termination! (wasBusy=%d)\n",
+                             Global::IsOnlineOrTransient (lastState)));
 
         /* reset the state to Aborted */
         if (mData->mMachineState != MachineState_Aborted)
@@ -7964,7 +7962,7 @@ void SessionMachine::uninit (Uninit::Reason aReason)
 
 #ifdef VBOX_WITH_USB
     /* release all captured USB devices */
-    if (aReason == Uninit::Abnormal && lastState >= MachineState_Running)
+    if (aReason == Uninit::Abnormal && Global::IsOnline (lastState))
     {
         /* Console::captureUSBDevices() is called in the VM process only after
          * setting the machine state to Starting or Restoring.
@@ -8480,7 +8478,7 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot (
     /* saveSettings() needs mParent lock */
     AutoMultiWriteLock2 alock (mParent, this);
 
-    AssertReturn ((mData->mMachineState < MachineState_Running ||
+    AssertReturn ((!Global::IsOnlineOrTransient (mData->mMachineState) ||
                    mData->mMachineState == MachineState_Paused) &&
                   mSnapshotData.mLastState == MachineState_Null &&
                   mSnapshotData.mSnapshot.isNull() &&
@@ -8666,7 +8664,7 @@ STDMETHODIMP SessionMachine::DiscardSnapshot (
     /* saveSettings() needs mParent lock */
     AutoMultiWriteLock2 alock (mParent, this);
 
-    ComAssertRet (mData->mMachineState < MachineState_Running, E_FAIL);
+    ComAssertRet (!Global::IsOnlineOrTransient (mData->mMachineState), E_FAIL);
 
     ComObjPtr <Snapshot> snapshot;
     HRESULT rc = findSnapshot (id, snapshot, true /* aSetError */);
@@ -8748,7 +8746,7 @@ STDMETHODIMP SessionMachine::DiscardCurrentState (
 
     AutoWriteLock alock (this);
 
-    ComAssertRet (mData->mMachineState < MachineState_Running, E_FAIL);
+    ComAssertRet (!Global::IsOnlineOrTransient (mData->mMachineState), E_FAIL);
 
     if (mData->mCurrentSnapshot.isNull())
         return setError (VBOX_E_INVALID_OBJECT_STATE,
@@ -8812,7 +8810,7 @@ STDMETHODIMP SessionMachine::DiscardCurrentSnapshotAndState (
 
     AutoWriteLock alock (this);
 
-    ComAssertRet (mData->mMachineState < MachineState_Running, E_FAIL);
+    ComAssertRet (!Global::IsOnlineOrTransient (mData->mMachineState), E_FAIL);
 
     if (mData->mCurrentSnapshot.isNull())
         return setError (VBOX_E_INVALID_OBJECT_STATE,
@@ -9508,7 +9506,7 @@ HRESULT SessionMachine::endTakingSnapshot (BOOL aSuccess)
             mData->mFirstSnapshot = mData->mCurrentSnapshot;
 
         int opFlags = SaveSS_AddOp | SaveSS_CurrentId;
-        if (mSnapshotData.mLastState < MachineState_Running)
+        if (!Global::IsOnline (mSnapshotData.mLastState))
         {
             /* the machine was powered off or saved when taking a snapshot, so
              * reset the mCurrentStateModified flag */
@@ -9521,7 +9519,7 @@ HRESULT SessionMachine::endTakingSnapshot (BOOL aSuccess)
 
     if (aSuccess && SUCCEEDED (rc))
     {
-        bool online = mSnapshotData.mLastState >= MachineState_Running;
+        bool online = Global::IsOnline (mSnapshotData.mLastState);
 
         /* associate old hard disks with the snapshot and do locking/unlocking*/
         fixupHardDisks2 (true /* aCommit */, online);
@@ -9593,7 +9591,7 @@ void SessionMachine::takeSnapshotHandler (TakeSnapshotTask &aTask)
 
     HRESULT rc = S_OK;
 
-    bool online = mSnapshotData.mLastState >= MachineState_Running;
+    bool online = Global::IsOnline (mSnapshotData.mLastState);
 
     LogFlowThisFunc (("Creating differencing hard disks (online=%d)...\n",
                       online));
@@ -10430,17 +10428,17 @@ HRESULT SessionMachine::setMachineState (MachineState_T aMachineState)
         }
         {
             AutoReadLock driveLock (mDVDDrive);
-            if (mDVDDrive->data()->mState == DriveState_ImageMounted)
+            if (mDVDDrive->data()->state == DriveState_ImageMounted)
             {
-                rc = mDVDDrive->data()->mImage->UnlockRead (NULL);
+                rc = mDVDDrive->data()->image->UnlockRead (NULL);
                 AssertComRC (rc);
             }
         }
         {
             AutoReadLock driveLock (mFloppyDrive);
-            if (mFloppyDrive->data()->mState == DriveState_ImageMounted)
+            if (mFloppyDrive->data()->state == DriveState_ImageMounted)
             {
-                rc = mFloppyDrive->data()->mImage->UnlockRead (NULL);
+                rc = mFloppyDrive->data()->image->UnlockRead (NULL);
                 AssertComRC (rc);
             }
         }

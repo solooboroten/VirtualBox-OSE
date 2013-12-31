@@ -27,8 +27,13 @@ static void ifs_remque(struct mbuf *ifm)
 void
 if_init(PNATState pData)
 {
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+    /* 14 for ethernet */
+    if_maxlinkhdr =  14;
+#else
     /* 2 for alignment, 14 for ethernet, 40 for TCP/IP */
-    if_maxlinkhdr = 2 + 14 + 40;
+    if_maxlinkhdr =  2 + 14 + 40;
+#endif
     if_queued = 0;
     if_thresh = 10;
     if_mtu = 1500;
@@ -180,8 +185,11 @@ if_start(PNATState pData)
     for (;;)
     {
         /* check if we can really output */
-        if (!slirp_can_output(pData->pvUser))
+        if (!slirp_can_output(pData->pvUser)) 
+        {
+            Log(("if_start: can't send\n"));
             return;
+        }
 
         /*
          * See which queue to get next packet from
@@ -220,10 +228,12 @@ if_start(PNATState pData)
                 ifm->ifq_so->so_nqueued = 0;
         }
 
-        /* Encapsulate the packet for sending */
-        if_encap(pData, (const uint8_t *)ifm->m_data, ifm->m_len);
-
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+        if_encap(pData, ETH_P_IP, ifm);
+#else
+        if_encap(pData,  mtod(ifm, uint8_t *), ifm->m_len);
         m_free(pData, ifm);
+#endif
 
         if (!if_queued)
             return;

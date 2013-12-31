@@ -144,6 +144,13 @@ RTDECL(uint32_t) RTMpGetMaxFrequency(RTCPUID idCpu)
 }
 
 
+RTDECL(bool) RTMpIsCpuWorkPending(void)
+{
+    /** @todo (not used on non-Windows platforms yet). */
+    return false;
+}
+
+
 /**
  * Wrapper between the native darwin per-cpu callback and PFNRTWORKER
  * for the RTMpOnAll API.

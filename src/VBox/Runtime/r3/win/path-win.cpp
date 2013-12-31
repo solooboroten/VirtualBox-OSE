@@ -99,6 +99,14 @@ RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, size_t cchRealPat
 RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, size_t cchAbsPath)
 {
     /*
+     * Validation.
+     */
+    AssertPtr(pszAbsPath);
+    AssertPtr(pszPath);
+    if (RT_UNLIKELY(!*pszPath))
+        return VERR_INVALID_PARAMETER;
+
+    /*
      * Convert to UTF-16, call Win32 API, convert back.
      */
     LPWSTR pwszPath;
@@ -110,14 +118,28 @@ RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, size_t cchAbsPath)
     RTUTF16 wsz[RTPATH_MAX];
     rc = GetFullPathNameW(pwszPath, RT_ELEMENTS(wsz), &wsz[0], &pwszFile);
     if (rc > 0 && rc < RT_ELEMENTS(wsz))
-        rc = RTUtf16ToUtf8Ex(&wsz[0], RTSTR_MAX, &pszAbsPath, cchAbsPath, NULL);
+    {
+        size_t cch;
+        rc = RTUtf16ToUtf8Ex(&wsz[0], RTSTR_MAX, &pszAbsPath, cchAbsPath, &cch);
+        if (RT_SUCCESS(rc))
+        {
+            /*
+             * Remove trailing slash if the path may be pointing to a directory.
+             * (See posix variant.)
+             */
+            if (    cch > 1
+                &&  RTPATH_IS_SLASH(pszAbsPath[cch - 1])
+                &&  !RTPATH_IS_VOLSEP(pszAbsPath[cch - 2])
+                &&  !RTPATH_IS_SLASH(pszAbsPath[cch - 2]))
+                pszAbsPath[cch - 1] = '\0';
+        }
+    }
     else if (rc <= 0)
         rc = RTErrConvertFromWin32(GetLastError());
     else
         rc = VERR_FILENAME_TOO_LONG;
 
     RTUtf16Free(pwszPath);
-
     return rc;
 }
 
@@ -457,6 +479,42 @@ RTDECL(bool) RTPathExists(const char *pszPath)
 #endif
 
     return RT_SUCCESS(rc);
+}
+
+
+RTDECL(int) RTPathGetCurrent(char *pszPath, size_t cchPath)
+{
+    int rc;
+
+    /*
+     * GetCurrentDirectory may in some cases omit the drive letter, according
+     * to MSDN, thus the GetFullPathName call.
+     */
+#ifndef RT_DONT_CONVERT_FILENAMES
+    RTUTF16 wszCurPath[RTPATH_MAX];
+    if (GetCurrentDirectoryW(RTPATH_MAX, wszCurPath))
+    {
+        RTUTF16 wszFullPath[RTPATH_MAX];
+        if (GetFullPathNameW(wszCurPath, RTPATH_MAX, wszFullPath, NULL))
+            rc = RTUtf16ToUtf8Ex(&wszFullPath[0], RTSTR_MAX, &pszPath, cchPath, NULL);
+        else
+            rc = RTErrConvertFromWin32(GetLastError());
+    }
+    else
+        rc = RTErrConvertFromWin32(GetLastError());
+#else
+    char szCurPath[RTPATH_MAX];
+    if (GetCurrentDirectory(RTPATH_MAX, szCurPath))
+    {
+        if (GetFullPathName(szCurPath, cchPath, pszPath, NULL))
+            rc = VINF_SUCCESS;
+        else
+            rc = RTErrConvertFromWin32(GetLastError());
+    }
+    else
+        rc = RTErrConvertFromWin32(GetLastError());
+#endif
+    return rc;
 }
 
 

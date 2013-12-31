@@ -114,7 +114,7 @@ static void
 crServerDeleteClient( CRClient *client )
 {
     int i, j;
-	int32_t pos;
+    int32_t pos;
 
     crDebug("Deleting client %p (%d msgs left)", client,
                     crNetNumMessages(client->conn));
@@ -543,9 +543,12 @@ crServerSerializeRemoteStreams(void)
 int
 crServerRecv( CRConnection *conn, CRMessage *msg, unsigned int len )
 {
+    CRMessage *pRealMsg;
     (void) len;
 
-    switch( msg->header.type )
+    pRealMsg = (msg->header.type!=CR_MESSAGE_REDIR_PTR) ? msg : (CRMessage*) msg->redirptr.pMessage;
+
+    switch( pRealMsg->header.type )
     {
         /* Called when using multiple threads */
         case CR_MESSAGE_NEWCLIENT:

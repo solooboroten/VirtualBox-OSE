@@ -572,6 +572,8 @@ typedef enum
 /** @name VMX MSRs - Misc VMX info.
  * @{
  */
+/** Relationship between the preemption timer and tsc; count down every time bit x of the tsc changes. */
+#define MSR_IA32_VMX_MISC_PREEMPT_TSC_BIT(a)                    (a & 0x1f)
 /** Activity states supported by the implementation. */
 #define MSR_IA32_VMX_MISC_ACTIVITY_STATES(a)                    ((a >> 6ULL) & 0x7)
 /** Number of CR3 target values supported by the processor. (0-256) */
@@ -777,6 +779,10 @@ typedef enum
 #define VMX_VMCS_CTRL_PIN_EXEC_CONTROLS_EXT_INT_EXIT            RT_BIT(0)
 /** Non-maskable interrupts cause VM exits if set; otherwise dispatched through the guest's IDT. */
 #define VMX_VMCS_CTRL_PIN_EXEC_CONTROLS_NMI_EXIT                RT_BIT(3)
+/** Virtual NMIs. */
+#define VMX_VMCS_CTRL_PIN_EXEC_CONTROLS_VIRTUAL_NMI             RT_BIT(5)
+/** Activate VMX preemption timer. */
+#define VMX_VMCS_CTRL_PIN_EXEC_CONTROLS_PREEMPT_TIMER           RT_BIT(6)
 /* All other bits are reserved and must be set according to MSR IA32_VMX_PROCBASED_CTLS. */
 /** @} */
 
@@ -807,6 +813,8 @@ typedef enum
 #define VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_STORE_EXIT         RT_BIT(20)
 /** Use TPR shadow. */
 #define VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW         RT_BIT(21)
+/** VM Exit when virtual nmi blocking is disabled. */
+#define VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_NMI_WINDOW_EXIT        RT_BIT(22)
 /** VM Exit when executing a MOV DRx instruction. */
 #define VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_MOV_DR_EXIT            RT_BIT(23)
 /** VM Exit when executing IO instructions. */
@@ -832,6 +840,10 @@ typedef enum
 #define VMX_VMCS_CTRL_PROC_EXEC2_VIRT_APIC                      RT_BIT(0)
 /** EPT supported/enabled. */
 #define VMX_VMCS_CTRL_PROC_EXEC2_EPT                            RT_BIT(1)
+/** Descriptor table instructions cause VM-exits. */
+#define VMX_VMCS_CTRL_PROC_EXEC2_DESCRIPTOR_INSTR_EXIT          RT_BIT(2)
+/** Virtualize x2APIC mode. */
+#define VMX_VMCS_CTRL_PROC_EXEC2_X2APIC                         RT_BIT(4)
 /** VPID supported/enabled. */
 #define VMX_VMCS_CTRL_PROC_EXEC2_VPID                           RT_BIT(5)
 /** VM Exit when executing the WBINVD instruction. */

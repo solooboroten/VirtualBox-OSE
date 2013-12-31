@@ -38,6 +38,21 @@ else
 endif
 
 
+#
+# Clean up global stuff that Config.kmk generates.
+#
+OTHER_CLEAN += \
+	$(VBOX_PACKAGE_HEADER) \
+	$(VBOX_LICENSE_VER_KMK) \
+	$(VBOX_VERSION_MK) \
+	$(VBOX_VERSION_HEADER) \
+	$(VBOX_VERSION_STAMP) \
+	$(wildcard $(PATH_OUT)/version-stamp-*.*.*) \
+	$(VBOX_SVN_REV_KMK).ts \
+	$(VBOX_SVN_REV_KMK) \
+	$(PATH_OUT)/GCCConfig.kmk
+
+
 ifndef VBOX_ONLY_DOCS
 ifndef VBOX_ONLY_ADDITIONS
 
@@ -89,16 +104,9 @@ endif
 # The Qt DLLs.
 ifneq ($(VBOX_WITH_QTGUI),)
  if1of ($(KBUILD_TARGET), win os2)
-  ## @todo remove ifeq and make it work for win too (see
-  ifeq ($(KBUILD_TARGET),os2)
-   include $(KBUILD_PATH)/units/qt3.kmk
+  ifneq ($(strip $(VBOX_DLL_QT)),)
    bin_SOURCES += \
-    $(DLL_SDK_QT3_QT)=>$(not-dir $(DLL_SDK_QT3_QT))
-  else
-   ifneq ($(strip $(VBOX_DLL_QT)),)
-    bin_SOURCES += \
-     $(VBOX_DLL_QT)=>$(not-dir $(VBOX_DLL_QT))
-   endif
+    $(VBOX_DLL_QT)=>$(not-dir $(VBOX_DLL_QT))
   endif
   ifdef VBOX_QT_BINARIES
    bin_SOURCES += $(VBOX_QT_BINARIES)
@@ -708,10 +716,12 @@ additions-fetch:
 
 
 ## @todo Currently combined solaris additions building assumes that amd64 is
-# built first. Do not change the order of dependencies here without testing.
+# built first. The windows amd64 additions need some x86 files, so don't change
+# the order of the windows builds.
+# Do not change the order of dependencies here without testing.
 additions-build: \
-	additions-build-win.amd64 \
 	additions-build-win.x86 \
+	additions-build-win.amd64 \
 	additions-build-solaris.amd64 \
 	additions-build-solaris.x86 \
 	additions-build-os2.x86 \
@@ -745,7 +755,7 @@ ifeq ($(KBUILD_TARGET),win)
 	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
 	$(call MSG_L1,Building Windows/amd64 additions)
-	rsync -av --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)
+	rsync -av --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)
 	$(VBOX_KMK_TIME) ssh vbox@192.168.27.5 c:/psexec/psexec.exe \\\\\\\\addvm -u vbox -p $(WIN64PASSWORD) c:\\\\cygwin\\\\bin\\\\bash.exe -c \''PATH=/usr/bin:/bin e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.amd64) > e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME).log 2>&1'\'; \
 	rc=$$?; \
 	rsync -av --delete 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/out/win.amd64/ out/win.amd64; \
@@ -866,4 +876,3 @@ snapshot:
 	    -f $(TARBALLPATH)/$(TARBALLNAME) \
 	    $(TARBALLROOT)
 	$(QUIET)$(RM) $(TARBALLPATH)/$(TARBALLROOT)
-

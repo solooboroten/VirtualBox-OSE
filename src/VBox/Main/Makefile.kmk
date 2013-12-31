@@ -56,9 +56,6 @@ ifneq ($(KBUILD_TARGET),win)
  ifneq ($(KBUILD_TARGET),os2)
   VBOX_MAIN_DEFS+= VBOX_WITH_SYS_V_IPC_SESSION_WATCHER
  endif
- ifndef VBOX_WITH_NETFLT
-  VBOX_MAIN_DEFS += VBOX_WITH_UNIXY_TAP_NETWORKING
- endif
 endif
 ifdef VBOX_WITH_NETFLT
  VBOX_MAIN_DEFS += VBOX_WITH_NETFLT
@@ -331,6 +328,7 @@ ifdef VBOX_WITH_RESOURCE_USAGE_API
  	PerformanceImpl.cpp \
  	Performance.cpp
  VBoxSVC_SOURCES.darwin  +=  darwin/PerformanceDarwin.cpp
+ VBoxSVC_SOURCES.freebsd += freebsd/PerformanceFreeBSD.cpp
  VBoxSVC_SOURCES.linux   +=   linux/PerformanceLinux.cpp
  VBoxSVC_SOURCES.os2     +=     os2/PerformanceOs2.cpp
  VBoxSVC_SOURCES.solaris += solaris/PerformanceSolaris.cpp
@@ -447,6 +445,8 @@ VBoxC_DEFS = \
 	$(if $(VBOX_WITH_WINMM),VBOX_WITH_WINMM,) \
 	$(if $(VBOX_WITH_CROSSBOW),VBOX_WITH_CROSSBOW,) \
 	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000,) \
+	$(if $(VBOX_WITH_HPET),VBOX_WITH_HPET,) \
+	$(if $(VBOX_WITH_SMC),VBOX_WITH_SMC,) \
 	$(if $(VBOX_WITH_PDM_ASYNC_COMPLETION),VBOX_WITH_PDM_ASYNC_COMPLETION,)
 ifdef VBOX_WITH_USB
 VBoxC_DEFS += \

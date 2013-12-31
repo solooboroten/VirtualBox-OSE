@@ -381,7 +381,7 @@ static inline target_ulong get_phys_addr_code(CPUState *env, target_ulong addr)
 }
 #else
 # ifdef VBOX
-target_ulong remR3PhysGetPhysicalAddressCode(CPUState *env, target_ulong addr, CPUTLBEntry *pTLBEntry);
+target_ulong remR3PhysGetPhysicalAddressCode(CPUState *env, target_ulong addr, CPUTLBEntry *pTLBEntry, target_phys_addr_t ioTLBEntry);
 #  if !defined(REM_PHYS_ADDR_IN_TLB)
 target_ulong remR3HCVirt2GCPhys(CPUState *env1, void *addr);
 #  endif
@@ -407,7 +407,9 @@ DECLINLINE(target_ulong) get_phys_addr_code(CPUState *env1, target_ulong addr)
     if (pd > IO_MEM_ROM && !(pd & IO_MEM_ROMD)) {
 # ifdef VBOX
         /* deal with non-MMIO access handlers. */
-        return remR3PhysGetPhysicalAddressCode(env1, addr, &env1->tlb_table[mmu_idx][page_index]);
+        return remR3PhysGetPhysicalAddressCode(env1, addr, 
+                                               &env1->tlb_table[mmu_idx][page_index],
+                                               env1->iotlb[mmu_idx][page_index]);
 # elif defined(TARGET_SPARC) || defined(TARGET_MIPS)
         do_unassigned_access(addr, 0, 1, 0, 4);
 #else
@@ -418,7 +420,7 @@ DECLINLINE(target_ulong) get_phys_addr_code(CPUState *env1, target_ulong addr)
 # if defined(VBOX) && defined(REM_PHYS_ADDR_IN_TLB)
     return addr + env1->tlb_table[mmu_idx][page_index].addend;
 # elif defined(VBOX)
-    return remR3HCVirt2GCPhys(env1, (void *)(addr + env1->tlb_table[mmu_idx][page_index].addend));
+    return remR3HCVirt2GCPhys(env1, (void *)(uintptr_t)(addr + env1->tlb_table[mmu_idx][page_index].addend));
 # else
     return addr + env1->tlb_table[mmu_idx][page_index].addend - (unsigned long)phys_ram_base;
 # endif

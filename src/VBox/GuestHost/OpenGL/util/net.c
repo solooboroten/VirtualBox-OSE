@@ -292,6 +292,7 @@ crNetConnectToServer( const char *server, unsigned short default_port,
  */
 void crNetNewClient( CRConnection *conn, CRNetServer *ns )
 {
+    /*
     unsigned int len = sizeof(CRMessageNewClient);
     CRMessageNewClient msg;
 
@@ -303,6 +304,8 @@ void crNetNewClient( CRConnection *conn, CRNetServer *ns )
         msg.header.type = CR_MESSAGE_NEWCLIENT;
 
     crNetSend( conn, NULL, &msg, len );
+    */
+
     crNetServerConnect( ns );
 }
 
@@ -760,7 +763,7 @@ crNetSend(CRConnection *conn, void **bufp, const void *start, unsigned int len)
                             (unsigned char *) *bufp + conn->buffer_size );
     }
 
-#ifndef NDEBUG
+#ifdef DEBUG
     if ( conn->send_credits > CR_INITIAL_RECV_CREDITS )
     {
         crError( "crNetSend: send_credits=%u, looks like there is a leak (max=%u)",
@@ -793,7 +796,7 @@ void crNetBarf( CRConnection *conn, void **bufp,
                 (unsigned char *) *bufp + conn->buffer_size );
     }
 
-#ifndef NDEBUG
+#ifdef DEBUG
     if ( conn->send_credits > CR_INITIAL_RECV_CREDITS )
     {
         crError( "crNetBarf: send_credits=%u, looks like there is a "

@@ -1392,6 +1392,7 @@ static int vmmR3ServiceCallHostRequest(PVM pVM)
          */
         case VMMCALLHOST_VMM_LOGGER_FLUSH:
             pVM->vmm.s.rcCallHost = VINF_SUCCESS;
+            LogAlways(("*FLUSH*\n"));
             break;
 
         /*
@@ -1425,6 +1426,13 @@ static int vmmR3ServiceCallHostRequest(PVM pVM)
             LogRel((pVM->vmm.s.szRing0AssertMsg1));
             LogRel((pVM->vmm.s.szRing0AssertMsg2));
             return VERR_VMM_RING0_ASSERTION;
+
+        /* 
+         * A forced switch to ring 0 for preemption purposes. 
+         */
+        case VMMCALLHOST_VM_R0_PREEMPT:
+            pVM->vmm.s.rcCallHost = VINF_SUCCESS;
+            break;
 
         default:
             AssertMsgFailed(("enmCallHostOperation=%d\n", pVM->vmm.s.enmCallHostOperation));

@@ -22,6 +22,8 @@
  */
 
 #include "MachineDebuggerImpl.h"
+
+#include "Global.h"
 #include "ConsoleImpl.h"
 #include "Logging.h"
 
@@ -332,29 +334,6 @@ STDMETHODIMP MachineDebugger::COMSETTER(PATMEnabled) (BOOL aEnable)
     CheckComRCReturnRC (pVM.rc());
 
     PATMR3AllowPatching (pVM, aEnable);
-
-    return S_OK;
-}
-
-/**
- * Set the new patch manager enabled flag.
- *
- * @returns COM status code
- * @param   new patch manager enabled flag
- */
-STDMETHODIMP MachineDebugger::InjectNMI()
-{
-    LogFlowThisFunc ((""));
-
-    AutoCaller autoCaller (this);
-    CheckComRCReturnRC (autoCaller.rc());
-
-    AutoWriteLock alock (this);
-
-    Console::SafeVMPtr pVM (mParent);
-    CheckComRCReturnRC (pVM.rc());
-
-    HWACCMR3InjectNMI(pVM);
 
     return S_OK;
 }
@@ -691,8 +670,10 @@ STDMETHODIMP MachineDebugger::ResetStats (IN_BSTR aPattern)
 {
     Console::SafeVMPtrQuiet pVM (mParent);
 
-    if (pVM.isOk())
-        STAMR3Reset (pVM, Utf8Str (aPattern).raw());
+    if (!pVM.isOk())
+        return E_FAIL;
+
+    STAMR3Reset (pVM, Utf8Str (aPattern).raw());
 
     return S_OK;
 }
@@ -707,8 +688,10 @@ STDMETHODIMP MachineDebugger::DumpStats (IN_BSTR aPattern)
 {
     Console::SafeVMPtrQuiet pVM (mParent);
 
-    if (pVM.isOk())
-        STAMR3Dump (pVM, Utf8Str (aPattern).raw());
+    if (!pVM.isOk())
+        return E_FAIL;
+
+    STAMR3Dump (pVM, Utf8Str (aPattern).raw());
 
     return S_OK;
 }
@@ -739,6 +722,29 @@ STDMETHODIMP MachineDebugger::GetStats (IN_BSTR aPattern, BOOL aWithDescriptions
      * Until that's done, this method is kind of useless for debugger statistics GUI because
      * of the amount statistics in a debug build. */
     Bstr (pszSnapshot).cloneTo (aStats);
+
+    return S_OK;
+}
+
+/**
+ * Set the new patch manager enabled flag.
+ *
+ * @returns COM status code
+ * @param   new patch manager enabled flag
+ */
+STDMETHODIMP MachineDebugger::InjectNMI()
+{
+    LogFlowThisFunc ((""));
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    Console::SafeVMPtr pVM (mParent);
+    CheckComRCReturnRC (pVM.rc());
+
+    HWACCMR3InjectNMI(pVM);
 
     return S_OK;
 }
@@ -798,9 +804,7 @@ bool MachineDebugger::queueSettings() const
         // check if the machine is running
         MachineState_T machineState;
         mParent->COMGETTER(State) (&machineState);
-        if (    machineState != MachineState_Running
-            &&  machineState != MachineState_Paused
-            &&  machineState != MachineState_Stuck)
+        if (!Global::IsActive (machineState))
             // queue the request
             return true;
     }

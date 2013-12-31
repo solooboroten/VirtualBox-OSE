@@ -761,7 +761,6 @@ static int VBoxNetFltSolarisModOpen(queue_t *pQueue, dev_t *pDev, int fOpenMode,
             /*
              * Request the physical address (we cache the acknowledgement).
              */
-            /** @todo take a look at DLPI notifications additionally for these things. */
             rc = vboxNetFltSolarisPhysAddrReq(pStream->pReadQueue);
             if (RT_LIKELY(RT_SUCCESS(rc)))
             {
@@ -1857,6 +1856,10 @@ static int vboxNetFltSolarisAttachIp4(PVBOXNETFLTINS pThis, bool fAttach)
 
                                 rc = strioctl(pIp4VNode, fAttach ? _I_INSERT : _I_REMOVE, (intptr_t)&StrMod, 0, K_TO_K,
                                             kcred, &ret);
+
+                                g_VBoxNetFltSolarisInstance = NULL;
+                                g_VBoxNetFltSolarisStreamType = kUndefined;
+
                                 if (!rc)
                                 {
                                     if (!fAttach)
@@ -1865,14 +1868,17 @@ static int vboxNetFltSolarisAttachIp4(PVBOXNETFLTINS pThis, bool fAttach)
                                     /*
                                      * Inject/Eject from the host ARP stack.
                                      */
+                                    g_VBoxNetFltSolarisInstance = pThis;
                                     g_VBoxNetFltSolarisStreamType = kArpStream;
+
                                     rc = strioctl(pArpVNode, fAttach ? _I_INSERT : _I_REMOVE, (intptr_t)&ArpStrMod, 0, K_TO_K,
                                                 kcred, &ret);
+
+                                    g_VBoxNetFltSolarisInstance = NULL;
+                                    g_VBoxNetFltSolarisStreamType = kUndefined;
+
                                     if (!rc)
                                     {
-                                        g_VBoxNetFltSolarisInstance = NULL;
-                                        g_VBoxNetFltSolarisStreamType = kUndefined;
-
                                         /*
                                          * Our job's not yet over; we need to relink the upper and lower streams
                                          * otherwise we've pretty much screwed up the host interface.
@@ -2505,7 +2511,6 @@ static inline void vboxNetFltSolarisInitPacketId(PVBOXNETFLTPACKETID pTag, mblk_
  * @param   pThis               The instance.
  * @param   pPromiscStream      Pointer to the promiscuous stream.
  * @param   pMsg                Pointer to the message.
- * @remarks Warning!! Assumes caller has taken care of any locking necessary.
  */
 static int vboxNetFltSolarisQueueLoopback(PVBOXNETFLTINS pThis, vboxnetflt_promisc_stream_t *pPromiscStream, mblk_t *pMsg)
 {
@@ -2957,6 +2962,19 @@ static void vboxNetFltSolarisAnalyzeMBlk(mblk_t *pMsg)
         {
             LogFlow((DEVICE_NAME ":Chained IP packet. Skipping validity check.\n"));
         }
+    }
+    else if (pEthHdr->EtherType == RT_H2BE_U16(RTNET_ETHERTYPE_VLAN))
+    {
+        typedef struct VLANHEADER
+        {
+            int Pcp:3;
+            int Cfi:1;
+            int Vid:12; 
+        } VLANHEADER;
+
+        VLANHEADER *pVlanHdr = (VLANHEADER *)(pMsg->b_rptr + sizeof(RTNETETHERHDR));
+        LogFlow((DEVICE_NAME ":VLAN Pcp=%d Cfi=%d Id=%d\n", pVlanHdr->Pcp, pVlanHdr->Cfi, pVlanHdr->Vid >> 4));
+        LogFlow((DEVICE_NAME "%.*Rhxd\n", MBLKL(pMsg), pMsg->b_rptr));
     }
     else if (pEthHdr->EtherType == RT_H2BE_U16(RTNET_ETHERTYPE_ARP))
     {

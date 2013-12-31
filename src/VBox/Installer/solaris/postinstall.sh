@@ -52,20 +52,27 @@ if test "$currentzone" = "global"; then
     fi
 fi
 
-# create links
+# create symlinks and hardlinks
+VBOXBASEDIR="/opt/VirtualBox"
+SYSISAEXEC="/usr/lib/isaexec"
 echo "Creating links..."
-if test -f /opt/VirtualBox/VirtualBox; then
-    /usr/sbin/installf -c none $PKGINST /usr/bin/VirtualBox=/opt/VirtualBox/VBox.sh s
-    # Qt links
-    /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxQtconfig=/opt/VirtualBox/VBox.sh s
+if test -f "$VBOXBASEDIR/amd64/VirtualBox" || test -f "$VBOXBASEDIR/i386/VirtualBox"; then
+    /usr/sbin/installf -c none $PKGINST /usr/bin/VirtualBox=$VBOXBASEDIR/VBox.sh s
+    /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxQtconfig=$VBOXBASEDIR/VBox.sh s
 fi
-/usr/sbin/installf -c none $PKGINST /usr/bin/VBoxManage=/opt/VirtualBox/VBox.sh s
-/usr/sbin/installf -c none $PKGINST /usr/bin/VBoxSDL=/opt/VirtualBox/VBox.sh s
-if test -f /opt/VirtualBox/VBoxHeadless; then
-    /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxHeadless=/opt/VirtualBox/VBox.sh s
-    if test -f /opt/VirtualBox/VBoxVRDP.so; then
-        /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxVRDP=/opt/VirtualBox/VBox.sh s
+/usr/sbin/installf -c none $PKGINST /usr/bin/VBoxManage=$VBOXBASEDIR/VBox.sh s
+/usr/sbin/installf -c none $PKGINST /usr/bin/VBoxSDL=$VBOXBASEDIR/VBox.sh s
+if test -f "$VBOXBASEDIR/amd64/VBoxHeadless" || test -f "$VBOXBASEDIR/i386/VBoxHeadless"; then
+    if test -d $VBOXBASEDIR/amd64; then
+        /usr/sbin/installf -c none $PKGINST $VBOXBASEDIR/amd64/rdesktop-vrdp-keymaps=$VBOXBASEDIR/rdesktop-vrdp-keymaps s
+        /usr/sbin/installf -c none $PKGINST $VBOXBASEDIR/amd64/additions=$VBOXBASEDIR/additions s
     fi
+    if test -d $VBOXBASEDIR/i386; then
+        /usr/sbin/installf -c none $PKGINST $VBOXBASEDIR/i386/rdesktop-vrdp-keymaps=$VBOXBASEDIR/rdesktop-vrdp-keymaps s
+        /usr/sbin/installf -c none $PKGINST $VBOXBASEDIR/i386/additions=$VBOXBASEDIR/additions s
+    fi
+    /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxHeadless=/$VBOXBASEDIR/VBox.sh s
+    /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxVRDP=$VBOXBASEDIR/VBox.sh s
 fi
 
 if test "$currentzone" = "global"; then

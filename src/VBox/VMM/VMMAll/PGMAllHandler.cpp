@@ -237,6 +237,13 @@ static int pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(PVM pVM, PPGMPHYSHANDL
             const uint16_t u16 = pRam->aPages[i].HCPhys >> MM_RAM_FLAGS_IDX_SHIFT; /** @todo PAGE FLAGS */
             if (u16)
             {
+# ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
+                /* Start a subset here because pgmPoolTrackFlushGCPhysPTsSlow and pgmPoolTrackFlushGCPhysPTs
+                   will/may kill the pool otherwise. */
+                PVMCPU pVCpu = VMMGetCpu(pVM);
+                uint32_t iPrevSubset = PGMDynMapPushAutoSubset(pVCpu);
+# endif
+
                 if ((u16 >> (MM_RAM_FLAGS_CREFS_SHIFT - MM_RAM_FLAGS_IDX_SHIFT)) != MM_RAM_FLAGS_CREFS_PHYSEXT)
                     pgmPoolTrackFlushGCPhysPT(pVM,
                                               pPage,
@@ -247,10 +254,25 @@ static int pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(PVM pVM, PPGMPHYSHANDL
                 else
                     rc = pgmPoolTrackFlushGCPhysPTsSlow(pVM, pPage);
                 fFlushTLBs = true;
+
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
+                PGMDynMapPopAutoSubset(pVCpu, iPrevSubset);
+#endif
             }
+
 #elif defined(PGMPOOL_WITH_CACHE)
+# ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
+            /* Start a subset here because pgmPoolTrackFlushGCPhysPTsSlow kill the pool otherwise. */
+            PVMCPU pVCpu = VMMGetCpu(pVM);
+            uint32_t iPrevSubset = PGMDynMapPushAutoSubset(pVCpu);
+# endif
+
             rc = pgmPoolTrackFlushGCPhysPTsSlow(pVM, pPage);
             fFlushTLBs = true;
+
+# ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
+            PGMDynMapPopAutoSubset(pVCpu, iPrevSubset);
+# endif
 #endif
         }
 
@@ -1042,17 +1064,39 @@ VMMDECL(bool) PGMHandlerPhysicalIsRegistered(PVM pVM, RTGCPHYS GCPhys)
     PPGMPHYSHANDLER pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
     if (pCur)
     {
-        if (    GCPhys >= pCur->Core.Key
-            &&  GCPhys <= pCur->Core.KeyLast)
-        {
-            Assert(     pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
-                   ||   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_ALL
-                   ||   pCur->enmType == PGMPHYSHANDLERTYPE_MMIO);
-            return true;
-        }
+        Assert(GCPhys >= pCur->Core.Key && GCPhys <= pCur->Core.KeyLast);
+        Assert(     pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
+               ||   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_ALL
+               ||   pCur->enmType == PGMPHYSHANDLERTYPE_MMIO);
+        return true;
     }
 
     return false;
+}
+
+
+/**
+ * Checks if it's an disabled all access handler or write access handler at the
+ * given address.
+ *
+ * @returns true if it's an all access handler, false if it's a write access
+ *          handler.
+ * @param   pVM         Pointer to the shared VM structure.
+ * @param   GCPhys      The address of the page with a disabled handler.
+ *
+ * @remarks The caller, PGMR3PhysTlbGCPhys2Ptr, must hold the PGM lock.
+ */
+bool pgmHandlerPhysicalIsAll(PVM pVM, RTGCPHYS GCPhys)
+{
+    PPGMPHYSHANDLER pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+    AssertReturn(pCur, true);
+    Assert(     pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
+           ||   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_ALL
+           ||   pCur->enmType == PGMPHYSHANDLERTYPE_MMIO); /* sanity */
+    /* Only whole pages can be disabled. */
+    Assert(   pCur->Core.Key     <= (GCPhys & ~(RTGCPHYS)PAGE_OFFSET_MASK)
+           && pCur->Core.KeyLast >= (GCPhys | PAGE_OFFSET_MASK));
+    return pCur->enmType != PGMPHYSHANDLERTYPE_PHYSICAL_WRITE;
 }
 
 

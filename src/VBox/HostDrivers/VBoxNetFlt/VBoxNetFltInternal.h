@@ -67,6 +67,9 @@ typedef enum VBOXNETFTLINSSTATE
     /** Disconnecting from the internal network and possibly the host network interface.
      * Partly for reasons of deadlock avoidance again. */
     kVBoxNetFltInsState_Disconnecting,
+    /** Destroying the instance
+     * Partly for reasons of deadlock avoidance again. */
+    kVBoxNetFltInsState_Destroying,
     /** The instance has been disconnected from both the host and the internal network. */
     kVBoxNetFltInsState_Destroyed,
 
@@ -190,15 +193,14 @@ typedef struct VBOXNETFLTINS
 # elif defined(RT_OS_WINDOWS)
             /** @name Windows instance data.
              * @{ */
-//#  ifdef VBOX_NETFLT_ONDEMAND_BIND
             /** Filter driver device context. */
             ADAPT IfAdaptor;
-//#  else
-//            /** Pointer to the filter driver device context. */
-//            PADAPT volatile pIfAdaptor;
-//#  endif
+            /** Packet worker thread info */
+            PACKET_QUEUE_WORKER PacketQueueWorker;
             /** The MAC address of the interface. Caching MAC for performance reasons. */
             RTMAC Mac;
+            /** mutex used to synchronize ADAPT init/deinit */
+            RTSEMMUTEX hAdaptMutex;
             /** @}  */
 # else
 #  error "PORTME"
@@ -250,7 +252,10 @@ typedef struct VBOXNETFLTGLOBALS
     SUPDRVFACTORY SupDrvFactory;
     /** The number of current factory references. */
     int32_t volatile cFactoryRefs;
-
+#ifdef VBOXNETFLT_STATIC_CONFIG
+    /* wait timer event */
+    RTSEMEVENT hTimerEvent;
+#endif
     /** The SUPDRV IDC handle (opaque struct). */
     SUPDRVIDCHANDLE SupDrvIDC;
 } VBOXNETFLTGLOBALS;

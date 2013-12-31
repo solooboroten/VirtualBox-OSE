@@ -344,7 +344,7 @@ static int iomInterpretMOVS(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame
      * Get data size.
      */
     unsigned cb = DISGetParamSize(pCpu, &pCpu->param1);
-    AssertMsg(cb > 0 && cb <= sizeof(uint32_t), ("cb=%d\n", cb));
+    AssertMsg(cb > 0 && cb <= sizeof(uint64_t), ("cb=%d\n", cb));
     int      offIncrement = pRegFrame->eflags.Bits.u1DF ? -(signed)cb : (signed)cb;
 
 #ifdef VBOX_WITH_STATISTICS
@@ -433,7 +433,7 @@ static int iomInterpretMOVS(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame
                           SELMTOFLAT_FLAGS_HYPER | SELMTOFLAT_FLAGS_NO_PL,
                           (RTGCPTR *)&pu8Virt);
         if (RT_FAILURE(rc))
-            return VINF_EM_RAW_GUEST_TRAP;
+            return VINF_IOM_HC_MMIO_READ;
 
         /* Check if destination address is MMIO. */
         PIOMMMIORANGE pMMIODst;
@@ -573,7 +573,7 @@ static int iomInterpretSTOS(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCPHYS GCPhysFaul
      * Get data size.
      */
     unsigned cb = DISGetParamSize(pCpu, &pCpu->param1);
-    AssertMsg(cb > 0 && cb <= sizeof(uint32_t), ("cb=%d\n", cb));
+    AssertMsg(cb > 0 && cb <= sizeof(uint64_t), ("cb=%d\n", cb));
     int      offIncrement = pRegFrame->eflags.Bits.u1DF ? -(signed)cb : (signed)cb;
 
 #ifdef VBOX_WITH_STATISTICS
@@ -1781,12 +1781,12 @@ VMMDECL(int) IOMMMIOModifyPage(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysRemapped
     uint64_t fFlags;
     RTHCPHYS HCPhys;
     rc = PGMShwGetPage(pVM, (RTGCPTR)GCPhys, &fFlags, &HCPhys);
-    Assert(rc == VERR_PAGE_NOT_PRESENT);
+    Assert(rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
 #endif
 
     /* Mark it as writable and present so reads and writes no longer fault. */
     rc = PGMShwModifyPage(pVM, (RTGCPTR)GCPhys, 1, fPageFlags, ~fPageFlags);
-    AssertRC(rc);
+    Assert(rc == VINF_SUCCESS || rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
 
     return VINF_SUCCESS;
 }
@@ -1830,13 +1830,13 @@ VMMDECL(int)  IOMMMIOResetRegion(PVM pVM, RTGCPHYS GCPhys)
 
         /* Mark it as not present again to intercept all read and write access. */
         rc = PGMShwModifyPage(pVM, (RTGCPTR)GCPhys, 1, 0, ~(uint64_t)(X86_PTE_RW|X86_PTE_P));
-        AssertRC(rc);
+        Assert(rc == VINF_SUCCESS || rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
 
 #ifdef VBOX_STRICT
         uint64_t fFlags;
         RTHCPHYS HCPhys;
         rc = PGMShwGetPage(pVM, (RTGCPTR)GCPhys, &fFlags, &HCPhys);
-        Assert(rc == VERR_PAGE_NOT_PRESENT);
+        Assert(rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
 #endif
         cb     -= PAGE_SIZE;
         GCPhys += PAGE_SIZE;

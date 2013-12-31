@@ -44,6 +44,7 @@
 class VBoxConsoleWnd;
 class MousePointerChangeEvent;
 class VBoxFrameBuffer;
+class VBoxDockIconPreview;
 
 class QPainter;
 class QLabel;
@@ -127,7 +128,9 @@ public:
 
 #if defined(Q_WS_MAC)
     void updateDockIcon();
+    void updateDockOverlay();
     void setDockIconEnabled (bool aOn) { mDockIconEnabled = aOn; };
+    void setMouseCoalescingEnabled (bool aOn);
 #endif
 
 signals:
@@ -298,6 +301,7 @@ private:
     /** The current modifier key mask. Used to figure out which modifier
      *  key was pressed when we get a kEventRawKeyModifiersChanged event. */
     UInt32 mDarwinKeyModifiers;
+    bool mKeyboardGrabbed;
 #endif
 
     VBoxFrameBuffer *mFrameBuf;
@@ -320,7 +324,7 @@ private:
 
     QPixmap mPausedShot;
 #if defined(Q_WS_MAC)
-    CGImageRef mVirtualBoxLogo;
+    VBoxDockIconPreview *mDockIconPreview;
     bool mDockIconEnabled;
 #endif
     DesktopGeo mDesktopGeo;

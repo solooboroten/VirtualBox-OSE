@@ -128,15 +128,13 @@ $(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFltNotify.dll: $$(TARGET_VBoxNetFltNotif
 $(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFlt.cat: \
 		$(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFlt.sys \
 		$(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFltNotify.dll \
-		$(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFlt.inf \
-		$(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFlt.cat
+		$(PATH_TARGET)/VBoxNetFltCat.dir/VBoxNetFlt.inf
 	$(call MSG_TOOL,Inf2Cat,VBoxNetFlt-inf,$@,$<)
 	$(call VBOX_MAKE_CAT_FN, $(@D),$@)
 
 $(PATH_TARGET)/VBoxNetFltMpCat.dir/VBoxNetFlt_m.cat: \
 		$(PATH_TARGET)/VBoxNetFltMpCat.dir/VBoxNetFlt.sys \
-		$(PATH_TARGET)/VBoxNetFltMpCat.dir/VBoxNetFlt_m.inf \
-		$(PATH_TARGET)/VBoxNetFltMpCat.dir/VBoxNetFlt_m.cat
+		$(PATH_TARGET)/VBoxNetFltMpCat.dir/VBoxNetFlt_m.inf
 	$(call MSG_TOOL,Inf2Cat,VBoxNetFlt-inf,$@,$<)
 	$(call VBOX_MAKE_CAT_FN, $(@D),$@)
 
@@ -159,7 +157,7 @@ PROGRAMS.win  += NetFltInstall
 NetFltInstall_TEMPLATE = VBOXR3STATIC
 NetFltInstall_SDKS     = WINPSDK W2K3DDK VBOX_NTDLL
 NetFltInstall_SOURCES  = win/NetFltInstall.cpp
-NetFltInstall_LIBS     = $(PATH_LIB)/WinNetConfig.lib
+NetFltInstall_LIBS     = $(TARGET_WinNetConfig)
 
 
 #
@@ -169,7 +167,7 @@ PROGRAMS.win  += NetFltUninstall
 NetFltUninstall_TEMPLATE = VBOXR3STATIC
 NetFltUninstall_SDKS     = WINPSDK W2K3DDK VBOX_NTDLL
 NetFltUninstall_SOURCES  = win/NetFltUninstall.cpp
-NetFltUninstall_LIBS     = $(PATH_LIB)/WinNetConfig.lib
+NetFltUninstall_LIBS     = $(TARGET_WinNetConfig)
 
 
 #
@@ -221,6 +219,7 @@ else if1of ($(KBUILD_TARGET), linux solaris) ## @todo merge this with the mixed 
 # vboxnetflt(.ko/.o/) - The lower case driver.
 # Note! On Solaris the name has to be <= 8 chars long.
 #
+ ifdef VBOX_WITH_VBOXDRV
 SYSMODS += vboxnetflt
 vboxnetflt_TEMPLATE      = VBOXR0DRV
 vboxnetflt_NAME.solaris  = vboxflt
@@ -246,6 +245,7 @@ vboxnetflt_LIBS = \
 vboxnetflt_SOURCES.linux = linux/VBoxNetFlt-linux.c
 vboxnetflt_SOURCES.solaris = solaris/VBoxNetFlt-solaris.c
 vboxnetflt_SOURCES = VBoxNetFlt.c
+ endif
 
 endif
 
@@ -265,7 +265,8 @@ ifeq ($(KBUILD_TARGET),linux)
 	$(PATH_VBoxNetFlt-src)/Makefile
  VBoxNetFlt-src_CLEAN   = \
 	$(PATH_VBoxNetFlt-src)/dkms.conf \
-	$(PATH_VBoxNetFlt-src)/Makefile
+	$(PATH_VBoxNetFlt-src)/Makefile	\
+	$(PATH_TARGET)/VBoxNetFlt-src-1.dep
 
  VBoxNetFlt-sh_INST    = bin/src/vboxnetflt/
  VBoxNetFlt-sh_MODE    = a+rx,u+w
@@ -309,4 +310,5 @@ $$(PATH_VBoxNetFlt-src)/dkms.conf: \
 endif # linux
 
 include	$(KBUILD_PATH)/subfooter.kmk
+
 

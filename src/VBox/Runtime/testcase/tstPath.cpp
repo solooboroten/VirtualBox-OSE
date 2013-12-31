@@ -84,57 +84,145 @@ int main()
      * RTPathAbsEx
      */
     RTPrintf("tstPath: TESTING RTPathAbsEx()\n");
-    static const char *aInput[] =
+    static const struct
     {
-        // NULL, NULL, -- assertion in RTStrToUtf16
-        NULL,                           "/absolute/..",
-        NULL,                           "/absolute\\\\../..",
-        NULL,                           "/absolute//../path",
-        NULL,                           "/absolute/../../path",
-        NULL,                           "relative/../dir\\.\\.\\.\\file.txt",
-        NULL,                           "\\",
-        "relative_base/dir\\",          "\\from_root",
-        "relative_base/dir/",           "relative_also",
+        const char *pcszInputBase;
+        const char *pcszInputPath;
+        int rc;
+        const char *pcszOutput;
+    }
+    s_aRTPathAbsExTests[] =
+    {
 #if defined (RT_OS_OS2) || defined (RT_OS_WINDOWS)
-        NULL,                           "C:\\",
-        "C:\\",                         "..",
-        "C:\\temp",                     "..",
-        "C:\\VirtualBox/Machines",      "..\\VirtualBox.xml",
-        "C:\\MustDie",                  "\\from_root/dir/..",
-        "C:\\temp",                     "D:\\data",
-        NULL,                           "\\\\server\\../share", // -- on Win32, GetFullPathName doesn't remove .. here
-        /* the three below use cases should fail with VERR_INVALID_NAME */
-        //NULL,                           "\\\\server",
-        //NULL,                           "\\\\",
-        //NULL,                           "\\\\\\something",
-        "\\\\server\\share_as_base",    "/from_root",
-        "\\\\just_server",              "/from_root",
-        "\\\\server\\share_as_base",    "relative\\data",
-        "base",                         "\\\\?\\UNC\\relative/edwef/..",
-        "base",                         "\\\\?\\UNC\\relative/edwef/..",
-        /* this is not (and I guess should not be) supported, should fail */
-        ///@todo "\\\\?\\UNC\\base",             "/from_root",
+    { NULL, "", VERR_INVALID_PARAMETER, NULL },
+    { NULL, ".", VINF_SUCCESS, "%p" },
+    { NULL, "\\", VINF_SUCCESS, "%d\\" },
+    { NULL, "\\..", VINF_SUCCESS, "%d\\" },
+    { NULL, "/absolute/..", VINF_SUCCESS, "%d\\" },
+    { NULL, "/absolute\\\\../..", VINF_SUCCESS, "%d\\" },
+    { NULL, "/absolute//../path\\", VINF_SUCCESS, "%d\\path" },
+    { NULL, "/absolute/../../path", VINF_SUCCESS, "%d\\path" },
+    { NULL, "relative/../dir\\.\\.\\.\\file.txt", VINF_SUCCESS, "%p\\dir\\file.txt" },
+    { NULL, "\\data\\", VINF_SUCCESS, "%d\\data" },
+    { "relative_base/dir\\", "\\from_root", VINF_SUCCESS, "%d\\from_root" },
+    { "relative_base/dir/", "relative_also", VINF_SUCCESS, "%p\\relative_base\\dir\\relative_also" },
 #else
-        "\\temp",                       "..",
-        "\\VirtualBox/Machines",        "..\\VirtualBox.xml",
-        "\\MustDie",                    "\\from_root/dir/..",
-        "\\temp",                       "\\data",
+    { NULL, "", VERR_INVALID_PARAMETER, NULL },
+    { NULL, ".", VINF_SUCCESS, "%p" },
+    { NULL, "/", VINF_SUCCESS, "/" },
+    { NULL, "/..", VINF_SUCCESS, "/" },
+    { NULL, "/absolute/..", VINF_SUCCESS, "/" },
+    { NULL, "/absolute\\\\../..", VINF_SUCCESS, "/" },
+    { NULL, "/absolute//../path/", VINF_SUCCESS, "/path" },
+    { NULL, "/absolute/../../path", VINF_SUCCESS, "/path" },
+    { NULL, "relative/../dir/./././file.txt", VINF_SUCCESS, "%p/dir/file.txt" },
+    { NULL, "relative/../dir\\.\\.\\.\\file.txt", VINF_SUCCESS, "%p/dir\\.\\.\\.\\file.txt" },  /* linux-specific */
+    { NULL, "/data/", VINF_SUCCESS, "/data" },
+    { "relative_base/dir/", "/from_root", VINF_SUCCESS, "/from_root" },
+    { "relative_base/dir/", "relative_also", VINF_SUCCESS, "%p/relative_base/dir/relative_also" },
+#endif
+#if defined (RT_OS_OS2) || defined (RT_OS_WINDOWS)
+    { NULL, "C:\\", VINF_SUCCESS, "C:\\" },
+    { "C:\\", "..", VINF_SUCCESS, "C:\\" },
+    { "C:\\temp", "..", VINF_SUCCESS, "C:\\" },
+    { "C:\\VirtualBox/Machines", "..\\VirtualBox.xml", VINF_SUCCESS, "C:\\VirtualBox\\VirtualBox.xml" },
+    { "C:\\MustDie", "\\from_root/dir/..", VINF_SUCCESS, "C:\\from_root" },
+    { "C:\\temp", "D:\\data", VINF_SUCCESS, "D:\\data" },
+    { NULL, "\\\\server\\..\\share", VINF_SUCCESS, "\\\\server\\..\\share" /* kind of strange */ },
+    { NULL, "\\\\server/", VINF_SUCCESS, "\\\\server" },
+    { NULL, "\\\\", VINF_SUCCESS, "\\\\" },
+    { NULL, "\\\\\\something", VINF_SUCCESS, "\\\\\\something" /* kind of strange */ },
+    { "\\\\server\\share_as_base", "/from_root", VINF_SUCCESS, "\\\\server\\from_root" },
+    { "\\\\just_server", "/from_root", VINF_SUCCESS, "\\\\just_server\\from_root" },
+    { "\\\\server\\share_as_base", "relative\\data", VINF_SUCCESS, "\\\\server\\share_as_base\\relative\\data" },
+    { "base", "\\\\?\\UNC\\relative/edwef/..", VINF_SUCCESS, "\\\\?\\UNC\\relative" },
+    { "\\\\?\\UNC\\base", "/from_root", VERR_INVALID_NAME, NULL },
+#else
+    { "/temp", "..", VINF_SUCCESS, "/" },
+    { "/VirtualBox/Machines", "../VirtualBox.xml", VINF_SUCCESS, "/VirtualBox/VirtualBox.xml" },
+    { "/MustDie", "/from_root/dir/..", VINF_SUCCESS, "/from_root" },
+    { "\\temp", "\\data", VINF_SUCCESS, "%p/\\temp/\\data" },
 #endif
     };
 
-    for (unsigned i = 0; i < RT_ELEMENTS(aInput); i += 2)
+    for (unsigned i = 0; i < RT_ELEMENTS(s_aRTPathAbsExTests); ++ i)
     {
-        RTPrintf("tstPath: base={%s}, path={%s}, ", aInput[i], aInput[i + 1]);
-        CHECK_RC(RTPathAbsEx(aInput[i], aInput[i + 1], szPath, sizeof(szPath)));
-        if (RT_SUCCESS(rc))
-            RTPrintf("abs={%s}\n", szPath);
+        rc = RTPathAbsEx(s_aRTPathAbsExTests[i].pcszInputBase,
+                         s_aRTPathAbsExTests[i].pcszInputPath,
+                         szPath, sizeof(szPath));
+        if (rc != s_aRTPathAbsExTests[i].rc)
+        {
+            RTPrintf("tstPath: RTPathAbsEx unexpected result code!\n"
+                     "   input base: '%s'\n"
+                     "   input path: '%s'\n"
+                     "       output: '%s'\n"
+                     "           rc: %Rrc\n"
+                     "  expected rc: %Rrc\n",
+                     s_aRTPathAbsExTests[i].pcszInputBase,
+                     s_aRTPathAbsExTests[i].pcszInputPath,
+                     szPath, rc,
+                     s_aRTPathAbsExTests[i].rc);
+            cErrors++;
+            continue;
+        }
+
+        char szTmp[RTPATH_MAX];
+        char *pszExpected = NULL;
+        if (s_aRTPathAbsExTests[i].pcszOutput != NULL)
+        {
+            if (s_aRTPathAbsExTests[i].pcszOutput[0] == '%')
+            {
+                rc = RTPathGetCurrent(szTmp, sizeof(szTmp));
+                if (RT_FAILURE(rc))
+                {
+                    RTPrintf("tstPath: RTPathGetCurrent failed with rc=%Rrc!\n", rc);
+                    cErrors++;
+                    break;
+                }
+
+                pszExpected = szTmp;
+
+                if (s_aRTPathAbsExTests[i].pcszOutput[1] == 'p')
+                {
+                    size_t cch = strlen(szTmp);
+                    if (cch + strlen(s_aRTPathAbsExTests[i].pcszOutput) - 2 <= sizeof(szTmp))
+                        strcpy(szTmp + cch, s_aRTPathAbsExTests[i].pcszOutput + 2);
+                }
+#if defined(RT_OS_OS2) || defined(RT_OS_WINDOWS)
+                else if (s_aRTPathAbsExTests[i].pcszOutput[1] == 'd')
+                {
+                    if (2 + strlen(s_aRTPathAbsExTests[i].pcszOutput) - 2 <= sizeof(szTmp))
+                        strcpy(szTmp + 2, s_aRTPathAbsExTests[i].pcszOutput + 2);
+                }
+#endif
+            }
+            else
+            {
+                strcpy(szTmp, s_aRTPathAbsExTests[i].pcszOutput);
+                pszExpected = szTmp;
+            }
+
+            if (strcmp(szPath, pszExpected))
+            {
+                RTPrintf("tstPath: RTPathAbsEx failed!\n"
+                         "   input base: '%s'\n"
+                         "   input path: '%s'\n"
+                         "       output: '%s'\n"
+                         "     expected: '%s'\n",
+                         s_aRTPathAbsExTests[i].pcszInputBase,
+                         s_aRTPathAbsExTests[i].pcszInputPath,
+                         szPath,
+                         s_aRTPathAbsExTests[i].pcszOutput);
+                cErrors++;
+            }
+        }
     }
 
     /*
      * RTPathStripFilename
      */
     RTPrintf("tstPath: RTPathStripFilename...\n");
-    static const char *apszStripFilenameTests[] =
+    static const char *s_apszStripFilenameTests[] =
     {
         "/usr/include///",              "/usr/include//",
         "/usr/include/",                "/usr/include",
@@ -148,10 +236,10 @@ int main()
         "C:\\OS2\\DLLS",                "C:\\OS2",
 #endif
     };
-    for (unsigned i = 0; i < RT_ELEMENTS(apszStripFilenameTests); i += 2)
+    for (unsigned i = 0; i < RT_ELEMENTS(s_apszStripFilenameTests); i += 2)
     {
-        const char *pszInput  = apszStripFilenameTests[i];
-        const char *pszExpect = apszStripFilenameTests[i + 1];
+        const char *pszInput  = s_apszStripFilenameTests[i];
+        const char *pszExpect = s_apszStripFilenameTests[i + 1];
         char szPath[RTPATH_MAX];
         strcpy(szPath, pszInput);
         RTPathStripFilename(szPath);

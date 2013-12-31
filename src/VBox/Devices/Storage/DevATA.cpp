@@ -96,6 +96,12 @@
 #define ATA_EVENT_STATUS_MEDIA_REMOVED          2    /**< medium removed */
 #define ATA_EVENT_STATUS_MEDIA_CHANGED          3    /**< medium was removed + new medium was inserted */
 
+/**
+ * Length of the configurable VPD data (without termination)
+ */
+#define ATA_SERIAL_NUMBER_LENGTH     20
+#define ATA_FIRMWARE_REVISION_LENGTH  8
+#define ATA_MODEL_NUMBER_LENGTH      40
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -273,6 +279,17 @@ typedef struct ATADevState {
     PPDMDEVINSRC                        pDevInsRC;
     /** Pointer to controller instance. */
     RCPTRTYPE(struct ATACONTROLLER *)   pControllerRC;
+
+    /** The serial numnber to use for IDENTIFY DEVICE commands. */
+    char                                szSerialNumber[ATA_SERIAL_NUMBER_LENGTH+1];
+    /** The firmware revision to use for IDENTIFY DEVICE commands. */
+    char                                szFirmwareRevision[ATA_FIRMWARE_REVISION_LENGTH+1];
+    /** The model number to use for IDENTIFY DEVICE commands. */
+    char                                szModelNumber[ATA_MODEL_NUMBER_LENGTH+1];
+
+#if HC_ARCH_BITS == 64
+    uint32_t                            Alignment3[2];
+#endif
 } ATADevState;
 
 
@@ -391,6 +408,9 @@ typedef struct ATACONTROLLER
 #if 0 /*HC_ARCH_BITS == 32*/
     uint32_t            Alignment0;
 #endif
+
+    /** Timestamp we started the reset. */
+    uint64_t            u64ResetTime;
 
     /* Statistics */
     STAMCOUNTER     StatAsyncOps;
@@ -1083,23 +1103,9 @@ static void ataCmdError(ATADevState *s, uint8_t uErrorCode)
 static bool ataIdentifySS(ATADevState *s)
 {
     uint16_t *p;
-    char aSerial[20];
-    int rc;
-    RTUUID Uuid;
 
     Assert(s->uTxDir == PDMBLOCKTXDIR_FROM_DEVICE);
     Assert(s->cbElementaryTransfer == 512);
-    rc = s->pDrvBlock ? s->pDrvBlock->pfnGetUuid(s->pDrvBlock, &Uuid) : RTUuidClear(&Uuid);
-    if (RT_FAILURE(rc) || RTUuidIsNull(&Uuid))
-    {
-        PATACONTROLLER pCtl = ATADEVSTATE_2_CONTROLLER(s);
-        /* Generate a predictable serial for drives which don't have a UUID. */
-        RTStrPrintf(aSerial, sizeof(aSerial), "VB%x-%04x%04x",
-                    s->iLUN + ATADEVSTATE_2_DEVINS(s)->iInstance * 32,
-                    pCtl->IOPortBase1, pCtl->IOPortBase2);
-    }
-    else
-        RTStrPrintf(aSerial, sizeof(aSerial), "VB%08x-%08x", Uuid.au32[0], Uuid.au32[3]);
 
     p = (uint16_t *)s->CTX_SUFF(pbIOBuffer);
     memset(p, 0, 512);
@@ -1109,12 +1115,12 @@ static bool ataIdentifySS(ATADevState *s)
     /* Block size; obsolete, but required for the BIOS. */
     p[5] = RT_H2LE_U16(512);
     p[6] = RT_H2LE_U16(s->PCHSGeometry.cSectors);
-    ataPadString((uint8_t *)(p + 10), aSerial, 20); /* serial number */
+    ataPadString((uint8_t *)(p + 10), s->szSerialNumber, ATA_SERIAL_NUMBER_LENGTH); /* serial number */
     p[20] = RT_H2LE_U16(3); /* XXX: retired, cache type */
     p[21] = RT_H2LE_U16(512); /* XXX: retired, cache size in sectors */
     p[22] = RT_H2LE_U16(0); /* ECC bytes per sector */
-    ataPadString((uint8_t *)(p + 23), "1.0", 8); /* firmware version */
-    ataPadString((uint8_t *)(p + 27), "VBOX HARDDISK", 40); /* model */
+    ataPadString((uint8_t *)(p + 23), s->szFirmwareRevision, ATA_FIRMWARE_REVISION_LENGTH); /* firmware version */
+    ataPadString((uint8_t *)(p + 27), s->szModelNumber, ATA_MODEL_NUMBER_LENGTH); /* model */
 #if ATA_MAX_MULT_SECTORS > 1
     p[47] = RT_H2LE_U16(0x8000 | ATA_MAX_MULT_SECTORS);
 #endif
@@ -1207,33 +1213,19 @@ static bool ataFlushSS(ATADevState *s)
 static bool atapiIdentifySS(ATADevState *s)
 {
     uint16_t *p;
-    char aSerial[20];
-    RTUUID Uuid;
-    int rc;
 
     Assert(s->uTxDir == PDMBLOCKTXDIR_FROM_DEVICE);
     Assert(s->cbElementaryTransfer == 512);
-    rc = s->pDrvBlock ? s->pDrvBlock->pfnGetUuid(s->pDrvBlock, &Uuid) : RTUuidClear(&Uuid);
-    if (RT_FAILURE(rc) || RTUuidIsNull(&Uuid))
-    {
-        PATACONTROLLER pCtl = ATADEVSTATE_2_CONTROLLER(s);
-        /* Generate a predictable serial for drives which don't have a UUID. */
-        RTStrPrintf(aSerial, sizeof(aSerial), "VB%x-%04x%04x",
-                    s->iLUN + ATADEVSTATE_2_DEVINS(s)->iInstance * 32,
-                    pCtl->IOPortBase1, pCtl->IOPortBase2);
-    }
-    else
-        RTStrPrintf(aSerial, sizeof(aSerial), "VB%08x-%08x", Uuid.au32[0], Uuid.au32[3]);
 
     p = (uint16_t *)s->CTX_SUFF(pbIOBuffer);
     memset(p, 0, 512);
     /* Removable CDROM, 50us response, 12 byte packets */
     p[0] = RT_H2LE_U16(2 << 14 | 5 << 8 | 1 << 7 | 2 << 5 | 0 << 0);
-    ataPadString((uint8_t *)(p + 10), aSerial, 20); /* serial number */
+    ataPadString((uint8_t *)(p + 10), s->szSerialNumber, ATA_SERIAL_NUMBER_LENGTH); /* serial number */
     p[20] = RT_H2LE_U16(3); /* XXX: retired, cache type */
     p[21] = RT_H2LE_U16(512); /* XXX: retired, cache size in sectors */
-    ataPadString((uint8_t *)(p + 23), "1.0", 8); /* firmware version */
-    ataPadString((uint8_t *)(p + 27), "VBOX CD-ROM", 40); /* model */
+    ataPadString((uint8_t *)(p + 23), s->szFirmwareRevision, ATA_FIRMWARE_REVISION_LENGTH); /* firmware version */
+    ataPadString((uint8_t *)(p + 27), s->szModelNumber, ATA_MODEL_NUMBER_LENGTH); /* model */
     p[49] = RT_H2LE_U16(1 << 11 | 1 << 9 | 1 << 8); /* DMA and LBA supported */
     p[50] = RT_H2LE_U16(1 << 14);  /* No drive specific standby timer minimum */
     p[51] = RT_H2LE_U16(240); /* PIO transfer cycle */
@@ -1498,7 +1490,13 @@ static bool ataReadSectorsSS(ATADevState *s)
         if (s->cErrors++ < MAX_LOG_REL_ERRORS)
             LogRel(("PIIX3 ATA: LUN#%d: disk read error (rc=%Rrc iSector=%#RX64 cSectors=%#RX32)\n",
                     s->iLUN, rc, iLBA, cSectors));
-        ataCmdError(s, ID_ERR);
+
+        /*
+         * Check if we got interrupted. We don't need to set status variables
+         * because the request was aborted.
+         */
+        if (rc != VERR_INTERRUPTED)
+            ataCmdError(s, ID_ERR);
     }
     /** @todo implement redo for iSCSI */
     return false;
@@ -1545,7 +1543,13 @@ static bool ataWriteSectorsSS(ATADevState *s)
         if (s->cErrors++ < MAX_LOG_REL_ERRORS)
             LogRel(("PIIX3 ATA: LUN#%d: disk write error (rc=%Rrc iSector=%#RX64 cSectors=%#RX32)\n",
                     s->iLUN, rc, iLBA, cSectors));
-        ataCmdError(s, ID_ERR);
+
+        /*
+         * Check if we got interrupted. We don't need to set status variables
+         * because the request was aborted.
+         */
+        if (rc != VERR_INTERRUPTED)
+            ataCmdError(s, ID_ERR);
     }
     /** @todo implement redo for iSCSI */
     return false;
@@ -1761,7 +1765,13 @@ static bool atapiReadSS(ATADevState *s)
     {
         if (s->cErrors++ < MAX_LOG_REL_ERRORS)
             LogRel(("PIIX3 ATA: LUN#%d: CD-ROM read error, %d sectors at LBA %d\n", s->iLUN, cSectors, s->iATAPILBA));
-        atapiCmdErrorSimple(s, SCSI_SENSE_MEDIUM_ERROR, SCSI_ASC_READ_ERROR);
+
+        /*
+         * Check if we got interrupted. We don't need to set status variables
+         * because the request was aborted.
+         */
+        if (rc != VERR_INTERRUPTED)
+            atapiCmdErrorSimple(s, SCSI_SENSE_MEDIUM_ERROR, SCSI_ASC_READ_ERROR);
     }
     return false;
 }
@@ -1799,7 +1809,7 @@ static bool atapiPassthroughSS(ATADevState *s)
     PDMCritSectLeave(&pCtl->lock);
 
     if (pProf) { STAM_PROFILE_ADV_START(pProf, b); }
-    if (cbTransfer > 100 * _1K)
+    if (cbTransfer > SCSI_MAX_BUFFER_SIZE)
     {
         /* Linux accepts commands with up to 100KB of data, but expects
          * us to handle commands with up to 128KB of data. The usual
@@ -1846,8 +1856,8 @@ static bool atapiPassthroughSS(ATADevState *s)
         cReqSectors = 0;
         for (uint32_t i = cSectors; i > 0; i -= cReqSectors)
         {
-            if (i * s->cbATAPISector > 100 * _1K)
-                cReqSectors = (100 * _1K) / s->cbATAPISector;
+            if (i * s->cbATAPISector > SCSI_MAX_BUFFER_SIZE)
+                cReqSectors = SCSI_MAX_BUFFER_SIZE / s->cbATAPISector;
             else
                 cReqSectors = i;
             cbCurrTX = s->cbATAPISector * cReqSectors;
@@ -3723,6 +3733,32 @@ static int ataIOPortReadU8(PATACONTROLLER pCtl, uint32_t addr, uint32_t *pu32)
                 cBusy = 0;
                 PDMCritSectLeave(&pCtl->lock);
 
+#ifndef RT_OS_WINDOWS
+                /*
+                 * The thread might be stuck in an I/O operation
+                 * due to a high I/O load on the host. (see @bugref{3301})
+                 * To perform the reset successfully
+                 * we interrupt the operation by sending a signal to the thread
+                 * if the thread didn't responded in 10ms.
+                 * This works only on POSIX hosts (Windows has a CancelSynchronousIo function which
+                 * does the same but it was introduced with Vista) but so far
+                 * this hang was only observed on Linux and Mac OS X.
+                 *
+                 * This is a workaround and needs to be solved properly.
+                 */
+                if (pCtl->fReset)
+                {
+                    uint64_t u64ResetTimeStop = RTTimeMilliTS();
+
+                    if ((u64ResetTimeStop - pCtl->u64ResetTime) >= 10)
+                    {
+                        LogRel(("PIIX3 ATA: Async I/O thread probably stuck in operation, interrupting\n"));
+                        pCtl->u64ResetTime = u64ResetTimeStop;
+                        RTThreadPoke(pCtl->AsyncIOThread);
+                    }
+                }
+#endif
+
                 RTThreadYield();
 
                 {
@@ -3815,6 +3851,11 @@ static int ataControlWrite(PATACONTROLLER pCtl, uint32_t addr, uint32_t val)
             val &= ~ATA_DEVCTL_HOB;
             Log2(("%s: ignored setting HOB\n", __FUNCTION__));
         }
+
+        /* Save the timestamp we started the reset. */
+        pCtl->u64ResetTime = RTTimeMilliTS();
+
+        /* Issue the reset request now. */
         ataAsyncIOPutRequest(pCtl, &ataResetARequest);
 #else /* !IN_RING3 */
         AssertMsgFailed(("RESET handling is too complicated for GC\n"));
@@ -4278,6 +4319,11 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
         while (pCtl->fRedoIdle)
         {
             rc = RTSemEventWait(pCtl->SuspendIOSem, RT_INDEFINITE_WAIT);
+            /* Continue if we got a signal by RTThreadPoke().
+             * We will get notified if there is a request to process.
+             */
+            if (RT_UNLIKELY(rc == VERR_INTERRUPTED))
+                continue;
             if (RT_FAILURE(rc) || pCtl->fShutdown)
                 break;
 
@@ -4285,16 +4331,24 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
         }
 
         /* Wait for work.  */
-        if (pReq == NULL)
+        while (pReq == NULL)
         {
             LogBird(("ata: %x: going to sleep...\n", pCtl->IOPortBase1));
             rc = RTSemEventWait(pCtl->AsyncIOSem, RT_INDEFINITE_WAIT);
             LogBird(("ata: %x: waking up\n", pCtl->IOPortBase1));
-            if (RT_FAILURE(rc) || pCtl->fShutdown)
+            /* Continue if we got a signal by RTThreadPoke().
+             * We will get notified if there is a request to process.
+             */
+            if (RT_UNLIKELY(rc == VERR_INTERRUPTED))
+                continue;
+            if (RT_FAILURE(rc) || RT_UNLIKELY(pCtl->fShutdown))
                 break;
 
             pReq = ataAsyncIOGetCurrentRequest(pCtl);
         }
+
+        if (RT_FAILURE(rc) || pCtl->fShutdown)
+            break;
 
         if (pReq == NULL)
             continue;
@@ -6119,17 +6173,19 @@ static DECLCALLBACK(int)   ataConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
         pThis->aCts[i].DelayIRQMillies = (uint32_t)DelayIRQMillies;
         for (uint32_t j = 0; j < RT_ELEMENTS(pThis->aCts[i].aIfs); j++)
         {
-            pThis->aCts[i].aIfs[j].iLUN = i * RT_ELEMENTS(pThis->aCts) + j;
-            pThis->aCts[i].aIfs[j].pDevInsR3 = pDevIns;
-            pThis->aCts[i].aIfs[j].pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
-            pThis->aCts[i].aIfs[j].pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
-            pThis->aCts[i].aIfs[j].pControllerR3 = &pThis->aCts[i];
-            pThis->aCts[i].aIfs[j].pControllerR0 = MMHyperR3ToR0(PDMDevHlpGetVM(pDevIns), &pThis->aCts[i]);
-            pThis->aCts[i].aIfs[j].pControllerRC = MMHyperR3ToRC(PDMDevHlpGetVM(pDevIns), &pThis->aCts[i]);
-            pThis->aCts[i].aIfs[j].IBase.pfnQueryInterface = ataQueryInterface;
-            pThis->aCts[i].aIfs[j].IMountNotify.pfnMountNotify = ataMountNotify;
-            pThis->aCts[i].aIfs[j].IMountNotify.pfnUnmountNotify = ataUnmountNotify;
-            pThis->aCts[i].aIfs[j].Led.u32Magic = PDMLED_MAGIC;
+            ATADevState *pIf = &pThis->aCts[i].aIfs[j];
+
+            pIf->iLUN      = i * RT_ELEMENTS(pThis->aCts) + j;
+            pIf->pDevInsR3 = pDevIns;
+            pIf->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+            pIf->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+            pIf->pControllerR3 = &pThis->aCts[i];
+            pIf->pControllerR0 = MMHyperR3ToR0(PDMDevHlpGetVM(pDevIns), &pThis->aCts[i]);
+            pIf->pControllerRC = MMHyperR3ToRC(PDMDevHlpGetVM(pDevIns), &pThis->aCts[i]);
+            pIf->IBase.pfnQueryInterface       = ataQueryInterface;
+            pIf->IMountNotify.pfnMountNotify   = ataMountNotify;
+            pIf->IMountNotify.pfnUnmountNotify = ataUnmountNotify;
+            pIf->Led.u32Magic                  = PDMLED_MAGIC;
         }
     }
 
@@ -6279,7 +6335,7 @@ static DECLCALLBACK(int)   ataConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
         rc = RTSemMutexCreate(&pCtl->AsyncIORequestMutex);
         AssertRC(rc);
         ataAsyncIOClearRequests(pCtl);
-        rc = RTThreadCreate(&pCtl->AsyncIOThread, ataAsyncIOLoop, (void *)pCtl, 128*1024, RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE, "ATA");
+        rc = RTThreadCreateF(&pCtl->AsyncIOThread, ataAsyncIOLoop, (void *)pCtl, 128*1024, RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE, "ATA-%u", i);
         AssertRC(rc);
         Assert(pCtl->AsyncIOThread != NIL_RTTHREAD && pCtl->AsyncIOSem != NIL_RTSEMEVENT && pCtl->SuspendIOSem != NIL_RTSEMEVENT && pCtl->AsyncIORequestMutex != NIL_RTSEMMUTEX);
         Log(("%s: controller %d AIO thread id %#x; sem %p susp_sem %p mutex %p\n", __FUNCTION__, i, pCtl->AsyncIOThread, pCtl->AsyncIOSem, pCtl->SuspendIOSem, pCtl->AsyncIORequestMutex));
@@ -6300,7 +6356,74 @@ static DECLCALLBACK(int)   ataConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
 
             rc = PDMDevHlpDriverAttach(pDevIns, pIf->iLUN, &pIf->IBase, &pIf->pDrvBase, s_apszDescs[i][j]);
             if (RT_SUCCESS(rc))
+            {
                 rc = ataConfigLun(pDevIns, pIf);
+                if (RT_SUCCESS(rc))
+                {
+                    /*
+                     * Init vendor product data.
+                     */
+                    static const char *s_apszCFGMKeys[RT_ELEMENTS(pThis->aCts)][RT_ELEMENTS(pCtl->aIfs)] =
+                    {
+                        { "PrimaryMaster", "PrimarySlave" },
+                        { "SecondaryMaster", "SecondarySlave" }
+                    };
+
+                    /* Generate a default serial number. */
+                    char szSerial[ATA_SERIAL_NUMBER_LENGTH+1];
+                    RTUUID Uuid;
+                    if (pIf->pDrvBlock)
+                        rc = pIf->pDrvBlock->pfnGetUuid(pIf->pDrvBlock, &Uuid);
+                    else
+                        RTUuidClear(&Uuid);
+
+                    if (RT_FAILURE(rc) || RTUuidIsNull(&Uuid))
+                    {
+                        /* Generate a predictable serial for drives which don't have a UUID. */
+                        RTStrPrintf(szSerial, sizeof(szSerial), "VB%x-%04x%04x",
+                                    pIf->iLUN + pDevIns->iInstance * 32,
+                                    pThis->aCts[i].IOPortBase1, pThis->aCts[i].IOPortBase2);
+                    }
+                    else
+                        RTStrPrintf(szSerial, sizeof(szSerial), "VB%08x-%08x", Uuid.au32[0], Uuid.au32[3]);
+
+                    /* Get user config if present using defaults otherwise. */
+                    PCFGMNODE pCfgNode = CFGMR3GetChild(pCfgHandle, s_apszCFGMKeys[i][j]);
+                    rc = CFGMR3QueryStringDef(pCfgNode, "SerialNumber", pIf->szSerialNumber, sizeof(pIf->szSerialNumber),
+                                              szSerial);
+                    if (RT_FAILURE(rc))
+                    {
+                        if (rc == VERR_CFGM_NOT_ENOUGH_SPACE)
+                            return PDMDEV_SET_ERROR(pDevIns, VERR_INVALID_PARAMETER,
+                                        N_("PIIX3 configuration error: \"SerialNumber\" is longer than 20 bytes"));
+                        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                  N_("PIIX3 configuration error: failed to read \"SerialNumber\" as string"));
+                    }
+
+                    rc = CFGMR3QueryStringDef(pCfgNode, "FirmwareRevision", pIf->szFirmwareRevision, sizeof(pIf->szFirmwareRevision),
+                                              "1.0");
+                    if (RT_FAILURE(rc))
+                    {
+                        if (rc == VERR_CFGM_NOT_ENOUGH_SPACE)
+                            return PDMDEV_SET_ERROR(pDevIns, VERR_INVALID_PARAMETER,
+                                        N_("PIIX3 configuration error: \"FirmwareRevision\" is longer than 8 bytes"));
+                        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                    N_("PIIX3 configuration error: failed to read \"FirmwareRevision\" as string"));
+                    }
+
+                    rc = CFGMR3QueryStringDef(pCfgNode, "ModelNumber", pIf->szModelNumber, sizeof(pIf->szModelNumber),
+                                              pIf->fATAPI ? "VBOX CD-ROM" : "VBOX HARDDISK");
+                    if (RT_FAILURE(rc))
+                    {
+                        if (rc == VERR_CFGM_NOT_ENOUGH_SPACE)
+                            return PDMDEV_SET_ERROR(pDevIns, VERR_INVALID_PARAMETER,
+                                       N_("PIIX3 configuration error: \"ModelNumber\" is longer than 40 bytes"));
+                        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                    N_("PIIX3 configuration error: failed to read \"ModelNumber\" as string"));
+                    }
+                }
+
+            }
             else if (rc == VERR_PDM_NO_ATTACHED_DRIVER)
             {
                 pIf->pDrvBase = NULL;
@@ -6365,7 +6488,8 @@ const PDMDEVREG g_DevicePIIX3IDE =
     "  LUN #3 is secondary slave.\n"
     "  LUN #999 is the LED/Status connector.",
     /* fFlags */
-    PDM_DEVREG_FLAGS_DEFAULT_BITS | PDM_DEVREG_FLAGS_RC | PDM_DEVREG_FLAGS_R0,
+    PDM_DEVREG_FLAGS_DEFAULT_BITS | PDM_DEVREG_FLAGS_RC | PDM_DEVREG_FLAGS_R0 |
+    PDM_DEVREG_FLAGS_FIRST_SUSPEND_NOTIFICATION | PDM_DEVREG_FLAGS_FIRST_POWEROFF_NOTIFICATION,
     /* fClass */
     PDM_DEVREG_CLASS_STORAGE,
     /* cMaxInstances */

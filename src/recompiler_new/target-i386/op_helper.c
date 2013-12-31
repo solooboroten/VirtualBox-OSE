@@ -144,13 +144,16 @@ void helper_write_eflags_vme(target_ulong t0)
 {
     unsigned int new_eflags = t0;
 
+    assert(env->eflags & (1<<VM_SHIFT));
+
     /* if virtual interrupt pending and (virtual) interrupts will be enabled -> #GP */
     /* if TF will be set -> #GP */
     if (    ((new_eflags & IF_MASK) && (env->eflags & VIP_MASK))
         ||  (new_eflags & TF_MASK)) {
         raise_exception(EXCP0D_GPF);
     } else {
-        load_eflags(new_eflags, (TF_MASK | AC_MASK | ID_MASK | NT_MASK) & 0xffff);
+        load_eflags(new_eflags, 
+                    (TF_MASK | AC_MASK | ID_MASK | NT_MASK) & 0xffff);
 
         if (new_eflags & IF_MASK) {
             env->eflags |= VIF_MASK;
@@ -168,7 +171,14 @@ target_ulong helper_read_eflags_vme(void)
     eflags |= env->eflags & ~(VM_MASK | RF_MASK);
     if (env->eflags & VIF_MASK)
         eflags |= IF_MASK;
-    return eflags;
+    else
+        eflags &= ~IF_MASK;
+
+    /* According to AMD manual, should be read with IOPL == 3 */
+    eflags |= (3 << IOPL_SHIFT);
+
+    /* We only use helper_read_eflags_vme() in 16-bits mode */
+    return eflags & 0xffff;
 }
 
 void helper_dump_state()
@@ -1027,6 +1037,9 @@ DECLINLINE(bool) is_vme_irq_redirected(int intno)
         env->tr.limit < 103)
         goto fail;
     io_offset = lduw_kernel(env->tr.base + 0x66);
+    /* Make sure the io bitmap offset is valid; anything less than sizeof(VBOXTSS) means there's none. */
+    if (io_offset < 0x68 + 0x20)
+        io_offset = 0x68 + 0x20;
     /* the virtual interrupt redirection bitmap is located below the io bitmap */
     intredir_offset = io_offset - 0x20;
 
@@ -5363,7 +5376,7 @@ void helper_sti(void)
 #ifdef VBOX
 void helper_cli_vme(void)
 {
-    env->eflags &= ~IF_MASK;
+    env->eflags &= ~VIF_MASK;
 }
 
 void helper_sti_vme(void)
@@ -5372,7 +5385,7 @@ void helper_sti_vme(void)
     if (env->eflags & VIP_MASK) {
         raise_exception(EXCP0D_GPF);
     }
-    env->eflags |= IF_MASK;
+    env->eflags |= VIF_MASK;
 }
 #endif
 
@@ -5962,7 +5975,6 @@ DECLINLINE(void) helper_fstt_raw(CPU86_LDouble f, uint8_t *ptr)
 #define stw(a,b) *(uint16_t *)(a) = (uint16_t)(b)
 #define stl(a,b) *(uint32_t *)(a) = (uint32_t)(b)
 #define stq(a,b) *(uint64_t *)(a) = (uint64_t)(b)
-#define data64 0
 
 //*****************************************************************************
 void restore_raw_fp_state(CPUX86State *env, uint8_t *ptr)
@@ -5970,6 +5982,7 @@ void restore_raw_fp_state(CPUX86State *env, uint8_t *ptr)
     int fpus, fptag, i, nb_xmm_regs;
     CPU86_LDouble tmp;
     uint8_t *addr;
+    int data64 = !!(env->hflags & HF_CS64_MASK);
 
     if (env->cpuid_features & CPUID_FXSR)
     {
@@ -6047,6 +6060,7 @@ void save_raw_fp_state(CPUX86State *env, uint8_t *ptr)
     int i, fpus, fptag, nb_xmm_regs;
     CPU86_LDouble tmp;
     uint8_t *addr;
+    int data64 = !!(env->hflags & HF_CS64_MASK);
 
     if (env->cpuid_features & CPUID_FXSR)
     {

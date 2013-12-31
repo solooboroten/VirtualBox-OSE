@@ -185,7 +185,7 @@ tcp_newtcpcb(PNATState pData, struct socket *so)
 {
     register struct tcpcb *tp;
 
-    tp = (struct tcpcb *)malloc(sizeof(*tp));
+    tp = (struct tcpcb *)RTMemAlloc(sizeof(*tp));
     if (tp == NULL)
         return ((struct tcpcb *)0);
 
@@ -263,18 +263,19 @@ tcp_close(PNATState pData, register struct tcpcb *tp)
     struct socket *so = tp->t_socket;
     register struct mbuf *m;
 
-    struct tseg_qent *te;
+    struct tseg_qent *te = NULL;
     DEBUG_CALL("tcp_close");
     DEBUG_ARG("tp = %lx", (long )tp);
     /*XXX: freeing the reassembly queue */
-    LIST_FOREACH(te, &tp->t_segq, tqe_q)
+    while (!LIST_EMPTY(&tp->t_segq))
     {
+        te = LIST_FIRST(&tp->t_segq);
         LIST_REMOVE(te, tqe_q);
         m_freem(pData, te->tqe_m);
-        free(te);
+        RTMemFree(te);
         tcp_reass_qsize--;
     }
-    free(tp);
+    RTMemFree(tp);
     so->so_tcpcb = 0;
     soisfdisconnected(so);
     /* clobber input socket cache if we're closing the cached connection */
@@ -467,7 +468,7 @@ tcp_connect(PNATState pData, struct socket *inso)
         }
         if (tcp_attach(pData, so) < 0)
         {
-            free(so); /* NOT sofree */
+            RTMemFree(so); /* NOT sofree */
             return;
         }
         so->so_laddr = inso->so_laddr;
@@ -667,6 +668,12 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
                 /*
                  * Need to emulate the PORT command
                  */
+                struct sockaddr_in addr;
+                socklen_t addrlen = sizeof addr;
+
+                if (getsockname(so->s, (struct sockaddr *)&addr, &addrlen))
+                    return 1;
+
                 x = sscanf(bptr, "ORT %u,%u,%u,%u,%u,%u\r\n%256[^\177]",
                            &n1, &n2, &n3, &n4, &n5, &n6, buff);
                 if (x < 6)
@@ -683,7 +690,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
                 n5 = (n6 >> 8) & 0xff;
                 n6 &= 0xff;
 
-                laddr = ntohl(so->so_faddr.s_addr);
+                laddr = ntohl(addr.sin_addr.s_addr);
 
                 n1 = ((laddr >> 24) & 0xff);
                 n2 = ((laddr >> 16) & 0xff);
@@ -700,6 +707,12 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
                 /*
                  * Need to emulate the PASV response
                  */
+                struct sockaddr_in addr;
+                socklen_t addrlen = sizeof addr;
+
+                if (getsockname(so->s, (struct sockaddr *)&addr, &addrlen))
+                    return 1;
+
                 x = sscanf(bptr, "27 Entering Passive Mode (%u,%u,%u,%u,%u,%u)\r\n%256[^\177]",
                            &n1, &n2, &n3, &n4, &n5, &n6, buff);
                 if (x < 6)
@@ -716,7 +729,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
                 n5 = (n6 >> 8) & 0xff;
                 n6 &= 0xff;
 
-                laddr = ntohl(so->so_faddr.s_addr);
+                laddr = ntohl(addr.sin_addr.s_addr);
 
                 n1 = ((laddr >> 24) & 0xff);
                 n2 = ((laddr >> 16) & 0xff);

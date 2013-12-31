@@ -2462,24 +2462,37 @@ VMMR3DECL(int) PGMR3PhysTlbGCPhys2Ptr(PVM pVM, RTGCPHYS GCPhys, bool fWritable, 
             if (0)
                 /* nothing */;
 #endif
-            else if (PGM_PAGE_HAS_ACTIVE_ALL_HANDLERS(pPage)) /* catches MMIO */
-                rc = VERR_PGM_PHYS_TLB_CATCH_ALL;
-            else if (fWritable && PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage))
-                rc = VINF_PGM_PHYS_TLB_CATCH_WRITE;
+            else if (PGM_PAGE_HAS_ANY_HANDLERS(pPage))
+            {
+                if (PGM_PAGE_HAS_ACTIVE_ALL_HANDLERS(pPage)) /* catches MMIO */
+                    rc = VERR_PGM_PHYS_TLB_CATCH_ALL;
+                else if (fWritable && PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage))
+                    rc = VINF_PGM_PHYS_TLB_CATCH_WRITE;
+                else
+                {
+                    /* Temporariliy disabled phycial handler(s), since the recompiler
+                       doesn't get notified when it's reset we'll have to pretend its
+                       operating normally. */
+                    if (pgmHandlerPhysicalIsAll(pVM, GCPhys))
+                        rc = VERR_PGM_PHYS_TLB_CATCH_ALL;
+                    else
+                        rc = VINF_PGM_PHYS_TLB_CATCH_WRITE;
+                }
+            }
             else
                 rc = VINF_SUCCESS;
             if (RT_SUCCESS(rc))
             {
                 if (pRam->fFlags & MM_RAM_FLAGS_DYNAMIC_ALLOC)
                 {
-                    Assert(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_RAM);
+                    AssertMsg(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_RAM, ("GCPhys=%RGp type=%d\n", GCPhys, PGM_PAGE_GET_TYPE(pPage)));
                     RTGCPHYS off = GCPhys - pRam->GCPhys;
                     unsigned iChunk = (off >> PGM_DYNAMIC_CHUNK_SHIFT);
                     *pvPtr = (void *)(pRam->paChunkR3Ptrs[iChunk] + (off & PGM_DYNAMIC_CHUNK_OFFSET_MASK));
                 }
                 else if (RT_LIKELY(pRam->pvR3))
                 {
-                    Assert(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_RAM);
+                    AssertMsg(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_RAM || PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_MMIO2, ("GCPhys=%RGp type=%d\n", GCPhys, PGM_PAGE_GET_TYPE(pPage)));
                     RTGCPHYS off = GCPhys - pRam->GCPhys;
                     *pvPtr = (uint8_t *)pRam->pvR3 + off;
                 }

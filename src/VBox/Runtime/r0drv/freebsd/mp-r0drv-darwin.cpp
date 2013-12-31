@@ -46,10 +46,10 @@ RTDECL(RTCPUID) RTMpCpuId(void)
 }
 
 
-/** 
- * Wrapper between the native FreeBSD per-cpu callback and PFNRTWORKER 
+/**
+ * Wrapper between the native FreeBSD per-cpu callback and PFNRTWORKER
  * for the RTMpOnAll API.
- * 
+ *
  * @param   pvArg   Pointer to the RTMPARGS package.
  */
 static void rtmpOnAllFreeBSDWrapper(void *pvArg)
@@ -72,10 +72,10 @@ RTDECL(int) RTMpOnAll(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 }
 
 
-/** 
- * Wrapper between the native FreeBSD per-cpu callback and PFNRTWORKER 
+/**
+ * Wrapper between the native FreeBSD per-cpu callback and PFNRTWORKER
  * for the RTMpOnOthers API.
- * 
+ *
  * @param   pvArg   Pointer to the RTMPARGS package.
  */
 static void rtmpOnOthersFreeBSDWrapper(void *pvArg)
@@ -101,10 +101,10 @@ RTDECL(int) RTMpOnOthers(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 }
 
 
-/** 
- * Wrapper between the native FreeBSD per-cpu callback and PFNRTWORKER 
+/**
+ * Wrapper between the native FreeBSD per-cpu callback and PFNRTWORKER
  * for the RTMpOnSpecific API.
- * 
+ *
  * @param   pvArg   Pointer to the RTMPARGS package.
  */
 static void rtmpOnSpecificFreeBSDWrapper(void *pvArg)
@@ -129,8 +129,8 @@ RTDECL(int) RTMpOnSpecific(RTCPUID idCpu, PFNRTMPWORKER pfnWorker, void *pvUser1
     Args.idCpu = idCpu;
     Args.cHits = 0;
     smp_rendezvous(NULL, rtmpOnSpecificFreeBSDWrapper, NULL, &Args);
-    return Args.cHits == 1 
-         ? VINF_SUCCESS 
+    return Args.cHits == 1
+         ? VINF_SUCCESS
          : VERR_CPU_NOT_FOUND;
 }
 

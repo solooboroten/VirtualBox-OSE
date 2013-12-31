@@ -389,7 +389,9 @@ REMR3DECL(int) REMR3Init(PVM pVM)
 
 #ifdef DEBUG_ALL_LOGGING
     loglevel = ~0;
+# ifdef DEBUG_TMP_LOGGING
     logfile = fopen("/tmp/vbox-qemu.log", "w");
+# endif
 #endif
 
     return rc;
@@ -1297,7 +1299,12 @@ void remR3FlushPage(CPUState *env, RTGCPTR GCPtr)
 void *remR3TlbGCPhys2Ptr(CPUState *env1, target_ulong physAddr, int fWritable)
 {
     void *pv;
-    int rc = PGMR3PhysTlbGCPhys2Ptr(env1->pVM, physAddr, true /*fWritable*/, &pv);
+    int rc;
+
+    /* Address must be aligned enough to fiddle with lower bits */
+    Assert((physAddr & 0x3) == 0);
+
+    rc = PGMR3PhysTlbGCPhys2Ptr(env1->pVM, physAddr, true /*fWritable*/, &pv);
     Assert(   rc == VINF_SUCCESS
            || rc == VINF_PGM_PHYS_TLB_CATCH_WRITE
            || rc == VERR_PGM_PHYS_TLB_CATCH_ALL
@@ -1716,9 +1723,6 @@ REMR3DECL(int)  REMR3State(PVM pVM)
                   | CPUM_CHANGED_GDTR | CPUM_CHANGED_IDTR | CPUM_CHANGED_LDTR | CPUM_CHANGED_TR
                   | CPUM_CHANGED_FPU_REM | CPUM_CHANGED_SYSENTER_MSR | CPUM_CHANGED_CPUID))
     {
-        if (fFlags & CPUM_CHANGED_FPU_REM)
-            save_raw_fp_state(&pVM->rem.s.Env, (uint8_t *)&pCtx->fpu); /* 'save' is an excellent name. */
-
         if (fFlags & CPUM_CHANGED_GLOBAL_TLB_FLUSH)
         {
             pVM->rem.s.fIgnoreCR3Load = true;
@@ -1810,6 +1814,10 @@ REMR3DECL(int)  REMR3State(PVM pVM)
             CPUMGetGuestCpuId(pVM,          1, &u32Dummy, &u32Dummy, &pVM->rem.s.Env.cpuid_ext_features, &pVM->rem.s.Env.cpuid_features);
             CPUMGetGuestCpuId(pVM, 0x80000001, &u32Dummy, &u32Dummy, &u32Dummy, &pVM->rem.s.Env.cpuid_ext2_features);
         }
+
+        /* Sync FPU state after CR4 and CPUID. */
+        if (fFlags & CPUM_CHANGED_FPU_REM)
+            save_raw_fp_state(&pVM->rem.s.Env, (uint8_t *)&pCtx->fpu); /* 'save' is an excellent name. */
     }
 
     /*
@@ -2049,9 +2057,6 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     /** @todo CS */
     /** @todo FPUDP */
     /** @todo DS */
-    /** @todo Fix MXCSR support in QEMU so we don't overwrite MXCSR with 0 when we shouldn't! */
-    pCtx->fpu.MXCSR         = 0;
-    pCtx->fpu.MXCSR_MASK    = 0;
 
     /** @todo check if FPU/XMM was actually used in the recompiler */
     restore_raw_fp_state(&pVM->rem.s.Env, (uint8_t *)&pCtx->fpu);
@@ -2968,19 +2973,24 @@ REMR3DECL(bool) REMR3IsPageAccessHandled(PVM pVM, RTGCPHYS GCPhys)
  * @param   addr        The virtual address.
  * @param   pTLBEntry   The TLB entry.
  */
-target_ulong remR3PhysGetPhysicalAddressCode(CPUState *env, target_ulong addr, CPUTLBEntry *pTLBEntry)
+target_ulong remR3PhysGetPhysicalAddressCode(CPUState*          env,
+                                             target_ulong       addr,
+                                             CPUTLBEntry*       pTLBEntry,
+                                             target_phys_addr_t ioTLBEntry)
 {
     PVM pVM = env->pVM;
-    if ((pTLBEntry->addr_code & ~TARGET_PAGE_MASK) == pVM->rem.s.iHandlerMemType)
+
+    if ((ioTLBEntry & ~TARGET_PAGE_MASK) == pVM->rem.s.iHandlerMemType)
     {
-        target_ulong ret = pTLBEntry->addend + addr;
-        AssertMsg2("remR3PhysGetPhysicalAddressCode: addr=%RGv addr_code=%RGv addend=%RGp ret=%RGp\n",
-                   (RTGCPTR)addr, (RTGCPTR)pTLBEntry->addr_code, (RTGCPHYS)pTLBEntry->addend, ret);
+        /* If code memory is being monitored, appropriate IOTLB entry will have
+           handler IO type, and addend will provide real physical address, no
+           matter if we store VA in TLB or not, as handlers are always passed PA */
+        target_ulong ret = (ioTLBEntry & TARGET_PAGE_MASK) + addr;
         return ret;
     }
-    LogRel(("\nTrying to execute code with memory type addr_code=%RGv addend=%RGp at %RGv! (iHandlerMemType=%#x iMMIOMemType=%#x)\n"
+    LogRel(("\nTrying to execute code with memory type addr_code=%RGv addend=%RGp at %RGv! (iHandlerMemType=%#x iMMIOMemType=%#x IOTLB=%RGp)\n"
             "*** handlers\n",
-            (RTGCPTR)pTLBEntry->addr_code, (RTGCPHYS)pTLBEntry->addend, (RTGCPTR)addr, pVM->rem.s.iHandlerMemType, pVM->rem.s.iMMIOMemType));
+            (RTGCPTR)pTLBEntry->addr_code, (RTGCPHYS)pTLBEntry->addend, (RTGCPTR)addr, pVM->rem.s.iHandlerMemType, pVM->rem.s.iMMIOMemType, (RTGCPHYS)ioTLBEntry));
     DBGFR3Info(pVM, "handlers", NULL, DBGFR3InfoLogRelHlp());
     LogRel(("*** mmio\n"));
     DBGFR3Info(pVM, "mmio", NULL, DBGFR3InfoLogRelHlp());
@@ -3664,9 +3674,14 @@ bool remR3DisasInstr(CPUState *env, int f32BitCode, char *pszPrefix)
  * @param   pvCode          Pointer to the code block.
  * @param   cb              Size of the code block.
  */
-void disas(FILE *phFileIgnored, void *pvCode, unsigned long cb)
+void disas(FILE *phFile, void *pvCode, unsigned long cb)
 {
+#ifdef DEBUG_TMP_LOGGING
+# define DISAS_PRINTF(x...) fprintf(phFile, x)
+#else
+# define DISAS_PRINTF(x...) RTLogPrintf(x)
     if (LogIs2Enabled())
+#endif
     {
         unsigned        off = 0;
         char            szOutput[256];
@@ -3679,15 +3694,15 @@ void disas(FILE *phFileIgnored, void *pvCode, unsigned long cb)
         Cpu.mode = CPUMODE_64BIT;
 #endif
 
-        RTLogPrintf("Recompiled Code: %p %#lx (%ld) bytes\n", pvCode, cb, cb);
+        DISAS_PRINTF("Recompiled Code: %p %#lx (%ld) bytes\n", pvCode, cb, cb);
         while (off < cb)
         {
             uint32_t cbInstr;
             if (RT_SUCCESS(DISInstr(&Cpu, (uintptr_t)pvCode + off, 0, &cbInstr, szOutput)))
-                RTLogPrintf("%s", szOutput);
+                DISAS_PRINTF("%s", szOutput);
             else
             {
-                RTLogPrintf("disas error\n");
+                DISAS_PRINTF("disas error\n");
                 cbInstr = 1;
 #ifdef RT_ARCH_AMD64 /** @todo remove when DISInstr starts supporing 64-bit code. */
                 break;
@@ -3696,7 +3711,8 @@ void disas(FILE *phFileIgnored, void *pvCode, unsigned long cb)
             off += cbInstr;
         }
     }
-    NOREF(phFileIgnored);
+
+#undef  DISAS_PRINTF
 }
 
 
@@ -3708,9 +3724,14 @@ void disas(FILE *phFileIgnored, void *pvCode, unsigned long cb)
  * @param   cb              Number of bytes to disassemble.
  * @param   fFlags          Flags, probably something which tells if this is 16, 32 or 64 bit code.
  */
-void target_disas(FILE *phFileIgnored, target_ulong uCode, target_ulong cb, int fFlags)
+void target_disas(FILE *phFile, target_ulong uCode, target_ulong cb, int fFlags)
 {
+#ifdef DEBUG_TMP_LOGGING
+# define DISAS_PRINTF(x...) fprintf(phFile, x)
+#else
+# define DISAS_PRINTF(x...) RTLogPrintf(x)
     if (LogIs2Enabled())
+#endif
     {
         PVM pVM = cpu_single_env->pVM;
         RTSEL cs;
@@ -3724,7 +3745,7 @@ void target_disas(FILE *phFileIgnored, target_ulong uCode, target_ulong cb, int 
         /*
          * Do the disassembling.
          */
-        RTLogPrintf("Guest Code: PC=%RGp %RGp bytes fFlags=%d\n", uCode, cb, fFlags);
+        DISAS_PRINTF("Guest Code: PC=%llx %llx bytes fFlags=%d\n", (uint64_t)uCode, (uint64_t)cb, fFlags);
         cs = cpu_single_env->segs[R_CS].selector;
         eip = uCode - cpu_single_env->segs[R_CS].base;
         for (;;)
@@ -3738,10 +3759,10 @@ void target_disas(FILE *phFileIgnored, target_ulong uCode, target_ulong cb, int 
                                         szBuf, sizeof(szBuf),
                                         &cbInstr);
             if (RT_SUCCESS(rc))
-                RTLogPrintf("%RGp %s\n", uCode, szBuf);
+                DISAS_PRINTF("%llx %s\n", (uint64_t)uCode, szBuf);
             else
             {
-                RTLogPrintf("%RGp %04x:%RGp: %s\n", uCode, cs, eip, szBuf);
+                DISAS_PRINTF("%llx %04x:%llx: %s\n", (uint64_t)uCode, cs, (uint64_t)eip, szBuf);
                 cbInstr = 1;
             }
 
@@ -3753,7 +3774,7 @@ void target_disas(FILE *phFileIgnored, target_ulong uCode, target_ulong cb, int 
             eip += cbInstr;
         }
     }
-    NOREF(phFileIgnored);
+#undef DISAS_PRINTF
 }
 
 

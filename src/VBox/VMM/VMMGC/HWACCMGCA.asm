@@ -115,13 +115,23 @@ BEGINPROC VMXGCStartVM64
     jmp     .vmstart64_vmxon_failed
     
 .vmxon_success:
+    jnz     .vmxon_success2
+    mov     rax, VERR_VMX_GENERIC
+    jmp     .vmstart64_vmxon_failed
+    
+.vmxon_success2:    
     ; Activate the VMCS pointer
     vmptrld [rbp + 16 + 8]
     jnc     .vmptrld_success
     mov     rax, VERR_VMX_INVALID_VMCS_PTR
-    jmp     .vmstart64_vmoff_end
+    jmp     .vmstart64_vmxoff_end
     
 .vmptrld_success:
+    jnz     .vmptrld_success2
+    mov     rax, VERR_VMX_GENERIC
+    jmp     .vmstart64_vmxoff_end
+
+.vmptrld_success2:
 
     ; Save the VMCS pointer on the stack
     push    qword [rbp + 16 + 8];
@@ -133,6 +143,10 @@ BEGINPROC VMXGCStartVM64
     ; Flush the VMCS write cache first (before any other vmreads/vmwrites!)
     mov     rbx, [rbp + 24 + 8]                             ; pCache
 
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     qword [rbx + VMCSCACHE.uPos], 2
+%endif
+
 %ifdef DEBUG
     mov     rax, [rbp + 8 + 8]                              ; pPageCpuPhys
     mov     [rbx + VMCSCACHE.TestIn.pPageCpuPhys], rax
@@ -142,24 +156,27 @@ BEGINPROC VMXGCStartVM64
     mov     [rbx + VMCSCACHE.TestIn.pCtx], rsi
 %endif
 
-    mov     ecx, [xBX + VMCSCACHE.Write.cValidEntries]
+    mov     ecx, [rbx + VMCSCACHE.Write.cValidEntries]
     cmp     ecx, 0
     je      .no_cached_writes
-    mov     edx, ecx
-    mov     ecx, 0
+    mov     rdx, rcx
+    mov     rcx, 0
     jmp     .cached_write
     
 ALIGN(16)    
 .cached_write:
-    mov     eax, [xBX + VMCSCACHE.Write.aField + xCX*4]
-    vmwrite xAX, qword [xBX + VMCSCACHE.Write.aFieldVal + xCX*8]
-    inc     xCX
-    cmp     xCX, xDX
+    mov     eax, [rbx + VMCSCACHE.Write.aField + rcx*4]
+    vmwrite rax, qword [rbx + VMCSCACHE.Write.aFieldVal + rcx*8]
+    inc     rcx
+    cmp     rcx, rdx
     jl     .cached_write
 
-    mov     dword [xBX + VMCSCACHE.Write.cValidEntries], 0
+    mov     dword [rbx + VMCSCACHE.Write.cValidEntries], 0
 .no_cached_writes:
 
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     qword [rbx + VMCSCACHE.uPos], 3
+%endif
     ; Save the pCache pointer
     push    xBX
 %endif
@@ -190,6 +207,10 @@ ALIGN(16)
     mov     eax, VMX_VMCS_HOST_GDTR_BASE
     vmwrite rax, [rsp+2]
     add     rsp, 8*2
+
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     qword [rbx + VMCSCACHE.uPos], 4
+%endif
     
     ; hopefully we can ignore TR (we restore it anyway on the way back to 32 bits mode)
     
@@ -220,6 +241,10 @@ ALIGN(16)
     LOADGUESTMSR MSR_K6_STAR,           CPUMCTX.msrSTAR
     LOADGUESTMSR MSR_K8_SF_MASK,        CPUMCTX.msrSFMASK
     LOADGUESTMSR MSR_K8_KERNEL_GS_BASE, CPUMCTX.msrKERNELGSBASE
+
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     qword [rbx + VMCSCACHE.uPos], 5
+%endif
 
     ; Save the pCtx pointer
     push    rsi
@@ -289,9 +314,14 @@ ALIGNCODE(16)
 %ifdef VMX_USE_CACHED_VMCS_ACCESSES
     pop     rdi         ; saved pCache
 
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     dword [rdi + VMCSCACHE.uPos], 7
+%endif
 %ifdef DEBUG
     mov     [rdi + VMCSCACHE.TestOut.pCache], rdi
     mov     [rdi + VMCSCACHE.TestOut.pCtx], rsi
+    mov     rax, cr8
+    mov     [rdi + VMCSCACHE.TestOut.cr8], rax
 %endif
     
     mov     ecx, [rdi + VMCSCACHE.Read.cValidEntries]
@@ -301,16 +331,19 @@ ALIGNCODE(16)
 
 ALIGN(16)
 .cached_read:
-    dec     xCX
-    mov     eax, [rdi + VMCSCACHE.Read.aField + xCX*4]
-    vmread  qword [rdi + VMCSCACHE.Read.aFieldVal + xCX*8], xAX
-    cmp     xCX, 0
+    dec     rcx
+    mov     eax, [rdi + VMCSCACHE.Read.aField + rcx*4]
+    vmread  qword [rdi + VMCSCACHE.Read.aFieldVal + rcx*8], rax
+    cmp     rcx, 0
     jnz     .cached_read
 .no_cached_reads:
 
     ; Save CR2 for EPT
     mov     rax, cr2
     mov     [rdi + VMCSCACHE.cr2], rax
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     dword [rdi + VMCSCACHE.uPos], 8
+%endif
 %endif
 
     ; Restore segment registers
@@ -318,6 +351,9 @@ ALIGN(16)
 
     mov     eax, VINF_SUCCESS
 
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     dword [rdi + VMCSCACHE.uPos], 9
+%endif
 .vmstart64_end:
 
 %ifdef VMX_USE_CACHED_VMCS_ACCESSES
@@ -331,7 +367,7 @@ ALIGN(16)
     vmclear qword [rsp]  ;Pushed pVMCS
     add     rsp, 8
 
-.vmstart64_vmoff_end:
+.vmstart64_vmxoff_end:
     ; Disable VMX root mode
     vmxoff
 .vmstart64_vmxon_failed:
@@ -343,6 +379,9 @@ ALIGN(16)
     pushf
     pop     rdx
     mov     [rdi + VMCSCACHE.TestOut.eflags], rdx
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     dword [rdi + VMCSCACHE.uPos], 12
+%endif
 .skip_flags_save:
 %endif
 %endif
@@ -355,6 +394,9 @@ ALIGN(16)
 
 %ifdef VMX_USE_CACHED_VMCS_ACCESSES
     pop     rdi         ; pCache
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     dword [rdi + VMCSCACHE.uPos], 10
+%endif
 
 %ifdef DEBUG
     mov     [rdi + VMCSCACHE.TestOut.pCache], rdi
@@ -379,6 +421,9 @@ ALIGN(16)
 %ifdef DEBUG
     mov     [rdi + VMCSCACHE.TestOut.pCache], rdi
     mov     [rdi + VMCSCACHE.TestOut.pCtx], rsi
+%endif
+%ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    mov     dword [rdi + VMCSCACHE.uPos], 11
 %endif
 
 %endif

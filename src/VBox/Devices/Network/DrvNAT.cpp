@@ -31,6 +31,7 @@
 #include <VBox/pdmdrv.h>
 #include <iprt/assert.h>
 #include <iprt/file.h>
+#include <iprt/mem.h>
 #include <iprt/string.h>
 #include <iprt/critsect.h>
 #include <iprt/cidr.h>
@@ -46,6 +47,12 @@
 # include <iprt/semaphore.h>
 # include <iprt/req.h>
 #endif
+
+/**
+ * @todo: This is a bad hack to prevent freezing the guest during high network
+ *        activity. This needs to be fixed properly.
+ */
+#define VBOX_NAT_DELAY_HACK
 
 
 /*******************************************************************************
@@ -81,6 +88,8 @@ typedef struct DRVNAT
     PPDMTHREAD              pThread;
     /** Queue for NAT-thread-external events. */
     PRTREQQUEUE             pReqQueue;
+    /* Send queue */
+    PPDMQUEUE               pSendQueue;
 # ifndef RT_OS_WINDOWS
     /** The write end of the control pipe. */
     RTFILE                  PipeWrite;
@@ -92,6 +101,17 @@ typedef struct DRVNAT
 # endif
 #endif
 } DRVNAT, *PDRVNAT;
+
+typedef struct DRVNATQUEUITEM
+{
+    /** The core part owned by the queue manager. */
+    PDMQUEUEITEMCORE    Core;
+    /** The buffer for output to guest. */
+    const uint8_t       *pu8Buf;
+    /* size of buffer */
+    size_t              cb;
+    void                *mbuf;
+} DRVNATQUEUITEM, *PDRVNATQUEUITEM;
 
 /** Converts a pointer to NAT::INetworkConnector to a PRDVNAT. */
 #define PDMINETWORKCONNECTOR_2_DRVNAT(pInterface)   ( (PDRVNAT)((uintptr_t)pInterface - RT_OFFSETOF(DRVNAT, INetworkConnector)) )
@@ -314,6 +334,7 @@ static DECLCALLBACK(int) drvNATAsyncIoThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThr
 # ifdef RT_OS_WINDOWS
     DWORD   event;
     HANDLE  *phEvents;
+    unsigned int cBreak = 0;
 # endif
 
     LogFlow(("drvNATAsyncIoThread: pThis=%p\n", pThis));
@@ -379,6 +400,13 @@ static DECLCALLBACK(int) drvNATAsyncIoThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThr
         slirp_select_poll(pThis->pNATState, /* fTimeout=*/false, /* fIcmp=*/(event == WSA_WAIT_EVENT_0));
         /* process _all_ outstanding requests but don't wait */
         RTReqProcess(pThis->pReqQueue, 0);
+#  ifdef VBOX_NAT_DELAY_HACK
+        if (cBreak++ > 128)
+        {
+            cBreak = 0;
+            RTThreadSleep(2);
+        }
+#  endif
 # endif /* RT_OS_WINDOWS */
     }
 
@@ -426,17 +454,23 @@ int slirp_can_output(void *pvUser)
     /** Happens during termination */
     if (!RTCritSectIsOwner(&pThis->CritSect))
         return 0;
-#endif
 
     int rc =  pThis->pPort->pfnWaitReceiveAvail(pThis->pPort, 0);
     return RT_SUCCESS(rc);
+#else
+    return 1;
+#endif
 }
 
 
 /**
  * Function called by slirp to feed incoming data to the network port.
  */
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+void slirp_output(void *pvUser, void *pvArg, const uint8_t *pu8Buf, int cb)
+#else
 void slirp_output(void *pvUser, const uint8_t *pu8Buf, int cb)
+#endif
 {
     PDRVNAT pThis = (PDRVNAT)pvUser;
 
@@ -449,12 +483,70 @@ void slirp_output(void *pvUser, const uint8_t *pu8Buf, int cb)
     /** Happens during termination */
     if (!RTCritSectIsOwner(&pThis->CritSect))
         return;
-#endif
 
     int rc = pThis->pPort->pfnReceive(pThis->pPort, pu8Buf, cb);
     AssertRC(rc);
     LogFlow(("slirp_output END %x %d\n", pu8Buf, cb));
+#else
+
+    PDRVNATQUEUITEM pItem = (PDRVNATQUEUITEM)PDMQueueAlloc(pThis->pSendQueue);
+    if (pItem)
+    {
+        pItem->pu8Buf = pu8Buf;
+        pItem->cb = cb;
+        pItem->mbuf = pvArg;
+        Log2(("pItem:%p %.Rhxd\n", pItem, pItem->pu8Buf));
+        PDMQueueInsert(pThis->pSendQueue, &pItem->Core);
+        return;
+    }
+    static unsigned cDroppedPackets;
+    if (cDroppedPackets < 64)
+    {
+        cDroppedPackets++;
+        LogRel(("NAT: Dropping package (couldn't alloc queue item to)\n"));
+    }
+    RTMemFree((void *)pItem->pu8Buf);
+#endif
 }
+
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+/**
+ * Queue callback for processing a queued item.
+ *
+ * @returns Success indicator.
+ *          If false the item will not be removed and the flushing will stop.
+ * @param   pDrvIns         The driver instance.
+ * @param   pItemCore       Pointer to the queue item to process.
+ */
+static DECLCALLBACK(bool) drvNATQueueConsumer(PPDMDRVINS pDrvIns, PPDMQUEUEITEMCORE pItemCore)
+{
+    PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
+    PDRVNATQUEUITEM pItem = (PDRVNATQUEUITEM)pItemCore;
+    PRTREQ pReq = NULL;
+    Log(("drvNATQueueConsumer(pItem:%p, pu8Buf:%p, cb:%d)\n", pItem, pItem->pu8Buf, pItem->cb));
+    Log2(("drvNATQueueConsumer: pu8Buf:\n%.Rhxd\n", pItem->pu8Buf));
+    int rc = pThis->pPort->pfnWaitReceiveAvail(pThis->pPort, 0);
+    if (RT_FAILURE(rc))
+        return false;
+    rc = pThis->pPort->pfnReceive(pThis->pPort, pItem->pu8Buf, pItem->cb);
+
+#if 0
+    rc = RTReqAlloc(pThis->pReqQueue, &pReq, RTREQTYPE_INTERNAL);
+    AssertReleaseRC(rc);
+    pReq->u.Internal.pfn      = (PFNRT)slirp_post_sent;
+    pReq->u.Internal.cArgs    = 2;
+    pReq->u.Internal.aArgs[0] = (uintptr_t)pThis->pNATState;
+    pReq->u.Internal.aArgs[1] = (uintptr_t)pItem->mbuf;
+    pReq->fFlags              = RTREQFLAGS_VOID;
+    AssertRC(rc);
+#else
+    /*Copy buffer again, till seeking good way of syncronization with slirp mbuf management code*/
+    AssertRelease(pItem->mbuf == NULL);
+    RTMemFree((void *)pItem->pu8Buf);
+#endif
+    return RT_SUCCESS(rc);
+}
+#endif
 
 /**
  * Queries an interface to the driver.
@@ -738,7 +830,17 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandl
 #else
             rc = RTReqCreateQueue(&pThis->pReqQueue);
             if (RT_FAILURE(rc))
+            {
+                LogRel(("Can't create request queue\n"));
                 return rc;
+            }
+
+            rc = PDMDrvHlpPDMQueueCreate(pDrvIns, sizeof(DRVNATQUEUITEM), 50, 0, drvNATQueueConsumer, &pThis->pSendQueue);
+            if (RT_FAILURE(rc))
+            {
+                LogRel(("Can't create send queue\n"));
+                return rc;
+            }
 
 # ifndef RT_OS_WINDOWS
             /*

@@ -406,6 +406,7 @@ static const char *emGetMnemonic(PDISCPUSTATE pCpu)
         case OP_BTS:        return "Bts";
         case OP_BTC:        return "Btc";
         case OP_LMSW:       return "Lmsw";
+        case OP_SMSW:       return "Smsw";
         case OP_CMPXCHG:    return pCpu->prefix & PREFIX_LOCK ? "Lock CmpXchg"   : "CmpXchg";
         case OP_CMPXCHG8B:  return pCpu->prefix & PREFIX_LOCK ? "Lock CmpXchg8b" : "CmpXchg8b";
 
@@ -2213,6 +2214,58 @@ static int emInterpretLmsw(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
     return EMInterpretLMSW(pVM, pRegFrame, val);
 }
 
+#ifdef EM_EMULATE_SMSW
+/**
+ * SMSW Emulation.
+ */
+static int emInterpretSmsw(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize)
+{
+    OP_PARAMVAL param1;
+    uint64_t    cr0 = CPUMGetGuestCR0(pVM);
+
+    int rc = DISQueryParamVal(pRegFrame, pCpu, &pCpu->param1, &param1, PARAM_SOURCE);
+    if(RT_FAILURE(rc))
+        return VERR_EM_INTERPRETER;
+
+    switch(param1.type)
+    {
+    case PARMTYPE_IMMEDIATE:
+        if(param1.size != sizeof(uint16_t))
+            return VERR_EM_INTERPRETER;
+        LogFlow(("emInterpretSmsw %d <- cr0 (%x)\n", pCpu->param1.base.reg_gen, cr0));
+        rc = DISWriteReg16(pRegFrame, pCpu->param1.base.reg_gen, cr0);
+        break;
+
+    case PARMTYPE_ADDRESS:
+    {
+        RTGCPTR pParam1;
+
+        /* Actually forced to 16 bits regardless of the operand size. */
+        if(param1.size != sizeof(uint16_t))
+            return VERR_EM_INTERPRETER;
+
+        pParam1 = (RTGCPTR)param1.val.val64;
+        pParam1 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param1, pParam1);
+        LogFlow(("emInterpretSmsw %VGv <- cr0 (%x)\n", pParam1, cr0));
+
+        rc = emRamWrite(pVM, pParam1, &cr0, sizeof(uint16_t));
+        if (RT_FAILURE(rc))
+        {
+            AssertMsgFailed(("emRamWrite %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
+            return VERR_EM_INTERPRETER;
+        }
+        break;
+    }
+
+    default:
+        return VERR_EM_INTERPRETER;
+    }
+
+    LogFlow(("emInterpretSmsw %x\n", cr0));
+    return rc;
+}
+#endif
+
 /**
  * MOV CRx
  */
@@ -3095,6 +3148,9 @@ DECLINLINE(int) emInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCO
         INTERPRET_CASE_EX_DUAL_PARAM2(OP_LGDT, LGdt, LIGdt);
 #endif
         INTERPRET_CASE(OP_LMSW,Lmsw);
+#ifdef EM_EMULATE_SMSW
+        INTERPRET_CASE(OP_SMSW,Smsw);
+#endif
         INTERPRET_CASE(OP_CLTS,Clts);
         INTERPRET_CASE(OP_MONITOR, Monitor);
         INTERPRET_CASE(OP_MWAIT, MWait);

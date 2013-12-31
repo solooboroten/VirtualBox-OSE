@@ -546,14 +546,15 @@ DECLINLINE(int) intnetR0IfRetain(PINTNETIF pIf, PSUPDRVSESSION pSession)
  * Release an interface previously retained by intnetR0IfRetain or
  * by handle lookup/freeing.
  *
- * @returns VBox status code, can assume success in most situations.
+ * @returns true if destroyed, false if not.
  * @param   pIf                 The interface instance.
  * @param   pSession            The current session.
  */
-DECLINLINE(void) intnetR0IfRelease(PINTNETIF pIf, PSUPDRVSESSION pSession)
+DECLINLINE(bool) intnetR0IfRelease(PINTNETIF pIf, PSUPDRVSESSION pSession)
 {
     int rc = SUPR0ObjRelease(pIf->pvObj, pSession);
     AssertRC(rc);
+    return rc == VINF_OBJECT_DESTROYED;
 }
 
 
@@ -2311,7 +2312,7 @@ static bool intnetR0NetworkSendUnicast(PINTNETNETWORK pNetwork, PINTNETIF pIfSen
             &&  !(pNetwork->fFlags & (INTNET_OPEN_FLAGS_IGNORE_PROMISC | INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC | INTNET_OPEN_FLAGS_IGNORE_PROMISC_TRUNK_WIRE | INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC_TRUNK_WIRE)) )
             fDst |= INTNETTRUNKDIR_WIRE;
         if (    !(pNetwork->fFlags & (INTNET_OPEN_FLAGS_IGNORE_PROMISC | INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC | INTNET_OPEN_FLAGS_IGNORE_PROMISC_TRUNK_HOST | INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC_TRUNK_HOST))
-            ||  pTrunkIf->pIfPort->pfnIsPromiscuous(pTrunkIf->pIfPort) )
+            &&  pTrunkIf->pIfPort->pfnIsPromiscuous(pTrunkIf->pIfPort) )
             fDst |= INTNETTRUNKDIR_HOST;
 
         if (    fDst != (INTNETTRUNKDIR_HOST | INTNETTRUNKDIR_WIRE)
@@ -3046,8 +3047,7 @@ INTNETR0DECL(int) INTNETR0IfWait(PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSES
         ASMAtomicDecU32(&pIf->cSleepers);
         if (!pIf->fDestroying)
         {
-            intnetR0IfRelease(pIf, pSession);
-            if (pIf->hIf != hIf)
+            if (intnetR0IfRelease(pIf, pSession))
                 rc = VERR_SEM_DESTROYED;
         }
         else

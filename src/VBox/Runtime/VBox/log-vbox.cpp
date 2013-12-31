@@ -209,6 +209,7 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
     ASSERT_LOG_GROUP(DEV_APIC);
     ASSERT_LOG_GROUP(DEV_AUDIO);
     ASSERT_LOG_GROUP(DEV_FDC);
+    ASSERT_LOG_GROUP(DEV_HPET);
     ASSERT_LOG_GROUP(DEV_IDE);
     ASSERT_LOG_GROUP(DEV_KBD);
     ASSERT_LOG_GROUP(DEV_NE2000);
@@ -221,6 +222,7 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
     ASSERT_LOG_GROUP(DEV_PIT);
     ASSERT_LOG_GROUP(DEV_RTC);
     ASSERT_LOG_GROUP(DEV_SERIAL);
+    ASSERT_LOG_GROUP(DEV_SMC);
     ASSERT_LOG_GROUP(DEV_USB);
     ASSERT_LOG_GROUP(DEV_VGA);
     ASSERT_LOG_GROUP(DEV_VMM);
@@ -414,7 +416,12 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif
 # if defined(DEBUG_aleksey)  /* Guest ring-0 as well */
-        RTLogGroupSettings(pLogger, "+net_flt_drv.e.l.f");
+        RTLogGroupSettings(pLogger, "+net_flt_drv.e.l");
+        RTLogFlags(pLogger, "enabled unbuffered");
+        pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
+# endif
+# if defined(DEBUG_misha)  /* Guest ring-0 as well */
+        RTLogGroupSettings(pLogger, "+net_flt_drv.e.l.f.l2+srv_intnet.e.l.f");
         RTLogFlags(pLogger, "enabled unbuffered");
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif

@@ -3,9 +3,6 @@
 # include <paths.h>
 #endif
 
-/* disable these counters for the final release */
-/* #define VBOX_WITHOUT_RELEASE_STATISTICS */
-
 #include <VBox/err.h>
 #include <VBox/pdmdrv.h>
 #include <iprt/assert.h>
@@ -28,17 +25,19 @@
 
 # define DO_POLL_EVENTS(rc, error, so, events, label) do {} while (0)
 
-#define DO_CHECK_FD_SET(so, events, fdset) (FD_ISSET((so)->s, (fdset)))
+# define DO_CHECK_FD_SET(so, events, fdset) (FD_ISSET((so)->s, (fdset)))
 
-# ifdef VBOX_WITH_SLIRP_ICMP
+# define DO_WIN_CHECK_FD_SET(so, events, fdset ) 0 /* specific for Windows Winsock API */
+
+# ifndef RT_OS_WINDOWS
 #  define ICMP_ENGAGE_EVENT(so, fdset)               \
     do {                                             \
         if (pData->icmp_socket.s != -1)              \
             DO_ENGAGE_EVENT1((so), (fdset), ICMP);   \
     } while (0)
-# else /* !VBOX_WITH_SLIRP_ICMP */
-#  define ICMP_ENGAGE_EVENT(so, fdset)               do {} while (0)
-# endif /* !VBOX_WITH_SLIRP_ICMP */
+# else /* !RT_OS_WINDOWS */
+#  define ICMP_ENGAGE_EVENT(so, fdset) do {} while(0)
+#endif /* RT_OS_WINDOWS */
 
 #else /* defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS) */
 
@@ -73,6 +72,9 @@
         continue;                                                           \
     }
 
+# define acceptds_win FD_ACCEPT
+# define acceptds_win_bit FD_ACCEPT_BIT
+
 # define readfds_win FD_READ
 # define readfds_win_bit FD_READ_BIT
 
@@ -85,6 +87,7 @@
 # define DO_CHECK_FD_SET(so, events, fdset)  \
     (((events).lNetworkEvents & fdset ## _win) && ((events).iErrorCode[fdset ## _win_bit] == 0))
 
+# define DO_WIN_CHECK_FD_SET(so, events, fdset ) DO_CHECK_FD_SET((so), (events), fdset)
 
 #endif /* defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS) */
 
@@ -105,6 +108,9 @@
 
 #define CHECK_FD_SET(so, events, set)           \
     (DO_CHECK_FD_SET((so), (events), set))
+
+#define WIN_CHECK_FD_SET(so, events, set)           \
+    (DO_WIN_CHECK_FD_SET((so), (events), set))
 
 /*
  * Loging macros
@@ -274,8 +280,6 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
         {
             if (!inet_aton(buff2, &tmp_addr))
                 continue;
-            if (tmp_addr.s_addr == loopback_addr.s_addr)
-                tmp_addr = our_addr;
             /* If it's the first one, set it to dns_addr */
             if (!found)
             {
@@ -331,7 +335,7 @@ int slirp_init(PNATState *ppData, const char *pszNetAddr, uint32_t u32Netmask,
                const char *pszBootFile, void *pvUser)
 {
     int fNATfailed = 0;
-    PNATState pData = malloc(sizeof(NATState));
+    PNATState pData = RTMemAlloc(sizeof(NATState));
     *ppData = pData;
     if (!pData)
         return VERR_NO_MEMORY;
@@ -360,9 +364,7 @@ int slirp_init(PNATState *ppData, const char *pszNetAddr, uint32_t u32Netmask,
     debug_init();
     if_init(pData);
     ip_init(pData);
-#ifdef VBOX_WITH_SLIRP_ICMP
     icmp_init(pData);
-#endif /* VBOX_WITH_SLIRP_ICMP */
 
     /* Initialise mbufs *after* setting the MTU */
     m_init(pData);
@@ -385,7 +387,7 @@ int slirp_init(PNATState *ppData, const char *pszNetAddr, uint32_t u32Netmask,
  */
 void slirp_register_timers(PNATState pData, PPDMDRVINS pDrvIns)
 {
-#ifndef VBOX_WITHOUT_RELEASE_STATISTICS
+#ifdef VBOX_WITH_STATISTICS
     PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatFill, STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS,
                            STAMUNIT_TICKS_PER_CALL, "Profiling slirp fills", "/Drivers/NAT%d/Fill", pDrvIns->iInstance);
     PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatPoll, STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS,
@@ -402,7 +404,7 @@ void slirp_register_timers(PNATState pData, PPDMDRVINS pDrvIns)
                            STAMUNIT_COUNT, "UDP sockets", "/Drivers/NAT%d/SockUDP", pDrvIns->iInstance);
     PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatUDPHot, STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS,
                            STAMUNIT_COUNT, "UDP sockets active", "/Drivers/NAT%d/SockUDPHot", pDrvIns->iInstance);
-#endif /* VBOX_WITHOUT_RELEASE_STATISTICS */
+#endif /* VBOX_WITH_STATISTICS */
 }
 
 /**
@@ -442,14 +444,12 @@ void slirp_term(PNATState pData)
     if (pData->pszDomain)
         RTStrFree((char *)(void *)pData->pszDomain);
 
-#ifdef VBOX_WITH_SLIRP_ICMP
-# ifdef RT_OS_WINDOWS
+#ifdef RT_OS_WINDOWS
     pData->pfIcmpCloseHandle(pData->icmp_socket.sh);
     FreeLibrary(pData->hmIcmpLibrary);
-    free(pData->pvIcmpBuffer);
+    RTMemFree(pData->pvIcmpBuffer);
 # else
     closesocket(pData->icmp_socket.s);
-# endif
 #endif
 
     slirp_link_down(pData);
@@ -471,7 +471,7 @@ void slirp_term(PNATState pData)
          "\n"
          "\n"));
 #endif
-    free(pData);
+    RTMemFree(pData);
 }
 
 
@@ -515,7 +515,7 @@ void slirp_select_fill(PNATState pData, int *pnfds,
 #endif
     int i;
 
-    STAM_REL_PROFILE_START(&pData->StatFill, a);
+    STAM_PROFILE_START(&pData->StatFill, a);
 
     nfds = *pnfds;
 
@@ -546,14 +546,14 @@ void slirp_select_fill(PNATState pData, int *pnfds,
         }
         ICMP_ENGAGE_EVENT(&pData->icmp_socket, readfds);
 
-        STAM_REL_COUNTER_RESET(&pData->StatTCP);
-        STAM_REL_COUNTER_RESET(&pData->StatTCPHot);
+        STAM_COUNTER_RESET(&pData->StatTCP);
+        STAM_COUNTER_RESET(&pData->StatTCPHot);
 
         for (so = tcb.so_next; so != &tcb; so = so_next)
         {
             so_next = so->so_next;
 
-            STAM_REL_COUNTER_INC(&pData->StatTCP);
+            STAM_COUNTER_INC(&pData->StatTCP);
 
             /*
              * See if we need a tcp_fasttimo
@@ -573,7 +573,7 @@ void slirp_select_fill(PNATState pData, int *pnfds,
              */
             if (so->so_state & SS_FACCEPTCONN)
             {
-                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                STAM_COUNTER_INC(&pData->StatTCPHot);
                 TCP_ENGAGE_EVENT1(so, readfds);
                 continue;
             }
@@ -583,7 +583,8 @@ void slirp_select_fill(PNATState pData, int *pnfds,
              */
             if (so->so_state & SS_ISFCONNECTING)
             {
-                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                Log2(("connecting %R[natsock] engaged\n",so));
+                STAM_COUNTER_INC(&pData->StatTCPHot);
                 TCP_ENGAGE_EVENT1(so, writefds);
             }
 
@@ -593,7 +594,7 @@ void slirp_select_fill(PNATState pData, int *pnfds,
              */
             if (CONN_CANFSEND(so) && so->so_rcv.sb_cc)
             {
-                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                STAM_COUNTER_INC(&pData->StatTCPHot);
                 TCP_ENGAGE_EVENT1(so, writefds);
             }
 
@@ -603,7 +604,7 @@ void slirp_select_fill(PNATState pData, int *pnfds,
              */
             if (CONN_CANFRCV(so) && (so->so_snd.sb_cc < (so->so_snd.sb_datalen/2)))
             {
-                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                STAM_COUNTER_INC(&pData->StatTCPHot);
                 TCP_ENGAGE_EVENT2(so, readfds, xfds);
             }
         }
@@ -611,14 +612,14 @@ void slirp_select_fill(PNATState pData, int *pnfds,
         /*
          * UDP sockets
          */
-        STAM_REL_COUNTER_RESET(&pData->StatUDP);
-        STAM_REL_COUNTER_RESET(&pData->StatUDPHot);
+        STAM_COUNTER_RESET(&pData->StatUDP);
+        STAM_COUNTER_RESET(&pData->StatUDPHot);
 
         for (so = udb.so_next; so != &udb; so = so_next)
         {
             so_next = so->so_next;
 
-            STAM_REL_COUNTER_INC(&pData->StatUDP);
+            STAM_COUNTER_INC(&pData->StatUDP);
 
             /*
              * See if it's timed out
@@ -646,7 +647,7 @@ void slirp_select_fill(PNATState pData, int *pnfds,
              */
             if ((so->so_state & SS_ISFCONNECTED) && so->so_queued <= 4)
             {
-                STAM_REL_COUNTER_INC(&pData->StatUDPHot);
+                STAM_COUNTER_INC(&pData->StatUDPHot);
                 UDP_ENGAGE_EVENT(so, readfds);
             }
         }
@@ -659,7 +660,7 @@ void slirp_select_fill(PNATState pData, int *pnfds,
     *pnfds = VBOX_EVENT_COUNT;
 #endif
 
-    STAM_REL_PROFILE_STOP(&pData->StatFill, a);
+    STAM_PROFILE_STOP(&pData->StatFill, a);
 }
 
 #if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
@@ -676,7 +677,7 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
     int error;
 #endif
 
-    STAM_REL_PROFILE_START(&pData->StatPoll, a);
+    STAM_PROFILE_START(&pData->StatPoll, a);
 
     /* Update time */
     updtime(pData);
@@ -688,18 +689,18 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
     {
         if (time_fasttimo && ((curtime - time_fasttimo) >= 2))
         {
-            STAM_REL_PROFILE_START(&pData->StatFastTimer, a);
+            STAM_PROFILE_START(&pData->StatFastTimer, a);
             tcp_fasttimo(pData);
             time_fasttimo = 0;
-            STAM_REL_PROFILE_STOP(&pData->StatFastTimer, a);
+            STAM_PROFILE_STOP(&pData->StatFastTimer, a);
         }
         if (do_slowtimo && ((curtime - last_slowtimo) >= 499))
         {
-            STAM_REL_PROFILE_START(&pData->StatSlowTimer, a);
+            STAM_PROFILE_START(&pData->StatSlowTimer, a);
             ip_slowtimo(pData);
             tcp_slowtimo(pData);
             last_slowtimo = curtime;
-            STAM_REL_PROFILE_STOP(&pData->StatSlowTimer, a);
+            STAM_PROFILE_STOP(&pData->StatSlowTimer, a);
         }
     }
 #if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
@@ -712,14 +713,15 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
      */
     if (link_up)
     {
-#if defined(VBOX_WITH_SLIRP_ICMP)
-# if defined(RT_OS_WINDOWS)
+#if defined(RT_OS_WINDOWS)
+        /*XXX: before renaming please make see define 
+         * fIcmp in slirp_state.h
+         */
         if (fIcmp)
             sorecvfrom(pData, &pData->icmp_socket);
-# else
+#else
         if (pData->icmp_socket.s != -1 && FD_ISSET(pData->icmp_socket.s, readfds))
             sorecvfrom(pData, &pData->icmp_socket);
-# endif
 #endif
         /*
          * Check TCP sockets
@@ -754,7 +756,8 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
             /*
              * Check sockets for reading
              */
-            else if (CHECK_FD_SET(so, NetworkEvents, readfds))
+            else if (   CHECK_FD_SET(so, NetworkEvents, readfds)
+                     || WIN_CHECK_FD_SET(so, NetworkEvents, acceptds))
             {
                 /*
                  * Check for incoming connections
@@ -804,6 +807,7 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
                  */
                 if (so->so_state & SS_ISFCONNECTING)
                 {
+                    Log2(("connecting %R[natsock] catched\n", so));
                     /* Connected */
                     so->so_state &= ~SS_ISFCONNECTING;
 
@@ -914,17 +918,6 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
             }
         }
 
-#if 0
-#if defined(VBOX_WITH_SLIRP_ICMP)
-# if defined(RT_OS_WINDOWS)
-        if (fIcmp)
-            sorecvfrom(pData, &pData->icmp_socket);
-# else
-        if (pData->icmp_socket.s != -1 && FD_ISSET(pData->icmp_socket.s, readfds))
-            sorecvfrom(pData, &pData->icmp_socket);
-# endif
-#endif
-#endif
     }
 
     /*
@@ -933,14 +926,11 @@ void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_se
     if (if_queued && link_up)
         if_start(pData);
 
-    STAM_REL_PROFILE_STOP(&pData->StatPoll, a);
+    STAM_PROFILE_STOP(&pData->StatPoll, a);
 }
 
 #define ETH_ALEN        6
 #define ETH_HLEN        14
-
-#define ETH_P_IP        0x0800          /* Internet Protocol packet     */
-#define ETH_P_ARP       0x0806          /* Address Resolution packet    */
 
 #define ARPOP_REQUEST   1               /* ARP request                  */
 #define ARPOP_REPLY     2               /* ARP reply                    */
@@ -970,16 +960,38 @@ struct arphdr
 };
 
 static
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+void arp_input(PNATState pData, struct mbuf *m)
+#else
 void arp_input(PNATState pData, const uint8_t *pkt, int pkt_len)
+#endif
 {
-    struct ethhdr *eh = (struct ethhdr *)pkt;
-    struct arphdr *ah = (struct arphdr *)(pkt + ETH_HLEN);
-    uint8_t arp_reply[ETH_HLEN + sizeof(struct arphdr)];
-    struct ethhdr *reh = (struct ethhdr *)arp_reply;
-    struct arphdr *rah = (struct arphdr *)(arp_reply + ETH_HLEN);
+    struct ethhdr *eh;
+    struct ethhdr *reh;
+    struct arphdr *ah;
+    struct arphdr *rah;
     int ar_op;
     struct ex_list *ex_ptr;
-    uint32_t htip = ntohl(*(uint32_t*)ah->ar_tip);
+    uint32_t htip;
+#ifndef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+    uint8_t arp_reply[sizeof(struct arphdr) + ETH_HLEN];
+    eh = (struct ethhdr *)pkt;
+#else
+    struct mbuf *mr; 
+    eh = mtod(m, struct ethhdr *);
+#endif
+    ah = (struct arphdr *)&eh[1];
+    htip = ntohl(*(uint32_t*)ah->ar_tip);
+
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+    mr = m_get(pData);
+    mr->m_data += if_maxlinkhdr;
+    mr->m_len = sizeof(struct arphdr);
+    rah = mtod(mr, struct arphdr *);
+#else
+    reh = (struct ethhdr *)arp_reply;
+    rah = (struct arphdr *)&reh[1];
+#endif
 
     ar_op = ntohs(ah->ar_op);
     switch(ar_op)
@@ -997,25 +1009,38 @@ void arp_input(PNATState pData, const uint8_t *pkt, int pkt_len)
                 }
                 return;
         arp_ok:
-                /* XXX: make an ARP request to have the client address */
-                memcpy(client_ethaddr, eh->h_source, ETH_ALEN);
 
-                /* ARP request for alias/dns mac address */
-                memcpy(reh->h_dest, pkt + ETH_ALEN, ETH_ALEN);
-                memcpy(reh->h_source, special_ethaddr, ETH_ALEN - 1);
+#ifndef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+                memcpy(reh->h_dest, eh->h_source, ETH_ALEN);
+                memcpy(reh->h_source, &special_addr, ETH_ALEN);
                 reh->h_source[5] = ah->ar_tip[3];
                 reh->h_proto = htons(ETH_P_ARP);
-
+#endif
                 rah->ar_hrd = htons(1);
                 rah->ar_pro = htons(ETH_P_IP);
                 rah->ar_hln = ETH_ALEN;
                 rah->ar_pln = 4;
                 rah->ar_op = htons(ARPOP_REPLY);
-                memcpy(rah->ar_sha, reh->h_source, ETH_ALEN);
+                memcpy(rah->ar_sha, special_ethaddr, ETH_ALEN);
+
+                switch (htip & ~pData->netmask) 
+                {
+                    case CTL_DNS:
+                    case CTL_ALIAS:
+                        rah->ar_sha[5] = (uint8_t)(htip & ~pData->netmask);
+                        break;
+                    default:;
+                }
+                
                 memcpy(rah->ar_sip, ah->ar_tip, 4);
                 memcpy(rah->ar_tha, ah->ar_sha, ETH_ALEN);
                 memcpy(rah->ar_tip, ah->ar_sip, 4);
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+                if_encap(pData, ETH_P_ARP, mr);
+                m_free(pData, m);
+#else
                 slirp_output(pData->pvUser, arp_reply, sizeof(arp_reply));
+#endif
             }
             break;
         default:
@@ -1027,58 +1052,104 @@ void slirp_input(PNATState pData, const uint8_t *pkt, int pkt_len)
 {
     struct mbuf *m;
     int proto;
+    static bool fWarnedIpv6;
 
-    if (pkt_len < ETH_HLEN)
+    if (pkt_len < ETH_HLEN) 
+    {
+        LogRel(("NAT: packet having size %d has been ingnored\n", pkt_len));
         return;
+    }
+    
+    m = m_get(pData);
+    if (!m)
+    {
+        LogRel(("can't allocate new mbuf\n"));
+        return;
+    }
+
+    /* Note: we add to align the IP header */
+
+    if (M_FREEROOM(m) < pkt_len)
+       m_inc(m, pkt_len);
+
+    m->m_len = pkt_len ;
+    memcpy(m->m_data, pkt, pkt_len);
 
     proto = ntohs(*(uint16_t *)(pkt + 12));
     switch(proto)
     {
         case ETH_P_ARP:
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+            arp_input(pData, m);
+#else
             arp_input(pData, pkt, pkt_len);
+            m_free(pData, m);
+#endif
             break;
         case ETH_P_IP:
             /* Update time. Important if the network is very quiet, as otherwise
              * the first outgoing connection gets an incorrect timestamp. */
             updtime(pData);
-
-            m = m_get(pData);
-            if (!m)
-                return;
-            /* Note: we add to align the IP header */
-            if (M_FREEROOM(m) < pkt_len + 2)
-            {
-                m_inc(m, pkt_len + 2);
-            }
-            m->m_len = pkt_len + 2;
-            memcpy(m->m_data + 2, pkt, pkt_len);
-
-            m->m_data += 2 + ETH_HLEN;
-            m->m_len -= 2 + ETH_HLEN;
-
+            m->m_data += ETH_HLEN;
+            m->m_len -= ETH_HLEN;
             ip_input(pData, m);
             break;
+        case ETH_P_IPV6:
+            m_free(pData, m);
+            if (!fWarnedIpv6)
+            {
+                LogRel(("NAT: IPv6 not supported\n"));
+                fWarnedIpv6 = true;
+            }
+            break;
         default:
+            LogRel(("NAT: Unsupported protocol %x\n", proto));
+            m_free(pData, m);
             break;
     }
 }
 
 /* output the IP packet to the ethernet device */
-void if_encap(PNATState pData, const uint8_t *ip_data, int ip_data_len)
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+void if_encap(PNATState pData, uint16_t eth_proto, struct mbuf *m)
+#else
+void if_encap(PNATState pData, uint8_t *ip_data, int ip_data_len)
+#endif
 {
-    uint8_t buf[1600];
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+    struct ethhdr *eh;
+    uint8_t *buf = RTMemAlloc(1600);
+    m->m_data -= if_maxlinkhdr;
+    m->m_len += ETH_HLEN;
+    eh = mtod(m, struct ethhdr *);
+#else
+    uint8_t buf[1600]; 
     struct ethhdr *eh = (struct ethhdr *)buf;
 
     if (ip_data_len + ETH_HLEN > sizeof(buf))
         return;
+    
+    memcpy(buf + sizeof(struct ethhdr), ip_data, ip_data_len);
+#endif
+
 
     memcpy(eh->h_dest, client_ethaddr, ETH_ALEN);
     memcpy(eh->h_source, special_ethaddr, ETH_ALEN - 1);
     /* XXX: not correct */
     eh->h_source[5] = CTL_ALIAS;
+#ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
+    eh->h_proto = htons(eth_proto);
+#if 0
+    slirp_output(pData->pvUser, m, mtod(m, uint8_t *), m->m_len);
+#else
+    memcpy(buf, mtod(m, uint8_t *), m->m_len); 
+    slirp_output(pData->pvUser, NULL, buf, m->m_len);
+    m_free(pData, m);
+#endif
+#else
     eh->h_proto = htons(ETH_P_IP);
-    memcpy(buf + sizeof(struct ethhdr), ip_data, ip_data_len);
     slirp_output(pData->pvUser, buf, ip_data_len + ETH_HLEN);
+#endif
 }
 
 int slirp_redir(PNATState pData, int is_udp, int host_port,
@@ -1132,4 +1203,15 @@ unsigned int slirp_get_timeout_ms(PNATState pData)
             return 500; /* see PR_SLOWHZ */
     }
     return 0;
+}
+
+/*
+ * this function called from NAT thread
+ */
+void slirp_post_sent(PNATState pData, void *pvArg)
+{
+    struct socket *so = 0; 
+    struct tcpcb *tp = 0;
+    struct mbuf *m = (struct mbuf *)pvArg;
+    m_free(pData, m); 
 }

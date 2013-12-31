@@ -540,7 +540,11 @@ static DECLCALLBACK(void) HWACCMR0InitCPU(RTCPUID idCpu, void *pvUser1, void *pv
             /* Paranoia. */
             val = ASMRdMsr(MSR_K6_EFER);
             if (val & MSR_K6_EFER_SVME)
+            {
+                /* Restore previous value. */
+                ASMWrMsr(MSR_K6_EFER, val & ~MSR_K6_EFER_SVME);
                 paRc[idCpu] = VINF_SUCCESS;
+            }
             else
                 paRc[idCpu] = VERR_SVM_ILLEGAL_EFER_MSR;
         }
@@ -797,8 +801,6 @@ static DECLCALLBACK(void) hwaccmR0PowerCallback(RTPOWEREVENT enmEvent, void *pvU
 VMMR0DECL(int) HWACCMR0InitVM(PVM pVM)
 {
     int             rc;
-    RTCPUID         idCpu = RTMpCpuId();
-    PHWACCM_CPUINFO pCpu = &HWACCMR0Globals.aCpuInfo[idCpu];
 
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
@@ -849,13 +851,17 @@ VMMR0DECL(int) HWACCMR0InitVM(PVM pVM)
         pVCpu->hwaccm.s.uCurrentASID              = 0;
     }
 
+    RTCCUINTREG     fFlags = ASMIntDisableFlags();
+    PHWACCM_CPUINFO pCpu = HWACCMR0GetCurrentCpu();
+
+    /* @note Not correct as we can be rescheduled to a different cpu, but the fInUse case is mostly for debugging. */
     ASMAtomicWriteBool(&pCpu->fInUse, true);
+    ASMSetFlags(fFlags);
 
     /* Init a VT-x or AMD-V VM. */
     rc = HWACCMR0Globals.pfnInitVM(pVM);
 
     ASMAtomicWriteBool(&pCpu->fInUse, false);
-
     return rc;
 }
 
@@ -869,8 +875,6 @@ VMMR0DECL(int) HWACCMR0InitVM(PVM pVM)
 VMMR0DECL(int) HWACCMR0TermVM(PVM pVM)
 {
     int             rc;
-    RTCPUID         idCpu = RTMpCpuId();
-    PHWACCM_CPUINFO pCpu = &HWACCMR0Globals.aCpuInfo[idCpu];
 
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
@@ -881,7 +885,12 @@ VMMR0DECL(int) HWACCMR0TermVM(PVM pVM)
     /* Make sure we don't touch hwaccm after we've disabled hwaccm in preparation of a suspend. */
     AssertReturn(!ASMAtomicReadBool(&HWACCMR0Globals.fSuspended), VERR_HWACCM_SUSPEND_PENDING);
 
+    /* @note Not correct as we can be rescheduled to a different cpu, but the fInUse case is mostly for debugging. */
+    RTCCUINTREG     fFlags = ASMIntDisableFlags();
+    PHWACCM_CPUINFO pCpu = HWACCMR0GetCurrentCpu();
+
     ASMAtomicWriteBool(&pCpu->fInUse, true);
+    ASMSetFlags(fFlags);
 
     /* Terminate a VT-x or AMD-V VM. */
     rc = HWACCMR0Globals.pfnTermVM(pVM);
@@ -1015,6 +1024,7 @@ VMMR0DECL(int) HWACCMR0Leave(PVM pVM, PVMCPU pVCpu)
         CPUMR0SaveGuestFPU(pVM, pVCpu, pCtx);
 
         pVCpu->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_CR0;
+        Assert(!CPUMIsGuestFPUStateActive(pVCpu));
     }
 
     rc = HWACCMR0Globals.pfnLeaveSession(pVM, pVCpu, pCtx);
@@ -1103,7 +1113,6 @@ VMMR0DECL(int)   HWACCMR0SaveDebugState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     return SVMR0Execute64BitsHandler(pVM, pVCpu, pCtx, pVM->hwaccm.s.pfnSaveGuestDebug64, 0, NULL);
 }
 
-# ifdef DEBUG
 /**
  * Test the 32->64 bits switcher
  *
@@ -1115,15 +1124,18 @@ VMMR0DECL(int)   HWACCMR0TestSwitcher3264(PVM pVM)
     PVMCPU   pVCpu = &pVM->aCpus[0];
     CPUMCTX *pCtx;
     uint32_t aParam[5] = {0, 1, 2, 3, 4};
+    int      rc;
 
     pCtx = CPUMQueryGuestCtxPtrEx(pVM, pVCpu);
 
+    STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatWorldSwitch3264, z);   
     if (pVM->hwaccm.s.vmx.fSupported)
-        return VMXR0Execute64BitsHandler(pVM, pVCpu, pCtx, pVM->hwaccm.s.pfnTest64, 5, &aParam[0]);
-
-    return SVMR0Execute64BitsHandler(pVM, pVCpu, pCtx, pVM->hwaccm.s.pfnTest64, 5, &aParam[0]);
+        rc  = VMXR0Execute64BitsHandler(pVM, pVCpu, pCtx, pVM->hwaccm.s.pfnTest64, 5, &aParam[0]);
+    else
+        rc = SVMR0Execute64BitsHandler(pVM, pVCpu, pCtx, pVM->hwaccm.s.pfnTest64, 5, &aParam[0]);
+    STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatWorldSwitch3264, z);
+    return rc;
 }
-# endif
 
 #endif /* HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL) */
 

@@ -342,6 +342,11 @@ typedef struct CPUMCPU
      */
     CPUMHOSTCTX             Host;
 
+#ifdef VBOX_WITH_CRASHDUMP_MAGIC
+    uint8_t                 aMagic[56];
+    uint64_t                uMagic;
+#endif
+
     /**
      * Guest context.
      * Aligned on a 64-byte boundrary.
@@ -384,7 +389,9 @@ __BEGIN_DECLS
 DECLASM(int)      cpumHandleLazyFPUAsm(PCPUMCPU pCPUM);
 
 #ifdef IN_RING0
+DECLASM(int)      cpumR0SaveHostRestoreGuestFPUState(PCPUMCPU pCPUM);
 DECLASM(int)      cpumR0SaveGuestRestoreHostFPUState(PCPUMCPU pCPUM);
+DECLASM(int)      cpumR0SaveHostFPUState(PCPUMCPU pCPUM);
 DECLASM(int)      cpumR0RestoreHostFPUState(PCPUMCPU pCPUM);
 DECLASM(void)     cpumR0LoadFPU(PCPUMCTX pCtx);
 DECLASM(void)     cpumR0SaveFPU(PCPUMCTX pCtx);

@@ -95,7 +95,11 @@ else
             rc_status -v
         }
     elif [ "$system" = "gentoo" ]; then
-        . /sbin/functions.sh
+        if [ -f /sbin/functions.sh ]; then
+            . /sbin/functions.sh
+        elif [ -f /etc/init.d/functions.sh ]; then
+            . /etc/init.d/functions.sh
+        fi
         fail_msg() {
             eerror "$1"
         }
@@ -277,6 +281,7 @@ setup()
         --no-print-directory install >> $LOG 2>&1; then
         failure "Look at $LOG to find out what went wrong"
     fi
+    rm -f /etc/vbox/module_not_compiled
     succ_msg
     start
 }

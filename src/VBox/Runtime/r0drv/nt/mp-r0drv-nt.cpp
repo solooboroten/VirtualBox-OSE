@@ -114,6 +114,7 @@ RTDECL(bool) RTMpIsCpuPossible(RTCPUID idCpu)
 }
 
 
+
 RTDECL(PRTCPUSET) RTMpGetSet(PRTCPUSET pSet)
 {
     /** @todo online/present cpu stuff must be corrected for proper W2K8 support
@@ -148,6 +149,45 @@ RTDECL(RTCPUID) RTMpGetOnlineCount(void)
     RTMpGetOnlineSet(&Set);
     return RTCpuSetCount(&Set);
 }
+
+
+#if 0
+/* Experiment with checking the undocumented KPRCB structure
+ * 'dt nt!_kprcb 0xaddress' shows the layout
+ */
+typedef struct
+{
+    LIST_ENTRY     DpcListHead;
+    ULONG_PTR      DpcLock;
+    volatile ULONG DpcQueueDepth;
+    ULONG          DpcQueueCount;
+} KDPC_DATA, *PKDPC_DATA;
+
+RTDECL(bool) RTMpIsCpuWorkPending(void)
+{
+    uint8_t *pkprcb;
+    PKDPC_DATA pDpcData;
+
+    _asm {
+        mov eax, fs:0x20
+        mov pkprcb, eax
+    }
+    pDpcData = (PKDPC_DATA)(pkprcb + 0x19e0);
+    if (pDpcData->DpcQueueDepth)
+        return true;
+
+    pDpcData++;
+    if (pDpcData->DpcQueueDepth)
+        return true;
+    return false;
+}
+#else
+RTDECL(bool) RTMpIsCpuWorkPending(void)
+{
+    /** @todo not implemented */
+    return false;
+}
+#endif
 
 
 /**

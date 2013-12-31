@@ -48,12 +48,14 @@
 # define _LINUX_BYTEORDER_GENERIC_H
 /* This is another hack for not bothering with C++ unfriendly byteswap macros. */
 # define _LINUX_BYTEORDER_SWAB_H
+# define _LINUX_BYTEORDER_SWABB_H
 /* Those macros that are needed are defined in the header below */
 # include "swab.h"
 # include <linux/cdrom.h>
 # include <sys/fcntl.h>
 # include <errno.h>
 # include <limits.h>
+# include <iprt/mem.h>
 # define USE_MEDIA_POLLING
 
 #elif defined(RT_OS_SOLARIS)
@@ -428,6 +430,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
             break;
         case PDMBLOCKTXDIR_FROM_DEVICE:
             Assert(*pcbBuf != 0);
+            Assert(*pcbBuf <= SCSI_MAX_BUFFER_SIZE);
             /* Make sure that the buffer is clear for commands reading
              * data. The actually received data may be shorter than what
              * we expect, and due to the unreliable feedback about how much
@@ -435,11 +438,13 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
              * prevent that. Returning previous buffer contents may cause
              * security problems inside the guest OS, if users can issue
              * commands to the CDROM device. */
-            memset(pvBuf, '\0', *pcbBuf);
+            memset(pThis->pbDoubleBuffer, '\0', *pcbBuf);
             direction = CGC_DATA_READ;
             break;
         case PDMBLOCKTXDIR_TO_DEVICE:
             Assert(*pcbBuf != 0);
+            Assert(*pcbBuf <= SCSI_MAX_BUFFER_SIZE);
+            memcpy(pThis->pbDoubleBuffer, pvBuf, *pcbBuf);
             direction = CGC_DATA_WRITE;
             break;
         default:
@@ -448,7 +453,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
     }
     memset(&cgc, '\0', sizeof(cgc));
     memcpy(cgc.cmd, pbCmd, CDROM_PACKET_SIZE);
-    cgc.buffer = (unsigned char *)pvBuf;
+    cgc.buffer = (unsigned char *)pThis->pbDoubleBuffer;
     cgc.buflen = *pcbBuf;
     cgc.stat = 0;
     Assert(cbSense >= sizeof(struct request_sense));
@@ -470,6 +475,14 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
                 cgc.sense->sense_key = SCSI_SENSE_ILLEGAL_REQUEST;
             Log2(("%s: error status %d, rc=%Rrc\n", __FUNCTION__, cgc.stat, rc));
         }
+    }
+    switch (enmTxDir)
+    {
+        case PDMBLOCKTXDIR_FROM_DEVICE:
+            memcpy(pvBuf, pThis->pbDoubleBuffer, *pcbBuf);
+            break;
+        default:
+            ;
     }
     Log2(("%s: after ioctl: cgc.buflen=%d txlen=%d\n", __FUNCTION__, cgc.buflen, *pcbBuf));
     /* The value of cgc.buflen does not reliably reflect the actual amount
@@ -618,12 +631,14 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
     return rc;
 }
 
+
 #ifdef VBOX_WITH_SUID_WRAPPER
 /* These functions would have to go into a seperate solaris binary with
  * the setuid permission set, which would run the user-SCSI ioctl and
  * return the value. BUT... this might be prohibitively slow.
  */
-#ifdef RT_OS_SOLARIS
+# ifdef RT_OS_SOLARIS
+
 /**
  * Checks if the current user is authorized using Solaris' role-based access control.
  * Made as a seperate function with so that it need not be invoked each time we need
@@ -640,6 +655,7 @@ static int solarisCheckUserAuth()
 
     return VINF_SUCCESS;
 }
+
 
 /**
  * Setuid wrapper to gain root access.
@@ -662,6 +678,7 @@ static int solarisEnterRootMode(uid_t *pEffUserID)
     return VINF_SUCCESS;
 }
 
+
 /**
  * Setuid wrapper to relinquish root access.
  *
@@ -683,10 +700,28 @@ static int solarisExitRootMode(uid_t *pEffUserID)
     }
     return VINF_SUCCESS;
 }
-#endif   /* RT_OS_SOLARIS */
-#endif
+
+# endif   /* RT_OS_SOLARIS */
+#endif /* VBOX_WITH_SUID_WRAPPER */
+
 
 /* -=-=-=-=- driver interface -=-=-=-=- */
+
+
+/** @copydoc FNPDMDRVDESTRUCT */
+DECLCALLBACK(void) drvHostDvdDestruct(PPDMDRVINS pDrvIns)
+{
+#ifdef RT_OS_LINUX
+    PDRVHOSTBASE pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTBASE);
+
+    if (pThis->pbDoubleBuffer)
+    {
+        RTMemFree(pThis->pbDoubleBuffer);
+        pThis->pbDoubleBuffer = NULL;
+    }
+#endif
+    return DRVHostBaseDestruct(pDrvIns);
+}
 
 
 /**
@@ -720,6 +755,11 @@ static DECLCALLBACK(int) drvHostDvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgH
         /*
          * Override stuff.
          */
+#ifdef RT_OS_LINUX
+        pThis->pbDoubleBuffer = (uint8_t *)RTMemAlloc(SCSI_MAX_BUFFER_SIZE);
+        if (!pThis->pbDoubleBuffer)
+            return VERR_NO_MEMORY;
+#endif
 
 #ifndef RT_OS_L4 /* Passthrough is not supported on L4 yet */
         bool fPassthrough;
@@ -797,7 +837,7 @@ const PDMDRVREG g_DrvHostDVD =
     /* pfnConstruct */
     drvHostDvdConstruct,
     /* pfnDestruct */
-    DRVHostBaseDestruct,
+    drvHostDvdDestruct,
     /* pfnIOCtl */
     NULL,
     /* pfnPowerOn */

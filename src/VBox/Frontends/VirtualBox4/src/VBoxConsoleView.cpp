@@ -79,6 +79,7 @@ const int XKeyRelease = KeyRelease;
 #endif // Q_WS_X11
 
 #if defined (Q_WS_MAC)
+# include "VBoxDockIconPreview.h"
 # include "DarwinKeyboard.h"
 # ifdef VBOX_WITH_HACKED_QT
 #  include "QIApplication.h"
@@ -668,7 +669,7 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mDarwinEventHandlerRef (NULL)
 # endif
     , mDarwinKeyModifiers (0)
-    , mVirtualBoxLogo (NULL)
+    , mKeyboardGrabbed (false)
     , mDockIconEnabled (true)
 #endif
     , mDesktopGeo (DesktopGeo_Invalid)
@@ -681,7 +682,9 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 
 #ifdef Q_WS_MAC
     /* Overlay logo for the dock icon */
-    mVirtualBoxLogo = ::darwinToCGImageRef ("VirtualBox_cube_42px.png");
+    //mVirtualBoxLogo = ::darwinToCGImageRef ("VirtualBox_cube_42px.png");
+    QString osTypeId = mConsole.GetGuest().GetOSTypeId();
+    mDockIconPreview = new VBoxDockIconPreview (mMainWnd, vboxGlobal().vmGuestOSTypeIcon (osTypeId));
 
     /* Install the event handler which will proceed external window handling */
     EventHandlerUPP eventHandler = ::NewEventHandlerUPP (::darwinOverlayWindowHandler);
@@ -883,7 +886,7 @@ VBoxConsoleView::~VBoxConsoleView()
         ::RemoveEventHandler (mDarwinWindowOverlayHandlerRef);
         mDarwinWindowOverlayHandlerRef = NULL;
     }
-    CGImageRelease (mVirtualBoxLogo);
+    delete mDockIconPreview;
 #endif
 }
 
@@ -1196,11 +1199,6 @@ bool VBoxConsoleView::event (QEvent *e)
                     mIgnoreFrameBufferResize = false;
                     doResizeHint (mNormalSize);
                 }
-
-#ifdef Q_WS_MAC
-                /* Enable async resizing. */
-                ::darwinEnableAsyncDragForWindow (mMainWnd);
-#endif /* Q_WS_MAC */
 
                 return true;
             }
@@ -1594,10 +1592,30 @@ bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
                     return true; /* stop further event handling */
                 break;
             }
+#ifdef Q_WS_MAC
+            case QEvent::Leave:
+            {
+                /* Enable mouse event compression if we leave the VM view. This
+                   is necessary for having smooth resizing of the VM/other
+                   windows. */
+                setMouseCoalescingEnabled (true);
+                break;
+            }
+            case QEvent::Enter:
+            {
+                /* Disable mouse event compression if we enter the VM view. So
+                   all mouse events are registered in the VM. Only do this if
+                   the keyboard/mouse is grabbed (this is when we have a valid
+                   event handler). */
+                setMouseCoalescingEnabled (false);
+                break;
+            }
+#endif /* Q_WS_MAC */
             case QEvent::Resize:
             {
                 if (mMouseCaptured)
                     updateMouseClipping();
+                break;
             }
             default:
                 break;
@@ -2192,10 +2210,13 @@ bool VBoxConsoleView::darwinKeyboardEvent (EventRef inEvent)
  */
 void VBoxConsoleView::darwinGrabKeyboardEvents (bool fGrab)
 {
+    mKeyboardGrabbed = fGrab;
     if (fGrab)
     {
-        ::SetMouseCoalescingEnabled (false, NULL);      //??
-        ::CGSetLocalEventsSuppressionInterval (0.0);    //??
+        /* Disable mouse event compression to get *really* all mouse events in
+           the VM. */
+        ::SetMouseCoalescingEnabled (false, NULL);
+        ::CGSetLocalEventsSuppressionInterval (0.0);
 
 #ifndef VBOX_WITH_HACKED_QT
 
@@ -3883,8 +3904,12 @@ void VBoxConsoleView::updateDockIcon()
     if (mDockIconEnabled)
     {
         if (!mPausedShot.isNull())
+        {
+            CGImageRef pauseImg = ::darwinToCGImageRef (&mPausedShot);
             /* Use the pause image as background */
-            ::darwinUpdateDockPreview (mMainWnd, ::darwinToCGImageRef (&mPausedShot), mVirtualBoxLogo, mMainWnd->dockImageState());
+            mDockIconPreview->updateDockPreview (pauseImg);
+            CGImageRelease (pauseImg);
+        }
         else
         {
 # if defined (VBOX_GUI_USE_QUARTZ2D)
@@ -3893,15 +3918,49 @@ void VBoxConsoleView::updateDockIcon()
                 /* If the render mode is Quartz2D we could use the CGImageRef
                  * of the framebuffer for the dock icon creation. This saves
                  * some conversion time. */
-                ::darwinUpdateDockPreview (mMainWnd, static_cast <VBoxQuartz2DFrameBuffer *> (mFrameBuf)->imageRef(), mVirtualBoxLogo, mMainWnd->dockImageState());
+                mDockIconPreview->updateDockPreview (static_cast <VBoxQuartz2DFrameBuffer *> (mFrameBuf)->imageRef());
             }
             else
 # endif
                 /* In image mode we have to create the image ref out of the
                  * framebuffer */
-                ::darwinUpdateDockPreview (mMainWnd, mFrameBuf, mVirtualBoxLogo, mMainWnd->dockImageState());
+                mDockIconPreview->updateDockPreview (mFrameBuf);
         }
     }
 }
+
+void VBoxConsoleView::updateDockOverlay()
+{
+    /* Only to an update to the realtime preview if this is enabled by the user
+     * & we are in an state where the framebuffer is likely valid. Otherwise to
+     * the overlay stuff only. */
+    if (mDockIconEnabled &&
+        (mLastState == KMachineState_Running ||
+         mLastState == KMachineState_Restoring ||
+         mLastState == KMachineState_Saving))
+        updateDockIcon();
+    else
+        mDockIconPreview->updateDockOverlay();
+}
+
+void VBoxConsoleView::setMouseCoalescingEnabled (bool aOn)
+{
+
+    if (aOn)
+        /* Enable mouse event compression if we leave the VM view. This
+           is necessary for having smooth resizing of the VM/other
+           windows. */
+        ::SetMouseCoalescingEnabled (true, NULL);
+    else
+    {
+        /* Disable mouse event compression if we enter the VM view. So
+           all mouse events are registered in the VM. Only do this if
+           the keyboard/mouse is grabbed (this is when we have a valid
+           event handler). */
+        if (mKeyboardGrabbed)
+            ::SetMouseCoalescingEnabled (false, NULL);
+    }
+}
+
 #endif
 

@@ -697,6 +697,12 @@ int main()
     GEN_CHECK_OFF(ATADevState, pControllerR3);
     GEN_CHECK_OFF(ATADevState, pControllerR0);
     GEN_CHECK_OFF(ATADevState, pControllerRC);
+    GEN_CHECK_OFF(ATADevState, szSerialNumber);
+    GEN_CHECK_OFF(ATADevState, szSerialNumber[ATA_SERIAL_NUMBER_LENGTH]);
+    GEN_CHECK_OFF(ATADevState, szFirmwareRevision);
+    GEN_CHECK_OFF(ATADevState, szFirmwareRevision[ATA_FIRMWARE_REVISION_LENGTH]);
+    GEN_CHECK_OFF(ATADevState, szModelNumber);
+    GEN_CHECK_OFF(ATADevState, szModelNumber[ATA_MODEL_NUMBER_LENGTH]);
     GEN_CHECK_SIZE(ATATransferRequest);
     GEN_CHECK_OFF(ATATransferRequest, iIf);
     GEN_CHECK_OFF(ATATransferRequest, iBeginTransfer);
@@ -743,6 +749,7 @@ int main()
     GEN_CHECK_OFF(ATACONTROLLER, AsyncIORequestMutex);
     GEN_CHECK_OFF(ATACONTROLLER, SuspendIOSem);
     GEN_CHECK_OFF(ATACONTROLLER, DelayIRQMillies);
+    GEN_CHECK_OFF(ATACONTROLLER, u64ResetTime);
     GEN_CHECK_OFF(ATACONTROLLER, StatAsyncOps);
     GEN_CHECK_OFF(ATACONTROLLER, StatAsyncMinWait);
     GEN_CHECK_OFF(ATACONTROLLER, StatAsyncMaxWait);
@@ -1136,6 +1143,13 @@ int main()
 #endif
     GEN_CHECK_OFF(AHCIPort, fNotificationSend);
     GEN_CHECK_OFF(AHCIPort, fPortReset);
+    GEN_CHECK_OFF(AHCIPort, fAsyncIOThreadIdle);
+    GEN_CHECK_OFF(AHCIPort, szSerialNumber);
+    GEN_CHECK_OFF(AHCIPort, szSerialNumber[AHCI_SERIAL_NUMBER_LENGTH]); /* One additional byte for the termination.*/
+    GEN_CHECK_OFF(AHCIPort, szFirmwareRevision);
+    GEN_CHECK_OFF(AHCIPort, szFirmwareRevision[AHCI_FIRMWARE_REVISION_LENGTH]); /* One additional byte for the termination.*/
+    GEN_CHECK_OFF(AHCIPort, szModelNumber);
+    GEN_CHECK_OFF(AHCIPort, szModelNumber[AHCI_MODEL_NUMBER_LENGTH]); /* One additional byte for the termination.*/
 
     GEN_CHECK_SIZE(AHCI);
     GEN_CHECK_OFF(AHCI, dev);

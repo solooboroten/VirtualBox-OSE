@@ -2796,9 +2796,8 @@ ipcDConnectService::CreateWorker()
   if (NS_SUCCEEDED(rv))
   {
     nsAutoLock lock(mLock);
-#ifdef VBOX /* tracking an illegal join in Shutdown. */
+    /* tracking an illegal join in Shutdown. */
     NS_ASSERTION(!mDisconnected, "CreateWorker racing Shutdown");
-#endif 
     if (!mWorkers.AppendElement(worker))
       rv = NS_ERROR_OUT_OF_MEMORY;
   }
@@ -2857,6 +2856,8 @@ ipcDConnectService::Init()
 {
   nsresult rv;
 
+  LOG(("ipcDConnectService::Init.\n"));
+
   rv = IPC_DefineTarget(kDConnectTargetID, this);
   if (NS_FAILED(rv))
     return rv;
@@ -2901,16 +2902,28 @@ ipcDConnectService::Init()
   if (!mWaitingWorkersMon)
     return NS_ERROR_OUT_OF_MEMORY;
 
+  /* The DConnectWorker::Run method checks the ipcDConnectService::mDisconnected.
+   * So mDisconnect must be set here to avoid an immediate exit of the worker thread.
+   */
+  mDisconnected = PR_FALSE;
+
   // create a single worker thread
   rv = CreateWorker();
   if (NS_FAILED(rv))
-      return rv;
+  {
+    mDisconnected = PR_TRUE;
+    return rv;
+  }
+
+#else
+
+  mDisconnected = PR_FALSE;
 
 #endif
 
-  mDisconnected = PR_FALSE;
   mInstance = this;
 
+  LOG(("ipcDConnectService::Init NS_OK.\n"));
   return NS_OK;
 }
 
@@ -3633,7 +3646,7 @@ ipcDConnectService::OnInvoke(PRUint32 peer, const DConnectInvoke *invoke, PRUint
 
   const nsXPTMethodInfo *methodInfo;
   nsXPTCVariant *params = nsnull;
-  nsIInterfaceInfo *iinfo = nsnull;
+  nsCOMPtr<nsIInterfaceInfo> iinfo = nsnull;
   PRUint8 i, paramCount = 0, paramUsed = 0;
   nsresult rv;
 

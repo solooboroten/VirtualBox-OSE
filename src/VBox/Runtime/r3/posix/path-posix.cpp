@@ -168,235 +168,154 @@ static int fsCleanPath(char *pszPath)
 
 RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, size_t cchAbsPath)
 {
-    /*
-     * Convert input.
-     */
-    char *pszNativePath;
-    int rc = rtPathToNative(&pszNativePath, pszPath);
-    if (RT_FAILURE(rc))
-    {
-        LogFlow(("RTPathAbs(%p:{%s}, %p, %d): returns %Rrc\n", pszPath,
-                 pszPath, pszAbsPath, cchAbsPath, rc));
-        return rc;
-    }
+    int rc;
 
     /*
-     * On POSIX platforms the API doesn't take a length parameter, which makes it
-     * a little bit more work.
+     * Validation.
      */
+    AssertPtr(pszAbsPath);
+    AssertPtr(pszPath);
+    if (RT_UNLIKELY(!*pszPath))
+        return VERR_INVALID_PARAMETER;
+
+    /*
+     * Make a clean working copy of the input.
+     */
+    size_t cchPath = strlen(pszPath);
+    if (cchPath > PATH_MAX)
+    {
+        LogFlow(("RTPathAbs(%p:{%s}, %p, %d): returns %Rrc\n", pszPath, pszPath, pszAbsPath, cchAbsPath, VERR_FILENAME_TOO_LONG));
+        return VERR_FILENAME_TOO_LONG;
+    }
+
     char szTmpPath[PATH_MAX + 1];
-    char *psz = realpath(pszNativePath, szTmpPath);
-    if (!psz)
-    {
-        if (errno == ENOENT || errno == ENOTDIR
-#ifdef RT_OS_OS2
-            /// @todo realpath() returns EIO for non-existent UNC paths like
-            //  //server/share/subdir (i.e. when a subdir is specified within
-            //  a share). We should either fix realpath() in libc or remove
-            //  this todo.
-            || errno == EIO
-#endif
-            )
-        {
-            if (strlen(pszNativePath) <= PATH_MAX)
-            {
-                /*
-                 * Iterate the path bit by bit an apply realpath to it.
-                 */
+    memcpy(szTmpPath, pszPath, cchPath + 1);
+    size_t cchTmpPath = fsCleanPath(szTmpPath);
 
-                char szTmpSrc[PATH_MAX + 1];
-                strcpy(szTmpSrc, pszNativePath);
-                fsCleanPath(szTmpSrc);
+    /*
+     * Handle "." specially (fsCleanPath does).
+     */
+    if (szTmpPath[0] == '.' && !szTmpPath[1])
+        return RTPathGetCurrent(pszAbsPath, cchAbsPath);
 
-                size_t cch = 0; // current resolved path length
-                char *pszCur = szTmpSrc;
-
+    /*
+     * Do we have a root slash?
+     */
+    char *pszCur = szTmpPath;
 #ifdef HAVE_DRIVE
-                if (pszCur[0] && RTPATH_IS_VOLSEP(pszCur[1]) && pszCur[2] == '/')
-                {
-                    psz = szTmpPath;
-                    cch = 2;
-                    pszCur += 3;
-                }
-#ifdef HAVE_UNC
-                else
-                if (pszCur[0] == '/' && pszCur[1] == '/')
-                {
-                    pszCur += 2;
-                    char *pszSlash = strchr(pszCur, '/');
-                    size_t cchElement = pszSlash ? pszSlash - pszCur : strlen(pszCur);
-                    if (cchElement && pszCur[cchElement])
-                    {
-                        psz = szTmpPath;
-                        cch = cchElement + 2;
-                        pszCur += cchElement + 1;
-                    }
-                    else
-                        /* we've got just "//server" or "//" */
-                        /// @todo (r=dmik) not 100% sure we should fail, but the
-                        //  above cases are just invalid (incomplete) paths,
-                        //  no matter that Win32 returns these paths as is.
-                        rc = VERR_INVALID_NAME;
-                }
-#endif
-#else
-                if (*pszCur == '/')
-                {
-                    psz = szTmpPath;
-                    pszCur++;
-                }
-#endif
-                else
-                {
-                    /* get the cwd */
-                    psz = getcwd(szTmpPath,  sizeof(szTmpPath));
-                    AssertMsg(psz, ("Couldn't get cwd!\n"));
-                    if (psz)
-                    {
-#ifdef HAVE_DRIVE
-                        if (*pszCur == '/')
-                        {
-                            cch = 2;
-                            pszCur++;
-                        }
-                        else
-#endif
-                            cch = strlen(psz);
-                    }
-                    else
-                        rc = RTErrConvertFromErrno(errno);
-                }
-
-                if (psz)
-                {
-                    bool fResolveSymlinks = true;
-                    char szTmpPath2[PATH_MAX + 1];
-
-                    /* make sure strrchr() will work correctly */
-                    psz[cch] = '\0';
-
-                    while (*pszCur)
-                    {
-                        char *pszSlash = strchr(pszCur, '/');
-                        size_t cchElement = pszSlash ? pszSlash - pszCur : strlen(pszCur);
-                        if (cch + cchElement + 1 > PATH_MAX)
-                        {
-                            rc = VERR_FILENAME_TOO_LONG;
-                            break;
-                        }
-
-                        if (!strncmp(pszCur, "..", cchElement))
-                        {
-                            char *pszLastSlash = strrchr(psz, '/');
-#ifdef HAVE_UNC
-                            if (pszLastSlash && pszLastSlash > psz &&
-                                pszLastSlash[-1] != '/')
-#else
-                            if (pszLastSlash)
-#endif
-                            {
-                                cch = pszLastSlash - psz;
-                                psz[cch] = '\0';
-                            }
-                            /* else: We've reached the root and the parent of
-                             * the root is the root. */
-                        }
-                        else
-                        {
-                            psz[cch++] = '/';
-                            memcpy(psz + cch, pszCur, cchElement);
-                            cch += cchElement;
-                            psz[cch] = '\0';
-
-                            if (fResolveSymlinks)
-                            {
-                                /* resolve possible symlinks */
-                                char *psz2 = realpath(psz, psz == szTmpPath
-                                                           ? szTmpPath2
-                                                           : szTmpPath);
-                                if (psz2)
-                                {
-                                    psz = psz2;
-                                    cch = strlen(psz);
-                                }
-                                else
-                                {
-                                    if (errno != ENOENT && errno != ENOTDIR
-#ifdef RT_OS_OS2
-                                        /// @todo see above
-                                        && errno != EIO
-#endif
-                                        )
-                                    {
-                                        rc = RTErrConvertFromErrno(errno);
-                                        break;
-                                    }
-
-                                    /* no more need to resolve symlinks */
-                                    fResolveSymlinks = false;
-                                }
-                            }
-                        }
-
-                        pszCur += cchElement;
-                        /* skip the slash */
-                        if (*pszCur)
-                            ++pszCur;
-                    }
-
-#ifdef HAVE_DRIVE
-                    /* check if we're at the root */
-                    if (cch == 2 && RTPATH_IS_VOLSEP(psz[1]))
-#else
-                    /* if the length is zero here, then we're at the root */
-                    if (!cch)
-#endif
-                    {
-                        psz[cch++] = '/';
-                        psz[cch] = '\0';
-                    }
-                }
-            }
-            else
-                rc = VERR_FILENAME_TOO_LONG;
-        }
-        else
-            rc = RTErrConvertFromErrno(errno);
-    }
-
-    RTStrFree(pszNativePath);
-
-    if (psz && RT_SUCCESS(rc))
+    if (pszCur[0] && RTPATH_IS_VOLSEP(pszCur[1]) && pszCur[2] == '/')
+        pszCur += 3;
+# ifdef HAVE_UNC
+    else if (pszCur[0] == '/' && pszCur[1] == '/')
+        pszCur += 2;
+# endif
+#else  /* !HAVE_DRIVE */
+    if (pszCur[0] == '/')
+        pszCur += 1;
+#endif /* !HAVE_DRIVE */
+    else
     {
         /*
-         * Convert result and copy it to the return buffer.
+         * No, prepend the current directory to the relative path.
          */
-        char *pszUtf8AbsPath;
-        rc = rtPathFromNative(&pszUtf8AbsPath, psz);
-        if (RT_FAILURE(rc))
+        char szCurDir[RTPATH_MAX];
+        rc = RTPathGetCurrent(szCurDir, sizeof(szCurDir));
+        AssertRCReturn(rc, rc);
+
+        size_t cchCurDir = fsCleanPath(szCurDir); /* paranoia */
+        if (cchCurDir + cchTmpPath + 1 > PATH_MAX)
         {
-            LogFlow(("RTPathAbs(%p:{%s}, %p, %d): returns %Rrc\n", pszPath,
-                     pszPath, pszAbsPath, cchAbsPath, rc));
-            return rc;
+            LogFlow(("RTPathAbs(%p:{%s}, %p, %d): returns %Rrc\n", pszPath, pszPath, pszAbsPath, cchAbsPath, VERR_FILENAME_TOO_LONG));
+            return VERR_FILENAME_TOO_LONG;
         }
 
-        /* replace '/' back with native RTPATH_SLASH */
-        psz = pszUtf8AbsPath;
-        for (; *psz; psz++)
-            if (*psz == '/')
-                *psz = RTPATH_SLASH;
+        memmove(szTmpPath + cchCurDir + 1, szTmpPath, cchTmpPath + 1);
+        memcpy(szTmpPath, szCurDir, cchCurDir);
+        szTmpPath[cchCurDir] = '/';
 
-        unsigned cch = strlen(pszUtf8AbsPath) + 1;
-        if (cch <= cchAbsPath)
-            memcpy(pszAbsPath, pszUtf8AbsPath, cch);
+
+#ifdef HAVE_DRIVE
+        if (pszCur[0] && RTPATH_IS_VOLSEP(pszCur[1]) && pszCur[2] == '/')
+            pszCur += 3;
+# ifdef HAVE_UNC
+        else if (pszCur[0] == '/' && pszCur[1] == '/')
+            pszCur += 2;
+# endif
+#else
+        if (pszCur[0] == '/')
+            pszCur += 1;
+#endif
         else
-            rc = VERR_BUFFER_OVERFLOW;
-        RTStrFree(pszUtf8AbsPath);
+            AssertMsgFailedReturn(("pszCur=%s\n", pszCur), VERR_INTERNAL_ERROR);
     }
 
-    LogFlow(("RTPathAbs(%p:{%s}, %p:{%s}, %d): returns %Rrc\n", pszPath,
-             pszPath, pszAbsPath, RT_SUCCESS(rc) ? pszAbsPath : "<failed>",
-             cchAbsPath, rc));
+    char *pszTop = pszCur;
+
+    /*
+     * Get rid of double dot path components by evaluating them.
+     */
+    for (;;)
+    {
+        if (   pszCur[0] == '.'
+            && pszCur[1] == '.'
+            && (!pszCur[2] || pszCur[2] == '/'))
+        {
+            /* rewind to the previous component if any */
+            char *pszPrev = pszCur - 1;
+            if (pszPrev > pszTop)
+                while (*--pszPrev != '/')
+                    ;
+
+            AssertMsg(*pszPrev == '/', ("szTmpPath={%s}, pszPrev=+%u\n", szTmpPath, pszPrev - szTmpPath));
+            memmove(pszPrev, pszCur + 2, strlen(pszCur + 2) + 1);
+
+            pszCur = pszPrev;
+        }
+        else
+        {
+            /* advance to end of component. */
+            while (*pszCur && *pszCur != '/')
+                pszCur++;
+        }
+
+        if (!*pszCur)
+            break;
+
+        /* skip the slash */
+        ++pszCur;
+    }
+
+    if (pszCur < pszTop)
+    {
+        /*
+         * We overwrote the root slash with '\0', restore it.
+         */
+        *pszCur++ = '/';
+        *pszCur = '\0';
+    }
+    else if (pszCur > pszTop && pszCur[-1] == '/')
+    {
+        /*
+         * Extra trailing slash in a non-root path, remove it.
+         * (A bit questionable...)
+         */
+        *--pszCur = '\0';
+    }
+
+    /*
+     * Copy the result to the user buffer.
+     */
+    cchTmpPath = pszCur - szTmpPath;
+    if (cchTmpPath < cchAbsPath)
+    {
+        memcpy(pszAbsPath, szTmpPath, cchTmpPath + 1);
+        rc = VINF_SUCCESS;
+    }
+    else
+        rc = VERR_BUFFER_OVERFLOW;
+
+    LogFlow(("RTPathAbs(%p:{%s}, %p:{%s}, %d): returns %Rrc\n", pszPath, pszPath, pszAbsPath,
+             RT_SUCCESS(rc) ? pszAbsPath : "<failed>", cchAbsPath, rc));
     return rc;
 }
 
@@ -888,6 +807,34 @@ RTDECL(bool) RTPathExists(const char *pszPath)
         RTStrFree(pszNativePath);
     }
     return RT_SUCCESS(rc);
+}
+
+
+RTDECL(int)  RTPathGetCurrent(char *pszPath, size_t cchPath)
+{
+    int rc;
+    char szNativeCurDir[RTPATH_MAX];
+    if (getcwd(szNativeCurDir, sizeof(szNativeCurDir)) != NULL)
+    {
+        char *pszCurDir;
+        rc = rtPathFromNative(&pszCurDir, szNativeCurDir);
+        if (RT_SUCCESS(rc))
+        {
+            size_t cchCurDir = strlen(pszCurDir);
+            if (cchCurDir < cchPath)
+            {
+                memcpy(pszPath, pszCurDir, cchCurDir + 1);
+                RTStrFree(pszCurDir);
+                return VINF_SUCCESS;
+            }
+
+            rc = VERR_BUFFER_OVERFLOW;
+            RTStrFree(pszCurDir);
+        }
+    }
+    else
+        rc = RTErrConvertFromErrno(errno);
+    return rc;
 }
 
 

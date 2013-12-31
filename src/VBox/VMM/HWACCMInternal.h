@@ -230,12 +230,10 @@ typedef struct HWACCM
     /* RC handler to setup the 64 bits debug state. */
     RTRCPTR                     pfnSaveGuestDebug64;
 
-# ifdef DEBUG
     /* Test handler */
     RTRCPTR                     pfnTest64;
 
     RTRCPTR                     uAlignment[1];
-# endif
 #elif defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     uint32_t                    u32Alignment[1];
 #endif
@@ -281,6 +279,11 @@ typedef struct HWACCM
         /** Virtual address of the MSR entry load page (guest MSRs). */
         R0PTRTYPE(uint8_t *)        pMSREntryLoad;
 
+#ifdef VBOX_WITH_CRASHDUMP_MAGIC
+        RTR0MEMOBJ                  pMemObjScratch;
+        RTHCPHYS                    pScratchPhys;
+        R0PTRTYPE(uint8_t *)        pScratch;
+#endif
         /** R0 memory object for the MSR exit store page (guest MSRs). */
         RTR0MEMOBJ                  pMemObjMSRExitStore;
         /** Physical address of the MSR exit store page (guest MSRs). */
@@ -386,8 +389,18 @@ typedef HWACCM *PHWACCM;
 /* Structure for storing read and write VMCS actions. */
 typedef struct VMCSCACHE
 {
+#ifdef VBOX_WITH_CRASHDUMP_MAGIC
     /* Magic marker for searching in crash dumps. */
     uint8_t         aMagic[16];
+    uint64_t        uMagic;
+    uint64_t        u64TimeEntry;
+    uint64_t        u64TimeSwitch;
+    uint64_t        cResume;
+    uint64_t        interPD;
+    uint64_t        pSwitcher;
+    uint32_t        uPos;
+    uint32_t        idCpu;
+#endif
     /* CR2 is saved here for EPT syncing. */
     uint64_t        cr2;
     struct
@@ -418,6 +431,7 @@ typedef struct VMCSCACHE
         RTGCPTR     pCache;
         RTGCPTR     pCtx;
         uint64_t    eflags;
+        uint64_t    cr8;
     } TestOut;
     struct
     {
@@ -552,6 +566,10 @@ typedef struct HWACCMCPU
 #endif
     STAMPROFILEADV          StatInGC;
 
+#if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+    STAMPROFILEADV          StatWorldSwitch3264;
+#endif
+
     STAMCOUNTER             StatIntInject;
 
     STAMCOUNTER             StatExitShadowNM;
@@ -569,8 +587,8 @@ typedef struct HWACCMCPU
     STAMCOUNTER             StatExitInvd;
     STAMCOUNTER             StatExitCpuid;
     STAMCOUNTER             StatExitRdtsc;
-    STAMCOUNTER             StatExitCRxWrite[8];
-    STAMCOUNTER             StatExitCRxRead[8];
+    STAMCOUNTER             StatExitCRxWrite[16];
+    STAMCOUNTER             StatExitCRxRead[16];
     STAMCOUNTER             StatExitDRxWrite;
     STAMCOUNTER             StatExitDRxRead;
     STAMCOUNTER             StatExitCLTS;

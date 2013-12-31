@@ -694,6 +694,7 @@ VMMR0DECL(int) SVMR0LoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
                 return VERR_PGM_UNSUPPORTED_SHADOW_PAGING_MODE;
 
             case PGMMODE_32_BIT:        /* 32-bit paging. */
+                val &= ~X86_CR4_PAE;
                 break;
 
             case PGMMODE_PAE:           /* PAE paging. */
@@ -1733,7 +1734,7 @@ ResumeExecution:
         uint32_t cbSize;
 
         Log2(("SVM: %RGv mov x, cr%d\n", (RTGCPTR)pCtx->rip, exitCode - SVM_EXIT_READ_CR0));
-        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitCRxRead[exitCode - SVM_EXIT_WRITE_CR0]);
+        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitCRxRead[exitCode - SVM_EXIT_READ_CR0]);
         rc = EMInterpretInstruction(pVM, CPUMCTX2CORE(pCtx), 0, &cbSize);
         if (rc == VINF_SUCCESS)
         {
@@ -1755,7 +1756,7 @@ ResumeExecution:
         uint32_t cbSize;
 
         Log2(("SVM: %RGv mov dr%d, x\n", (RTGCPTR)pCtx->rip, exitCode - SVM_EXIT_WRITE_DR0));
-        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitDRxRead);
+        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitDRxWrite);
 
         if (!DBGFIsStepping(pVM))
         {
@@ -1794,7 +1795,7 @@ ResumeExecution:
     {
         uint32_t cbSize;
 
-        Log2(("SVM: %RGv mov dr%d, x\n", (RTGCPTR)pCtx->rip, exitCode - SVM_EXIT_READ_DR0));
+        Log2(("SVM: %RGv mov x, dr%d\n", (RTGCPTR)pCtx->rip, exitCode - SVM_EXIT_READ_DR0));
         STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitDRxRead);
 
         if (!DBGFIsStepping(pVM))
@@ -2347,8 +2348,10 @@ VMMR0DECL(int) SVMR0Execute64BitsHandler(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, R
     for (int i=(int)cbParam-1;i>=0;i--)
         CPUMPushHyper(pVM, paParam[i]);
 
+    STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatWorldSwitch3264, z);
     /* Call switcher. */
     rc = pVM->hwaccm.s.pfnHost32ToGuest64R0(pVM);
+    STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatWorldSwitch3264, z);
 
     ASMSetFlags(uFlags);
     return rc;

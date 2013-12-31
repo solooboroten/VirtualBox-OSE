@@ -27,7 +27,7 @@
 
 enum {
     /** The number of milliseconds before the clipboard times out. */
-    CLIPBOARDTIMEOUT = 2000
+    CLIPBOARDTIMEOUT = 5000
 };
 
 struct _VBOXCLIPBOARDCONTEXT;

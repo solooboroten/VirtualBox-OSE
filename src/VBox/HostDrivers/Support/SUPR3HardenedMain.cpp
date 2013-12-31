@@ -57,8 +57,15 @@
 # include <stdio.h>
 # include <sys/types.h>
 # if defined(RT_OS_LINUX)
+#  undef USE_LIB_PCAP /* don't depend on libcap as we had to depend on either
+                         libcap1 or libcap2 */
+
+#  undef _POSIX_SOURCE
 #  include <sys/capability.h>
 #  include <sys/prctl.h>
+#  ifndef CAP_TO_MASK
+#   define CAP_TO_MASK(cap) RT_BIT(cap)
+#  endif
 # elif defined(RT_OS_SOLARIS)
 #  include <priv.h>
 # endif
@@ -125,6 +132,9 @@ static const char *g_pszSupLibHardenedProgName;
 static uid_t g_uid;
 /** The real GID at startup. */
 static gid_t g_gid;
+# ifdef RT_OS_LINUX
+static uint32_t g_uCaps;
+# endif
 #endif
 
 /*******************************************************************************
@@ -599,8 +609,24 @@ static void supR3HardenedMainGrabCapabilites(void)
      * We are about to drop all our privileges. Remove all capabilities but
      * keep the cap_net_raw capability for ICMP sockets for the NAT stack.
      */
-    if (!cap_set_proc(cap_from_text("all-eip cap_net_raw+ep")))
-        prctl(PR_SET_KEEPCAPS, /*keep=*/1, 0, 0, 0);
+    if (g_uCaps != 0)
+    {
+#  ifdef USE_LIB_PCAP
+        /* XXX cap_net_bind_service */
+        if (!cap_set_proc(cap_from_text("all-eip cap_net_raw+ep")))
+            prctl(PR_SET_KEEPCAPS, /*keep=*/1, 0, 0, 0);
+#  else
+        cap_user_header_t hdr = (cap_user_header_t)alloca(sizeof(*hdr));
+        cap_user_data_t   cap = (cap_user_data_t)alloca(sizeof(*cap));
+        memset(hdr, 0, sizeof(*hdr));
+        hdr->version = _LINUX_CAPABILITY_VERSION;
+        memset(cap, 0, sizeof(*cap));
+        cap->effective = g_uCaps;
+        cap->permitted = g_uCaps;
+        if (!capset(hdr, cap))
+            prctl(PR_SET_KEEPCAPS, /*keep=*/1, 0, 0, 0);
+#  endif /* !USE_LIB_PCAP */
+    }
 
 # elif defined(RT_OS_SOLARIS)
     /*
@@ -632,6 +658,46 @@ static void supR3HardenedMainGrabCapabilites(void)
     else
         supR3HardenedError(-1, false, "SUPR3HardenedMain: failed to get basic privilege set.\n");
 
+# endif
+}
+
+/*
+ * Look at the environment for some special options.
+ */
+static void supR3GrabOptions(void)
+{
+    const char *pszOpt;
+
+# ifdef RT_OS_LINUX
+    g_uCaps = 0;
+
+    /*
+     * Do _not_ perform any capability-related system calls for root processes
+     * (leaving g_uCaps at 0).
+     * (Hint: getuid gets the real user id, not the effective.)
+     */
+    if (getuid() != 0)
+    {
+        /*
+         * CAP_NET_RAW.
+         * Default: enabled.
+         * Can be disabled with 'export VBOX_HARD_CAP_NET_RAW=0'.
+         */
+        pszOpt = getenv("VBOX_HARD_CAP_NET_RAW");
+        if (   !pszOpt
+            || memcmp(pszOpt, "0", sizeof("0")) != 0)
+            g_uCaps = CAP_TO_MASK(CAP_NET_RAW);
+
+        /*
+         * CAP_NET_BIND_SERVICE.
+         * Default: disabled.
+         * Can be enabled with 'export VBOX_HARD_CAP_NET_BIND_SERVICE=1'.
+         */
+        pszOpt = getenv("VBOX_HARD_CAP_NET_BIND_SERVICE");
+        if (   pszOpt
+            && memcmp(pszOpt, "0", sizeof("0")) != 0)
+            g_uCaps |= CAP_TO_MASK(CAP_NET_BIND_SERVICE);
+    }
 # endif
 }
 
@@ -703,8 +769,24 @@ static void supR3HardenedMainDropPrivileges(void)
     /*
      * Re-enable the cap_net_raw capability which was disabled during setresuid.
      */
-    /** @todo Warn if that does not work? */
-    cap_set_proc(cap_from_text("cap_net_raw+ep"));
+    if (g_uCaps != 0)
+    {
+#  ifdef USE_LIB_PCAP
+        /** @todo Warn if that does not work? */
+        /* XXX cap_net_bind_service */
+        cap_set_proc(cap_from_text("cap_net_raw+ep"));
+#  else
+        cap_user_header_t hdr = (cap_user_header_t)alloca(sizeof(*hdr));
+        cap_user_data_t   cap = (cap_user_data_t)alloca(sizeof(*cap));
+        memset(hdr, 0, sizeof(*hdr));
+        hdr->version = _LINUX_CAPABILITY_VERSION;
+        memset(cap, 0, sizeof(*cap));
+        cap->effective = g_uCaps;
+        cap->permitted = g_uCaps;
+        /** @todo Warn if that does not work? */
+        capset(hdr, cap);
+#  endif /* !USE_LIB_PCAP */
+    }
 # endif
 }
 
@@ -921,7 +1003,13 @@ DECLHIDDEN(int) SUPR3HardenedMain(const char *pszProgName, uint32_t fFlags, int 
      * *might* not be able to access /proc/self/exe after the seteuid call.
      */
     supR3HardenedGetFullExePath();
+
 # endif
+
+    /*
+     * Grab any options from the environment.
+     */
+    supR3GrabOptions();
 
     /*
      * Check that we're root, if we aren't then the installation is butchered.

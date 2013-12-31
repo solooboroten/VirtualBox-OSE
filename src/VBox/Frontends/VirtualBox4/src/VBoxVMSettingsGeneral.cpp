@@ -90,6 +90,8 @@ VBoxVMSettingsGeneral::VBoxVMSettingsGeneral()
                                                        QTreeWidgetItem*)),
              this, SLOT (onCurrentBootItemChanged (QTreeWidgetItem*,
                                                    QTreeWidgetItem*)));
+    connect (mCbVirt, SIGNAL (stateChanged (int)),
+             this, SLOT (stateChangedVirt (int)));
 
     /* Setup iconsets */
     mTbBootItemUp->setIcon (VBoxGlobal::iconSet (":/list_moveup_16px.png",
@@ -206,6 +208,11 @@ void VBoxVMSettingsGeneral::getFrom (const CMachine &aMachine)
         mCbVirt->setCheckState (Qt::Checked) :
         mCbVirt->setCheckState (Qt::Unchecked);
 
+    /* Nested Paging */
+    mCbNestedPaging->setEnabled (   fVTxAMDVSupported
+                                 && aMachine.GetHWVirtExEnabled() == KTSBool_True);
+    mCbNestedPaging->setChecked (aMachine.GetHWVirtExNestedPagingEnabled());
+
     /* PAE/NX */
     bool fPAESupported = vboxGlobal().virtualBox().GetHost()
                          .GetProcessorFeature (KProcessorFeature_PAE);
@@ -285,6 +292,9 @@ void VBoxVMSettingsGeneral::putBackTo()
     mMachine.SetHWVirtExEnabled (
         mCbVirt->checkState() == Qt::Checked ? KTSBool_True : KTSBool_False);
 
+    /* Nested Paging */
+    mMachine.SetHWVirtExNestedPagingEnabled (mCbNestedPaging->isChecked());
+
     /* PAE/NX */
     mMachine.SetPAEEnabled (mCbPae->isChecked());
 
@@ -361,16 +371,17 @@ void VBoxVMSettingsGeneral::setOrderAfter (QWidget *aWidget)
     setTabOrder (mSlRam, mLeRam);
     setTabOrder (mLeRam, mSlVideo);
     setTabOrder (mSlVideo, mLeVideo);
+    setTabOrder (mLeVideo, mCb3D);
 
-    setTabOrder (mLeVideo, mTwBootOrder);
+    setTabOrder (mCb3D, mTwBootOrder);
     setTabOrder (mTwBootOrder, mTbBootItemUp);
     setTabOrder (mTbBootItemUp, mTbBootItemDown);
     setTabOrder (mTbBootItemDown, mCbAcpi);
     setTabOrder (mCbAcpi, mCbApic);
     setTabOrder (mCbApic, mCbVirt);
-    setTabOrder (mCbVirt, mCbPae);
-    setTabOrder (mCbPae, mCb3D);
-    setTabOrder (mCb3D, mCbClipboard);
+    setTabOrder (mCbVirt, mCbNestedPaging);
+    setTabOrder (mCbNestedPaging, mCbPae);
+    setTabOrder (mCbPae, mCbClipboard);
     setTabOrder (mCbClipboard, mCbIDEController);
     setTabOrder (mCbIDEController, mPsSnapshot);
 
@@ -441,6 +452,11 @@ void VBoxVMSettingsGeneral::valueChangedVRAM (int aVal)
 void VBoxVMSettingsGeneral::textChangedVRAM (const QString &aText)
 {
     mSlVideo->setValue (aText.toInt());
+}
+
+void VBoxVMSettingsGeneral::stateChangedVirt (int aState)
+{
+    mCbNestedPaging->setEnabled (mCbVirt->checkState());
 }
 
 void VBoxVMSettingsGeneral::moveBootItemUp()

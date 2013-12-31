@@ -146,9 +146,7 @@ ip_input(PNATState pData, struct mbuf *m)
         goto bad;
     }
 
-#ifdef VBOX_WITH_SLIRP_ICMP
     ip->ip_ttl--;
-#endif
     /*
      * If offset or IP_MF are set, must reassemble.
      * Otherwise, nothing need be done.
@@ -245,7 +243,7 @@ ip_reass(PNATState pData, struct mbuf* m)
          */
         struct ipq_t *q = TAILQ_LAST(head, ipqhead);
         if (q == NULL)
-        { 
+        {
             /* gak */
             for (i = 0; i < IPREASS_NHASH; i++)
             {
@@ -309,7 +307,7 @@ found:
      */
     if (fp == NULL)
     {
-        fp = malloc(sizeof(struct ipq_t));
+        fp = RTMemAlloc(sizeof(struct ipq_t));
         if (fp == NULL)
             goto dropfrag;
         TAILQ_INSERT_HEAD(head, fp, ipq_list);
@@ -464,7 +462,7 @@ found:
     ip->ip_dst = fp->ipq_dst;
     TAILQ_REMOVE(head, fp, ipq_list);
     nipq--;
-    free(fp);
+    RTMemFree(fp);
 
     m->m_len += (ip->ip_hl << 2);
     m->m_data -= (ip->ip_hl << 2);
@@ -500,7 +498,7 @@ ip_freef(PNATState pData, struct ipqhead *fhp, struct ipq_t *fp)
         m_freem(pData, q);
     }
     TAILQ_REMOVE(fhp, fp, ipq_list);
-    free(fp);
+    RTMemFree(fp);
     nipq--;
 }
 
@@ -527,7 +525,8 @@ ip_slowtimo(PNATState pData)
 
             fpp = fp;
             fp = TAILQ_NEXT(fp, ipq_list);
-            if(--fpp->ipq_ttl == 0) {
+            if(--fpp->ipq_ttl == 0)
+            {
                 ipstat.ips_fragtimeout += fpp->ipq_nfrags;
                 ip_freef(pData, &ipq[i], fpp);
             }

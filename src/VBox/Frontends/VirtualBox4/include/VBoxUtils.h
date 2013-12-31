@@ -208,16 +208,8 @@ void darwinWindowAnimateResize (QWidget *aWidget, const QRect &aTarget);
 /* Proxy icon creation */
 QPixmap darwinCreateDragPixmap (const QPixmap& aPixmap, const QString &aText);
 
-/* Special routines for the dock handling */
-CGImageRef darwinCreateDockBadge (const char *aSource);
-void darwinUpdateDockPreview (QWidget *aMainWindow, CGImageRef aVMImage, CGImageRef aOverlayImage, CGImageRef aStateImage = NULL);
-void darwinUpdateDockPreview (QWidget *aMainWindow, VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlayImage, CGImageRef aStateImage = NULL);
-
 /* Icons in the menu of an mac application are unusual. */
 void darwinDisableIconsInMenus();
-
-/* Enable the async resize/move handling on Mac OS X */
-void darwinEnableAsyncDragForWindow (QWidget *aWindow);
 
 /* Experimental region handler for the seamless mode */
 OSStatus darwinRegionHandler (EventHandlerCallRef aInHandlerCallRef, EventRef aInEvent, void *aInUserData);

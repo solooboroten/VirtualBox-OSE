@@ -70,7 +70,11 @@
 # if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 10)
 #  define VBOX_SKB_CHECKSUM_HELP(skb) skb_checksum_help(skb, 0)
 # else /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 10) */
-#  define VBOX_SKB_CHECKSUM_HELP(skb) skb_checksum_help(&skb, 0)
+#  if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 7)
+#   define VBOX_SKB_CHECKSUM_HELP(skb) skb_checksum_help(&skb, 0)
+#  else /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 7) */
+#   define VBOX_SKB_CHECKSUM_HELP(skb) (!skb_checksum_help(skb))
+#  endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 7) */
 # endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 10) */
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 19) */
 
@@ -82,6 +86,10 @@
 # define VBOX_SKB_IS_GSO(skb) false
 # define VBOX_SKB_GSO_SEGMENT(skb) NULL
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 18) */
+
+#ifndef NET_IP_ALIGN
+# define NET_IP_ALIGN 2
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 12)
 unsigned dev_get_flags(const struct net_device *dev)
@@ -114,6 +122,21 @@ static void     VBoxNetFltLinuxUnload(void);
 /**
  * The (common) global data.
  */
+#ifdef RT_ARCH_AMD64
+/**
+ * Memory for the executable memory heap (in IPRT).
+ */
+extern uint8_t g_abExecMemory[4096]; /* cannot donate less than one page */
+__asm__(".section execmemory, \"awx\", @progbits\n\t"
+        ".align 32\n\t"
+        ".globl g_abExecMemory\n"
+        "g_abExecMemory:\n\t"
+        ".zero 4096\n\t"
+        ".type g_abExecMemory, @object\n\t"
+        ".size g_abExecMemory, 4096\n\t"
+        ".text\n\t");
+#endif
+
 static VBOXNETFLTGLOBALS g_VBoxNetFltGlobals;
 
 module_init(VBoxNetFltLinuxInit);
@@ -142,14 +165,22 @@ static VBOXNETFLTGLOBALS g_VBoxNetFltGlobals;
 static int __init VBoxNetFltLinuxInit(void)
 {
     int rc;
-    Log(("VBoxNetFltLinuxInit\n"));
-
     /*
      * Initialize IPRT.
      */
     rc = RTR0Init(0);
     if (RT_SUCCESS(rc))
     {
+#ifdef RT_ARCH_AMD64
+        rc = RTR0MemExecDonate(&g_abExecMemory[0], sizeof(g_abExecMemory));
+        printk("VBoxNetFlt: dbg - g_abExecMemory=%p\n", (void *)&g_abExecMemory[0]);
+        if (RT_FAILURE(rc))
+        {
+            printk("VBoxNetFlt: failed to donate exec memory, no logging will be available.\n");
+        }
+#endif
+        Log(("VBoxNetFltLinuxInit\n"));
+
         /*
          * Initialize the globals and connect to the support driver.
          *
@@ -259,7 +290,7 @@ DECLINLINE(void) vboxNetFltLinuxReleaseNetDev(PVBOXNETFLTINS pThis, struct net_d
 }
 
 #define VBOXNETFLT_CB_TAG 0xA1C9D7C3
-#define VBOXNETFLT_SKB_CB(skb) (*(uint32_t*)&((skb)->cb[0]))
+#define VBOXNETFLT_SKB_TAG(skb) (*(uint32_t*)&((skb)->cb[sizeof((skb)->cb)-sizeof(uint32_t)]))
 
 /**
  * Checks whether this is an mbuf created by vboxNetFltLinuxMBufFromSG,
@@ -270,7 +301,7 @@ DECLINLINE(void) vboxNetFltLinuxReleaseNetDev(PVBOXNETFLTINS pThis, struct net_d
  */
 DECLINLINE(bool) vboxNetFltLinuxSkBufIsOur(struct sk_buff *pBuf)
 {
-    return VBOXNETFLT_SKB_CB(pBuf) == VBOXNETFLT_CB_TAG ;
+    return VBOXNETFLT_SKB_TAG(pBuf) == VBOXNETFLT_CB_TAG ;
 }
 
 
@@ -322,9 +353,9 @@ static struct sk_buff *vboxNetFltLinuxSkBufFromSG(PVBOXNETFLTINS pThis, PINTNETS
             VBOX_SKB_RESET_NETWORK_HDR(pPkt);
             /* Restore ethernet header back. */
             skb_push(pPkt, ETH_HLEN);
+            VBOX_SKB_RESET_MAC_HDR(pPkt);
         }
-        VBOX_SKB_RESET_MAC_HDR(pPkt);
-        VBOXNETFLT_SKB_CB(pPkt) = VBOXNETFLT_CB_TAG;
+        VBOXNETFLT_SKB_TAG(pPkt) = VBOXNETFLT_CB_TAG;
 
         return pPkt;
     }
@@ -413,10 +444,10 @@ DECLINLINE(void) vboxNetFltLinuxSkBufToSG(PVBOXNETFLTINS pThis, struct sk_buff *
         pSG->cSegsUsed++;
     }
 #endif
-    Log2(("vboxNetFltLinuxSkBufToSG: allocated=%d, segments=%d frags=%d next=%p frag_list=%p pkt_type=%x fSrc=%x\n",
+    Log4(("vboxNetFltLinuxSkBufToSG: allocated=%d, segments=%d frags=%d next=%p frag_list=%p pkt_type=%x fSrc=%x\n",
           pSG->cSegsAlloc, pSG->cSegsUsed, skb_shinfo(pBuf)->nr_frags, pBuf->next, skb_shinfo(pBuf)->frag_list, pBuf->pkt_type, fSrc));
     for (i = 0; i < pSG->cSegsUsed; i++)
-        Log2(("vboxNetFltLinuxSkBufToSG:   #%d: cb=%d pv=%p\n",
+        Log4(("vboxNetFltLinuxSkBufToSG:   #%d: cb=%d pv=%p\n",
               i, pSG->aSegs[i].cb, pSG->aSegs[i].pv));
 }
 
@@ -430,20 +461,27 @@ DECLINLINE(void) vboxNetFltLinuxSkBufToSG(PVBOXNETFLTINS pThis, struct sk_buff *
  * @param   fSrc            Where the packet (allegedly) comes from, one INTNETTRUNKDIR_* value.
  * @param   eProtocol       The protocol.
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 14)
 static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
                                         struct net_device *pSkbDev,
                                         struct packet_type *pPacketType,
                                         struct net_device *pOrigDev)
+#else
+static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
+                                        struct net_device *pSkbDev,
+                                        struct packet_type *pPacketType)
+#endif
 {
     PVBOXNETFLTINS pThis;
     struct net_device *pDev;
+    LogFlow(("vboxNetFltLinuxPacketHandler: pBuf=%p pSkbDev=%p pPacketType=%p\n",
+             pBuf, pSkbDev, pPacketType));
     /*
      * Drop it immediately?
      */
-    Log2(("vboxNetFltLinuxPacketHandler: pBuf=%p pSkbDev=%p pPacketType=%p pOrigDev=%p\n",
-          pBuf, pSkbDev, pPacketType, pOrigDev));
     if (!pBuf)
         return 0;
+    
     pThis = VBOX_FLT_PT_TO_INST(pPacketType);
     pDev = (struct net_device *)ASMAtomicUoReadPtr((void * volatile *)&pThis->u.s.pDev);
     if (pThis->u.s.pDev != pSkbDev)
@@ -452,16 +490,34 @@ static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
         return 0;
     }
 
+    Log4(("vboxNetFltLinuxPacketHandler: pBuf->cb dump:\n%.*Rhxd\n", sizeof(pBuf->cb), pBuf->cb));
     if (vboxNetFltLinuxSkBufIsOur(pBuf))
     {
+        Log2(("vboxNetFltLinuxPacketHandler: got our own sk_buff, drop it.\n"));
         dev_kfree_skb(pBuf);
         return 0;
     }
 
+#ifndef VBOXNETFLT_SG_SUPPORT
+    {
+        /*
+         * Get rid of fragmented packets, they cause too much trouble.
+         */
+        struct sk_buff *pCopy = skb_copy(pBuf, GFP_ATOMIC);
+        kfree_skb(pBuf);
+        if (!pCopy)
+        {
+            LogRel(("VBoxNetFlt: Failed to allocate packet buffer, dropping the packet.\n"));
+            return 0;
+        }
+        pBuf = pCopy;
+    }
+#endif
+
     /* Add the packet to transmit queue and schedule the bottom half. */
     skb_queue_tail(&pThis->u.s.XmitQueue, pBuf);
     schedule_work(&pThis->u.s.XmitTask);
-    Log2(("vboxNetFltLinuxPacketHandler: scheduled work %p for sk_buff %p\n",
+    Log4(("vboxNetFltLinuxPacketHandler: scheduled work %p for sk_buff %p\n",
           &pThis->u.s.XmitTask, pBuf));
     /* It does not really matter what we return, it is ignored by the kernel. */
     return 0;
@@ -500,6 +556,34 @@ static void  vboxNetFltLinuxFreeSkBuff(struct sk_buff *pBuf, PINTNETSG pSG)
     dev_kfree_skb(pBuf);
 }
 
+#ifndef LOG_ENABLED
+#define vboxNetFltDumpPacket(a, b, c, d)
+#else
+static void vboxNetFltDumpPacket(PINTNETSG pSG, bool fEgress, const char *pszWhere, int iIncrement)
+{
+    uint8_t *pInt, *pExt;
+    static int iPacketNo = 1;
+    iPacketNo += iIncrement;
+    if (fEgress)
+    {
+        pExt = pSG->aSegs[0].pv;
+        pInt = pExt + 6;
+    }
+    else
+    {
+        pInt = pSG->aSegs[0].pv;
+        pExt = pInt + 6;
+    }
+    Log(("VBoxNetFlt: (int)%02x:%02x:%02x:%02x:%02x:%02x"
+         " %s (%s)%02x:%02x:%02x:%02x:%02x:%02x (%u bytes) packet #%u\n",
+         pInt[0], pInt[1], pInt[2], pInt[3], pInt[4], pInt[5],
+         fEgress ? "-->" : "<--", pszWhere,
+         pExt[0], pExt[1], pExt[2], pExt[3], pExt[4], pExt[5],
+         pSG->cbTotal, iPacketNo));
+    Log3(("%.*Rhxd\n", pSG->aSegs[0].cb, pSG->aSegs[0].pv));
+}
+#endif
+
 static int vboxNetFltLinuxForwardSegment(PVBOXNETFLTINS pThis, struct sk_buff *pBuf, uint32_t fSrc)
 {
     unsigned cSegs = vboxNetFltLinuxSGSegments(pThis, pBuf);
@@ -515,14 +599,9 @@ static int vboxNetFltLinuxForwardSegment(PVBOXNETFLTINS pThis, struct sk_buff *p
         vboxNetFltLinuxSkBufToSG(pThis, pBuf, pSG, cSegs, fSrc);
 
         pTmp = pSG->aSegs[0].pv;
-        Log(("VBoxNetFlt: (int)%02x:%02x:%02x:%02x:%02x:%02x"
-             " <-- (%s)%02x:%02x:%02x:%02x:%02x:%02x (%u bytes)\n",
-             pTmp[0], pTmp[1], pTmp[2], pTmp[3], pTmp[4], pTmp[5],
-             (fSrc & INTNETTRUNKDIR_HOST) ? "host" : "wire",
-             pTmp[6], pTmp[7], pTmp[8], pTmp[9], pTmp[10], pTmp[11],
-             pSG->cbTotal));
+        vboxNetFltDumpPacket(pSG, false, (fSrc & INTNETTRUNKDIR_HOST) ? "host" : "wire", 1);
         pThis->pSwitchPort->pfnRecv(pThis->pSwitchPort, pSG, fSrc);
-        Log2(("VBoxNetFlt: Dropping the sk_buff.\n"));
+        Log4(("VBoxNetFlt: Dropping the sk_buff.\n"));
         vboxNetFltLinuxFreeSkBuff(pBuf, pSG);
     }
 
@@ -532,20 +611,6 @@ static int vboxNetFltLinuxForwardSegment(PVBOXNETFLTINS pThis, struct sk_buff *p
 static void vboxNetFltLinuxForwardToIntNet(PVBOXNETFLTINS pThis, struct sk_buff *pBuf)
 {
     uint32_t fSrc = pBuf->pkt_type == PACKET_OUTGOING ? INTNETTRUNKDIR_HOST : INTNETTRUNKDIR_WIRE;
-
-#ifndef VBOXNETFLT_SG_SUPPORT
-    /*
-     * Get rid of fragmented packets, they cause too much trouble.
-     */
-    struct sk_buff *pCopy = skb_copy(pBuf, GFP_KERNEL);
-    kfree_skb(pBuf);
-    if (!pCopy)
-    {
-        LogRel(("VBoxNetFlt: Failed to allocate packet buffer, dropping the packet.\n"));
-        return;
-    }
-    pBuf = pCopy;
-#endif
 
     if (VBOX_SKB_IS_GSO(pBuf))
     {
@@ -578,14 +643,18 @@ static void vboxNetFltLinuxForwardToIntNet(PVBOXNETFLTINS pThis, struct sk_buff 
      */
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 20)
 static void vboxNetFltLinuxXmitTask(struct work_struct *pWork)
+#else
+static void vboxNetFltLinuxXmitTask(void *pWork)
+#endif
 {
     struct sk_buff *pBuf;
     bool fActive;
     PVBOXNETFLTINS pThis;
     RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
 
-    Log2(("vboxNetFltLinuxXmitTask: Got work %p.\n", pWork));
+    Log4(("vboxNetFltLinuxXmitTask: Got work %p.\n", pWork));
     pThis = VBOX_FLT_XT_TO_INST(pWork);
     /*
      * Active? Retain the instance and increment the busy counter.
@@ -779,17 +848,13 @@ bool vboxNetFltOsMaybeRediscovered(PVBOXNETFLTINS pThis)
     return !ASMAtomicUoReadBool(&pThis->fDisconnectedFromHost);
 }
 
-
 int  vboxNetFltPortOsXmit(PVBOXNETFLTINS pThis, PINTNETSG pSG, uint32_t fDst)
 {
-    uint8_t *pTmp;
     struct net_device * pDev;
     int err;
     int rc = VINF_SUCCESS;
 
     LogFlow(("vboxNetFltPortOsXmit: pThis=%p (%s)\n", pThis, pThis->szName));
-
-    pTmp = pSG->aSegs[0].pv;
 
     pDev = vboxNetFltLinuxRetainNetDev(pThis);
     if (pDev)
@@ -802,11 +867,9 @@ int  vboxNetFltPortOsXmit(PVBOXNETFLTINS pThis, PINTNETSG pSG, uint32_t fDst)
             struct sk_buff *pBuf = vboxNetFltLinuxSkBufFromSG(pThis, pSG, true);
             if (pBuf)
             {
-                Log(("VBoxNetFlt: (int)%02x:%02x:%02x:%02x:%02x:%02x"
-                     " --> (wire)%02x:%02x:%02x:%02x:%02x:%02x (%u bytes)\n",
-                     pTmp[6], pTmp[7], pTmp[8], pTmp[9], pTmp[10], pTmp[11],
-                     pTmp[0], pTmp[1], pTmp[2], pTmp[3], pTmp[4], pTmp[5],
-                     pSG->cbTotal));
+                vboxNetFltDumpPacket(pSG, true, "wire", 1);
+                Log4(("vboxNetFltPortOsXmit: pBuf->cb dump:\n%.*Rhxd\n", sizeof(pBuf->cb), pBuf->cb));
+                Log4(("vboxNetFltPortOsXmit: dev_queue_xmit(%p)\n", pBuf));
                 err = dev_queue_xmit(pBuf);
                 if (err)
                     rc = RTErrConvertFromErrno(err);
@@ -823,11 +886,9 @@ int  vboxNetFltPortOsXmit(PVBOXNETFLTINS pThis, PINTNETSG pSG, uint32_t fDst)
             struct sk_buff *pBuf = vboxNetFltLinuxSkBufFromSG(pThis, pSG, false);
             if (pBuf)
             {
-                Log(("VBoxNetFlt: (int)%02x:%02x:%02x:%02x:%02x:%02x"
-                     " --> (host)%02x:%02x:%02x:%02x:%02x:%02x (%u bytes)\n",
-                     pTmp[6], pTmp[7], pTmp[8], pTmp[9], pTmp[10], pTmp[11],
-                     pTmp[0], pTmp[1], pTmp[2], pTmp[3], pTmp[4], pTmp[5],
-                     pSG->cbTotal));
+                vboxNetFltDumpPacket(pSG, true, "host", (fDst & INTNETTRUNKDIR_WIRE) ? 0 : 1);
+                Log4(("vboxNetFltPortOsXmit: pBuf->cb dump:\n%.*Rhxd\n", sizeof(pBuf->cb), pBuf->cb));
+                Log4(("vboxNetFltPortOsXmit: netif_rx_ni(%p)\n", pBuf));
                 err = netif_rx_ni(pBuf);
                 if (err)
                     rc = RTErrConvertFromErrno(err);
@@ -850,6 +911,8 @@ bool vboxNetFltPortOsIsPromiscuous(PVBOXNETFLTINS pThis)
     if (pDev)
     {
         fRc = !!(pDev->promiscuity - (ASMAtomicUoReadBool(&pThis->u.s.fPromiscuousSet) & 1));
+        LogFlow(("vboxNetFltPortOsIsPromiscuous: returns %d, pDev->promiscuity=%d, fPromiscuousSet=%d\n",
+                 fRc, pDev->promiscuity, pThis->u.s.fPromiscuousSet));
         vboxNetFltLinuxReleaseNetDev(pThis, pDev);
     }
     return fRc;
@@ -1028,7 +1091,7 @@ int  vboxNetFltOsPreInitInstance(PVBOXNETFLTINS pThis)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 20)
     INIT_WORK(&pThis->u.s.XmitTask, vboxNetFltLinuxXmitTask);
 #else
-    INIT_WORK(&pThis->u.s.XmitTask, vboxNetFltLinuxXmitTask, NULL);
+    INIT_WORK(&pThis->u.s.XmitTask, vboxNetFltLinuxXmitTask, &pThis->u.s.XmitTask);
 #endif
 
     return VINF_SUCCESS;

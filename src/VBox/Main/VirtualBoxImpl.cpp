@@ -199,7 +199,7 @@ HRESULT VirtualBox::init()
             if (RT_SUCCESS (vrc))
                 vrc = RTFileWrite (handle,
                                    (void *) gDefaultGlobalConfig,
-                                   sizeof (gDefaultGlobalConfig), NULL);
+                                   strlen (gDefaultGlobalConfig), NULL);
             if (RT_FAILURE (vrc))
             {
                 rc = setError (E_FAIL, tr ("Could not create the default settings file "
@@ -1017,7 +1017,7 @@ STDMETHODIMP VirtualBox::FindMachine (IN_BSTR aName, IMachine **aMachine)
 
     HRESULT rc = machine
         ? S_OK
-        : setError (VBOX_E_FILE_ERROR,
+        : setError (VBOX_E_OBJECT_NOT_FOUND,
             tr ("Could not find a registered machine named '%ls'"), aName);
 
     LogFlowThisFunc (("rc=%08X\n", rc));

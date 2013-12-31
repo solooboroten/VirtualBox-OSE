@@ -124,6 +124,12 @@ RTDECL(RTCPUID) RTMpGetOnlineCount(void)
 }
 
 
+RTDECL(bool) RTMpIsCpuWorkPending(void)
+{
+    /** @todo (not used on non-Windows platforms yet). */
+    return false;
+}
+
 
 /**
  * Wrapper between the native solaris per-cpu callback and PFNRTWORKER

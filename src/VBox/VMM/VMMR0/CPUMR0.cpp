@@ -167,9 +167,14 @@ VMMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
             break;
     }
 
-#if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     if (CPUMIsGuestInLongModeEx(pCtx))
     {
+        Assert(!(pVCpu->cpum.s.fUseFlags & CPUM_SYNC_FPU_STATE));
+
+        /* Save the host state and record the fact (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM). */
+        cpumR0SaveHostFPUState(&pVCpu->cpum.s);
+
         /* Restore the state on entry as we need to be in 64 bits mode to access the full state. */
         pVCpu->cpum.s.fUseFlags |= CPUM_SYNC_FPU_STATE;
     }
@@ -177,6 +182,27 @@ VMMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 #endif
     {
 #ifndef CPUM_CAN_HANDLE_NM_TRAPS_IN_KERNEL_MODE
+# ifdef VBOX_WITH_HYBRID_32BIT_KERNEL /** @todo remove the #else here and move cpumHandleLazyFPUAsm back to VMMGC after branching out 2.1. */
+        /* Clear MSR_K6_EFER_FFXSR or else we'll be unable to save/restore the XMM state with fxsave/fxrstor. */
+        uint64_t SavedEFER = 0;
+        if (pVM->cpum.s.CPUFeaturesExt.edx & X86_CPUID_AMD_FEATURE_EDX_FFXSR)
+        {
+            SavedEFER = ASMRdMsr(MSR_K6_EFER);
+            if (SavedEFER & MSR_K6_EFER_FFXSR)
+            {
+                ASMWrMsr(MSR_K6_EFER, SavedEFER & ~MSR_K6_EFER_FFXSR);
+                pVCpu->cpum.s.fUseFlags |= CPUM_MANUAL_XMM_RESTORE;
+            }
+        }
+
+        /* Do the job and record that we've switched FPU state. */
+        cpumR0SaveHostRestoreGuestFPUState(&pVCpu->cpum.s);
+
+        /* Restore EFER. */
+        if (pVCpu->cpum.s.fUseFlags & CPUM_MANUAL_XMM_RESTORE)
+            ASMWrMsr(MSR_K6_EFER, SavedEFER);
+
+# else
         uint64_t oldMsrEFERHost = 0;
         uint32_t oldCR0 = ASMGetCR0();
 
@@ -203,8 +229,9 @@ VMMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         if (pVCpu->cpum.s.fUseFlags & CPUM_MANUAL_XMM_RESTORE)
             ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost);
 
- 	    /* CPUMHandleLazyFPU could have changed CR0; restore it. */
+        /* CPUMHandleLazyFPU could have changed CR0; restore it. */
         ASMSetCR0(oldCR0);
+# endif
 
 #else  /* CPUM_CAN_HANDLE_NM_TRAPS_IN_KERNEL_MODE */
 
@@ -235,10 +262,11 @@ VMMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
                 pVCpu->cpum.s.fUseFlags |= CPUM_MANUAL_XMM_RESTORE;
             }
         }
+
 #endif /* CPUM_CAN_HANDLE_NM_TRAPS_IN_KERNEL_MODE */
     }
 
-    pVCpu->cpum.s.fUseFlags |= CPUM_USED_FPU;
+    Assert(pVCpu->cpum.s.fUseFlags & (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM) == (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM));
     return VINF_SUCCESS;
 }
 
@@ -257,13 +285,15 @@ VMMR0DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     Assert(ASMGetCR4() & X86_CR4_OSFSXR);
     AssertReturn((pVCpu->cpum.s.fUseFlags & CPUM_USED_FPU), VINF_SUCCESS);
 
-#if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     if (CPUMIsGuestInLongModeEx(pCtx))
     {
         if (!(pVCpu->cpum.s.fUseFlags & CPUM_SYNC_FPU_STATE))
+        {
             HWACCMR0SaveFPUState(pVM, pVCpu, pCtx);
-
-        cpumR0RestoreHostFPUState(&pVCpu->cpum.s);
+            cpumR0RestoreHostFPUState(&pVCpu->cpum.s);
+        }
+        /* else nothing to do; we didn't perform a world switch */
     }
     else
 #endif
@@ -301,7 +331,7 @@ VMMR0DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 #endif /* CPUM_CAN_HANDLE_NM_TRAPS_IN_KERNEL_MODE */
     }
 
-    pVCpu->cpum.s.fUseFlags &= ~(CPUM_USED_FPU | CPUM_MANUAL_XMM_RESTORE);
+    pVCpu->cpum.s.fUseFlags &= ~(CPUM_USED_FPU | CPUM_SYNC_FPU_STATE | CPUM_MANUAL_XMM_RESTORE);
     return VINF_SUCCESS;
 }
 
@@ -320,7 +350,7 @@ VMMR0DECL(int) CPUMR0SaveGuestDebugState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, b
     Assert(pVCpu->cpum.s.fUseFlags & CPUM_USE_DEBUG_REGS);
 
     /* Save the guest's debug state. The caller is responsible for DR7. */
-#if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     if (CPUMIsGuestInLongModeEx(pCtx))
     {
         if (!(pVCpu->cpum.s.fUseFlags & CPUM_SYNC_DEBUG_STATE))
@@ -396,7 +426,7 @@ VMMR0DECL(int) CPUMR0LoadGuestDebugState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, b
     ASMSetDR7(X86_DR7_INIT_VAL);
 
     /* Activate the guest state DR0-3; DR7 is left to the caller. */
-#if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     if (CPUMIsGuestInLongModeEx(pCtx))
     {
         /* Restore the state on entry as we need to be in 64 bits mode to access the full state. */
