@@ -380,6 +380,8 @@ typedef struct SSMSTRMBUF
     uint32_t                cb;
     /** End of stream indicator (for read streams only). */
     bool                    fEndOfStream;
+    /** The nano timestamp set by ssmR3StrmGetFreeBuf. */
+    uint64_t                NanoTS;
     /** Pointer to the next buffer in the chain. */
     PSSMSTRMBUF volatile    pNext;
 } SSMSTRMBUF;
@@ -503,6 +505,8 @@ typedef struct SSMHANDLE
             uint8_t         abRecHdr[1+7];
             /** Data buffer. */
             uint8_t         abDataBuffer[4096];
+            /** The maximum downtime given as milliseconds. */
+            uint32_t        cMsMaxDowntime;
         } Write;
 
         /** Read data. */
@@ -548,6 +552,8 @@ typedef struct SSMHANDLE
 
             /** 32-bit MSC saved this? */
             bool            fIsHostMsc32;
+            /** "Host OS" dot "architecture", picked up from recent SSM data units. */
+            char            szHostOSAndArch[32];
 
             /** @name Header info (set by ssmR3ValidateFile)
              * @{ */
@@ -918,6 +924,10 @@ static int ssmR3LazyInit(PVM pVM)
      */
     if (RT_SUCCESS(rc))
         rc = RTCritSectInit(&pVM->ssm.s.CancelCritSect);
+    if (RT_SUCCESS(rc))
+    {
+        STAM_REL_REG_USED(pVM, &pVM->ssm.s.uPass, STAMTYPE_U32, "/SSM/uPass", STAMUNIT_COUNT, "Current pass");
+    }
 
     pVM->ssm.s.fInitialized = RT_SUCCESS(rc);
     return rc;
@@ -1012,6 +1022,7 @@ static DECLCALLBACK(int) ssmR3SelfLoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uV
 
             /*
              * Detect 32-bit MSC for handling SSMFIELD_ENTRY_PAD_MSC32_AUTO.
+             * Save the Host OS for SSMR3HandleHostOSAndArch
              */
             if (!strcmp(szVar, "Host OS"))
             {
@@ -1021,6 +1032,12 @@ static DECLCALLBACK(int) ssmR3SelfLoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uV
                     LogRel(("SSM: (fIsHostMsc32 %RTbool => %RTbool)\n", pSSM->u.Read.fIsHostMsc32, fIsHostMsc32));
                     pSSM->u.Read.fIsHostMsc32 = fIsHostMsc32;
                 }
+
+                size_t cchValue = strlen(szValue);
+                size_t cchCopy = RT_MIN(cchValue, sizeof(pSSM->u.Read.szHostOSAndArch) - 1);
+                Assert(cchValue == cchCopy);
+                memcpy(pSSM->u.Read.szHostOSAndArch, szValue, cchCopy);
+                pSSM->u.Read.szHostOSAndArch[cchCopy] = '\0';
             }
         }
     }
@@ -1764,10 +1781,39 @@ static DECLCALLBACK(int) ssmR3FileSize(void *pvUser, uint64_t *pcb)
 
 
 /**
+ * @copydoc SSMSTRMOPS::pfnIsOk
+ */
+static DECLCALLBACK(int) ssmR3FileIsOk(void *pvUser)
+{
+    /*
+     * Check that there is still some space left on the disk.
+     */
+    RTFOFF cbFree;
+    int rc = RTFileQueryFsSizes((RTFILE)(uintptr_t)pvUser, NULL, &cbFree, NULL, NULL);
+#define SSM_MIN_DISK_FREE    ((RTFOFF)( 10 * _1M ))
+    if (RT_SUCCESS(rc))
+    {
+        if (cbFree < SSM_MIN_DISK_FREE)
+        {
+            LogRel(("SSM: Giving up: Low on disk space. (cbFree=%RTfoff, SSM_MIN_DISK_FREE=%RTfoff).\n",
+                    cbFree, SSM_MIN_DISK_FREE));
+            rc = VERR_SSM_LOW_ON_DISK_SPACE;
+        }
+    }
+    else if (rc == VERR_NOT_SUPPORTED)
+        rc = VINF_SUCCESS;
+    else
+        AssertLogRelRC(rc);
+    return rc;
+}
+
+
+/**
  * @copydoc SSMSTRMOPS::pfnClose
  */
-static DECLCALLBACK(int) ssmR3FileClose(void *pvUser)
+static DECLCALLBACK(int) ssmR3FileClose(void *pvUser, bool fCancelled)
 {
+    NOREF(fCancelled);
     return RTFileClose((RTFILE)(uintptr_t)pvUser);
 }
 
@@ -1783,6 +1829,7 @@ static SSMSTRMOPS const g_ssmR3FileOps =
     ssmR3FileSeek,
     ssmR3FileTell,
     ssmR3FileSize,
+    ssmR3FileIsOk,
     ssmR3FileClose,
     SSMSTRMOPS_VERSION
 };
@@ -1905,6 +1952,7 @@ static PSSMSTRMBUF ssmR3StrmGetFreeBuf(PSSMSTRM pStrm)
             pMine->cb           = 0;
             pMine->pNext        = NULL;
             pMine->fEndOfStream = false;
+            pMine->NanoTS       = RTTimeNanoTS();
             return pMine;
         }
     }
@@ -2083,10 +2131,12 @@ static int ssmR3StrmWriteBuffers(PSSMSTRM pStrm)
         pHead = pCur->pNext;
 
         /* flush */
-        int rc = pStrm->pOps->pfnWrite(pStrm->pvUser, pCur->offStream, &pCur->abData[0], pCur->cb);
+        int rc = pStrm->pOps->pfnIsOk(pStrm->pvUser);
+        if (RT_SUCCESS(rc))
+            rc = pStrm->pOps->pfnWrite(pStrm->pvUser, pCur->offStream, &pCur->abData[0], pCur->cb);
         if (    RT_FAILURE(rc)
             &&  ssmR3StrmSetError(pStrm, rc))
-            LogRel(("ssmR3StrmWriteBuffers: RTFileWriteAt failed with rc=%Rrc at offStream=%#llx\n", rc, pCur->offStream));
+            LogRel(("ssmR3StrmWriteBuffers: Write failed with rc=%Rrc at offStream=%#llx\n", rc, pCur->offStream));
 
         /* free */
         bool fEndOfStream = pCur->fEndOfStream;
@@ -2107,8 +2157,10 @@ static int ssmR3StrmWriteBuffers(PSSMSTRM pStrm)
  *
  * @returns VBox status code.
  * @param   pStrm           The stream handle.
+ * @param   fCancelled      Indicates whether the operation was cancelled or
+ *                          not.
  */
-static int ssmR3StrmClose(PSSMSTRM pStrm)
+static int ssmR3StrmClose(PSSMSTRM pStrm, bool fCancelled)
 {
     /*
      * Flush, terminate the I/O thread, and close the stream.
@@ -2128,20 +2180,20 @@ static int ssmR3StrmClose(PSSMSTRM pStrm)
     {
         if (pStrm->hIoThread != NIL_RTTHREAD)
         {
-            int rc2 = RTSemEventSignal(pStrm->hEvtFree);
+            int rc2 = RTSemEventSignal(pStrm->hEvtHead);
             AssertLogRelRC(rc2);
             int rc3 = RTThreadWait(pStrm->hIoThread, RT_INDEFINITE_WAIT, NULL);
             AssertLogRelRC(rc3);
             pStrm->hIoThread = NIL_RTTHREAD;
         }
 
-        rc = pStrm->pOps->pfnClose(pStrm->pvUser);
+        rc = pStrm->pOps->pfnClose(pStrm->pvUser, fCancelled);
         if (RT_FAILURE(rc))
             ssmR3StrmSetError(pStrm, rc);
     }
     else
     {
-        rc = pStrm->pOps->pfnClose(pStrm->pvUser);
+        rc = pStrm->pOps->pfnClose(pStrm->pvUser, fCancelled);
         if (RT_FAILURE(rc))
             ssmR3StrmSetError(pStrm, rc);
 
@@ -2519,6 +2571,32 @@ static uint8_t const *ssmR3StrmReadDirect(PSSMSTRM pStrm, size_t cbToRead)
         }
     }
     return NULL;
+}
+
+
+/**
+ * Check that the stream is OK and flush data that is getting old
+ *
+ * The checking is mainly for testing for cancellation and out of space
+ * conditions.
+ *
+ * @returns VBox status code.
+ * @param   pStrm       The stream handle.
+ */
+static int ssmR3StrmCheckAndFlush(PSSMSTRM pStrm)
+{
+    int rc = pStrm->pOps->pfnIsOk(pStrm->pvUser);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    if (    pStrm->fWrite
+        &&  pStrm->hIoThread != NIL_RTTHREAD
+        &&  !pStrm->pHead /* the worker is probably idle */
+        &&  pStrm->pCur
+        &&  RTTimeNanoTS() - pStrm->pCur->NanoTS > 500*1000*1000 /* 0.5s */
+       )
+        ssmR3StrmFlushCurBuf(pStrm);
+    return VINF_SUCCESS;
 }
 
 
@@ -4044,13 +4122,13 @@ static int ssmR3SaveDoDoneRun(PVM pVM, PSSMHANDLE pSSM)
 static int ssmR3SaveDoClose(PVM pVM, PSSMHANDLE pSSM)
 {
     VM_ASSERT_EMT0(pVM);
-
+    pVM->ssm.s.uPass = 0;
 
     /*
      * Make it non-cancellable, close the stream and delete the file on failure.
      */
     ssmR3SetCancellable(pVM, pSSM, false);
-    int rc = ssmR3StrmClose(&pSSM->Strm);
+    int rc = ssmR3StrmClose(&pSSM->Strm, pSSM->rc == VERR_SSM_CANCELLED);
     if (RT_SUCCESS(rc))
         rc = pSSM->rc;
     if (RT_SUCCESS(rc))
@@ -4590,25 +4668,26 @@ static int ssmR3SaveDoCreateFile(PVM pVM, const char *pszFilename, PCSSMSTRMOPS 
     if (!pSSM)
         return VERR_NO_MEMORY;
 
-    pSSM->pVM                   = pVM;
-    pSSM->enmOp                 = SSMSTATE_INVALID;
-    pSSM->enmAfter              = enmAfter;
-    pSSM->fCancelled            = SSMHANDLE_OK;
-    pSSM->rc                    = VINF_SUCCESS;
-    pSSM->cbUnitLeftV1          = 0;
-    pSSM->offUnit               = UINT64_MAX;
-    pSSM->fLiveSave             = false;
-    pSSM->pfnProgress           = pfnProgress;
-    pSSM->pvUser                = pvProgressUser;
-    pSSM->uPercent              = 0;
-    pSSM->offEstProgress        = 0;
-    pSSM->cbEstTotal            = 0;
-    pSSM->offEst                = 0;
-    pSSM->offEstUnitEnd         = 0;
-    pSSM->uPercentPrepare       = 0;
-    pSSM->uPercentDone          = 0;
-    pSSM->pszFilename           = pszFilename;
-    pSSM->u.Write.offDataBuffer = 0;
+    pSSM->pVM                       = pVM;
+    pSSM->enmOp                     = SSMSTATE_INVALID;
+    pSSM->enmAfter                  = enmAfter;
+    pSSM->fCancelled                = SSMHANDLE_OK;
+    pSSM->rc                        = VINF_SUCCESS;
+    pSSM->cbUnitLeftV1              = 0;
+    pSSM->offUnit                   = UINT64_MAX;
+    pSSM->fLiveSave                 = false;
+    pSSM->pfnProgress               = pfnProgress;
+    pSSM->pvUser                    = pvProgressUser;
+    pSSM->uPercent                  = 0;
+    pSSM->offEstProgress            = 0;
+    pSSM->cbEstTotal                = 0;
+    pSSM->offEst                    = 0;
+    pSSM->offEstUnitEnd             = 0;
+    pSSM->uPercentPrepare           = 0;
+    pSSM->uPercentDone              = 0;
+    pSSM->pszFilename               = pszFilename;
+    pSSM->u.Write.offDataBuffer     = 0;
+    pSSM->u.Write.cMsMaxDowntime    = UINT32_MAX;
 
     int rc;
     if (pStreamOps)
@@ -4919,6 +4998,8 @@ static int ssmR3DoLiveExecVoteLoop(PVM pVM, PSSMHANDLE pSSM)
 #define SSM_MAX_PASSES  _1M
     for (uint32_t uPass = 0; uPass < SSM_MAX_PASSES; uPass++)
     {
+        pVM->ssm.s.uPass = uPass;
+
         /*
          * Save state and vote on whether we need more passes or not.
          */
@@ -4945,24 +5026,11 @@ static int ssmR3DoLiveExecVoteLoop(PVM pVM, PSSMHANDLE pSSM)
         }
 
         /*
-         * Check that there is still some space left on the disk.
+         * Check that the stream is still OK.
          */
-        /** @todo move this to the stream flushing code? It's not perfect when done
-         *        here, it could be way better if we did it there. */
-        if (pSSM->pszFilename)
-        {
-            RTFOFF cbFree;
-            rc = RTFsQuerySizes(pSSM->pszFilename, NULL, &cbFree, NULL, NULL);
-            AssertRC(rc);
-#define SSM_MIN_DISK_FREE    ((RTFOFF)( 10 * _1M ))
-            if (   RT_SUCCESS(rc)
-                && cbFree < SSM_MIN_DISK_FREE)
-            {
-                LogRel(("SSM: Giving up: Low on disk space. (cbFree=%RTfoff, SSM_MIN_DISK_FREE=%RTfoff).\n",
-                        cbFree, SSM_MIN_DISK_FREE));
-                return pSSM->rc = VERR_SSM_LOW_ON_DISK_SPACE;
-            }
-        }
+        rc = ssmR3StrmCheckAndFlush(&pSSM->Strm);
+        if (RT_FAILURE(rc))
+            return pSSM->rc = rc;
     }
 
     LogRel(("SSM: Giving up: Too many passes! (%u)\n", SSM_MAX_PASSES));
@@ -5081,6 +5149,7 @@ VMMR3_INT_DECL(int) SSMR3LiveDoStep1(PSSMHANDLE pSSM)
  * @returns VBox status.
  *
  * @param   pVM             The VM handle.
+ * @param   cMsMaxDowntime  The maximum downtime given as milliseconds.
  * @param   pszFilename     Name of the file to save the state in. This string
  *                          must remain valid until SSMR3LiveDone is called.
  *                          Must be NULL if pStreamOps is used.
@@ -5093,11 +5162,13 @@ VMMR3_INT_DECL(int) SSMR3LiveDoStep1(PSSMHANDLE pSSM)
  *
  * @thread  EMT0
  */
-VMMR3_INT_DECL(int) SSMR3LiveSave(PVM pVM, const char *pszFilename, PCSSMSTRMOPS pStreamOps, void *pvStreamOpsUser,
-                                  SSMAFTER enmAfter, PFNVMPROGRESS pfnProgress, void *pvProgressUser, PSSMHANDLE *ppSSM)
+VMMR3_INT_DECL(int) SSMR3LiveSave(PVM pVM, uint32_t cMsMaxDowntime,
+                                  const char *pszFilename, PCSSMSTRMOPS pStreamOps, void *pvStreamOpsUser,
+                                  SSMAFTER enmAfter, PFNVMPROGRESS pfnProgress, void *pvProgressUser,
+                                  PSSMHANDLE *ppSSM)
 {
-    LogFlow(("SSMR3LiveSave: pszFilename=%p:{%s} pStreamOps=%p pvStreamOpsUser=%p enmAfter=%d pfnProgress=%p pvProgressUser=%p\n",
-             pszFilename, pszFilename, pStreamOps, pvStreamOpsUser, enmAfter, pfnProgress, pvProgressUser));
+    LogFlow(("SSMR3LiveSave: cMsMaxDowntime=%u pszFilename=%p:{%s} pStreamOps=%p pvStreamOpsUser=%p enmAfter=%d pfnProgress=%p pvProgressUser=%p\n",
+             cMsMaxDowntime, pszFilename, pszFilename, pStreamOps, pvStreamOpsUser, enmAfter, pfnProgress, pvProgressUser));
     VM_ASSERT_EMT0(pVM);
 
     /*
@@ -5132,9 +5203,10 @@ VMMR3_INT_DECL(int) SSMR3LiveSave(PVM pVM, const char *pszFilename, PCSSMSTRMOPS
                                    enmAfter, pfnProgress, pvProgressUser, &pSSM);
     if (RT_FAILURE(rc))
         return rc;
-    pSSM->uPercentPrepare = 20; /** @todo fix these. */
-    pSSM->uPercentDone    = 2;
-    pSSM->fLiveSave       = true;
+    pSSM->uPercentPrepare        = 20; /** @todo fix these. */
+    pSSM->uPercentDone           = 2;
+    pSSM->fLiveSave              = true;
+    pSSM->u.Write.cMsMaxDowntime = cMsMaxDowntime;
 
     /*
      * Write the saved state stream header and do the prep run for live saving.
@@ -5154,7 +5226,7 @@ VMMR3_INT_DECL(int) SSMR3LiveSave(PVM pVM, const char *pszFilename, PCSSMSTRMOPS
         return VINF_SUCCESS;
     }
     /* bail out. */
-    int rc2 = ssmR3StrmClose(&pSSM->Strm);
+    int rc2 = ssmR3StrmClose(&pSSM->Strm, pSSM->rc == VERR_SSM_CANCELLED);
     RTMemFree(pSSM);
     rc2 = RTFileDelete(pszFilename);
     AssertRC(rc2);
@@ -5205,7 +5277,7 @@ static int ssmR3DataReadFinishV1(PSSMHANDLE pSSM)
  * Callback for reading compressed data into the input buffer of the
  * decompressor, for saved file format version 1.
  *
- * @returns VBox status code.
+ * @returns VBox status code. Set pSSM->rc on error.
  * @param   pvSSM       The SSM handle.
  * @param   pvBuf       Where to store the compressed data.
  * @param   cbBuf       Size of the buffer.
@@ -5229,17 +5301,19 @@ static DECLCALLBACK(int) ssmR3ReadInV1(void *pvSSM, void *pvBuf, size_t cbBuf, s
             ssmR3Progress(pSSM, cbRead);
             return VINF_SUCCESS;
         }
-        return rc;
+        return pSSM->rc = rc;
     }
 
     if (pSSM->enmAfter != SSMAFTER_DEBUG_IT)
         AssertMsgFailed(("SSM: attempted reading more than the unit!\n"));
-    return VERR_SSM_LOADED_TOO_MUCH;
+    return pSSM->rc = VERR_SSM_LOADED_TOO_MUCH;
 }
 
 
 /**
  * Internal read worker for reading data from a version 1 unit.
+ *
+ * @returns VBox status code, pSSM->rc is set on error.
  *
  * @param   pSSM            The saved state handle.
  * @param   pvBuf           Where to store the read data.
@@ -5326,9 +5400,7 @@ static int ssmR3DataReadFinishV2(PSSMHANDLE pSSM)
 /**
  * Read reader that keep works the progress indicator and unit offset.
  *
- * Does not set SSM::rc.
- *
- * @returns VBox status code.
+ * @returns VBox status code. Does NOT set pSSM->rc.
  * @param   pSSM            The saved state handle.
  * @param   pvBuf           Where to put the bits
  * @param   cbBuf           How many bytes to read.
@@ -5343,7 +5415,9 @@ DECLINLINE(int) ssmR3DataReadV2Raw(PSSMHANDLE pSSM, void *pvBuf, size_t cbToRead
         return VINF_SUCCESS;
     }
 
-    /** @todo weed out lazy saving */
+    if (rc == VERR_SSM_CANCELLED)
+        return rc;
+
     if (pSSM->enmAfter != SSMAFTER_DEBUG_IT)
         AssertMsgFailed(("SSM: attempted reading more than the unit!\n"));
     return VERR_SSM_LOADED_TOO_MUCH;
@@ -5353,7 +5427,7 @@ DECLINLINE(int) ssmR3DataReadV2Raw(PSSMHANDLE pSSM, void *pvBuf, size_t cbToRead
 /**
  * Reads and checks the LZF "header".
  *
- * @returns VBox status code.
+ * @returns VBox status code. Sets pSSM->rc on error.
  * @param   pSSM            The saved state handle..
  * @param   pcbDecompr      Where to store the size of the decompressed data.
  */
@@ -5368,7 +5442,7 @@ DECLINLINE(int) ssmR3DataReadV2RawLzfHdr(PSSMHANDLE pSSM, uint32_t *pcbDecompr)
     uint8_t cKB;
     int rc = ssmR3DataReadV2Raw(pSSM, &cKB, 1);
     if (RT_FAILURE(rc))
-        return rc;
+        return pSSM->rc = rc;
     pSSM->u.Read.cbRecLeft -= sizeof(cKB);
 
     uint32_t cbDecompr = (uint32_t)cKB * _1K;
@@ -5386,7 +5460,7 @@ DECLINLINE(int) ssmR3DataReadV2RawLzfHdr(PSSMHANDLE pSSM, uint32_t *pcbDecompr)
  * Reads an LZF block from the stream and decompresses into the specified
  * buffer.
  *
- * @returns VBox status code.
+ * @returns VBox status code. Sets pSSM->rc on error.
  * @param   SSM             The saved state handle.
  * @param   pvDst           Pointer to the output buffer.
  * @param   cbDecompr       The size of the decompressed data.
@@ -5410,7 +5484,7 @@ static int ssmR3DataReadV2RawLzf(PSSMHANDLE pSSM, void *pvDst, size_t cbDecompr)
     {
         rc = ssmR3DataReadV2Raw(pSSM, &pSSM->u.Read.abComprBuffer[0], cbCompr);
         if (RT_FAILURE(rc))
-            return rc;
+            return pSSM->rc = rc;
         pb = &pSSM->u.Read.abComprBuffer[0];
     }
 
@@ -5428,14 +5502,14 @@ static int ssmR3DataReadV2RawLzf(PSSMHANDLE pSSM, void *pvDst, size_t cbDecompr)
     }
 
     AssertLogRelMsgFailed(("cbCompr=%#x cbDecompr=%#x rc=%Rrc\n", cbCompr, cbDecompr, rc));
-    return VERR_SSM_INTEGRITY_DECOMPRESSION;
+    return pSSM->rc = VERR_SSM_INTEGRITY_DECOMPRESSION;
 }
 
 
 /**
  * Reads and checks the raw zero "header".
  *
- * @returns VBox status code.
+ * @returns VBox status code. Sets pSSM->rc on error.
  * @param   pSSM            The saved state handle..
  * @param   pcbDecompr      Where to store the size of the zero data.
  */
@@ -5447,7 +5521,7 @@ DECLINLINE(int) ssmR3DataReadV2RawZeroHdr(PSSMHANDLE pSSM, uint32_t *pcbZero)
     uint8_t cKB;
     int rc = ssmR3DataReadV2Raw(pSSM, &cKB, 1);
     if (RT_FAILURE(rc))
-        return rc;
+        return pSSM->rc = rc;
     pSSM->u.Read.cbRecLeft = 0;
 
     uint32_t cbZero = (uint32_t)cKB * _1K;
@@ -5467,7 +5541,7 @@ DECLINLINE(int) ssmR3DataReadV2RawZeroHdr(PSSMHANDLE pSSM, uint32_t *pcbZero)
  * read in full and validated, the fEndOfData indicator is set, and VINF_SUCCESS
  * is returned.
  *
- * @returns VBox status code.
+ * @returns VBox status code. Does not set pSSM->rc.
  * @param   pSSM            The saved state handle.
  */
 static int ssmR3DataReadRecHdrV2(PSSMHANDLE pSSM)
@@ -5747,6 +5821,8 @@ static int ssmR3DataReadUnbufferedV2(PSSMHANDLE pSSM, void *pvBuf, size_t cbBuf)
 
 /**
  * Buffer miss, do a buffered read.
+ *
+ * @returns VBox status code. Sets pSSM->rc on error.
  *
  * @param   pSSM            The saved state handle.
  * @param   pvBuf           Where to store the read data.
@@ -7345,6 +7421,7 @@ static int ssmR3OpenFile(PVM pVM, const char *pszFilename, PCSSMSTRMOPS pStreamO
     pSSM->u.Read.cbGCPtr        = UINT8_MAX;
     pSSM->u.Read.fFixedGCPtrSize= false;
     pSSM->u.Read.fIsHostMsc32   = SSM_HOST_IS_MSC_32;
+    RT_ZERO(pSSM->u.Read.szHostOSAndArch);
     pSSM->u.Read.u16VerMajor    = UINT16_MAX;
     pSSM->u.Read.u16VerMinor    = UINT16_MAX;
     pSSM->u.Read.u32VerBuild    = UINT32_MAX;
@@ -7378,7 +7455,7 @@ static int ssmR3OpenFile(PVM pVM, const char *pszFilename, PCSSMSTRMOPS pStreamO
             return rc;
 
         /* failure path */
-        ssmR3StrmClose(&pSSM->Strm);
+        ssmR3StrmClose(&pSSM->Strm, pSSM->rc == VERR_SSM_CANCELLED);
     }
     else
         Log(("SSM: Failed to open save state file '%s', rc=%Rrc.\n",  pszFilename, rc));
@@ -7703,7 +7780,8 @@ static int ssmR3LoadDirectoryAndFooter(PSSMHANDLE pSSM)
 /**
  * Executes the loading of a V2.X file.
  *
- * @returns VBox status code.
+ * @returns VBox status code.  May or may not set pSSM->rc, the returned
+ *          status code is ALWAYS the more accurate of the two.
  * @param   pVM                 The VM handle.
  * @param   pSSM                The saved state handle.
  */
@@ -8060,14 +8138,14 @@ VMMR3DECL(int) SSMR3Load(PVM pVM, const char *pszFilename, PCSSMSTRMOPS pStreamO
                 }
             }
         }
-        rc = Handle.rc;
 
         /* progress */
         if (pfnProgress)
             pfnProgress(pVM, 99, pvProgressUser);
 
         ssmR3SetCancellable(pVM, &Handle, false);
-        ssmR3StrmClose(&Handle.Strm);
+        ssmR3StrmClose(&Handle.Strm, Handle.rc == VERR_SSM_CANCELLED);
+        rc = Handle.rc;
     }
 
     /*
@@ -8210,7 +8288,7 @@ VMMR3DECL(int) SSMR3ValidateFile(const char *pszFilename, bool fChecksumIt)
     int rc = ssmR3OpenFile(NULL, pszFilename, NULL /*pStreamOps*/, NULL /*pvUser*/, fChecksumIt,
                            false /*fChecksumOnRead*/, 1 /*cBuffers*/, &Handle);
     if (RT_SUCCESS(rc))
-        ssmR3StrmClose(&Handle.Strm);
+        ssmR3StrmClose(&Handle.Strm, false /*fCancelled*/);
     else
         Log(("SSM: Failed to open saved state file '%s', rc=%Rrc.\n",  pszFilename, rc));
     return rc;
@@ -8290,7 +8368,7 @@ VMMR3DECL(int) SSMR3Close(PSSMHANDLE pSSM)
     /*
      * Close the stream and free the handle.
      */
-    int rc = ssmR3StrmClose(&pSSM->Strm);
+    int rc = ssmR3StrmClose(&pSSM->Strm, pSSM->rc == VERR_SSM_CANCELLED);
     if (pSSM->u.Read.pZipDecompV1)
     {
         RTZipDecompDestroy(pSSM->u.Read.pZipDecompV1);
@@ -8628,15 +8706,108 @@ VMMR3DECL(bool) SSMR3HandleIsLiveSave(PSSMHANDLE pSSM)
 
 
 /**
+ * Gets the maximum downtime for a live operation.
+ *
+ * @returns The max downtime in milliseconds.  Can be anything from 0 thru
+ *          UINT32_MAX.
+ *
+ * @param   pSSM            The saved state handle.
+ */
+VMMR3DECL(uint32_t) SSMR3HandleMaxDowntime(PSSMHANDLE pSSM)
+{
+    SSM_ASSERT_VALID_HANDLE(pSSM);
+    if (pSSM->enmOp <= SSMSTATE_SAVE_DONE)
+        return pSSM->u.Write.cMsMaxDowntime;
+    return UINT32_MAX;
+}
+
+
+/**
  * Gets the host bit count of a saved state.
  *
  * @returns 32 or 64. If pSSM is invalid, 0 is returned.
  * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.
  */
 VMMR3DECL(uint32_t) SSMR3HandleHostBits(PSSMHANDLE pSSM)
 {
     SSM_ASSERT_VALID_HANDLE(pSSM);
     return ssmR3GetHostBits(pSSM);
+}
+
+
+/**
+ * Get the VirtualBox SVN revision that created the saved state.
+ *
+ * @returns The revision number on success.
+ *          form.  If we don't know, it's 0.
+ * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.  Be VERY careful with this
+ *          function since it will return different values for OSE builds!
+ */
+VMMR3DECL(uint32_t)     SSMR3HandleRevision(PSSMHANDLE pSSM)
+{
+    if (pSSM->enmOp >= SSMSTATE_LOAD_PREP)
+        return pSSM->u.Read.u32SvnRev;
+#ifdef SSM_STANDALONE
+    return 0;
+#else
+    return VMMGetSvnRev();
+#endif
+}
+
+
+/**
+ * Gets the VirtualBox version that created the saved state.
+ *
+ * @returns VBOX_FULL_VERSION style version number.
+ *          Returns UINT32_MAX if unknown or somehow out of range.
+ *
+ * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.
+ */
+VMMR3DECL(uint32_t)     SSMR3HandleVersion(PSSMHANDLE pSSM)
+{
+    if (pSSM->enmOp >= SSMSTATE_LOAD_PREP)
+    {
+        if (    !pSSM->u.Read.u16VerMajor
+            &&  !pSSM->u.Read.u16VerMinor
+            &&  !pSSM->u.Read.u32VerBuild)
+            return UINT32_MAX;
+        AssertReturn(pSSM->u.Read.u16VerMajor <=   0xff, UINT32_MAX);
+        AssertReturn(pSSM->u.Read.u16VerMinor <=   0xff, UINT32_MAX);
+        AssertReturn(pSSM->u.Read.u32VerBuild <= 0xffff, UINT32_MAX);
+        return VBOX_FULL_VERSION_MAKE(pSSM->u.Read.u16VerMajor, pSSM->u.Read.u16VerMinor, pSSM->u.Read.u32VerBuild);
+    }
+    return VBOX_FULL_VERSION;
+}
+
+
+/**
+ * Get the host OS and architecture where the saved state was created.
+ *
+ * @returns Pointer to a read only string.  When known, this is on the os.arch
+ *          form.  If we don't know, it's an empty string.
+ * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.
+ */
+VMMR3DECL(const char *) SSMR3HandleHostOSAndArch(PSSMHANDLE pSSM)
+{
+    if (pSSM->enmOp >= SSMSTATE_LOAD_PREP)
+        return pSSM->u.Read.szHostOSAndArch;
+    return KBUILD_TARGET "." KBUILD_TARGET_ARCH;
 }
 
 

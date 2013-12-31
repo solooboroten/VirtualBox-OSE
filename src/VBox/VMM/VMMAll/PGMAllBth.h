@@ -1252,6 +1252,12 @@ PGM_BTH_DECL(int, InvalidatePage)(PVMCPU pVCpu, RTGCPTR GCPtrPage)
              */
             PPGMPOOLPAGE    pShwPage = pgmPoolGetPage(pPool, PdeDst.u & SHW_PDE_PG_MASK);
             RTGCPHYS        GCPhys   = PdeSrc.u & GST_PDE_PG_MASK;
+
+# ifdef PGMPOOL_WITH_OPTIMIZED_DIRTY_PT
+            /* Reset the modification counter (OpenSolaris trashes tlb entries very often) */
+            pShwPage->cModifications = 1;
+# endif
+
 # if PGM_SHW_TYPE == PGM_TYPE_PAE && PGM_GST_TYPE == PGM_TYPE_32BIT
             /* Select the right PDE as we're emulating a 4kb page table with 2 shadow page tables. */
             GCPhys |= (iPDDst & 1) * (PAGE_SIZE/2);
@@ -2387,14 +2393,27 @@ PGM_BTH_DECL(int, CheckPageFault)(PVMCPU pVCpu, uint32_t uErr, PSHWPDE pPdeDst, 
                             /* Note: No need to invalidate this entry on other VCPUs as a stale TLB entry will not harm; write access will simply
                              *       fault again and take this path to only invalidate the entry.
                              */
-                            if (    pPage
-                                &&  PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage))
+                            if (RT_LIKELY(pPage))
                             {
-                                /* Assuming write handlers here as the PTE is present (otherwise we wouldn't be here). */
-                                PteDst.n.u1Write    = 0;
+                                if (PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage))
+                                    /* Assuming write handlers here as the PTE is present (otherwise we wouldn't be here). */
+                                    PteDst.n.u1Write = 0;
+                                else
+                                {
+                                    if (   PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_WRITE_MONITORED
+                                        && PGM_PAGE_GET_TYPE(pPage)  == PGMPAGETYPE_RAM)
+                                    {
+                                        rc = pgmPhysPageMakeWritableUnlocked(pVM, pPage, pPteSrc->u & GST_PTE_PG_MASK);
+                                        AssertRC(rc);
+                                    }
+                                    if (PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_ALLOCATED)
+                                        PteDst.n.u1Write = 1;
+                                    else
+                                        PteDst.n.u1Write = 0;
+                                }
                             }
                             else
-                                PteDst.n.u1Write    = 1;
+                                PteDst.n.u1Write = 1;
 
                             PteDst.n.u1Dirty    = 1;
                             PteDst.n.u1Accessed = 1;

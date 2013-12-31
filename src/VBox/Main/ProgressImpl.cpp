@@ -59,12 +59,14 @@ HRESULT ProgressBase::FinalConstruct()
     mCanceled = FALSE;
     mResultCode = S_OK;
 
-    m_cOperations =
-    m_ulTotalOperationsWeight =
-    m_ulOperationsCompletedWeight =
-    m_ulCurrentOperation =
-    m_ulCurrentOperationWeight =
-    m_ulOperationPercent = 0;
+    m_cOperations
+        = m_ulTotalOperationsWeight
+        = m_ulOperationsCompletedWeight
+        = m_ulCurrentOperation
+        = m_ulCurrentOperationWeight
+        = m_ulOperationPercent
+        = m_cMsTimeout
+        = 0;
 
     // get creation timestamp
     m_ullTimestamp = RTTimeMilliTS();
@@ -285,6 +287,22 @@ double ProgressBase::calcTotalPercent()
     return dPercent;
 }
 
+/**
+ * Internal helper for automatically timing out the operation.
+ *
+ * The caller should hold the object write lock.
+ */
+void ProgressBase::checkForAutomaticTimeout(void)
+{
+    if (   m_cMsTimeout
+        && mCancelable
+        && !mCanceled
+        && RTTimeMilliTS() - m_ullTimestamp > m_cMsTimeout
+       )
+        Cancel();
+}
+
+
 STDMETHODIMP ProgressBase::COMGETTER(TimeRemaining)(LONG *aTimeRemaining)
 {
     CheckComArgOutPointerValid(aTimeRemaining);
@@ -325,7 +343,10 @@ STDMETHODIMP ProgressBase::COMGETTER(Percent)(ULONG *aPercent)
     AutoCaller autoCaller(this);
     CheckComRCReturnRC(autoCaller.rc());
 
-    AutoReadLock alock(this);
+    checkForAutomaticTimeout();
+
+    /* checkForAutomaticTimeout requires a write lock. */
+    AutoWriteLock alock(this);
 
     if (mCompleted && SUCCEEDED(mResultCode))
         *aPercent = 100;
@@ -342,6 +363,8 @@ STDMETHODIMP ProgressBase::COMGETTER(Percent)(ULONG *aPercent)
         else
             *aPercent = ulPercent;
     }
+
+    checkForAutomaticTimeout();
 
     return S_OK;
 }
@@ -469,6 +492,35 @@ STDMETHODIMP ProgressBase::COMGETTER(OperationPercent)(ULONG *aOperationPercent)
     return S_OK;
 }
 
+STDMETHODIMP ProgressBase::COMSETTER(Timeout)(ULONG aTimeout)
+{
+    AutoCaller autoCaller(this);
+    CheckComRCReturnRC(autoCaller.rc());
+
+    AutoWriteLock alock(this);
+
+    if (!mCancelable)
+        return setError(VBOX_E_INVALID_OBJECT_STATE,
+                        tr("Operation cannot be canceled"));
+
+    LogThisFunc(("%#x => %#x\n", m_cMsTimeout, aTimeout));
+    m_cMsTimeout = aTimeout;
+    return S_OK;
+}
+
+STDMETHODIMP ProgressBase::COMGETTER(Timeout)(ULONG *aTimeout)
+{
+    CheckComArgOutPointerValid(aTimeout);
+
+    AutoCaller autoCaller(this);
+    CheckComRCReturnRC(autoCaller.rc());
+
+    AutoReadLock alock(this);
+
+    *aTimeout = m_cMsTimeout;
+    return S_OK;
+}
+
 // public methods only for internal purposes
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -530,6 +582,7 @@ bool ProgressBase::setCancelCallback(void (*pfnCallback)(void *), void *pvUser)
 
     AutoWriteLock alock(this);
 
+    checkForAutomaticTimeout();
     if (mCanceled)
         return false;
 
@@ -920,13 +973,13 @@ STDMETHODIMP Progress::SetCurrentOperationProgress(ULONG aPercent)
 
     AssertReturn(aPercent <= 100, E_INVALIDARG);
 
+    checkForAutomaticTimeout();
     if (mCancelable && mCanceled)
     {
         Assert(!mCompleted);
         return E_FAIL;
     }
-    else
-        AssertReturn(!mCompleted && !mCanceled, E_FAIL);
+    AssertReturn(!mCompleted && !mCanceled, E_FAIL);
 
     m_ulOperationPercent = aPercent;
 
@@ -1469,6 +1522,21 @@ STDMETHODIMP CombinedProgress::COMGETTER(OperationPercent)(ULONG *aOperationPerc
     CheckComRCReturnRC(rc);
 
     return ProgressBase::COMGETTER(OperationPercent) (aOperationPercent);
+}
+
+STDMETHODIMP CombinedProgress::COMSETTER(Timeout)(ULONG aTimeout)
+{
+    NOREF(aTimeout);
+    AssertFailed();
+    return E_NOTIMPL;
+}
+
+STDMETHODIMP CombinedProgress::COMGETTER(Timeout)(ULONG *aTimeout)
+{
+    CheckComArgOutPointerValid(aTimeout);
+
+    AssertFailed();
+    return E_NOTIMPL;
 }
 
 // IProgress methods

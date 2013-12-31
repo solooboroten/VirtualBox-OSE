@@ -609,12 +609,14 @@ static int vbvaMousePointerShape (PVGASTATE pVGAState, VBVACONTEXT *pCtx, const 
     pCtx->mouseShapeInfo.fSet = true;
     pCtx->mouseShapeInfo.fVisible = fVisible;
     pCtx->mouseShapeInfo.fAlpha = fAlpha;
-    pCtx->mouseShapeInfo.u32HotX = pShape->u32HotX;
-    pCtx->mouseShapeInfo.u32HotY = pShape->u32HotY;
-    pCtx->mouseShapeInfo.u32Width = pShape->u32Width;
-    pCtx->mouseShapeInfo.u32Height = pShape->u32Height;
     if (fShape)
     {
+        /* Data related to shape. */
+        pCtx->mouseShapeInfo.u32HotX = pShape->u32HotX;
+        pCtx->mouseShapeInfo.u32HotY = pShape->u32HotY;
+        pCtx->mouseShapeInfo.u32Width = pShape->u32Width;
+        pCtx->mouseShapeInfo.u32Height = pShape->u32Height;
+
         /* Reallocate memory buffer if necessary. */
         if (cbPointerData > pCtx->mouseShapeInfo.cbAllocated)
         {
@@ -1044,6 +1046,11 @@ static unsigned vbvaVHWAHandleCommand (PVGASTATE pVGAState, VBVACONTEXT *pCtx, P
     return 0;
 }
 
+static DECLCALLBACK(void) vbvaVHWAHHCommandSetEventCallback(void * pContext)
+{
+    RTSemEventSignal((RTSEMEVENT)pContext);
+}
+
 static int vbvaVHWAHHCommandPost(PVGASTATE pVGAState, VBOXVHWACMD* pCmd)
 {
     RTSEMEVENT hComplEvent;
@@ -1053,7 +1060,7 @@ static int vbvaVHWAHHCommandPost(PVGASTATE pVGAState, VBOXVHWACMD* pCmd)
     {
         /* ensure the cmd is not deleted until we process it */
         vbvaVHWAHHCommandRetain (pCmd);
-        pCmd->GuestVBVAReserved1 = (uint64_t)hComplEvent;
+        VBOXVHWA_HH_CALLBACK_SET(pCmd, vbvaVHWAHHCommandSetEventCallback, (void*)hComplEvent);
         vbvaVHWAHandleCommand(pVGAState, NULL, pCmd);
         if((ASMAtomicReadU32((volatile uint32_t *)&pCmd->Flags)  & VBOXVHWACMD_FLAG_HG_ASYNCH) != 0)
         {
@@ -1248,10 +1255,10 @@ int vbvaVHWACommandCompleteAsynch(PPDMDDISPLAYVBVACALLBACKS pInterface, PVBOXVHW
     }
     else
     {
-        if(pCmd->GuestVBVAReserved1)
+        PFNVBOXVHWA_HH_CALLBACK pfn = VBOXVHWA_HH_CALLBACK_GET(pCmd);
+        if(pfn)
         {
-            RTSEMEVENT hComplEvent = (RTSEMEVENT)pCmd->GuestVBVAReserved1;
-            RTSemEventSignal(hComplEvent);
+            pfn(VBOXVHWA_HH_CALLBACK_GET_ARG(pCmd));
         }
         rc = VINF_SUCCESS;
     }
@@ -1552,7 +1559,12 @@ void VBVAReset (PVGASTATE pVGAState)
     vbvaVHWAReset (pVGAState);
 #endif
 
-    HGSMIReset (pVGAState->pHGSMI);
+    uint32_t HgFlags = HGSMIReset (pVGAState->pHGSMI);
+    if(HgFlags & HGSMIHOSTFLAGS_IRQ)
+    {
+        /* this means the IRQ is LEVEL_HIGH, need to reset it */
+        PDMDevHlpPCISetIrq(pVGAState->pDevInsR3, 0, PDM_IRQ_LEVEL_LOW);
+    }
 
     if (pCtx)
     {

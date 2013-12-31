@@ -441,6 +441,10 @@ typedef struct AHCIPort
 
     uint32_t                        u32Alignment5[4];
 
+#if HC_ARCH_BITS == 32
+    uint32_t                        u32Alignment6;
+#endif
+
     /** Release statistics: number of DMA commands. */
     STAMCOUNTER                     StatDMA;
     /** Release statistics: number of bytes written. */
@@ -479,7 +483,7 @@ typedef struct AHCIPort
     /** The revision string for SCSI INQUIRY commands. */
     char                            szInquiryRevision[AHCI_ATAPI_INQUIRY_REVISION_LENGTH+1];
 
-    uint32_t                        Alignment6;
+    uint32_t                        Alignment7;
 
 } AHCIPort, *PAHCIPort;
 

@@ -102,12 +102,26 @@ HRESULT Display::FinalConstruct()
     mLastWidth = 0;
     mLastHeight = 0;
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    int rc = RTCritSectInit (&mVBVALock);
+    AssertRC (rc);
+    mfu32PendingVideoAccelDisable = false;
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
     return S_OK;
 }
 
 void Display::FinalRelease()
 {
     uninit();
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    if (RTCritSectIsInitialized (&mVBVALock))
+    {
+        RTCritSectDelete (&mVBVALock);
+        memset (&mVBVALock, 0, sizeof (mVBVALock));
+    }
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
 }
 
 // public initializer/uninitializer for internal purposes only
@@ -405,7 +419,11 @@ Display::displaySSMSaveScreenshot(PSSMHANDLE pSSM, void *pvUser)
         uint32_t cy = 0;
 
         /* SSM code is executed on EMT(0), therefore no need to use VMR3ReqCallWait. */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+        int rc = Display::displayTakeScreenshotEMT(that, &pu8Data, &cbData, &cx, &cy);
+#else
         int rc = that->mpDrv->pUpPort->pfnTakeScreenshot (that->mpDrv->pUpPort, &pu8Data, &cbData, &cx, &cy);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
         if (RT_SUCCESS(rc))
         {
@@ -966,6 +984,13 @@ unsigned mapCoordsToScreen(DISPLAYFBINFO *pInfos, unsigned cInfos, int *px, int 
  */
 void Display::handleDisplayUpdate (int x, int y, int w, int h)
 {
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    /*
+     * Always runs under either VBVA lock or, for HGSMI, DevVGA lock.
+     * Safe to use VBVA vars and take the framebuffer lock.
+     */
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
 #ifdef DEBUG_sunlover
     LogFlowFunc (("%d,%d %dx%d (%d,%d)\n",
                   x, y, w, h, mpDrv->Connector.cx, mpDrv->Connector.cy));
@@ -1161,10 +1186,37 @@ bool Display::VideoAccelAllowed (void)
     return true;
 }
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+int Display::vbvaLock(void)
+{
+    return RTCritSectEnter(&mVBVALock);
+}
+
+void Display::vbvaUnlock(void)
+{
+    RTCritSectLeave(&mVBVALock);
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+    
 /**
  * @thread EMT
  */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
 int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
+{
+    int rc;
+    vbvaLock();
+    rc = videoAccelEnable (fEnable, pVbvaMemory);
+    vbvaUnlock();
+    return rc;
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+int Display::videoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
+#else
+int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 {
     int rc = VINF_SUCCESS;
 
@@ -1217,7 +1269,11 @@ int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
     if (mfVideoAccelEnabled)
     {
         /* Process any pending orders and empty the VBVA ring buffer. */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+        videoAccelFlush ();
+#else
         VideoAccelFlush ();
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
     }
 
     if (!fEnable && mpVbvaMemory)
@@ -1261,6 +1317,10 @@ int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
         mpVbvaMemory->indexRecordFirst = 0;
         mpVbvaMemory->indexRecordFree = 0;
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+        mfu32PendingVideoAccelDisable = false;
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
         LogRel(("VBVA: Enabled.\n"));
     }
     else
@@ -1278,6 +1338,10 @@ int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
  */
 void Display::VideoAccelVRDP (bool fEnable)
 {
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    vbvaLock();
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
     int c = fEnable?
                 ASMAtomicIncS32 (&mcVideoAccelVRDPRefs):
                 ASMAtomicDecS32 (&mcVideoAccelVRDPRefs);
@@ -1320,6 +1384,9 @@ void Display::VideoAccelVRDP (bool fEnable)
          */
         Assert (mfVideoAccelVRDP == true);
     }
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    vbvaUnlock();
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
 }
 #endif /* VBOX_WITH_VRDP */
 
@@ -1594,7 +1661,21 @@ void Display::vbvaReleaseCmd (VBVACMDHDR *pHdr, int32_t cbCmd)
  *
  * @thread EMT
  */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
 void Display::VideoAccelFlush (void)
+{
+    vbvaLock();
+    videoAccelFlush();
+    vbvaUnlock();
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+/* Under VBVA lock. DevVGA is not taken. */
+void Display::videoAccelFlush (void)
+#else
+void Display::VideoAccelFlush (void)
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 {
 #ifdef DEBUG_sunlover_2
     LogFlowFunc (("mfVideoAccelEnabled = %d\n", mfVideoAccelEnabled));
@@ -1622,6 +1703,7 @@ void Display::VideoAccelFlush (void)
 
     /* Process the ring buffer */
     unsigned uScreenId;
+#ifndef VBOX_WITH_OLD_VBVA_LOCK
     for (uScreenId = 0; uScreenId < mcMonitors; uScreenId++)
     {
         if (!maFramebuffers[uScreenId].pFramebuffer.isNull())
@@ -1629,6 +1711,7 @@ void Display::VideoAccelFlush (void)
             maFramebuffers[uScreenId].pFramebuffer->Lock ();
         }
     }
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
     /* Initialize dirty rectangles accumulator. */
     VBVADIRTYREGION rgn;
@@ -1646,7 +1729,11 @@ void Display::VideoAccelFlush (void)
                   mpVbvaMemory->off32Data, mpVbvaMemory->off32Free));
 
             /* Disable VBVA on those processing errors. */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+            videoAccelEnable (false, NULL);
+#else
             VideoAccelEnable (false, NULL);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
             break;
         }
@@ -1709,10 +1796,12 @@ void Display::VideoAccelFlush (void)
 
     for (uScreenId = 0; uScreenId < mcMonitors; uScreenId++)
     {
+#ifndef VBOX_WITH_OLD_VBVA_LOCK
         if (!maFramebuffers[uScreenId].pFramebuffer.isNull())
         {
             maFramebuffers[uScreenId].pFramebuffer->Unlock ();
         }
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
         if (maFramebuffers[uScreenId].u32ResizeStatus == ResizeStatus_Void)
         {
@@ -1721,6 +1810,60 @@ void Display::VideoAccelFlush (void)
         }
     }
 }
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+int Display::videoAccelRefreshProcess(void)
+{
+    int rc = VWRN_INVALID_STATE; /* Default is to do a display update in VGA device. */
+
+    vbvaLock();
+
+    if (ASMAtomicCmpXchgU32(&mfu32PendingVideoAccelDisable, false, true))
+    {
+        videoAccelEnable (false, NULL);
+    }
+    else if (mfPendingVideoAccelEnable)
+    {
+        /* Acceleration was enabled while machine was not yet running
+         * due to restoring from saved state. Update entire display and
+         * actually enable acceleration.
+         */
+        Assert(mpPendingVbvaMemory);
+
+        /* Acceleration can not be yet enabled.*/
+        Assert(mpVbvaMemory == NULL);
+        Assert(!mfVideoAccelEnabled);
+
+        if (mfMachineRunning)
+        {
+            videoAccelEnable (mfPendingVideoAccelEnable,
+                              mpPendingVbvaMemory);
+
+            /* Reset the pending state. */
+            mfPendingVideoAccelEnable = false;
+            mpPendingVbvaMemory = NULL;
+        }
+
+        rc = VINF_TRY_AGAIN;
+    }
+    else
+    {
+        Assert(mpPendingVbvaMemory == NULL);
+
+        if (mfVideoAccelEnabled)
+        {
+            Assert(mpVbvaMemory);
+            videoAccelFlush ();
+
+            rc = VINF_SUCCESS; /* VBVA processed, no need to a display update. */
+        }
+    }
+
+    vbvaUnlock();
+
+    return rc;
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
 
 
 // IDisplay properties
@@ -1931,16 +2074,36 @@ STDMETHODIMP Display::SetSeamlessMode (BOOL enabled)
     return S_OK;
 }
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+int Display::displayTakeScreenshotEMT(Display *pDisplay, uint8_t **ppu8Data, size_t *pcbData, uint32_t *pu32Width, uint32_t *pu32Height)
+{
+   int rc;
+   pDisplay->vbvaLock();
+   rc = pDisplay->mpDrv->pUpPort->pfnTakeScreenshot(pDisplay->mpDrv->pUpPort, ppu8Data, pcbData, pu32Width, pu32Height);
+   pDisplay->vbvaUnlock();
+   return rc;
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+static int displayTakeScreenshot(PVM pVM, Display *pDisplay, struct DRVMAINDISPLAY *pDrv, BYTE *address, ULONG width, ULONG height)
+#else
 static int displayTakeScreenshot(PVM pVM, struct DRVMAINDISPLAY *pDrv, BYTE *address, ULONG width, ULONG height)
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 {
     uint8_t *pu8Data = NULL;
     size_t cbData = 0;
     uint32_t cx = 0;
     uint32_t cy = 0;
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    int vrc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)Display::displayTakeScreenshotEMT, 5,
+                              pDisplay, &pu8Data, &cbData, &cx, &cy);
+#else
     /* @todo pfnTakeScreenshot is probably callable from any thread, because it uses the VGA device lock. */
     int vrc = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)pDrv->pUpPort->pfnTakeScreenshot, 5,
                               pDrv->pUpPort, &pu8Data, &cbData, &cx, &cy);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
     if (RT_SUCCESS(vrc))
     {
@@ -2015,7 +2178,11 @@ STDMETHODIMP Display::TakeScreenShot (BYTE *address, ULONG width, ULONG height)
      */
     alock.leave();
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    int vrc = displayTakeScreenshot(pVM, this, mpDrv, address, width, height);
+#else
     int vrc = displayTakeScreenshot(pVM, mpDrv, address, width, height);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
     if (vrc == VERR_NOT_IMPLEMENTED)
         rc = setError (E_NOTIMPL,
@@ -2067,7 +2234,11 @@ STDMETHODIMP Display::TakeScreenShotSlow (ULONG width, ULONG height,
     if (!pu8Data)
         return E_OUTOFMEMORY;
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    int vrc = displayTakeScreenshot(pVM, this, mpDrv, pu8Data, width, height);
+#else
     int vrc = displayTakeScreenshot(pVM, mpDrv, pu8Data, width, height);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
     if (RT_SUCCESS(vrc))
     {
@@ -2101,6 +2272,16 @@ STDMETHODIMP Display::TakeScreenShotSlow (ULONG width, ULONG height,
     return rc;
 }
 
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+int Display::DrawToScreenEMT(Display *pDisplay, BYTE *address, ULONG x, ULONG y, ULONG width, ULONG height)
+{
+    int rc;
+    pDisplay->vbvaLock();
+    rc = pDisplay->mpDrv->pUpPort->pfnDisplayBlt(pDisplay->mpDrv->pUpPort, address, x, y, width, height);
+    pDisplay->vbvaUnlock();
+    return rc;
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
 
 STDMETHODIMP Display::DrawToScreen (BYTE *address, ULONG x, ULONG y,
                                     ULONG width, ULONG height)
@@ -2133,8 +2314,13 @@ STDMETHODIMP Display::DrawToScreen (BYTE *address, ULONG x, ULONG y,
      * Again we're lazy and make the graphics device do all the
      * dirty conversion work.
      */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    int rcVBox = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)Display::DrawToScreenEMT, 6,
+                                 this, address, x, y, width, height);
+#else
     int rcVBox = VMR3ReqCallWait(pVM, VMCPUID_ANY, (PFNRT)mpDrv->pUpPort->pfnDisplayBlt, 6,
                                  mpDrv->pUpPort, address, x, y, width, height);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 
     /*
      * If the function returns not supported, we'll have to do all the
@@ -2160,6 +2346,15 @@ STDMETHODIMP Display::DrawToScreen (BYTE *address, ULONG x, ULONG y,
     LogFlowFuncLeave();
     return rc;
 }
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+void Display::InvalidateAndUpdateEMT(Display *pDisplay)
+{
+    pDisplay->vbvaLock();
+    pDisplay->mpDrv->pUpPort->pfnUpdateDisplayAll(pDisplay->mpDrv->pUpPort);
+    pDisplay->vbvaUnlock();
+}
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
 
 /**
  * Does a full invalidation of the VM display and instructs the VM
@@ -2189,8 +2384,13 @@ STDMETHODIMP Display::InvalidateAndUpdate()
     alock.leave ();
 
     /* pdm.h says that this has to be called from the EMT thread */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    int rcVBox = VMR3ReqCallVoidWait(pVM, VMCPUID_ANY, (PFNRT)Display::InvalidateAndUpdateEMT,
+                                     1, this);
+#else
     int rcVBox = VMR3ReqCallVoidWait(pVM, VMCPUID_ANY,
                                      (PFNRT)mpDrv->pUpPort->pfnUpdateDisplayAll, 1, mpDrv->pUpPort);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
     alock.enter ();
 
     if (RT_FAILURE(rcVBox))
@@ -2486,7 +2686,15 @@ DECLCALLBACK(void) Display::displayRefreshCallback(PPDMIDISPLAYCONNECTOR pInterf
             {
                 /* Repaint the display because VM continued to run during the framebuffer resize. */
                 if (!pFBInfo->pFramebuffer.isNull())
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+                {
+                    pDisplay->vbvaLock();
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
                     pDrv->pUpPort->pfnUpdateDisplayAll(pDrv->pUpPort);
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+                    pDisplay->vbvaUnlock();
+                }
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
             }
         }
         else if (u32ResizeStatus == ResizeStatus_InProgress)
@@ -2500,6 +2708,42 @@ DECLCALLBACK(void) Display::displayRefreshCallback(PPDMIDISPLAYCONNECTOR pInterf
 
     if (!fNoUpdate)
     {
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+        int rc = pDisplay->videoAccelRefreshProcess();
+
+        if (rc != VINF_TRY_AGAIN) /* Means 'do nothing' here. */
+        {
+            if (rc == VWRN_INVALID_STATE)
+            {
+                /* No VBVA do a display update. */
+                DISPLAYFBINFO *pFBInfo = &pDisplay->maFramebuffers[VBOX_VIDEO_PRIMARY_SCREEN];
+                if (!pFBInfo->pFramebuffer.isNull() && pFBInfo->u32ResizeStatus == ResizeStatus_Void)
+                {
+                    Assert(pDrv->Connector.pu8Data);
+                    pDisplay->vbvaLock();
+                    pDrv->pUpPort->pfnUpdateDisplay(pDrv->pUpPort);
+                    pDisplay->vbvaUnlock();
+                }
+            }
+
+            /* Inform the VRDP server that the current display update sequence is
+             * completed. At this moment the framebuffer memory contains a definite
+             * image, that is synchronized with the orders already sent to VRDP client.
+             * The server can now process redraw requests from clients or initial
+             * fullscreen updates for new clients.
+             */
+            for (uScreenId = 0; uScreenId < pDisplay->mcMonitors; uScreenId++)
+            {
+                DISPLAYFBINFO *pFBInfo = &pDisplay->maFramebuffers[uScreenId];
+
+                if (!pFBInfo->pFramebuffer.isNull() && pFBInfo->u32ResizeStatus == ResizeStatus_Void)
+                {
+                    Assert (pDisplay->mParent && pDisplay->mParent->consoleVRDPServer());
+                    pDisplay->mParent->consoleVRDPServer()->SendUpdate (uScreenId, NULL, 0);
+                }
+            }
+        }
+#else
         if (pDisplay->mfPendingVideoAccelEnable)
         {
             /* Acceleration was enabled while machine was not yet running
@@ -2559,6 +2803,7 @@ DECLCALLBACK(void) Display::displayRefreshCallback(PPDMIDISPLAYCONNECTOR pInterf
                 }
             }
         }
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
     }
 
 #ifdef DEBUG_sunlover
@@ -2598,7 +2843,12 @@ DECLCALLBACK(void) Display::displayLFBModeChangeCallback(PPDMIDISPLAYCONNECTOR p
     NOREF(fEnabled);
 
     /* Disable VBVA mode in any case. The guest driver reenables VBVA mode if necessary. */
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    /* This is called under DevVGA lock. Postpone disabling VBVA, do it in the refresh timer. */
+    ASMAtomicWriteU32(&pDrv->pDisplay->mfu32PendingVideoAccelDisable, true);
+#else
     pDrv->pDisplay->VideoAccelEnable (false, NULL);
+#endif /* !VBOX_WITH_OLD_VBVA_LOCK */
 }
 
 /**

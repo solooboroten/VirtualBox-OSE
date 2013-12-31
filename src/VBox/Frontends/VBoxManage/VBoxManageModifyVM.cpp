@@ -203,7 +203,8 @@ static const RTGETOPTDEF g_aModifyVMOptions[] =
     { "--usbehci",                  MODIFYVM_USBEHCI,                   RTGETOPT_REQ_BOOL_ONOFF },
     { "--usb",                      MODIFYVM_USB,                       RTGETOPT_REQ_BOOL_ONOFF },
     { "--snapshotfolder",           MODIFYVM_SNAPSHOTFOLDER,            RTGETOPT_REQ_STRING },
-    { "--teleporterenabled",        MODIFYVM_TELEPORTER_ENABLED,        RTGETOPT_REQ_BOOL_ONOFF },
+    { "--teleporter",               MODIFYVM_TELEPORTER_ENABLED,        RTGETOPT_REQ_BOOL_ONOFF },
+    { "--teleporterenabled",        MODIFYVM_TELEPORTER_ENABLED,        RTGETOPT_REQ_BOOL_ONOFF }, /* deprecated */
     { "--teleporterport",           MODIFYVM_TELEPORTER_PORT,           RTGETOPT_REQ_UINT32 },
     { "--teleporteraddress",        MODIFYVM_TELEPORTER_ADDRESS,        RTGETOPT_REQ_STRING },
     { "--teleporterpassword",       MODIFYVM_TELEPORTER_PASSWORD,       RTGETOPT_REQ_STRING },
@@ -301,9 +302,13 @@ int handleModifyVM(HandlerArg *a)
 
             case MODIFYVM_FIRMWARE:
             {
-                if (!strcmp(ValueUnion.psz, "efi") || !strcmp(ValueUnion.psz, "efi32"))
+                if (!strcmp(ValueUnion.psz, "efi"))
                 {
                     CHECK_ERROR(machine, COMSETTER(FirmwareType)(FirmwareType_EFI));
+                }
+                else if (!strcmp(ValueUnion.psz, "efi32"))
+                {
+                    CHECK_ERROR(machine, COMSETTER(FirmwareType)(FirmwareType_EFI32));
                 }
                 else if (!strcmp(ValueUnion.psz, "efi64"))
                 {
@@ -1406,11 +1411,6 @@ int handleModifyVM(HandlerArg *a)
                 }
 #endif /* RT_OS_WINDOWS */
 #ifdef RT_OS_LINUX
-                else if (!strcmp(ValueUnion.psz, "oss"))
-                {
-                    CHECK_ERROR(audioAdapter, COMSETTER(AudioDriver)(AudioDriverType_OSS));
-                    CHECK_ERROR(audioAdapter, COMSETTER(Enabled)(true));
-                }
 # ifdef VBOX_WITH_ALSA
                 else if (!strcmp(ValueUnion.psz, "alsa"))
                 {
@@ -1432,15 +1432,6 @@ int handleModifyVM(HandlerArg *a)
                     CHECK_ERROR(audioAdapter, COMSETTER(AudioDriver)(AudioDriverType_SolAudio));
                     CHECK_ERROR(audioAdapter, COMSETTER(Enabled)(true));
                 }
-
-# ifdef VBOX_WITH_SOLARIS_OSS
-                else if (!strcmp(ValueUnion.psz, "oss"))
-                {
-                    CHECK_ERROR(audioAdapter, COMSETTER(AudioDriver)(AudioDriverType_OSS));
-                    CHECK_ERROR(audioAdapter, COMSETTER(Enabled)(true));
-                }
-# endif
-
 #endif /* !RT_OS_SOLARIS */
 #ifdef RT_OS_DARWIN
                 else if (!strcmp(ValueUnion.psz, "coreaudio"))
@@ -1450,6 +1441,13 @@ int handleModifyVM(HandlerArg *a)
                 }
 
 #endif /* !RT_OS_DARWIN */
+# if defined(RT_OS_FREEBSD) || defined(RT_OS_LINUX) || defined(VBOX_WITH_SOLARIS_OSS)
+                else if (!strcmp(ValueUnion.psz, "oss"))
+                {
+                    CHECK_ERROR(audioAdapter, COMSETTER(AudioDriver)(AudioDriverType_OSS));
+                    CHECK_ERROR(audioAdapter, COMSETTER(Enabled)(true));
+                }
+# endif
                 else
                 {
                     errorArgument("Invalid --audio argument '%s'", ValueUnion.psz);

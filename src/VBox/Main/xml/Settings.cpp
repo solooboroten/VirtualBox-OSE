@@ -1591,6 +1591,8 @@ void MachineConfigFile::readHardware(const xml::ElementNode &elmHardware,
                           || (strFirmwareType == "2")           // some trunk builds used the number here
                         )
                     hw.firmwareType = FirmwareType_EFI;
+                else if (    strFirmwareType == "EFI32")
+                    hw.firmwareType = FirmwareType_EFI32;
                 else if (    strFirmwareType == "EFI64")
                     hw.firmwareType = FirmwareType_EFI64;
                 else if (    strFirmwareType == "EFIDUAL")
@@ -2459,12 +2461,15 @@ void MachineConfigFile::writeHardware(xml::ElementNode &elmParent,
     if (hw.fSyntheticCpu)
         pelmCPU->createChild("SyntheticCpu")->setAttribute("enabled", hw.fSyntheticCpu);
     pelmCPU->setAttribute("count", hw.cCPUs);
-    xml::ElementNode *pelmCpuIdTree = pelmCPU->createChild("CpuIdTree");
+    xml::ElementNode *pelmCpuIdTree = NULL;
     for (CpuIdLeafsList::const_iterator it = hw.llCpuIdLeafs.begin();
          it != hw.llCpuIdLeafs.end();
          ++it)
     {
         const CpuIdLeaf &leaf = *it;
+
+        if (pelmCpuIdTree == NULL)
+             pelmCpuIdTree = pelmCPU->createChild("CpuIdTree");
 
         xml::ElementNode *pelmCpuIdLeaf = pelmCpuIdTree->createChild("CpuIdLeaf");
         pelmCpuIdLeaf->setAttribute("id",  leaf.ulId);
@@ -2487,6 +2492,7 @@ void MachineConfigFile::writeHardware(xml::ElementNode &elmParent,
          switch (hw.firmwareType)
          {
             case FirmwareType_EFI:      pcszFirmware = "EFI";   break;
+            case FirmwareType_EFI32:    pcszFirmware = "EFI32"; break;
             case FirmwareType_EFI64:    pcszFirmware = "EFI64"; break;
             case FirmwareType_EFIDUAL:  pcszFirmware = "EFIDUAL"; break;
             default:                    pcszFirmware = "None"; break;

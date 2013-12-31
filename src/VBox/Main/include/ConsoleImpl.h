@@ -146,7 +146,7 @@ public:
                             IProgress **aProgress);
     STDMETHOD(DeleteSnapshot)(IN_BSTR aId, IProgress **aProgress);
     STDMETHOD(RestoreSnapshot)(ISnapshot *aSnapshot, IProgress **aProgress);
-    STDMETHOD(Teleport)(IN_BSTR aHostname, ULONG aPort, IN_BSTR aPassword, IProgress **aProgress);
+    STDMETHOD(Teleport)(IN_BSTR aHostname, ULONG aPort, IN_BSTR aPassword, ULONG aMaxDowntime, IProgress **aProgress);
     STDMETHOD(RegisterCallback) (IConsoleCallback *aCallback);
     STDMETHOD(UnregisterCallback)(IConsoleCallback *aCallback);
 
@@ -562,6 +562,8 @@ private:
     bool mVMDestroying : 1;
     /** true when power down is initiated by vmstateChangeCallback (EMT) */
     bool mVMPoweredOff : 1;
+    /** true when vmstateChangeCallback shouldn't initiate a power down.  */
+    bool mVMIsAlreadyPoweringOff : 1;
 
     /** The current network attachment type in the VM.
      * This doesn't have to match the network attachment type

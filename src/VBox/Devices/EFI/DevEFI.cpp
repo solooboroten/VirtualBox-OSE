@@ -762,10 +762,21 @@ static int efiLoadRom(PDEVEFI pThis, PCFGMNODE pCfgHandle)
  */
 static int efiLoadThunk(PDEVEFI pThis, PCFGMNODE pCfgHandle)
 {
+    uint8_t f64BitEntry = 0;
+    int rc;
+
+    rc = CFGMR3QueryU8Def(pCfgHandle, "64BitEntry", &f64BitEntry, 0);
+    if (RT_FAILURE (rc))
+        return PDMDEV_SET_ERROR(pThis->pDevIns, rc,
+                                N_("Configuration error: Failed to read \"64BitEntry\""));
+
     /*
      * Make a copy of the page and set the values of the DEVEFIINFO structure
      * found at the beginning of it.
      */
+
+    if (f64BitEntry)
+        LogRel(("Using 64-bit EFI firmware\n"));
 
     /* Duplicate the page so we can change it. */
     AssertRelease(g_cbEfiThunkBinary == PAGE_SIZE);
@@ -784,15 +795,16 @@ static int efiLoadThunk(PDEVEFI pThis, PCFGMNODE pCfgHandle)
     AssertRelease(pEfiInfo->cbFwVol == (uint32_t)pThis->cbEfiRom);
     pEfiInfo->cbBelow4GB    = pThis->cbBelow4GB;
     pEfiInfo->cbAbove4GB    = pThis->cbAbove4GB;
-    pEfiInfo->fFlags        = 0; /* todo 0 bit makes 64-bit fw to boot need some knitting with GUI */
+    /* zeroth bit controls use of 64-bit entry point in fw */
+    pEfiInfo->fFlags        = f64BitEntry ? 1 : 0;
     pEfiInfo->cCpus         = pThis->cCpus;
     pEfiInfo->pfnPeiEP      = (uint32_t)pThis->GCEntryPoint1;
     pEfiInfo->u32Reserved2  = 0;
 
     /* Register the page as a ROM (data will be copied). */
-    int rc = PDMDevHlpROMRegister(pThis->pDevIns, UINT32_C(0xfffff000), PAGE_SIZE,
-                                  pThis->pu8EfiThunk,
-                                  PGMPHYS_ROM_FLAGS_PERMANENT_BINARY, "EFI Thunk");
+    rc = PDMDevHlpROMRegister(pThis->pDevIns, UINT32_C(0xfffff000), PAGE_SIZE,
+                              pThis->pu8EfiThunk,
+                              PGMPHYS_ROM_FLAGS_PERMANENT_BINARY, "EFI Thunk");
     if (RT_FAILURE(rc))
         return rc;
 
@@ -869,9 +881,14 @@ static DECLCALLBACK(int)  efiConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
                               "DmiOEMVBoxVer\0"
                               "DmiOEMVBoxRev\0"
 #endif
+                              "64BitEntry\0"
                               ))
         return PDMDEV_SET_ERROR(pDevIns, VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES,
                                 N_("Configuration error: Invalid config value(s) for the EFI device"));
+
+    /* CPU count (optional). */
+    rc = CFGMR3QueryU32Def(pCfgHandle, "NumCPUs", &pThis->cCpus, 1);
+    AssertLogRelRCReturn(rc, rc);
 
     rc = CFGMR3QueryU8Def(pCfgHandle, "IOAPIC", &pThis->u8IOAPIC, 1);
     if (RT_FAILURE (rc))
@@ -894,6 +911,7 @@ static DECLCALLBACK(int)  efiConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     rc = sharedfwPlantDMITable(pDevIns, pThis->au8DMIPage, VBOX_DMI_TABLE_SIZE, &uuid, pCfgHandle);
     if (RT_FAILURE(rc))
         return rc;
+
     if (pThis->u8IOAPIC)
         sharedfwPlantMpsTable(pDevIns, pThis->au8DMIPage + VBOX_DMI_TABLE_SIZE, pThis->cCpus);
 
@@ -910,9 +928,7 @@ static DECLCALLBACK(int)  efiConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     pThis->cbBelow4GB = RT_MIN(pThis->cbRam, _4G - pThis->cbRamHole);
     pThis->cbAbove4GB = pThis->cbRam - pThis->cbBelow4GB;
 
-    /* CPU count (optional). */
-    rc = CFGMR3QueryU32Def(pCfgHandle, "NumCPUs", &pThis->cCpus, 1);
-    AssertLogRelRCReturn(rc, rc);
+
     /*
      * Get the system EFI ROM file name.
      */
@@ -927,7 +943,7 @@ static DECLCALLBACK(int)  efiConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
         AssertRCReturn(rc, rc);
 
         size_t offFilename = strlen(pThis->pszEfiRomFile);
-        strcpy(pThis->pszEfiRomFile+offFilename, "/vboxefi.fv");
+        strcpy(pThis->pszEfiRomFile+offFilename, "/VBoxEFI32.fd");
         rc = VINF_SUCCESS;
     }
     else if (RT_FAILURE(rc))

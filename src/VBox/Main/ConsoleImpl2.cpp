@@ -132,63 +132,23 @@ const char* controllerString(StorageControllerType_T enmType)
 # pragma optimize("g", off)
 #endif
 
-static int findEfiRom(FirmwareType_T aFirmwareType, Utf8Str& aEfiRomFile)
+static int findEfiRom(IVirtualBox* vbox, FirmwareType_T aFirmwareType, Utf8Str& aEfiRomFile)
 {
-    /** @todo: combine with similar table in VirtualBox::CheckFirmwarePresent */
-    static const struct {
-        FirmwareType_T type;
-        const char*    fileName;
-    } firmwareDesc[] = {
-        {
-            /* compiled-in firmware */
-            FirmwareType_BIOS,    NULL,
-        },
-        {
-            FirmwareType_EFI,     "vboxefi.fv"
-        },
-        {
-            FirmwareType_EFI64,   "vboxefi64.fv"
-        },
-        {
-            FirmwareType_EFIDUAL, "vboxefidual.fv"
-        }
-    };
+    int rc;
+    BOOL fPresent = FALSE;
+    Bstr aFilePath, empty;
 
+    rc = vbox->CheckFirmwarePresent(aFirmwareType, empty,
+                                    empty.asOutParam(), aFilePath.asOutParam(), &fPresent);
+    if (RT_FAILURE(rc))
+        AssertComRCReturn (rc, VERR_FILE_NOT_FOUND);
 
-     for (size_t i = 0; i < sizeof(firmwareDesc) / sizeof(firmwareDesc[0]); i++)
-    {
-        if (aFirmwareType != firmwareDesc[i].type)
-            continue;
-
-        AssertRCReturn(firmwareDesc[i].fileName != NULL, E_INVALIDARG);
-
-        /* Search in ~/.VirtualBox/Firmware and RTPathAppPrivateArch() */
-        char pszVBoxPath[RTPATH_MAX];
-        int rc;
-
-        rc = com::GetVBoxUserHomeDirectory(pszVBoxPath, sizeof(pszVBoxPath)); AssertRCReturn(rc, rc);
-        aEfiRomFile = Utf8StrFmt("%s%cFirmware%c%s",
-                                 pszVBoxPath,
-                                 RTPATH_DELIMITER,
-                                 RTPATH_DELIMITER,
-                                 firmwareDesc[i].fileName);
-        if (RTFileExists(aEfiRomFile.raw()))
-            return S_OK;
-
-        rc = RTPathExecDir(pszVBoxPath, RTPATH_MAX); AssertRCReturn(rc, rc);
-        aEfiRomFile = Utf8StrFmt("%s%c%s",
-                              pszVBoxPath,
-                              RTPATH_DELIMITER,
-                              firmwareDesc[i].fileName);
-
-        if (RTFileExists(aEfiRomFile.raw()))
-            return S_OK;
-
-        aEfiRomFile = "";
+    if (!fPresent)
         return VERR_FILE_NOT_FOUND;
-    }
 
-     return E_INVALIDARG;
+    aEfiRomFile = Utf8Str(aFilePath);
+
+    return S_OK;
 }
 
 /**
@@ -210,6 +170,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     /* Note: hardcoded assumption about number of slots; see rom bios */
     bool afPciDeviceNo[32] = {false};
     bool fFdcEnabled = false;
+    BOOL fIs64BitGuest = false;
 
 #if !defined (VBOX_WITH_XPCOM)
     {
@@ -376,7 +337,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         BOOL fSupportsLongMode = false;
         hrc = host->GetProcessorFeature(ProcessorFeature_LongMode,
                                         &fSupportsLongMode);                        H();
-        BOOL fIs64BitGuest = false;
         hrc = guestOSType->COMGETTER(Is64Bit)(&fIs64BitGuest);                      H();
 
         if (fSupportsLongMode && fIs64BitGuest)
@@ -826,7 +786,18 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     {
         Utf8Str efiRomFile;
 
-        rc = findEfiRom(eFwType, efiRomFile);                                       RC_CHECK();
+        /* Autodetect firmware type, basing on guest type */
+        if (eFwType == FirmwareType_EFI)
+        {
+            eFwType =
+                    fIs64BitGuest ?
+                    (FirmwareType_T)FirmwareType_EFI64
+                    :
+                    (FirmwareType_T)FirmwareType_EFI32;
+        }
+
+        rc = findEfiRom(virtualBox, eFwType, efiRomFile);                                                                                                                          RC_CHECK();
+        bool f64BitEntry = eFwType == FirmwareType_EFI64;
         /*
          * EFI.
          */
@@ -840,6 +811,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertString(pCfg,   "EfiRom",           efiRomFile.raw());      RC_CHECK();
         rc = CFGMR3InsertInteger(pCfg,  "IOAPIC",               fIOAPIC);           RC_CHECK();
         rc = CFGMR3InsertBytes(pCfg,    "UUID", &HardwareUuid,sizeof(HardwareUuid));RC_CHECK();
+        rc = CFGMR3InsertInteger(pCfg,  "64BitEntry", f64BitEntry); /* boolean */   RC_CHECK();
     }
 
     /*
@@ -2974,13 +2946,12 @@ static void configSetProperty(VMMDev * const pVMMDev, const char *pszName,
         SafeArray<BSTR> valuesOut;
         SafeArray<ULONG64> timestampsOut;
         SafeArray<BSTR> flagsOut;
-        HRESULT hrc = pConsole->mControl->PullGuestProperties
-                                      (ComSafeArrayAsOutParam(namesOut),
-                                       ComSafeArrayAsOutParam(valuesOut),
-                                       ComSafeArrayAsOutParam(timestampsOut),
-                                       ComSafeArrayAsOutParam(flagsOut));
-        AssertMsgReturn(SUCCEEDED(hrc), ("hrc=%#x\n", hrc),
-                        VERR_GENERAL_FAILURE);
+        HRESULT hrc;
+        hrc = pConsole->mControl->PullGuestProperties(ComSafeArrayAsOutParam(namesOut),
+                                                      ComSafeArrayAsOutParam(valuesOut),
+                                                      ComSafeArrayAsOutParam(timestampsOut),
+                                                      ComSafeArrayAsOutParam(flagsOut));
+        AssertMsgReturn(SUCCEEDED(hrc), ("hrc=%Rrc\n", hrc), VERR_GENERAL_FAILURE);
         size_t cProps = namesOut.size();
         size_t cAlloc = cProps + 1;
         if (   valuesOut.size() != cProps

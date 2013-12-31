@@ -166,7 +166,7 @@
 /** @def VBOX_WITH_REAL_WRITE_MONITORED_PAGES
  * Enables real write monitoring of pages, i.e. mapping them read-only and
  * only making them writable when getting a write access #PF. */
-/*#define VBOX_WITH_REAL_WRITE_MONITORED_PAGES */
+#define VBOX_WITH_REAL_WRITE_MONITORED_PAGES
 
 /** @} */
 
@@ -1083,7 +1083,7 @@ typedef PPGMPAGE *PPPGMPAGE;
 
 #if 0
 /** Enables sanity checking of write monitoring using CRC-32.  */
-#define PGMLIVESAVERAMPAGE_WITH_CRC32
+# define PGMLIVESAVERAMPAGE_WITH_CRC32
 #endif
 
 /**
@@ -2753,6 +2753,16 @@ typedef struct PGM
         uint32_t                    cDirtyPagesShort;
         /** Long term dirty page average. */
         uint32_t                    cDirtyPagesLong;
+        /** The number of saved pages.  This is used to get some kind of estimate of the
+         * link speed so we can decide when we're done.  It is reset after the first
+         * 7 passes so the speed estimate doesn't get inflated by the initial set of
+         * zero pages.   */
+        uint64_t                    cSavedPages;
+        /** The nanosecond timestamp when cSavedPages was 0. */
+        uint64_t                    uSaveStartNS;
+        /** Pages per second (for statistics). */
+        uint32_t                    cPagesPerSecond;
+        uint32_t                    cAlignment;
     } LiveSave;
 
     /** @name   Error injection.
@@ -3363,6 +3373,7 @@ PPGMPOOLPAGE    pgmPoolGetPage(PPGMPOOL pPool, RTHCPHYS HCPhys);
 int             pgmPoolSyncCR3(PVMCPU pVCpu);
 bool            pgmPoolIsDirtyPage(PVM pVM, RTGCPHYS GCPhys);
 int             pgmPoolTrackUpdateGCPhys(PVM pVM, PPGMPAGE pPhysPage, bool fFlushPTEs, bool *pfFlushTLBs);
+void            pgmPoolInvalidateDirtyPage(PVM pVM, RTGCPHYS GCPhysPT);
 DECLINLINE(int) pgmPoolTrackFlushGCPhys(PVM pVM, PPGMPAGE pPhysPage, bool *pfFlushTLBs)
 {
     return pgmPoolTrackUpdateGCPhys(pVM, pPhysPage, true /* flush PTEs */, pfFlushTLBs);

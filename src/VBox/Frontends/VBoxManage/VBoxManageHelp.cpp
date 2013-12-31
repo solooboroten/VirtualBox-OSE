@@ -19,12 +19,35 @@
  * additional information or have any questions.
  */
 
+
+/*******************************************************************************
+*   Header Files                                                               *
+*******************************************************************************/
+#include <VBox/version.h>
+
 #include <iprt/ctype.h>
 #include <iprt/err.h>
 #include <iprt/getopt.h>
 #include <iprt/stream.h>
 
 #include "VBoxManage.h"
+
+
+
+void showLogo(void)
+{
+    static bool s_fShown; /* show only once */
+
+    if (!s_fShown)
+    {
+        RTPrintf("VirtualBox Command Line Management Interface Version "
+                 VBOX_VERSION_STRING  "\n"
+                 "(C) 2005-2009 Sun Microsystems, Inc.\n"
+                 "All rights reserved.\n"
+                 "\n");
+        s_fShown = true;
+    }
+}
 
 void printUsage(USAGECATEGORY u64Cmd)
 {
@@ -144,7 +167,7 @@ void printUsage(USAGECATEGORY u64Cmd)
 #ifdef VBOX_WITH_VIDEOHWACCEL
                  "                            [--accelerate2dvideo <on|off>]\n"
 #endif
-                 "                            [--firmware bios|efi]\n"
+                 "                            [--firmware bios|efi|efi32|efi64]\n"
                  "                            [--bioslogofadein on|off]\n"
                  "                            [--bioslogofadeout on|off]\n"
                  "                            [--bioslogodisplaytime <msec>]\n"
@@ -236,7 +259,7 @@ void printUsage(USAGECATEGORY u64Cmd)
         RTPrintf("                            [--usb on|off]\n"
                  "                            [--usbehci on|off]\n"
                  "                            [--snapshotfolder default|<path>]\n"
-                 "                            [--teleporterenabled on|off]\n"
+                 "                            [--teleporter on|off]\n"
                  "                            [--teleporterport <port>]\n"
                  "                            [--teleporteraddress <address|empty>\n"
                  "                            [--teleporterpassword <password>]\n"
@@ -308,8 +331,8 @@ void printUsage(USAGECATEGORY u64Cmd)
         RTPrintf("                            setvideomodehint <xres> <yres> <bpp> [display] |\n"
                  "                            setcredentials <username> <password> <domain>\n"
                  "                                           [--allowlocallogon <yes|no>] |\n"
-                 "                            teleport --hostname <name> --port <port>\n"
-                 "                                   [--password password]\n"
+                 "                            teleport --host <name> --port <port>\n"
+                 "                                   [--maxdowntime <msec>] [--password password]\n"
                  "\n");
     }
 
@@ -342,12 +365,15 @@ void printUsage(USAGECATEGORY u64Cmd)
     {
         RTPrintf("VBoxManage openmedium       disk|dvd|floppy <filename>\n"
                  "                            [--type normal|immutable|writethrough] (disk only)\n"
+                 "                            [--uuid <uuid>]\n"
+                 "                            [--parentuuid <uuid>] (disk only)\n"
                  "\n");
     }
 
     if (u64Cmd & USAGE_CLOSEMEDIUM)
     {
         RTPrintf("VBoxManage closemedium      disk|dvd|floppy <uuid>|<filename>\n"
+                 "                            [--delete]\n"
                  "\n");
     }
 

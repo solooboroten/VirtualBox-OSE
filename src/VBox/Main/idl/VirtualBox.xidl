@@ -1097,21 +1097,24 @@
 
    <enum
     name="FirmwareType"
-    uuid="7ceea938-8b49-41e2-bb47-667219c0d586"
+    uuid="b903f264-c230-483e-ac74-2b37ce60d371"
   >
     <desc>
       Firmware type.
     </desc>
-    <const name="BIOS"            value="1">
+    <const name="BIOS"           value="1">
       <desc>BIOS Firmware.</desc>
     </const>
-    <const name="EFI"             value="2">
+    <const name="EFI"            value="2">
+      <desc>EFI Firmware, bitness detetced basing on OS type.</desc>
+    </const>
+    <const name="EFI32"          value="3">
       <desc>Efi firmware, 32-bit.</desc>
     </const>
-    <const name="EFI64"           value="3">
+    <const name="EFI64"          value="4">
       <desc>Efi firmware, 64-bit.</desc>
     </const>
-    <const name="EFIDUAL"         value="4">
+    <const name="EFIDUAL"        value="5">
       <desc>Efi firmware, combined 32 and 64-bit.</desc>
     </const>
   </enum>
@@ -1591,7 +1594,7 @@
 
   <interface
     name="IVirtualBox" extends="$dispatched"
-    uuid="cdc78bfb-f4f6-4ab6-aadf-0407ae12fe85"
+    uuid="2158464a-f706-414b-a8c4-fb589dfc6b62"
     wsmap="managed"
   >
     <desc>
@@ -3030,6 +3033,13 @@
           Suggested url to download this firmware from.
         </desc>
       </param>
+
+      <param name="file" type="wstring" dir="out">
+        <desc>
+          Filename of firmware, only valid if result == TRUE.
+        </desc>
+      </param>
+
       <param name="result" type="boolean" dir="return">
         <desc>If firmware of this type and version is available.</desc>
       </param>
@@ -6431,7 +6441,7 @@
 
   <interface
      name="IConsole" extends="$unknown"
-     uuid="55dd56a5-1d1d-4d81-b742-b082b9571be6"
+     uuid="6375231a-c17c-464b-92cb-ae9e128d71c3"
      wsmap="managed"
      >
     <desc>
@@ -6987,7 +6997,7 @@
 
     <method name="deleteSnapshot">
       <desc>
-        Starts discarding the specified snapshot asynchronously.
+        Starts deleting the specified snapshot asynchronously.
         See <link to="ISnapshot" /> for an introduction to snapshots.
 
         The execution state and settings of the associated machine stored in
@@ -6999,73 +7009,44 @@
         deleted. The parent of this snapshot will become a new parent for all
         its child snapshots.
 
-        If the discarded snapshot is the current one, its parent
-        snapshot will become a new current snapshot. The current machine
-        state is not directly affected in this case, except that
-        currently attached differencing media based on media
-        of the discarded snapshot will be also merged as described
-        above.
+        If the deleted snapshot is the current one, its parent snapshot will
+        become a new current snapshot. The current machine state is not directly
+        affected in this case, except that currently attached differencing
+        media based on media of the discarded snapshot will be also merged as
+        described above.
 
-        If the discarded snapshot is the first one (the root snapshot)
-        and it has exactly one child snapshot, this child snapshot will
-        become the first snapshot after discarding. If there are no
-        children at all (i.e. the first snapshot is the only snapshot of
-        the machine), both the current and the first snapshot of the
-        machine will be set to @c null. In all other cases, the first
-        snapshot cannot be discarded.
+        If the deleted snapshot is the first or current snapshot, then the
+        respective IMachine attributes will be adjusted. Deleting the current
+        snapshot will also implicitly call <link to="IMachine::saveSettings"/>
+        to make all current machine settings permanent.
 
-        You cannot discard the snapshot if it
-        stores <link to="MediumType_Normal">normal</link> (non-differencing)
-        media that have differencing media based on them. Snapshots of
-        such kind can be discarded only when every normal medium has either
-        no children at all or exactly one child. In the former case, the normal
-        medium simply becomes unused (i.e. not attached to any VM). In the
-        latter case, it receives all the changes stored in the child medium,
-        and then it replaces the child medium in the configuration of the
-        corresponding snapshot or machine.
+        Deleting a snapshot has the following preconditions:
 
-        Also, you cannot discard the snapshot if it stores media
-        (of any type) having differencing child media that belong
-        to other machines. Such snapshots can be only discarded after
-        you discard all snapshots of other machines containing "foreign"
-        child media, or detach these "foreign" child media from machines
-        they are attached to.
+        <ul>
+          <li>Child media of all normal media of the discarded snapshot
+            must be accessible (see <link to="IMedium::state"/>) for this
+            operation to succeed.  In particular, this means that all virtual
+            machines, whose media are directly or indirectly based on the
+            media of discarded snapshot, must be powered off.</li>
 
-        One particular example of the snapshot storing normal media
-        is the first snapshot of a virtual machine that had normal media
-        attached when taking the snapshot. Be careful when
-        discarding such snapshots because this implicitly commits
-        changes (made since the snapshot being discarded has been taken)
-        to normal media (as described above), which may be not what
-        you want.
+          <li>You cannot delete the snapshot if a medium attached to it has
+          more than once child medium (differencing images) because otherwise
+          merging would be impossible. This might be the case if there is
+          more than one child snapshot or differencing images were created
+          for other reason (e.g. implicitly because of multiple machine
+          attachments).</li>
+        </ul>
 
-        The virtual machine is put to
-        the <link to="MachineState_Discarding">Discarding</link> state until
-        the discard operation is completed.
 
-        <note>
-          The machine must not be running, otherwise the operation
-          will fail.
-        </note>
+        The virtual machine's <link to="IMachine::state">state</link> is changed to "DeletingSnapshot"
+        while this operation is in progress.
 
-        <note>
-          Child media of all normal media of the discarded snapshot
-          must be accessible (see <link to="IMedium::state"/>) for this
-          operation to succeed.  In particular, this means that all virtual
-          machines, whose media are directly or indirectly based on the
-          media of discarded snapshot, must be powered off.
-        </note>
         <note>
           Merging medium contents can be very time and disk space
           consuming, if these media are big in size and have many
           children. However, if the snapshot being discarded is the last
           (head) snapshot on the branch, the operation will be rather
           quick.
-        </note>
-        <note>
-          Note that discarding the current snapshot
-          will implicitly call <link to="IMachine::saveSettings"/> to
-          make all current machine settings permanent.
         </note>
         <result name="VBOX_E_INVALID_VM_STATE">
           Virtual machine is running.
@@ -7136,6 +7117,21 @@
       </param>
       <param name="password" type="wstring" dir="in">
         <desc>The password.</desc>
+      </param>
+      <param name="maxDowntime" type="unsigned long" dir="in">
+        <desc>
+          The maximum allowed downtime given as milliseconds.  0 is not a valid
+          value.  Recommended value: 250 ms.
+
+          The higher the value is, the greater the chance for a successful
+          teleportation.  A small value may easily result in the teleportation
+          process taking hours and eventually fail.
+
+          <note>
+            The current implementation treats this a guideline, not as an
+            absolute rule.
+          </note>
+        </desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
         <desc>Progress object to track the operation completion.</desc>
@@ -8299,7 +8295,7 @@
 
   <interface
      name="IProgress" extends="$unknown"
-     uuid="62827ef1-c098-40eb-be96-36d0508489a6"
+     uuid="856aa038-853f-42e2-acf7-6e7b02dbe294"
      wsmap="managed"
      >
     <desc>
@@ -8421,6 +8417,14 @@
 
     <attribute name="operationPercent" type="unsigned long" readonly="yes">
         <desc>Progress value of the current sub-operation only, in percent.</desc>
+    </attribute>
+
+    <attribute name="timeout" type="unsigned long">
+      <desc>
+          When non-zero, this specifies the number of milliseconds after which
+          the operation will automatically be canceled.  This can only be set on
+          cancelable objects.
+      </desc>
     </attribute>
 
     <method name="setCurrentOperationProgress">
@@ -8957,9 +8961,8 @@
       child medium to its parent). It is also possible to walk down the tree
       using the <link to="#children"/> attribute.
 
-      Note that the type of all differencing media is
-      <link to="MediumType_Normal" />; all other values are meaningless for
-      them. Base media may be of any type.
+      Note that the type of all differencing media is "Normal"; all other
+      values are meaningless for them. Base media may be of any type.
 
       <h3>Creating hard disks</h3>
 
@@ -9400,9 +9403,12 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     <attribute name="autoReset" type="boolean">
       <desc>
         Whether this differencing medium will be automatically reset each
-        time a virtual machine it is attached to is powered up.
+        time a virtual machine it is attached to is powered up. This
+        attribute is automatically set to @c true for the last
+        differencing image of an "immutable" medium (see
+        <link to="MediumType" />).
 
-        See <link to="#reset()"/> for more information about resetting
+        See <link to="#reset"/> for more information about resetting
         differencing media.
 
         <note>
@@ -10138,10 +10144,12 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
         This operation will reset the differencing medium to its initial
         state when it does not contain any sector data and any read operation is
-        redirected to its parent medium.
+        redirected to its parent medium. This automatically gets called
+        during VM power-up for every medium whose <link to="#autoReset" />
+        attribute is @c true.
 
-        This medium will be placed to <link to="MediumState_LockedWrite"/>
-        for the duration of this operation.
+        The medium will be write-locked for the duration of this operation (see
+        <link to="#lockWrite" />).
 
         <result name="VBOX_E_NOT_SUPPORTED">
           This is not a differencing medium.

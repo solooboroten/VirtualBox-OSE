@@ -58,7 +58,7 @@
 #endif
 
 #define VBOXQGL_STATE_NAMEBASE "QGLVHWAData"
-#define VBOXQGL_STATE_VERSION 1
+#define VBOXQGL_STATE_VERSION 2
 
 #ifdef DEBUG
 VBoxVHWADbgTimer::VBoxVHWADbgTimer(uint32_t cPeriods) :
@@ -164,6 +164,16 @@ void VBoxVHWADbgTimer::frame()
 static VBoxVHWAInfo g_VBoxVHWASupportInfo;
 static bool g_bVBoxVHWAChecked = false;
 static bool g_bVBoxVHWASupported = false;
+
+static struct _VBOXVHWACMD * vhwaHHCmdCreate(VBOXVHWACMD_TYPE type, size_t size)
+{
+    char *buf = (char*)malloc(VBOXVHWACMD_SIZE_FROMBODYSIZE(size));
+    memset(buf, 0, size);
+    VBOXVHWACMD * pCmd = (VBOXVHWACMD*)buf;
+    pCmd->enmCmd = type;
+    pCmd->Flags = VBOXVHWACMD_FLAG_HH_CMD;
+    return pCmd;
+}
 
 static const VBoxVHWAInfo & vboxVHWAGetSupportInfo(const QGLContext *pContext)
 {
@@ -2804,6 +2814,59 @@ void VBoxGLWidget::vboxDoProcessVHWACommands(void *pContext)
 //    mDisplay.performDisplay();
 }
 
+int VBoxGLWidget::reset(VHWACommandList * pCmdList)
+{
+    VBOXVHWACMD * pCmd;
+    const OverlayList & overlays = mDisplay.overlays();
+    for (OverlayList::const_iterator oIt = overlays.begin();
+            oIt != overlays.end(); ++ oIt)
+    {
+        VBoxVHWASurfList * pSurfList = *oIt;
+        if(pSurfList->current())
+        {
+            /* 1. hide overlay */
+            pCmd = vhwaHHCmdCreate(VBOXVHWACMD_TYPE_SURF_OVERLAY_UPDATE, sizeof(VBOXVHWACMD_SURF_OVERLAY_UPDATE));
+            VBOXVHWACMD_SURF_OVERLAY_UPDATE *pOUCmd = VBOXVHWACMD_BODY(pCmd, VBOXVHWACMD_SURF_OVERLAY_UPDATE);
+            pOUCmd->u.in.hSrcSurf = pSurfList->current()->handle();
+            pOUCmd->u.in.flags = VBOXVHWA_OVER_HIDE;
+
+            pCmdList->push_back(pCmd);
+        }
+
+        /* 2. destroy overlay */
+        const SurfList & surfaces = pSurfList->surfaces();
+
+        for (SurfList::const_iterator sIt = surfaces.begin();
+                sIt != surfaces.end(); ++ sIt)
+        {
+            VBoxVHWASurfaceBase *pCurSurf = (*sIt);
+            pCmd = vhwaHHCmdCreate(VBOXVHWACMD_TYPE_SURF_DESTROY, sizeof(VBOXVHWACMD_SURF_DESTROY));
+            VBOXVHWACMD_SURF_DESTROY *pSDCmd = VBOXVHWACMD_BODY(pCmd, VBOXVHWACMD_SURF_DESTROY);
+            pSDCmd->u.in.hSurf = pCurSurf->handle();
+
+            pCmdList->push_back(pCmd);
+        }
+    }
+
+    /* 3. destroy primaries */
+    const SurfList & surfaces = mDisplay.primaries().surfaces();
+    for (SurfList::const_iterator sIt = surfaces.begin();
+            sIt != surfaces.end(); ++ sIt)
+    {
+        VBoxVHWASurfaceBase *pCurSurf = (*sIt);
+        if(pCurSurf->handle() != VBOXVHWA_SURFHANDLE_INVALID)
+        {
+            pCmd = vhwaHHCmdCreate(VBOXVHWACMD_TYPE_SURF_DESTROY, sizeof(VBOXVHWACMD_SURF_DESTROY));
+            VBOXVHWACMD_SURF_DESTROY *pSDCmd = VBOXVHWACMD_BODY(pCmd, VBOXVHWACMD_SURF_DESTROY);
+            pSDCmd->u.in.hSurf = pCurSurf->handle();
+
+            pCmdList->push_back(pCmd);
+        }
+    }
+
+    return VINF_SUCCESS;
+}
+
 #ifdef VBOX_WITH_VIDEOHWACCEL
 void VBoxGLWidget::vboxDoVHWACmd(void *cmd)
 {
@@ -3810,7 +3873,7 @@ static DECLCALLBACK(int) vboxQGLLoadExec(PSSMHANDLE pSSM, void *pvUser, uint32_t
 {
     Assert(uPass == SSM_PASS_FINAL); NOREF(uPass);
     VBoxGLWidget * pw = (VBoxGLWidget*)pvUser;
-    return pw->vhwaLoadExec(NULL, pSSM, u32Version);
+    return VBoxGLWidget::vhwaLoadExec(&pw->onResizeCmdList(), pSSM, u32Version);
 }
 
 int VBoxGLWidget::vhwaSaveSurface(struct SSMHANDLE * pSSM, VBoxVHWASurfaceBase *pSurf, uint32_t surfCaps)
@@ -3899,7 +3962,7 @@ int VBoxGLWidget::vhwaLoadSurface(VHWACommandList * pCmdList, struct SSMHANDLE *
     VBOXQGL_LOAD_SURFSTART(pSSM);
 
     char *buf = (char*)malloc(VBOXVHWACMD_SIZE(VBOXVHWACMD_SURF_CREATE));
-    memset(buf, 0, sizeof(buf));
+    memset(buf, 0, sizeof(VBOXVHWACMD_SIZE(VBOXVHWACMD_SURF_CREATE)));
     VBOXVHWACMD * pCmd = (VBOXVHWACMD*)buf;
     pCmd->enmCmd = VBOXVHWACMD_TYPE_SURF_CREATE;
     pCmd->Flags = VBOXVHWACMD_FLAG_HH_CMD;
@@ -4058,7 +4121,7 @@ int VBoxGLWidget::vhwaLoadOverlayData(VHWACommandList * pCmdList, struct SSMHAND
 
 //    char buf[VBOXVHWACMD_SIZE(VBOXVHWACMD_SURF_OVERLAY_UPDATE)];
     char *buf = new char[VBOXVHWACMD_SIZE(VBOXVHWACMD_SURF_CREATE)];
-    memset(buf, 0, sizeof(buf));
+    memset(buf, 0, VBOXVHWACMD_SIZE(VBOXVHWACMD_SURF_CREATE));
     VBOXVHWACMD * pCmd = (VBOXVHWACMD*)buf;
     pCmd->enmCmd = VBOXVHWACMD_TYPE_SURF_OVERLAY_UPDATE;
     pCmd->Flags = VBOXVHWACMD_FLAG_HH_CMD;
@@ -4124,6 +4187,14 @@ int VBoxGLWidget::vhwaLoadOverlayData(VHWACommandList * pCmdList, struct SSMHAND
     return rc;
 }
 
+void VBoxGLWidget::vhwaSaveExecVoid(struct SSMHANDLE * pSSM)
+{
+    VBOXQGL_SAVE_START(pSSM);
+    int rc = SSMR3PutU32(pSSM, 0);         AssertRC(rc); /* 0 primaries */
+    rc = SSMR3PutU32(pSSM, 0);         AssertRC(rc); /* 0 overlays */
+    VBOXQGL_SAVE_STOP(pSSM);
+}
+
 void VBoxGLWidget::vhwaSaveExec(struct SSMHANDLE * pSSM)
 {
     VBOXQGL_SAVE_START(pSSM);
@@ -4147,69 +4218,72 @@ void VBoxGLWidget::vhwaSaveExec(struct SSMHANDLE * pSSM)
      */
     const SurfList & primaryList = mDisplay.primaries().surfaces();
     uint32_t cPrimary = (uint32_t)primaryList.size();
-    Assert(cPrimary >= 1);
-    if(mDisplay.getVGA() == NULL || mDisplay.getVGA()->handle() == VBOXVHWA_SURFHANDLE_INVALID)
+    if(cPrimary &&
+            (mDisplay.getVGA() == NULL || mDisplay.getVGA()->handle() == VBOXVHWA_SURFHANDLE_INVALID))
     {
         cPrimary -= 1;
     }
+
     int rc = SSMR3PutU32(pSSM, cPrimary);         AssertRC(rc);
-
-    for (SurfList::const_iterator pr = primaryList.begin();
-         pr != primaryList.end(); ++ pr)
+    if(cPrimary)
     {
-        VBoxVHWASurfaceBase *pSurf = *pr;
-//        bool bVga = (pSurf == mDisplay.getVGA());
-        bool bVisible = (pSurf == mDisplay.getPrimary());
-        uint32_t flags = VBOXVHWA_SCAPS_PRIMARYSURFACE;
-        if(bVisible)
-            flags |= VBOXVHWA_SCAPS_VISIBLE;
-
-        if(pSurf->handle() != VBOXVHWA_SURFHANDLE_INVALID)
+        for (SurfList::const_iterator pr = primaryList.begin();
+             pr != primaryList.end(); ++ pr)
         {
-            rc = vhwaSaveSurface(pSSM, *pr, flags);    AssertRC(rc);
+            VBoxVHWASurfaceBase *pSurf = *pr;
+    //        bool bVga = (pSurf == mDisplay.getVGA());
+            bool bVisible = (pSurf == mDisplay.getPrimary());
+            uint32_t flags = VBOXVHWA_SCAPS_PRIMARYSURFACE;
+            if(bVisible)
+                flags |= VBOXVHWA_SCAPS_VISIBLE;
+
+            if(pSurf->handle() != VBOXVHWA_SURFHANDLE_INVALID)
+            {
+                rc = vhwaSaveSurface(pSSM, *pr, flags);    AssertRC(rc);
 #ifdef DEBUG
-            --cPrimary;
-            Assert(cPrimary < UINT32_MAX / 2);
+                --cPrimary;
+                Assert(cPrimary < UINT32_MAX / 2);
 #endif
+            }
+            else
+            {
+                Assert(pSurf == mDisplay.getVGA());
+            }
         }
-        else
-        {
-            Assert(pSurf == mDisplay.getVGA());
-        }
-    }
 
 #ifdef DEBUG
-    Assert(!cPrimary);
+        Assert(!cPrimary);
 #endif
 
-    const OverlayList & overlays = mDisplay.overlays();
-    rc = SSMR3PutU32(pSSM, (uint32_t)overlays.size());         AssertRC(rc);
+        const OverlayList & overlays = mDisplay.overlays();
+        rc = SSMR3PutU32(pSSM, (uint32_t)overlays.size());         AssertRC(rc);
 
-    for (OverlayList::const_iterator it = overlays.begin();
-         it != overlays.end(); ++ it)
-    {
-        VBoxVHWASurfList * pSurfList = *it;
-        const SurfList & surfaces = pSurfList->surfaces();
-        uint32_t cSurfs = (uint32_t)surfaces.size();
-        uint32_t flags = VBOXVHWA_SCAPS_OVERLAY;
-        if(cSurfs > 1)
-            flags |= VBOXVHWA_SCAPS_COMPLEX;
-        rc = SSMR3PutU32(pSSM, cSurfs);         AssertRC(rc);
-        for (SurfList::const_iterator sit = surfaces.begin();
-             sit != surfaces.end(); ++ sit)
+        for (OverlayList::const_iterator it = overlays.begin();
+             it != overlays.end(); ++ it)
         {
-            rc = vhwaSaveSurface(pSSM, *sit, flags);    AssertRC(rc);
-        }
+            VBoxVHWASurfList * pSurfList = *it;
+            const SurfList & surfaces = pSurfList->surfaces();
+            uint32_t cSurfs = (uint32_t)surfaces.size();
+            uint32_t flags = VBOXVHWA_SCAPS_OVERLAY;
+            if(cSurfs > 1)
+                flags |= VBOXVHWA_SCAPS_COMPLEX;
+            rc = SSMR3PutU32(pSSM, cSurfs);         AssertRC(rc);
+            for (SurfList::const_iterator sit = surfaces.begin();
+                 sit != surfaces.end(); ++ sit)
+            {
+                rc = vhwaSaveSurface(pSSM, *sit, flags);    AssertRC(rc);
+            }
 
-        bool bVisible = true;
-        VBoxVHWASurfaceBase * pOverlayData = pSurfList->current();
-        if(!pOverlayData)
-        {
-            pOverlayData = surfaces.front();
-            bVisible = false;
-        }
+            bool bVisible = true;
+            VBoxVHWASurfaceBase * pOverlayData = pSurfList->current();
+            if(!pOverlayData)
+            {
+                pOverlayData = surfaces.front();
+                bVisible = false;
+            }
 
-        rc = vhwaSaveOverlayData(pSSM, pOverlayData, bVisible);    AssertRC(rc);
+            rc = vhwaSaveOverlayData(pSSM, pOverlayData, bVisible);    AssertRC(rc);
+        }
     }
 
     VBOXQGL_SAVE_STOP(pSSM);
@@ -4221,7 +4295,7 @@ int VBoxGLWidget::vhwaLoadVHWAEnable(VHWACommandList * pCmdList)
     Assert(buf);
     if(buf)
     {
-        memset(buf, 0, sizeof(buf));
+        memset(buf, 0, sizeof(VBOXVHWACMD));
         VBOXVHWACMD * pCmd = (VBOXVHWACMD*)buf;
         pCmd->enmCmd = VBOXVHWACMD_TYPE_ENABLE;
         pCmd->Flags = VBOXVHWACMD_FLAG_HH_CMD;
@@ -4236,58 +4310,65 @@ int VBoxGLWidget::vhwaLoadExec(VHWACommandList * pCmdList, struct SSMHANDLE * pS
 {
     VBOXQGL_LOAD_START(pSSM);
 
+    if(u32Version > VBOXQGL_STATE_VERSION)
+        return VERR_VERSION_MISMATCH;
+
     int rc;
     uint32_t u32;
 
-    if(pCmdList == NULL)
-    {
-        /* use our own list */
-        pCmdList = &mOnResizeCmdList;
-    }
-
-    rc = SSMR3GetU32(pSSM, &u32); AssertRC(rc);
+    rc = vhwaLoadVHWAEnable(pCmdList); AssertRC(rc);
     if(RT_SUCCESS(rc))
     {
-        if(u32)
-        {
-            rc = vhwaLoadVHWAEnable(pCmdList);
-            AssertRC(rc);
-        }
-
-        for(uint32_t i = 0; i < u32; ++i)
-        {
-            rc = vhwaLoadSurface(pCmdList, pSSM, 0, u32Version);  AssertRC(rc);
-            if(RT_FAILURE(rc))
-                break;
-        }
-
+        rc = SSMR3GetU32(pSSM, &u32); AssertRC(rc);
         if(RT_SUCCESS(rc))
         {
-            rc = SSMR3GetU32(pSSM, &u32); AssertRC(rc);
-            if(RT_SUCCESS(rc))
+            if(u32Version == 1 && u32 == (~0)) /* work around the v1 bug */
+                u32 = 0;
+            if(u32)
             {
                 for(uint32_t i = 0; i < u32; ++i)
                 {
-                    uint32_t cSurfs;
-                    rc = SSMR3GetU32(pSSM, &cSurfs); AssertRC(rc);
-                    for(uint32_t j = 0; j < cSurfs; ++j)
-                    {
-                        rc = vhwaLoadSurface(pCmdList, pSSM, cSurfs - 1, u32Version);  AssertRC(rc);
-                        if(RT_FAILURE(rc))
-                            break;
-                    }
+                    rc = vhwaLoadSurface(pCmdList, pSSM, 0, u32Version);  AssertRC(rc);
+                    if(RT_FAILURE(rc))
+                        break;
+                }
 
+                if(RT_SUCCESS(rc))
+                {
+                    rc = SSMR3GetU32(pSSM, &u32); AssertRC(rc);
                     if(RT_SUCCESS(rc))
                     {
-                        rc = vhwaLoadOverlayData(pCmdList, pSSM, u32Version);  AssertRC(rc);
-                    }
+                        for(uint32_t i = 0; i < u32; ++i)
+                        {
+                            uint32_t cSurfs;
+                            rc = SSMR3GetU32(pSSM, &cSurfs); AssertRC(rc);
+                            for(uint32_t j = 0; j < cSurfs; ++j)
+                            {
+                                rc = vhwaLoadSurface(pCmdList, pSSM, cSurfs - 1, u32Version);  AssertRC(rc);
+                                if(RT_FAILURE(rc))
+                                    break;
+                            }
 
-                    if(RT_FAILURE(rc))
-                    {
-                        break;
+                            if(RT_SUCCESS(rc))
+                            {
+                                rc = vhwaLoadOverlayData(pCmdList, pSSM, u32Version);  AssertRC(rc);
+                            }
+
+                            if(RT_FAILURE(rc))
+                            {
+                                break;
+                            }
+                        }
                     }
                 }
             }
+#ifdef VBOXQGL_STATE_DEBUG
+            else if(u32Version == 1) /* read the 0 overlay count to ensure the following VBOXQGL_LOAD_STOP succeedes */
+            {
+                rc = SSMR3GetU32(pSSM, &u32); AssertRC(rc);
+                Assert(u32 == 0);
+            }
+#endif
         }
     }
 
@@ -5062,6 +5143,8 @@ int VBoxQGLOverlay::reset()
                 Assert(0);
                 break;
 #endif
+            case VBOXVHWA_PIPECMD_PAINT:
+                break;
             default:
                 /* should not happen, don't handle this for now */
                 Assert(0);
@@ -5069,11 +5152,37 @@ int VBoxQGLOverlay::reset()
             }
         }
 
-#ifdef DEBUG
         VBoxVHWACommandElement *pTest = mCmdPipe.detachCmdList(pHead, pTail);
         Assert(!pTest);
         NOREF(pTest);
-#endif
+    }
+
+    resetGl();
+
+    return VINF_SUCCESS;
+}
+
+static DECLCALLBACK(void) vbvaVHWAHHCommandFreeCmd(void * pContext)
+{
+    free(pContext);
+}
+
+int VBoxQGLOverlay::resetGl()
+{
+    if(mpOverlayWidget)
+    {
+        VHWACommandList list;
+        int rc = mpOverlayWidget->reset(&list);
+        if(RT_SUCCESS(rc))
+        {
+            for (VHWACommandList::const_iterator sIt = list.begin();
+                    sIt != list.end(); ++ sIt)
+            {
+                VBOXVHWACMD *pCmd = (*sIt);
+                VBOXVHWA_HH_CALLBACK_SET(pCmd, vbvaVHWAHHCommandFreeCmd, pCmd);
+                mCmdPipe.postCmd(VBOXVHWA_PIPECMD_VHWA, pCmd, 0);
+            }
+        }
     }
     return VINF_SUCCESS;
 }
@@ -5115,12 +5224,13 @@ void VBoxQGLOverlay::onVHWACommandEvent(QEvent * pEvent)
     Assert(!mGlCurrent);
     mGlCurrent = false; /* just a fall-back */
     VBoxVHWACommandElement * pFirst = mCmdPipe.detachCmdList(NULL, NULL);
-    do
+    while(pFirst) /* pFirst can be zero right after reset when all pending commands are flushed,
+                   * while events for those commands may still come along */
     {
         VBoxVHWACommandElement * pLast = processCmdList(pFirst);
 
         pFirst = mCmdPipe.detachCmdList(pFirst, pLast);
-    } while(pFirst);
+    }
 
     mProcessingCommands = false;
     repaint();
@@ -5575,7 +5685,7 @@ int VBoxQGLOverlay::vhwaLoadExec(struct SSMHANDLE * pSSM, uint32_t u32Version)
 //    int rc = SSMR3GetBool(pSSM, &bTmp /*&mGlOn*/);         AssertRC(rc);
 //    rc = SSMR3GetBool(pSSM, &bTmp /*&mOverlayVisible*/);         AssertRC(rc);
 //    if(RT_SUCCESS(rc))
-    return mpOverlayWidget->vhwaLoadExec(&mOnResizeCmdList, pSSM, u32Version);
+    return VBoxGLWidget::vhwaLoadExec(&mOnResizeCmdList, pSSM, u32Version);
 //    return rc;
 }
 
@@ -5584,7 +5694,10 @@ void VBoxQGLOverlay::vhwaSaveExec(struct SSMHANDLE * pSSM)
 //    int rc = SSMR3PutBool(pSSM, mGlOn);         AssertRC(rc);
 //    rc = SSMR3PutBool(pSSM, mOverlayVisible);         AssertRC(rc);
 //
-    mpOverlayWidget->vhwaSaveExec(pSSM);
+    if(mpOverlayWidget)
+        mpOverlayWidget->vhwaSaveExec(pSSM);
+    else
+        VBoxGLWidget::vhwaSaveExecVoid(pSSM);
 }
 
 int VBoxQGLOverlay::vhwaConstruct(struct _VBOXVHWACMD_HH_CONSTRUCT *pCmd)
@@ -5850,7 +5963,6 @@ void VBoxVHWACommandElementProcessor::reset(VBoxVHWACommandElement ** ppHead, VB
     if(pFirst)
     {
         Assert(pLast);
-        pHead = pFirst->pipe().detachList();
         VBoxVHWACommandElement * pCurHead;
         for(VBoxVHWACommandProcessEvent * pCur = pFirst; pCur ; pCur = pCur->mpNext)
         {

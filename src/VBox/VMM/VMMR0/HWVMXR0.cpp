@@ -110,9 +110,6 @@ VMMR0DECL(int) VMXR0EnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RT
     AssertReturn(pPageCpuPhys, VERR_INVALID_PARAMETER);
     AssertReturn(pvPageCpu, VERR_INVALID_PARAMETER);
 
-#if defined(LOG_ENABLED) && !defined(DEBUG_bird) && !defined(DEBUG_misha)
-    SUPR0Printf("VMXR0EnableCpu cpu %d page (%x) %x\n", pCpu->idCpu, pvPageCpu, (uint32_t)pPageCpuPhys);
-#endif
     if (pVM)
     {
         /* Set revision dword at the beginning of the VMXON structure. */
@@ -159,10 +156,6 @@ VMMR0DECL(int) VMXR0DisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS p
 
     /* And clear the X86_CR4_VMXE bit */
     ASMSetCR4(ASMGetCR4() & ~X86_CR4_VMXE);
-
-#if defined(LOG_ENABLED) && !defined(DEBUG_bird) && !defined(DEBUG_misha)
-    SUPR0Printf("VMXR0DisableCpu cpu %d\n", pCpu->idCpu);
-#endif
     return VINF_SUCCESS;
 }
 
@@ -2728,7 +2721,7 @@ ResumeExecution:
         HWACCMDumpRegs(pVM, pVCpu, pCtx);
 #endif
 
-    Log2(("E%d: New EIP=%x:%RGv\n", exitReason, pCtx->cs, (RTGCPTR)pCtx->rip));
+    Log2(("E%d: New EIP=%x:%RGv\n", (uint32_t)exitReason, pCtx->cs, (RTGCPTR)pCtx->rip));
     Log2(("Exit reason %d, exitQualification %RGv\n", (uint32_t)exitReason, exitQualification));
     Log2(("instrInfo=%d instrError=%d instr length=%d\n", (uint32_t)instrInfo, (uint32_t)instrError, (uint32_t)cbInstr));
     Log2(("Interruption error code %d\n", (uint32_t)errCode));

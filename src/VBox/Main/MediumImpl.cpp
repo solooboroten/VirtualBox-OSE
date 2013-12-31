@@ -337,6 +337,7 @@ HRESULT Medium::Task::startThread()
  */
 HRESULT Medium::Task::runNow()
 {
+    /* NIL_RTTHREAD indicates synchronous call. */
     Medium::taskThread(NIL_RTTHREAD, this);
 
     return rc;
@@ -1101,7 +1102,9 @@ HRESULT Medium::init(VirtualBox *aVirtualBox,
         CheckComRCReturnRC(rc);
     }
 
-    /* optional, only for diffs, default is false */
+    /* optional, only for diffs, default is false;
+     * we can only auto-reset diff images, so they
+     * must not have a parent */
     if (aParent != NULL)
         m->autoReset = data.fAutoReset;
     else
@@ -1520,7 +1523,7 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
         case MediumType_Normal:
         case MediumType_Immutable:
         {
-            /* normal can be easily converted to imutable and vice versa even
+            /* normal can be easily converted to immutable and vice versa even
              * if they have children as long as they are not attached to any
              * machine themselves */
             break;
@@ -1530,8 +1533,8 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
             /* cannot change to writethrough if there are children */
             if (children().size() != 0)
                 return setError(E_FAIL,
-                                tr("Hard disk '%ls' has %d child hard disks"),
-                                children().size());
+                                tr("Cannot change type for hard disk '%s' since it has %d child hard disk(s)"),
+                                m->strLocationFull.raw(), children().size());
             break;
         }
         default:
@@ -1932,13 +1935,13 @@ STDMETHODIMP Medium::LockWrite(MediumState_T *aState)
         {
             m->preLockState = m->state;
 
-            LogFlowThisFunc(("Okay - prev state=%d\n", m->state));
+            LogFlowThisFunc(("Okay - prev state=%d locationFull=%s\n", m->state, locationFull().c_str()));
             m->state = MediumState_LockedWrite;
             break;
         }
         default:
         {
-            LogFlowThisFunc(("Failing - state=%d\n", m->state));
+            LogFlowThisFunc(("Failing - state=%d locationFull=%s\n", m->state, locationFull().c_str()));
             rc = setStateError();
             break;
         }
@@ -1965,12 +1968,12 @@ STDMETHODIMP Medium::UnlockWrite(MediumState_T *aState)
         case MediumState_LockedWrite:
         {
             m->state = m->preLockState;
-            LogFlowThisFunc(("new state=%d\n", m->state));
+            LogFlowThisFunc(("new state=%d locationFull=%s\n", m->state, locationFull().c_str()));
             break;
         }
         default:
         {
-            LogFlowThisFunc(("Failing - state=%d\n", m->state));
+            LogFlowThisFunc(("Failing - state=%d locationFull=%s\n", m->state, locationFull().c_str()));
             rc = setError(VBOX_E_INVALID_OBJECT_STATE,
                           tr ("Medium '%s' is not locked for writing"),
                           m->strLocationFull.raw());
@@ -2520,6 +2523,8 @@ STDMETHODIMP Medium::Reset(IProgress **aProgress)
 
     AutoWriteLock alock(this);
 
+    LogFlowThisFunc(("ENTER for medium %s\n", m->strLocationFull.c_str()));
+
     if (mParent.isNull())
         return setError(VBOX_E_NOT_SUPPORTED,
                         tr ("Hard disk '%s' is not differencing"),
@@ -2545,7 +2550,7 @@ STDMETHODIMP Medium::Reset(IProgress **aProgress)
         /* setup task object and thread to carry out the operation
          * asynchronously */
 
-        std::auto_ptr <Task> task(new Task(this, progress, Task::Reset));
+        std::auto_ptr<Task> task(new Task(this, progress, Task::Reset));
         AssertComRCThrowRC(task->autoCaller.rc());
 
         rc = task->startThread();
@@ -2570,6 +2575,8 @@ STDMETHODIMP Medium::Reset(IProgress **aProgress)
         /* return progress to the caller */
         progress.queryInterfaceTo(aProgress);
     }
+
+    LogFlowThisFunc(("LEAVE, rc=%Rhrc\n", rc));
 
     return rc;
 }
@@ -4023,6 +4030,7 @@ HRESULT Medium::deleteStorage(ComObjPtr <Progress> *aProgress, bool aWait)
      * it holds a mVirtualBox lock too of course). */
 
     AutoMultiWriteLock2 alock(mVirtualBox->lockHandle(), this->lockHandle());
+    LogFlowThisFunc(("aWait=%RTbool locationFull=%s\n", aWait, locationFull().c_str() ));
 
     if (    !(m->formatObj->capabilities() & (   MediumFormatCapabilities_CreateDynamic
                                                | MediumFormatCapabilities_CreateFixed)))
@@ -4610,8 +4618,8 @@ HRESULT Medium::canClose()
 
     if (children().size() != 0)
         return setError(E_FAIL,
-                        tr("Hard disk '%ls' has %d child hard disks"),
-                        children().size());
+                        tr("Cannot close medium '%s' because it has %d child hard disk(s)"),
+                        m->strLocationFull.raw(), children().size());
 
     return S_OK;
 }

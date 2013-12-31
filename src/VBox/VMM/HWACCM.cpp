@@ -520,8 +520,10 @@ VMMR3DECL(int) HWACCMR3InitCPU(PVM pVM)
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatIntReinject,            "/HWACCM/CPU%d/Irq/Reinject");
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatPendingHostIrq,         "/HWACCM/CPU%d/Irq/PendingOnHost");
 
+        HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushPage,              "/HWACCM/CPU%d/Flush/Page");
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushPageManual,        "/HWACCM/CPU%d/Flush/Page/Virt");
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushPhysPageManual,    "/HWACCM/CPU%d/Flush/Page/Phys");
+        HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushTLB,               "/HWACCM/CPU%d/Flush/TLB");
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushTLBManual,         "/HWACCM/CPU%d/Flush/TLB/Manual");
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushTLBCRxChange,      "/HWACCM/CPU%d/Flush/TLB/CRx");
         HWACCM_REG_COUNTER(&pVCpu->hwaccm.s.StatFlushPageInvlpg,        "/HWACCM/CPU%d/Flush/Page/Invlpg");
@@ -1189,6 +1191,7 @@ VMMR3DECL(int) HWACCMR3InitFinalizeR0(PVM pVM)
 
             LogRel(("HWACMM: cpuid 0x80000001.u32AMDFeatureECX = %RX32\n", pVM->hwaccm.s.cpuid.u32AMDFeatureECX));
             LogRel(("HWACMM: cpuid 0x80000001.u32AMDFeatureEDX = %RX32\n", pVM->hwaccm.s.cpuid.u32AMDFeatureEDX));
+            LogRel(("HWACCM: AMD HWCR MSR                      = %RX64\n", pVM->hwaccm.s.svm.msrHWCR));
             LogRel(("HWACCM: AMD-V revision                    = %X\n", pVM->hwaccm.s.svm.u32Rev));
             LogRel(("HWACCM: AMD-V max ASID                    = %d\n", pVM->hwaccm.s.uMaxASID));
             LogRel(("HWACCM: AMD-V features                    = %X\n", pVM->hwaccm.s.svm.u32Features));
@@ -2610,6 +2613,17 @@ static DECLCALLBACK(int) hwaccmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersio
         }
     }
 #endif
+
+    /* Recheck all VCPUs if we can go staight into hwaccm execution mode. */
+    if (HWACCMIsEnabled(pVM))
+    {
+        for (VMCPUID i = 0; i < pVM->cCpus; i++)
+        {
+            PVMCPU pVCpu = &pVM->aCpus[i];
+
+            HWACCMR3CanExecuteGuest(pVM, CPUMQueryGuestCtxPtr(pVCpu));
+        }
+    }
     return VINF_SUCCESS;
 }
 

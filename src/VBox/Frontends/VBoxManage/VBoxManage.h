@@ -147,7 +147,7 @@ int errorArgument(const char *pszFormat, ...);
 void printUsageInternal(USAGECATEGORY u64Cmd);
 
 #ifndef VBOX_ONLY_DOCS
-LONG showProgress(ComPtr<IProgress> progress);
+HRESULT showProgress(ComPtr<IProgress> progress);
 #endif
 
 /* VBoxManage.cpp */
@@ -155,9 +155,10 @@ void showLogo(void);
 
 #ifndef VBOX_ONLY_DOCS
 int handleInternalCommands(HandlerArg *a);
-
-unsigned parseNum(const char *psz, unsigned cMaxNum, const char *name);
 #endif /* !VBOX_ONLY_DOCS */
+
+/* VBoxManageControlVM.cpp */
+int handleControlVM(HandlerArg *a);
 
 /* VBoxManageModifyVM.cpp */
 int handleModifyVM(HandlerArg *a);
@@ -184,6 +185,19 @@ int handleList(HandlerArg *a);
 
 /* VBoxManageMetrics.cpp */
 int handleMetrics(HandlerArg *a);
+
+/* VBoxManageMisc.cpp */
+int handleRegisterVM(HandlerArg *a);
+int handleUnregisterVM(HandlerArg *a);
+int handleCreateVM(HandlerArg *a);
+int handleStartVM(HandlerArg *a);
+int handleDiscardState(HandlerArg *a);
+int handleAdoptdState(HandlerArg *a);
+int handleGetExtraData(HandlerArg *a);
+int handleSetExtraData(HandlerArg *a);
+int handleSetProperty(HandlerArg *a);
+int handleSharedFolder(HandlerArg *a);
+int handleVMStatistics(HandlerArg *a);
 
 /* VBoxManageDisk.cpp */
 int handleCreateHardDisk(HandlerArg *a);

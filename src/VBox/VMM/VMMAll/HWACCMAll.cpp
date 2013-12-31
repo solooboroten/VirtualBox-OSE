@@ -167,9 +167,15 @@ VMMDECL(int) HWACCMInvalidatePageOnAllVCpus(PVM pVM, RTGCPTR GCPtr)
 {
     VMCPUID idCurCpu = VMMGetCpuId(pVM);
 
+    STAM_COUNTER_INC(&pVM->aCpus[idCurCpu].hwaccm.s.StatFlushPage);
+
     for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
     {
         PVMCPU pVCpu = &pVM->aCpus[idCpu];
+
+        /* Nothing to do if a TLB flush is already pending; the VCPU should have already been poked if it were active */
+        if (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_TLB_FLUSH))
+            continue;
 
         if (pVCpu->idCpu == idCurCpu)
         {
@@ -211,6 +217,8 @@ VMMDECL(int) HWACCMFlushTLBOnAllVCpus(PVM pVM)
         return HWACCMFlushTLB(&pVM->aCpus[0]);
 
     VMCPUID idThisCpu = VMMGetCpuId(pVM);
+
+    STAM_COUNTER_INC(&pVM->aCpus[idThisCpu].hwaccm.s.StatFlushTLB);
 
     for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
     {

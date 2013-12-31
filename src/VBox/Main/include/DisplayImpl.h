@@ -338,6 +338,27 @@ private:
     void vbvaReleaseCmd (VBVACMDHDR *pHdr, int32_t cbCmd);
 
     void handleResizeCompletedEMT (void);
+
+#ifdef VBOX_WITH_OLD_VBVA_LOCK
+    RTCRITSECT mVBVALock;
+    volatile uint32_t mfu32PendingVideoAccelDisable;
+    
+    int vbvaLock(void);
+    void vbvaUnlock(void);
+
+public:
+    static int displayTakeScreenshotEMT(Display *pDisplay, uint8_t **ppu8Data, size_t *pcbData, uint32_t *pu32Width, uint32_t *pu32Height);
+
+private:
+    static void InvalidateAndUpdateEMT(Display *pDisplay);
+    static int DrawToScreenEMT(Display *pDisplay, BYTE *address, ULONG x, ULONG y, ULONG width, ULONG height);
+
+    int videoAccelRefreshProcess(void);
+
+    /* Functions run under VBVA lock. */
+    int videoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory);
+    void videoAccelFlush (void);
+#endif /* VBOX_WITH_OLD_VBVA_LOCK */
 };
 
 void gdImageCopyResampled (uint8_t *dst, uint8_t *src,

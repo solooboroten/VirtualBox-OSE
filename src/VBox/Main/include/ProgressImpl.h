@@ -81,6 +81,8 @@ public:
     STDMETHOD(COMGETTER(Operation)) (ULONG *aCount);
     STDMETHOD(COMGETTER(OperationDescription)) (BSTR *aOperationDescription);
     STDMETHOD(COMGETTER(OperationPercent)) (ULONG *aOperationPercent);
+    STDMETHOD(COMSETTER(Timeout)) (ULONG aTimeout);
+    STDMETHOD(COMGETTER(Timeout)) (ULONG *aTimeout);
 
     // public methods only for internal purposes
 
@@ -96,6 +98,7 @@ public:
     double calcTotalPercent();
 
 protected:
+    void checkForAutomaticTimeout(void);
 
 #if !defined (VBOX_COM_INPROC)
     /** Weak parent. */
@@ -129,6 +132,7 @@ protected:
     Bstr m_bstrOperationDescription;                // name of current operation; initially from constructor, changed with setNextOperation()
     ULONG m_ulCurrentOperationWeight;               // weight of current operation, given to setNextOperation()
     ULONG m_ulOperationPercent;                     // percentage of current operation, set with setCurrentOperationProgress()
+    ULONG m_cMsTimeout;                             /**< Automatic timeout value. 0 means none. */
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -408,6 +412,8 @@ public:
     STDMETHOD(COMGETTER(Operation)) (ULONG *aCount);
     STDMETHOD(COMGETTER(OperationDescription)) (BSTR *aOperationDescription);
     STDMETHOD(COMGETTER(OperationPercent)) (ULONG *aOperationPercent);
+    STDMETHOD(COMSETTER(Timeout)) (ULONG aTimeout);
+    STDMETHOD(COMGETTER(Timeout)) (ULONG *aTimeout);
 
     // IProgress methods
     STDMETHOD(WaitForCompletion) (LONG aTimeout);
