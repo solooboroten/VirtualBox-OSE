@@ -477,6 +477,7 @@ public:
     STDMETHOD(DetachDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice);
     STDMETHOD(PassthroughDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice, BOOL aPassthrough);
     STDMETHOD(TemporaryEjectDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice, BOOL aTempEject);
+    STDMETHOD(NonRotationalDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice, BOOL aNonRotational);
     STDMETHOD(SetBandwidthGroupForDevice)(IN_BSTR aControllerName, LONG aControllerPort,
                                           LONG aDevice, IBandwidthGroup *aBandwidthGroup);
     STDMETHOD(MountMedium)(IN_BSTR aControllerName, LONG aControllerPort,
@@ -573,6 +574,16 @@ public:
     VirtualBox* getVirtualBox() const { return mParent; }
 
     /**
+     * Checks if this machine is accessible, without attempting to load the
+     * config file.
+     *
+     * @note This method doesn't check this object's readiness. Intended to be
+     * used by ready Machine children (whose readiness is bound to the parent's
+     * one) or after doing addCaller() manually.
+     */
+    bool isAccessible() const { return mData->mAccessible; }
+
+    /**
      * Returns this machine ID.
      *
      * @note This method doesn't check this object's readiness. Intended to be
@@ -624,6 +635,16 @@ public:
         IsModified_Snapshots            = 0x0800,
         IsModified_BandwidthControl     = 0x1000
     };
+
+    /**
+     * Checks if this machine is accessible, without attempting to load the
+     * config file.
+     *
+     * @note This method doesn't check this object's readiness. Intended to be
+     * used by ready Machine children (whose readiness is bound to the parent's
+     * one) or after doing addCaller() manually.
+     */
+    ChipsetType_T getChipsetType() const { return mHWData->mChipsetType; }
 
     void setModified(uint32_t fl);
     void setModifiedLock(uint32_t fl);
@@ -825,6 +846,7 @@ protected:
                          AutoWriteLock &writeLock,
                          Snapshot *pSnapshot,
                          GuidList *pllRegistriesThatNeedSaving);
+
     HRESULT detachAllMedia(AutoWriteLock &writeLock,
                            Snapshot *pSnapshot,
                            CleanupMode_T cleanupMode,

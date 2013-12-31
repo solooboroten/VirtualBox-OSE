@@ -1243,11 +1243,11 @@ QString VBoxGlobal::toString(KMediumVariant mediumVariant) const
     switch (mediumVariant)
     {
         case KMediumVariant_Standard:
-            return tr("Dynamically expanding storage");
+            return tr("Dynamically allocated storage");
         case (KMediumVariant)(KMediumVariant_Standard | KMediumVariant_Fixed):
             return tr("Fixed size storage");
         case (KMediumVariant)(KMediumVariant_Standard | KMediumVariant_VmdkSplit2G):
-            return tr("Dynamically expanding storage split into files of less than 2GB");
+            return tr("Dynamically allocated storage split into files of less than 2GB");
         case (KMediumVariant)(KMediumVariant_Standard | KMediumVariant_Fixed | KMediumVariant_VmdkSplit2G):
             return tr("Fixed size storage split into files of less than 2GB");
         default:
@@ -1649,7 +1649,7 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
                      + QString (sSectionItemTpl2).arg (tr ("Processor(s)", "details report"),
                                                        tr ("<nobr>%1</nobr>", "details report"))
                        .arg (aMachine.GetCPUCount())
-                     + QString (sSectionItemTpl2).arg (tr ("CPU Execution Cap", "details report"),
+                     + QString (sSectionItemTpl2).arg (tr ("Execution Cap", "details report"),
                                                        tr ("<nobr>%1%</nobr>", "details report"))
                        .arg (aMachine.GetCPUExecutionCap())
                      + QString (sSectionItemTpl2).arg (tr ("Boot Order", "details report"), bootOrder)
@@ -3868,7 +3868,7 @@ quint64 VBoxGlobal::requiredVideoMemory(const QString &strGuestOSTypeId, int cMo
     {
        /* Windows guests need offscreen VRAM too for graphics acceleration features: */
 #ifdef VBOX_WITH_CRHGSMI
-       if (strGuestOSTypeId == "WindowsVista" || strGuestOSTypeId == "Windows7")
+       if (isWddmCompatibleOsType(strGuestOSTypeId))
        {
            /* wddm mode, there are two surfaces for each screen: shadow & primary */
            needMBytes *= 3;
@@ -4437,6 +4437,12 @@ quint64 VBoxGlobal::required3DWddmOffscreenVideoMemory(const QString &strGuestOS
     quint64 cbSize = VBoxGlobal::requiredVideoMemory(strGuestOSTypeId, 1); /* why not cMonitors? */
     cbSize += 64 * _1M;
     return cbSize;
+}
+
+/* static */
+bool VBoxGlobal::isWddmCompatibleOsType(const QString &strGuestOSTypeId)
+{
+    return strGuestOSTypeId.startsWith("WindowsVista") || strGuestOSTypeId.startsWith("Windows7") || strGuestOSTypeId.startsWith("Windows2008");
 }
 #endif /* VBOX_WITH_CRHGSMI */
 

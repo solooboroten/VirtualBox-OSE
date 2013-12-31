@@ -151,9 +151,9 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            [--vram <vramsize in MB>]\n"
                      "                            [--acpi on|off]\n"
 #ifdef VBOX_WITH_PCI_PASSTHROUGH
-                     "                            [--attachpci 03:04.0]\n"
-                     "                            [--attachpci 03:04.0@02:01.0]\n"
-                     "                            [--detachpci 03:04.0]\n"
+                     "                            [--pciattach 03:04.0]\n"
+                     "                            [--pciattach 03:04.0@02:01.0]\n"
+                     "                            [--pcidetach 03:04.0]\n"
 #endif
                      "                            [--ioapic on|off]\n"
                      "                            [--pae on|off]\n"
@@ -466,6 +466,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
                      "                            [--setparentuuid <uuid>]\n"
                      "                            [--passthrough on|off]\n"
                      "                            [--tempeject on|off]\n"
+                     "                            [--nonrotational on|off]\n"
                      "                            [--bandwidthgroup <name>]\n"
                      "                            [--forceunmount]\n"
                      "                            [--server <name>|<ip>]\n"
@@ -705,7 +706,7 @@ void printUsage(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
     if (u64Cmd & USAGE_EXTPACK)
     {
         RTStrmPrintf(pStrm,
-                     "VBoxManage extpack          install <tarball> |\n"
+                     "VBoxManage extpack          install [--replace] <tarball> |\n"
                      "                            uninstall [--force] <name> |\n"
                      "                            cleanup\n"
                      "\n");

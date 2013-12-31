@@ -49,11 +49,15 @@
 #include <iprt/asm.h>
 
 #ifdef VBOXWDDMDISP_DEBUG
-bool g_bVBoxVDbgFDumpSetTexture = false;
-bool g_bVBoxVDbgFDumpDrawPrim = false;
-bool g_bVBoxVDbgFDumpTexBlt = false;
-bool g_bVBoxVDbgFDumpBlt = false;
+DWORD g_VBoxVDbgFDumpSetTexture = 0;
+DWORD g_VBoxVDbgFDumpDrawPrim = 0;
+DWORD g_VBoxVDbgFDumpTexBlt = 0;
+DWORD g_VBoxVDbgFDumpBlt = 0;
+DWORD g_VBoxVDbgFDumpRtSynch = 0;
+DWORD g_VBoxVDbgFDumpFlush = 0;
+DWORD g_VBoxVDbgFDumpShared = 0;
 
+DWORD g_VBoxVDbgPid = 0;
 typedef enum
 {
     VBOXDISPDBG_STATE_UNINITIALIZED = 0,

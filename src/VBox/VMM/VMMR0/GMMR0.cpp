@@ -2542,6 +2542,10 @@ static int gmmR0AllocatePagesNew(PGMM pGMM, PGVM pGVM, uint32_t cPages, PGMMPAGE
             }
             else
                 AssertMsgFailed(("idPage=%#x\n", idPage));
+
+            paPages[iPage].idPage       = NIL_GMM_PAGEID;
+            paPages[iPage].idSharedPage = NIL_GMM_PAGEID;
+            paPages[iPage].HCPhysGCPhys = NIL_RTHCPHYS;
         }
 
         /* Free empty chunks. */
@@ -2656,7 +2660,7 @@ GMMR0DECL(int) GMMR0AllocateHandyPages(PVM pVM, VMCPUID idCpu, uint32_t cPagesTo
                                     pPage->Private.pfn = GMM_PAGE_PFN_UNSHAREABLE;
                                 /* else: NIL_RTHCPHYS nothing */
 
-                                paPages[iPage].idPage = NIL_GMM_PAGEID;
+                                paPages[iPage].idPage       = NIL_GMM_PAGEID;
                                 paPages[iPage].HCPhysGCPhys = NIL_RTHCPHYS;
                             }
                             else
@@ -2721,13 +2725,25 @@ GMMR0DECL(int) GMMR0AllocateHandyPages(PVM pVM, VMCPUID idCpu, uint32_t cPagesTo
                         break;
                     }
                 }
-            }
+            } /* for each page to update */
 
-            /*
-             * Join paths with GMMR0AllocatePages for the allocation.
-             * Note! gmmR0AllocateMoreChunks may leave the protection of the mutex!
-             */
-            rc = gmmR0AllocatePagesNew(pGMM, pGVM, cPagesToAlloc, paPages, GMMACCOUNT_BASE);
+            if (RT_SUCCESS(rc))
+            {
+#if defined(VBOX_STRICT) && 0 /** @todo re-test this later. Appeared to be a PGM init bug. */
+                for (iPage = 0; iPage < cPagesToAlloc; iPage++)
+                {
+                    Assert(paPages[iPage].HCPhysGCPhys  == NIL_RTHCPHYS);
+                    Assert(paPages[iPage].idPage        == NIL_GMM_PAGEID);
+                    Assert(paPages[iPage].idSharedPage  == NIL_GMM_PAGEID);
+                }
+#endif
+
+                /*
+                 * Join paths with GMMR0AllocatePages for the allocation.
+                 * Note! gmmR0AllocateMoreChunks may leave the protection of the mutex!
+                 */
+                rc = gmmR0AllocatePagesNew(pGMM, pGVM, cPagesToAlloc, paPages, GMMACCOUNT_BASE);
+            }
         }
         else
             rc = VERR_WRONG_ORDER;

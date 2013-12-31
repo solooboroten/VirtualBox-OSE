@@ -3511,7 +3511,7 @@ HRESULT Console::doMediumChange(IMediumAttachment *aMediumAttachment, bool fForc
         return S_OK;
     }
 
-    if (!pMedium)
+    if (pMedium)
         return setError(E_FAIL,
                         tr("Could not mount the media/drive '%ls' (%Rrc)"),
                         mediumLocation.raw(), vrc);
@@ -6403,6 +6403,7 @@ HRESULT Console::powerUp(IProgress **aProgress, bool aPaused)
         rc = consoleInitReleaseLog(mMachine);
         if (FAILED(rc))
             throw rc;
+        mptrExtPackManager->dumpAllToReleaseLog();
 
 #ifdef RT_OS_SOLARIS
         /* setup host core dumper for the VM */

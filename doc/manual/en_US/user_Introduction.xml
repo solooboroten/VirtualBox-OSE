@@ -747,7 +747,7 @@
 
           <para>VirtualBox supports two types of image files:<itemizedlist>
               <listitem>
-                <para>A <emphasis role="bold">dynamically expanding
+                <para>A <emphasis role="bold">dynamically allocated
                 file</emphasis> will only grow in size when the guest actually
                 stores data on its virtual hard disk. It will therefore
                 initially be small on the host hard drive and only later grow
@@ -760,7 +760,7 @@
                 of the virtual hard disk space is actually in use. While
                 occupying much more space, a fixed-size file incurs less
                 overhead and is therefore slightly faster than a dynamically
-                expanding file.</para>
+                allocated file.</para>
               </listitem>
             </itemizedlist></para>
 
@@ -1096,6 +1096,10 @@
             key + C</emphasis>, or select "Scale mode" from the "Machine" menu
             in the VM window. To leave scale mode, press the host key + C
             again.</para>
+
+            <para>The aspect ratio of the guest screen is preserved when
+            resizing the window. To ignore the aspect ratio, press Shift
+            during the resize operation.</para>
 
             <para>Please see <xref linkend="KnownIssues" /> for additional
             remarks.</para>

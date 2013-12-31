@@ -103,10 +103,13 @@ void vboxVDbgVEHandlerUnregister();
     } while (0)
 
 #ifdef VBOXWDDMDISP_DEBUG
-extern bool g_bVBoxVDbgFDumpSetTexture;
-extern bool g_bVBoxVDbgFDumpDrawPrim;
-extern bool g_bVBoxVDbgFDumpTexBlt;
-extern bool g_bVBoxVDbgFDumpBlt;
+extern DWORD g_VBoxVDbgFDumpSetTexture;
+extern DWORD g_VBoxVDbgFDumpDrawPrim;
+extern DWORD g_VBoxVDbgFDumpTexBlt;
+extern DWORD g_VBoxVDbgFDumpBlt;
+extern DWORD g_VBoxVDbgFDumpRtSynch;
+extern DWORD g_VBoxVDbgFDumpFlush;
+extern DWORD g_VBoxVDbgFDumpShared;
 
 void vboxDispLogDrvF(char * szString, ...);
 void vboxDispLogDrv(char * szString);
@@ -129,29 +132,50 @@ void vboxVDbgDoPrintRect(const char * pPrefix, const RECT *pRect, const char * p
 void vboxVDbgDoPrintAlloc(const char * pPrefix, const PVBOXWDDMDISP_RESOURCE pRc, uint32_t iAlloc, const char * pSuffix);
 VOID vboxVDbgDoDumpRtData(char * pPrefix, IDirect3DDevice9 *pDevice, char * pSuffix);
 
+extern DWORD g_VBoxVDbgPid;
+#define VBOXVDBG_IS_PID(_pid) ((_pid) == (g_VBoxVDbgPid ? g_VBoxVDbgPid : (g_VBoxVDbgPid = GetCurrentProcessId())))
+#define VBOXVDBG_IS_DUMP_ALLOWED_PID(_pid) (((int)(_pid)) > 0 ? VBOXVDBG_IS_PID(_pid) : !VBOXVDBG_IS_PID(-((int)(_pid))))
+
+#define VBOXVDBG_IS_DUMP_ALLOWED(_type) ( \
+        g_VBoxVDbgFDump##_type \
+        && (g_VBoxVDbgFDump##_type == 1 \
+                || VBOXVDBG_IS_DUMP_ALLOWED_PID(g_VBoxVDbgFDump##_type) \
+           ) \
+        )
+
+#define VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pRc) (\
+        (_pRc)->RcDesc.fFlags.SharedResource \
+        && VBOXVDBG_IS_DUMP_ALLOWED(Shared) \
+        )
+
 #define VBOXVDBG_DUMP_DRAWPRIM_ENTER(_pDevice) do { \
-        if (g_bVBoxVDbgFDumpDrawPrim) \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(DrawPrim)) \
         { \
             vboxVDbgDoDumpRt("==>"__FUNCTION__": RenderTarget Dump\n", (_pDevice), "\n"); \
         }\
     } while (0)
 
 #define VBOXVDBG_DUMP_DRAWPRIM_LEAVE(_pDevice) do { \
-        if (g_bVBoxVDbgFDumpDrawPrim) \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(DrawPrim)) \
         { \
             vboxVDbgDoDumpRt("<=="__FUNCTION__": RenderTarget Dump\n", (_pDevice), "\n"); \
         }\
     } while (0)
 
 #define VBOXVDBG_DUMP_SETTEXTURE(_pRc) do { \
-        if (g_bVBoxVDbgFDumpSetTexture) \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(SetTexture) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pRc) \
+                ) \
         { \
             vboxVDbgDoDumpRcRectByRc("== "__FUNCTION__": Texture Dump\n", _pRc, NULL, "\n"); \
         } \
     } while (0)
 
 #define VBOXVDBG_DUMP_TEXBLT_ENTER(_pSrcRc, _pSrcRect, _pDstRc, _pDstPoint) do { \
-        if (g_bVBoxVDbgFDumpTexBlt) \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(TexBlt) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pSrcRc) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pDstRc) \
+                ) \
         { \
             RECT _DstRect; \
             vboxWddmRectMoved(&_DstRect, (_pSrcRect), (_pDstPoint)->x, (_pDstPoint)->y); \
@@ -161,7 +185,10 @@ VOID vboxVDbgDoDumpRtData(char * pPrefix, IDirect3DDevice9 *pDevice, char * pSuf
     } while (0)
 
 #define VBOXVDBG_DUMP_TEXBLT_LEAVE(_pSrcRc, _pSrcRect, _pDstRc, _pDstPoint) do { \
-        if (g_bVBoxVDbgFDumpTexBlt) \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(TexBlt) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pSrcRc) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pDstRc) \
+                ) \
         { \
             RECT _DstRect; \
             vboxWddmRectMoved(&_DstRect, (_pSrcRect), (_pDstPoint)->x, (_pDstPoint)->y); \
@@ -170,20 +197,40 @@ VOID vboxVDbgDoDumpRtData(char * pPrefix, IDirect3DDevice9 *pDevice, char * pSuf
         } \
     } while (0)
 
-#define VBOXVDBG_DUMP_BLT_ENTER(_pSrcSurf, _pSrcRect, _pDstSurf, _pDstRect) do { \
-        if (g_bVBoxVDbgFDumpBlt) \
+#define VBOXVDBG_DUMP_BLT_ENTER(_pSrcRc, _pSrcSurf, _pSrcRect, _pDstRc, _pDstSurf, _pDstRect) do { \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(Blt) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pSrcRc) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pDstRc) \
+                ) \
         { \
             vboxVDbgDoDumpSurfRect("==>"__FUNCTION__" Src:\n", (_pSrcSurf), (_pSrcRect), "\n", true); \
             vboxVDbgDoDumpSurfRect("==>"__FUNCTION__" Dst:\n", (_pDstSurf), (_pDstRect), "\n", true); \
         } \
     } while (0)
 
-#define VBOXVDBG_DUMP_BLT_LEAVE(_pSrcSurf, _pSrcRect, _pDstSurf, _pDstRect) do { \
-        if (g_bVBoxVDbgFDumpBlt) \
+#define VBOXVDBG_DUMP_BLT_LEAVE(_pSrcRc, _pSrcSurf, _pSrcRect, _pDstRc, _pDstSurf, _pDstRect) do { \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(Blt) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pSrcRc) \
+                || VBOXVDBG_IS_DUMP_SHARED_ALLOWED(_pDstRc) \
+                ) \
         { \
             vboxVDbgDoDumpSurfRect("<=="__FUNCTION__" Src:\n", (_pSrcSurf), (_pSrcRect), "\n", true); \
             vboxVDbgDoDumpSurfRect("<=="__FUNCTION__" Dst:\n", (_pDstSurf), (_pDstRect), "\n", true); \
         } \
+    } while (0)
+
+#define VBOXVDBG_DUMP_SYNC_RT(_pBbSurf) do { \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(RtSynch)) \
+        { \
+            vboxVDbgDoDumpSurfRect("== "__FUNCTION__" Bb:\n", (_pBbSurf), NULL, "\n", true); \
+        } \
+    } while (0)
+
+#define VBOXVDBG_DUMP_FLUSH(_pDevice) do { \
+        if (VBOXVDBG_IS_DUMP_ALLOWED(Flush)) \
+        { \
+            vboxVDbgDoDumpRt("== "__FUNCTION__": RenderTarget Dump\n", (_pDevice), "\n"); \
+        }\
     } while (0)
 #else
 #define VBOXVDBG_DUMP_DRAWPRIM_ENTER(_pDevice) do { } while (0)
@@ -191,8 +238,10 @@ VOID vboxVDbgDoDumpRtData(char * pPrefix, IDirect3DDevice9 *pDevice, char * pSuf
 #define VBOXVDBG_DUMP_SETTEXTURE(_pRc) do { } while (0)
 #define VBOXVDBG_DUMP_TEXBLT_ENTER(_pSrcRc, _pSrcRect, _pDstRc, _pDstPoint) do { } while (0)
 #define VBOXVDBG_DUMP_TEXBLT_LEAVE(_pSrcRc, _pSrcRect, _pDstRc, _pDstPoint) do { } while (0)
-#define VBOXVDBG_DUMP_BLT_ENTER(_pSrcSurf, _pSrcRect, _pDstSurf, _pDstRect) do { } while (0)
-#define VBOXVDBG_DUMP_BLT_LEAVE(_pSrcSurf, _pSrcRect, _pDstSurf, _pDstRect) do { } while (0)
+#define VBOXVDBG_DUMP_BLT_ENTER(_pSrcRc, _pSrcSurf, _pSrcRect, _pDstRc, _pDstSurf, _pDstRect) do { } while (0)
+#define VBOXVDBG_DUMP_BLT_LEAVE(_pSrcRc, _pSrcSurf, _pSrcRect, _pDstRc, _pDstSurf, _pDstRect) do { } while (0)
+#define VBOXVDBG_DUMP_SYNC_RT(_pBbSurf) do { } while (0)
+#define VBOXVDBG_DUMP_FLUSH(_pDevice) do { } while (0)
 #endif
 
 
