@@ -33,6 +33,7 @@
 
 typedef struct
 {
+    Utf8Str                 strBaseName;
     ComPtr<IMedium>         pMedium;
     ULONG                   uWeight;
 } MEDIUMTASK;
@@ -263,6 +264,11 @@ HRESULT MachineCloneVM::start(IProgress **pProgress)
     HRESULT rc;
     try
     {
+        /** @todo r=klaus this code cannot deal with someone crazy specifying
+         * IMachine corresponding to a mutable machine as d->pSrcMachine */
+        if (d->pSrcMachine->isSessionMachine())
+            throw E_FAIL;
+
         /* Handle the special case that someone is requesting a _full_ clone
          * with all snapshots (and the current state), but uses a snapshot
          * machine (and not the current one) as source machine. In this case we
@@ -277,6 +283,58 @@ HRESULT MachineCloneVM::start(IProgress **pProgress)
             rc = d->pSrcMachine->getVirtualBox()->FindMachine(bstrSrcMachineId.raw(), newSrcMachine.asOutParam());
             if (FAILED(rc)) throw rc;
             d->pSrcMachine = (Machine*)(IMachine*)newSrcMachine;
+        }
+
+        bool fSubtreeIncludesCurrent = false;
+        ComObjPtr<Machine> pCurrState;
+        if (d->mode == CloneMode_MachineAndChildStates)
+        {
+            if (d->pSrcMachine->isSnapshotMachine())
+            {
+                /* find machine object for current snapshot of current state */
+                Bstr bstrSrcMachineId;
+                rc = d->pSrcMachine->COMGETTER(Id)(bstrSrcMachineId.asOutParam());
+                if (FAILED(rc)) throw rc;
+                ComPtr<IMachine> pCurr;
+                rc = d->pSrcMachine->getVirtualBox()->FindMachine(bstrSrcMachineId.raw(), pCurr.asOutParam());
+                if (FAILED(rc)) throw rc;
+                if (pCurr.isNull())
+                    throw E_FAIL;
+                pCurrState = (Machine *)(IMachine *)pCurr;
+                ComPtr<ISnapshot> pSnapshot;
+                rc = pCurrState->COMGETTER(CurrentSnapshot)(pSnapshot.asOutParam());
+                if (FAILED(rc)) throw rc;
+                if (pSnapshot.isNull())
+                    throw E_FAIL;
+                ComPtr<IMachine> pCurrSnapMachine;
+                rc = pSnapshot->COMGETTER(Machine)(pCurrSnapMachine.asOutParam());
+                if (FAILED(rc)) throw rc;
+                if (pCurrSnapMachine.isNull())
+                    throw E_FAIL;
+
+                /* now check if there is a parent chain which leads to the
+                 * snapshot machine defining the subtree. */
+                while (!pSnapshot.isNull())
+                {
+                    ComPtr<IMachine> pSnapMachine;
+                    rc = pSnapshot->COMGETTER(Machine)(pSnapMachine.asOutParam());
+                    if (FAILED(rc)) throw rc;
+                    if (pSnapMachine.isNull())
+                        throw E_FAIL;
+                    if (pSnapMachine == d->pSrcMachine)
+                    {
+                        fSubtreeIncludesCurrent = true;
+                        break;
+                    }
+                    rc = pSnapshot->COMGETTER(Parent)(pSnapshot.asOutParam());
+                }
+            }
+            else
+            {
+                /* If the subtree is only the Current State simply use the
+                 * 'machine' case for cloning. It is easier to understand. */
+                d->mode = CloneMode_MachineState;
+            }
         }
 
         /* Lock the target machine early (so nobody mess around with it in the meantime). */
@@ -303,8 +361,7 @@ HRESULT MachineCloneVM::start(IProgress **pProgress)
             if (cSnapshots > 0)
             {
                 Utf8Str id;
-                if (    d->mode == CloneMode_MachineAndChildStates
-                    && !d->snapshotId.isEmpty())
+                if (d->mode == CloneMode_MachineAndChildStates)
                     id = d->snapshotId.toString();
                 ComPtr<ISnapshot> pSnapshot;
                 rc = d->pSrcMachine->FindSnapshot(Bstr(id).raw(), pSnapshot.asOutParam());
@@ -313,8 +370,20 @@ HRESULT MachineCloneVM::start(IProgress **pProgress)
                 if (FAILED(rc)) throw rc;
                 if (d->mode == CloneMode_MachineAndChildStates)
                 {
-                    rc = pSnapshot->COMGETTER(Machine)(d->pOldMachineState.asOutParam());
-                    if (FAILED(rc)) throw rc;
+                    if (fSubtreeIncludesCurrent)
+                    {
+                        /* zap d->snapshotId because there is no need to
+                         * create a new current state. */
+                        d->snapshotId.clear();
+                        if (pCurrState.isNull())
+                            throw E_FAIL;
+                        machineList.append(pCurrState);
+                    }
+                    else
+                    {
+                        rc = pSnapshot->COMGETTER(Machine)(d->pOldMachineState.asOutParam());
+                        if (FAILED(rc)) throw rc;
+                    }
                 }
             }
         }
@@ -366,6 +435,11 @@ HRESULT MachineCloneVM::start(IProgress **pProgress)
                 mtc.fCreateDiffs = fCreateDiffs;
                 mtc.fAttachLinked = fAttachLinked;
 
+                /* If the current state without any snapshots is cloned, we
+                 * don't need any diff images in the new clone. Add the last
+                 * medium to the list of medias to create only (the clone
+                 * operation of IMedium will create a merged copy
+                 * automatically). */
                 if (d->mode == CloneMode_MachineState)
                 {
                     /* Refresh the state so that the file size get read. */
@@ -376,8 +450,20 @@ HRESULT MachineCloneVM::start(IProgress **pProgress)
                     rc = pSrcMedium->COMGETTER(Size)(&lSize);
                     if (FAILED(rc)) throw rc;
 
-                    /* Save the current medium, for later cloning. */
+                    ComPtr<IMedium> pBaseMedium;
+                    rc = pSrcMedium->COMGETTER(Base)(pBaseMedium.asOutParam());
+                    if (FAILED(rc)) throw rc;
+
                     MEDIUMTASK mt;
+
+                    Bstr bstrBaseName;
+                    rc = pBaseMedium->COMGETTER(Name)(bstrBaseName.asOutParam());
+                    if (FAILED(rc)) throw rc;
+
+                    /* Save the base name. */
+                    mt.strBaseName = bstrBaseName;
+
+                    /* Save the current medium, for later cloning. */
                     mt.pMedium = pSrcMedium;
                     if (fAttachLinked)
                         mt.uWeight = 0; /* dummy */
@@ -595,6 +681,7 @@ HRESULT MachineCloneVM::run()
         typedef std::map<Utf8Str, ComObjPtr<Medium> > TStrMediumMap;
         typedef std::pair<Utf8Str, ComObjPtr<Medium> > TStrMediumPair;
         TStrMediumMap map;
+        GuidList llRegistriesThatNeedSaving;
         size_t cDisks = 0;
         for (size_t i = 0; i < d->llMedias.size(); ++i)
         {
@@ -622,7 +709,8 @@ HRESULT MachineCloneVM::run()
                     ComObjPtr<Medium> pLMedium = static_cast<Medium*>(pTmp);
                     if (pLMedium.isNull())
                         throw E_POINTER;
-                    if (pLMedium->isReadOnly())
+                    ComObjPtr<Medium> pBase = pLMedium->getBase();
+                    if (pBase->isReadOnly())
                     {
                         ComObjPtr<Medium> pDiff;
                         /* create the diff under the snapshot medium */
@@ -677,13 +765,17 @@ HRESULT MachineCloneVM::run()
                         Utf8Str strNewName(bstrSrcName);
                         if (!fKeepDiskNames)
                         {
+                            Utf8Str strSrcTest = bstrSrcName;
+                            /* Check if we have to use another name. */
+                            if (!mt.strBaseName.isEmpty())
+                                strSrcTest = mt.strBaseName;
+                            strSrcTest.stripExt();
                             /* If the old disk name was in {uuid} format we also
                              * want the new name in this format, but with the
                              * updated id of course. If the old disk was called
                              * like the VM name, we change it to the new VM name.
                              * For all other disks we rename them with this
                              * template: "new name-disk1.vdi". */
-                            Utf8Str strSrcTest = Utf8Str(bstrSrcName).stripExt();
                             if (strSrcTest == strOldVMName)
                                 strNewName = Utf8StrFmt("%s%s", trgMCF.machineUserData.strName.c_str(), RTPathExt(Utf8Str(bstrSrcName).c_str()));
                             else if (   strSrcTest.startsWith("{")
@@ -705,10 +797,9 @@ HRESULT MachineCloneVM::run()
                         rc = pMedium->COMGETTER(Location)(bstrSrcPath.asOutParam());
                         if (FAILED(rc)) throw rc;
                         if (   !bstrSrcPath.isEmpty()
-                            &&  RTPathStartsWith(Utf8Str(bstrSrcPath).c_str(), Utf8Str(bstrSrcSnapshotFolder).c_str()))
+                            &&  RTPathStartsWith(Utf8Str(bstrSrcPath).c_str(), Utf8Str(bstrSrcSnapshotFolder).c_str())
+                            && (fKeepDiskNames || mt.strBaseName.isEmpty()))
                             strFile = Utf8StrFmt("%s%c%s", strTrgSnapshotFolder.c_str(), RTPATH_DELIMITER, strNewName.c_str());
-                        else
-                            strFile = Utf8StrFmt("%s%c%s", strTrgMachineFolder.c_str(), RTPATH_DELIMITER, strNewName.c_str());
 
                         /* Start creating the clone. */
                         ComObjPtr<Medium> pTarget;
@@ -773,10 +864,24 @@ HRESULT MachineCloneVM::run()
                 }
             }
 
-            /* Create diffs for the last image chain. */
+            Bstr bstrSrcId;
+            rc = mtc.chain.first().pMedium->COMGETTER(Id)(bstrSrcId.asOutParam());
+            if (FAILED(rc)) throw rc;
+            Bstr bstrTrgId;
+            rc = pNewParent->COMGETTER(Id)(bstrTrgId.asOutParam());
+            if (FAILED(rc)) throw rc;
+            /* update snapshot configuration */
+            d->updateSnapshotStorageLists(trgMCF.llFirstSnapshot, bstrSrcId, bstrTrgId);
+
+            /* create new 'Current State' diff for caller defined place */
             if (mtc.fCreateDiffs)
             {
-                if (pNewParent->isReadOnly())
+                const MEDIUMTASK &mt = mtc.chain.first();
+                ComObjPtr<Medium> pLMedium = static_cast<Medium*>((IMedium*)mt.pMedium);
+                if (pLMedium.isNull())
+                    throw E_POINTER;
+                ComObjPtr<Medium> pBase = pLMedium->getBase();
+                if (pBase->isReadOnly())
                 {
                     ComObjPtr<Medium> pDiff;
                     rc = createDiffHelper(pNewParent, strTrgSnapshotFolder,
@@ -791,17 +896,12 @@ HRESULT MachineCloneVM::run()
                      * subject to diff creation. */
                     newMedia.append(pNewParent);
                 }
+
+                rc = pNewParent->COMGETTER(Id)(bstrTrgId.asOutParam());
+                if (FAILED(rc)) throw rc;
             }
-            Bstr bstrSrcId;
-            rc = mtc.chain.first().pMedium->COMGETTER(Id)(bstrSrcId.asOutParam());
-            if (FAILED(rc)) throw rc;
-            Bstr bstrTrgId;
-            rc = pNewParent->COMGETTER(Id)(bstrTrgId.asOutParam());
-            if (FAILED(rc)) throw rc;
-            /* We have to patch the configuration, so it contains the new
-             * medium uuid instead of the old one. */
+            /* update 'Current State' configuration */
             d->updateStorageLists(trgMCF.storageMachine.llStorageControllers, bstrSrcId, bstrTrgId);
-            d->updateSnapshotStorageLists(trgMCF.llFirstSnapshot, bstrSrcId, bstrTrgId);
         }
         /* Make sure all disks know of the new machine uuid. We do this last to
          * be able to change the medium type above. */
@@ -811,7 +911,22 @@ HRESULT MachineCloneVM::run()
             AutoCaller mac(pMedium);
             if (FAILED(mac.rc())) throw mac.rc();
             AutoWriteLock mlock(pMedium COMMA_LOCKVAL_SRC_POS);
-            pMedium->addRegistry(d->options.contains(CloneOptions_Link) ? d->pSrcMachine->mData->mUuid : d->pTrgMachine->mData->mUuid, false /* fRecurse */);
+            Guid uuid = d->pTrgMachine->mData->mUuid;
+            if (d->options.contains(CloneOptions_Link))
+            {
+                ComObjPtr<Medium> pParent = pMedium->getParent();
+                mlock.release();
+                if (!pParent.isNull())
+                {
+                    AutoCaller mac2(pParent);
+                    if (FAILED(mac2.rc())) throw mac2.rc();
+                    AutoReadLock mlock2(pParent COMMA_LOCKVAL_SRC_POS);
+                    if (pParent->getFirstRegistryMachineId(uuid))
+                        VirtualBox::addGuidToListUniquely(llRegistriesThatNeedSaving, uuid);
+                }
+                mlock.acquire();
+            }
+            pMedium->addRegistry(uuid, false /* fRecurse */);
         }
         /* Check if a snapshot folder is necessary and if so doesn't already
          * exists. */
@@ -866,12 +981,10 @@ HRESULT MachineCloneVM::run()
         rc = d->pTrgMachine->SaveSettings();
         if (FAILED(rc)) throw rc;
         trgLock.release();
-        if (d->options.contains(CloneOptions_Link))
+        if (!llRegistriesThatNeedSaving.empty())
         {
             srcLock.release();
-            GuidList llRegistrySrc;
-            llRegistrySrc.push_back(d->pSrcMachine->mData->mUuid);
-            rc = p->mParent->saveRegistries(llRegistrySrc);
+            rc = p->mParent->saveRegistries(llRegistriesThatNeedSaving);
             if (FAILED(rc)) throw rc;
         }
     }

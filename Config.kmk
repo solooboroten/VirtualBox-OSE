@@ -65,10 +65,35 @@ PROPS_MISCBINS_ACCUMULATE_L  += INTERMEDIATES
 # Misc names used bye the install paths below.
 VBOX_PUEL_MANGLED_NAME := Oracle_VM_VirtualBox_Extension_Pack
 
-# Install paths.
-PATH_INS              = $(PATH_OUT)
+# Install paths
+## @todo This will change after 4.1 is branched off!
+# What is now 'bin' and 'lib' will be moved down under 'staged/', except on
+# darwin where it's currently called 'dist' which will be renamed to 'staged'.
+# When running 'kmk install' files will be copied to 'dist/', on unix systems
+# this will be done in FHS fashion assuming /usr/local or /usr as 'prefix'.
+#
+# Changes related to this are marked VBOX_WITH_NEW_LAYOUT, while changes marked
+# VBOX_WITH_0_2_0_KBUILD are for building with current kBuild svn.
+if $(KMK_REVISION) >= 2475 \
+ && $(KBUILD_VERSION_MAJOR) == 0 \
+ && (   ($(KBUILD_VERSION_MINOR) == 1 && $(KBUILD_VERSION_PATCH) >= 99) \
+     || $(KBUILD_VERSION_MINOR) >= 2)
+ VBOX_WITH_0_2_0_KBUILD = 1
+endif
+ifndef VBOX_WITH_NEW_LAYOUT
+ PATH_STAGE           = $(PATH_OUT)
+ ifdef VBOX_WITH_0_2_0_KBUILD
+  PATH_INS            = $(PATH_OUT)/dist
+ else
+  PATH_INS            = $(PATH_OUT)
+ endif
+endif
 ifeq ($(KBUILD_TARGET),darwin)
- INST_DIST            = dist/
+ ifndef VBOX_WITH_NEW_LAYOUT
+  INST_DIST           = dist/
+ else
+  INST_DIST          :=
+ endif
  INST_SDK             = $(INST_DIST)sdk/
 
  # the bundles
@@ -180,7 +205,7 @@ VBOX_BUILD_PUBLISHER =
 if $(int-gt $(length $(VBOX_BUILD_PUBLISHER)),10)
   $(error VBOX_BUILD_PUBLISHER must not be longer than 10 characters!)
 endif
-VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)$(VBOX_BUILD_PUBLISHER)_BETA3
+VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)$(VBOX_BUILD_PUBLISHER)
 # Force the additions.sh script to get an exact additions build when we're doing the release.
 
 ifeq ($(int-mod $(VBOX_VERSION_BUILD),2),0)
@@ -550,8 +575,8 @@ VBOX_WITH_S3 = 1
 if1of ($(KBUILD_TARGET), darwin freebsd linux solaris win)
  VBOX_WITH_NETFLT = 1
  ifeq ($(KBUILD_TARGET),solaris)
- # Disabled until some Nevada version ships the required headers.
- #  VBOX_WITH_NETFLT_CROSSBOW = 1
+  # requires snv_159+.
+  VBOX_WITH_NETFLT_CROSSBOW = 1
  endif
  # Use VBoxNetAdp for host only networking.
  if1of ($(KBUILD_TARGET), darwin freebsd linux solaris) ## @todo this should be set and used on windows too.
@@ -939,6 +964,8 @@ ifdef VBOX_OSE
  VBOX_WITH_TESTSUITE=
  VBOX_WITH_INTEL_PXE=
  VBOX_WITH_FFMPEG=
+ # Disable for OSE, requires snv_159+.
+ VBOX_WITH_NETFLT_CROSSBOW=
  ifn1of ($(KBUILD_TARGET), darwin linux solaris win)
   VBOX_WITH_INSTALLER=
  endif

@@ -319,28 +319,12 @@ DECL_FORCE_INLINE(int) pdmCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy, PCRT
  */
 VMMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
 {
-    int rc;
-#ifndef IN_RING3
-    if (rcBusy == VINF_SUCCESS)
-    {
-# ifndef PDMCRITSECT_STRICT
-        rc = pdmCritSectEnter(pCritSect, VERR_SEM_BUSY, NULL);
-# else
-        RTLOCKVALSRCPOS SrcPos = RTLOCKVALSRCPOS_INIT_NORMAL_API();
-        rc = pdmCritSectEnter(pCritSect, VERR_SEM_BUSY, &SrcPos);
-# endif
-    }
-    else
-#endif /* !IN_RING3 */
-    {
 #ifndef PDMCRITSECT_STRICT
-        rc = pdmCritSectEnter(pCritSect, rcBusy, NULL);
+    return pdmCritSectEnter(pCritSect, rcBusy, NULL);
 #else
-        RTLOCKVALSRCPOS SrcPos = RTLOCKVALSRCPOS_INIT_NORMAL_API();
-        rc = pdmCritSectEnter(pCritSect, rcBusy, &SrcPos);
+    RTLOCKVALSRCPOS SrcPos = RTLOCKVALSRCPOS_INIT_NORMAL_API();
+    return pdmCritSectEnter(pCritSect, rcBusy, &SrcPos);
 #endif
-    }
-    return rc;
 }
 
 
@@ -517,7 +501,23 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
     if (pCritSect->s.Core.fFlags & RTCRITSECT_FLAGS_NOP)
         return;
 
-    Assert(pCritSect->s.Core.NativeThreadOwner == pdmCritSectGetNativeSelf(pCritSect));
+    /*
+     * Always check that the caller is the owner (screw performance).
+     */
+    RTNATIVETHREAD const hNativeSelf = pdmCritSectGetNativeSelf(pCritSect);
+    if (RT_UNLIKELY(pCritSect->s.Core.NativeThreadOwner != hNativeSelf))
+    {
+#if 1
+        AssertMsgFailed(("%p %s: %p != %p; cLockers=%d cNestings=%d\n", pCritSect, R3STRING(pCritSect->s.pszName),
+                         pCritSect->s.Core.NativeThreadOwner, hNativeSelf,
+                         pCritSect->s.Core.cLockers, pCritSect->s.Core.cNestings));
+#else
+        AssertReleaseMsgFailed(("%p %s: %p != %p; cLockers=%d cNestings=%d\n", pCritSect, R3STRING(pCritSect->s.pszName),
+                                pCritSect->s.Core.NativeThreadOwner, hNativeSelf,
+                                pCritSect->s.Core.cLockers, pCritSect->s.Core.cNestings));
+#endif
+        return;
+    }
     Assert(pCritSect->s.Core.cNestings >= 1);
 
     /*

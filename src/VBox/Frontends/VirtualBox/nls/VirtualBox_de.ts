@@ -762,7 +762,7 @@
     <message>
         <source>Execution Cap</source>
         <comment>details report</comment>
-        <translation>CPU-Auslastungsgrenze</translation>
+        <translation>&amp;CPU-Begrenzung</translation>
     </message>
     <message>
         <source>&lt;nobr&gt;%1%&lt;/nobr&gt;</source>
@@ -1585,23 +1585,23 @@
     </message>
     <message>
         <source>Left Shift</source>
-        <translation>Shift Links</translation>
+        <translation type="obsolete">Shift Links</translation>
     </message>
     <message>
         <source>Right Shift</source>
-        <translation>Shift Rechts</translation>
+        <translation type="obsolete">Shift Rechts</translation>
     </message>
     <message>
         <source>Left Ctrl</source>
-        <translation>Strg Links</translation>
+        <translation type="obsolete">Strg Links</translation>
     </message>
     <message>
         <source>Right Ctrl</source>
-        <translation>Strg Rechts</translation>
+        <translation type="obsolete">Strg Rechts</translation>
     </message>
     <message>
         <source>Left Alt</source>
-        <translation>Alt Links</translation>
+        <translation type="obsolete">Alt Links</translation>
     </message>
 </context>
 <context>

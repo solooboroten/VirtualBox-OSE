@@ -1455,7 +1455,7 @@ STDMETHODIMP Machine::COMSETTER(CPUHotPlugEnabled)(BOOL enabled)
             if (   (cCpusAttached != mHWData->mCPUCount)
                 || (iHighestId >= mHWData->mCPUCount))
                 return setError(E_INVALIDARG,
-                                tr("CPU hotplugging can't be disabled because the maximum number of CPUs is not equal to the amount of CPUs attached\n"));
+                                tr("CPU hotplugging can't be disabled because the maximum number of CPUs is not equal to the amount of CPUs attached"));
 
             setModified(IsModified_MachineData);
             mHWData.backup();
@@ -6254,12 +6254,26 @@ STDMETHODIMP Machine::CloneTo(IMachine *pTarget, CloneMode_T mode, ComSafeArrayI
     CheckComArgNotNull(pTarget);
     CheckComArgOutPointerValid(pProgress);
 
+    /** @todo r=klaus disabled as there are apparently still cases which are
+     * not handled correctly */
+    if (mode == CloneMode_MachineAndChildStates)
+        return setError(VBOX_E_NOT_SUPPORTED,
+                        tr("The clone mode \"Machine and child states\" is not yet supported. Please try again in the next VirtualBox maintenance update"));
+
     /* Convert the options. */
     RTCList<CloneOptions_T> optList;
     if (options != NULL)
         optList = com::SafeArray<CloneOptions_T>(ComSafeArrayInArg(options)).toList();
 
-    AssertReturn(!optList.contains(CloneOptions_Link) || (isSnapshotMachine() && mode == CloneMode_MachineState), E_INVALIDARG);
+    if (optList.contains(CloneOptions_Link))
+    {
+        if (!isSnapshotMachine())
+            return setError(E_INVALIDARG,
+                            tr("Linked clone can only be created from a snapshot"));
+        if (mode != CloneMode_MachineState)
+            return setError(E_INVALIDARG,
+                            tr("Linked clone can only be created for a single machine state"));
+    }
     AssertReturn(!(optList.contains(CloneOptions_KeepAllMACs) && optList.contains(CloneOptions_KeepNATMACs)), E_INVALIDARG);
 
     AutoCaller autoCaller(this);
@@ -7506,6 +7520,11 @@ HRESULT Machine::loadMachineDataFromSettings(const settings::MachineConfigFile &
     // snapshot folder needs special processing so set it again
     rc = COMSETTER(SnapshotFolder)(Bstr(config.machineUserData.strSnapshotFolder).raw());
     if (FAILED(rc)) return rc;
+
+    /* Copy the extra data items (Not in any case config is already the same as
+     * mData->pMachineConfigFile, like when the xml files are read from disk. So
+     * make sure the extra data map is copied). */
+    mData->pMachineConfigFile->mapExtraDataItems = config.mapExtraDataItems;
 
     /* currentStateModified (optional, default is true) */
     mData->mCurrentStateModified = config.fCurrentStateModified;
@@ -9201,7 +9220,7 @@ void Machine::addMediumToRegistry(ComObjPtr<Medium> &pMedium,
 
     if (pMedium->addRegistry(uuid, false /* fRecurse */))
         // registry actually changed:
-        mParent->addGuidToListUniquely(llRegistriesThatNeedSaving, uuid);
+        VirtualBox::addGuidToListUniquely(llRegistriesThatNeedSaving, uuid);
 
     if (puuid)
         *puuid = uuid;

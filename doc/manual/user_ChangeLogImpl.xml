@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.1.0 Beta 3 (2011-07-14)</title>
+    <title>Version 4.1.0 (2011-07-19)</title>
 
     <para>This version is a major update. The following major new features
       were added:</para>
@@ -9,7 +9,9 @@
     <itemizedlist>
 
       <listitem>
-        <para>Support for cloning of VMs (bug #5853, see <xref linkend="clone"/>)</para>
+        <para>Support for cloning of VMs (bug #5853, see
+          <xref linkend="clone"/>): full clones can be created through the GUI
+          and VBoxManage, linked clones only through VBoxManage</para>
       </listitem>
 
       <listitem>
@@ -35,12 +37,15 @@
       </listitem>
 
       <listitem>
-        <para>Windows guests: Experimental WDDM graphics driver</para>
+        <para>Windows guests: Experimental WDDM graphics driver, supporting
+          Windows Aero (bug #4607) and providing Direct3D support using a
+          cleaner approach (no need to install the guest drivers in Safe Mode
+          anymore)</para>
       </listitem>
 
       <listitem>
-        <para>Guest Additions: modules and features now are represented as facilities
-          to have a common interface for frontends</para>
+        <para>Guest Additions: status of modules and features can now be
+          queried separately by the frontends</para>
       </listitem>
 
       <listitem>
@@ -50,19 +55,24 @@
       </listitem>
 
       <listitem>
+        <para>Host-only Networking: fixed host crash in kernels prior to 2.6.29
+        </para>
+      </listitem>
+
+      <listitem>
         <para>New Networking Mode <emphasis>UDP Tunnel</emphasis>: allows to
         interconnect VMs running on different hosts easily and transparently,
         see <xref linkend="networkingmodes" /></para>
       </listitem>
 
       <listitem>
-        <para>Experimental support for SATA hotplug added. Currently only supported
-          for hard disks and only with VBoxManage.</para>
+        <para>Experimental support for SATA hard disk hotplugging available
+          with VBoxManage</para>
       </listitem>
 
       <listitem>
-        <para>Solaris hosts: New Crossbow based bridged networking driver for Solaris 11
-        hosts (build 159 and above).</para>
+        <para>Solaris hosts: New Crossbow based bridged networking driver for
+          Solaris 11 build 159 and above</para>
       </listitem>
 
 
@@ -96,6 +106,12 @@
       <listitem>
         <para>GUI: added a setting for the promiscuous mode policy for
           internal networks, bridged networks and host-only networks</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: added slider for setting the CPU execution cap allowing to
+          limit the amount of CPU time spent for the execution of the guest,
+          see <xref linkend="settings-processor"/>.</para>
       </listitem>
 
       <listitem>
@@ -222,12 +238,17 @@
       </listitem>
 
       <listitem>
-        <para>VRDP: support for TLS connections</para>
+        <para>VRDP: support for TLS connections (see
+          <xref linkend="vrde-crypt"/></para>)
       </listitem>
 
       <listitem>
         <para>VRDP: support for multimonitor client configurations with MS
           RDP clients</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed a rare screen corruption</para>
       </listitem>
 
       <listitem>
@@ -279,8 +300,17 @@
       </listitem>
 
       <listitem>
+        <para>Windows hosts: use native controls in the installer (bug #5520)</para>
+      </listitem>
+
+      <listitem>
         <para>Solaris hosts: fixed preemption issue with Solaris 11 hosts (builds
           166 and above)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: better control of USB device access on Solaris 11
+          hosts</para>
       </listitem>
 
       <listitem>
