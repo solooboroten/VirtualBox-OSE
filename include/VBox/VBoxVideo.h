@@ -262,6 +262,9 @@ typedef enum
     VBOXVHWACMD_TYPE_SURF_LOCK,
     VBOXVHWACMD_TYPE_SURF_UNLOCK,
     VBOXVHWACMD_TYPE_SURF_BLT,
+    VBOXVHWACMD_TYPE_SURF_FLIP,
+    VBOXVHWACMD_TYPE_SURF_OVERLAY_UPDATE,
+    VBOXVHWACMD_TYPE_SURF_OVERLAY_SETPOSITION,
     VBOXVHWACMD_TYPE_QUERY_INFO1,
     VBOXVHWACMD_TYPE_QUERY_INFO2,
     VBOXVHWACMD_TYPE_ENABLE,
@@ -360,23 +363,52 @@ typedef struct _VBOXVHWA_SURFACEDESC
     uint32_t Reserved2;
 } VBOXVHWA_SURFACEDESC;
 
+typedef struct _VBOXVHWA_BLTFX
+{
+    uint32_t flags;
+    uint32_t rop;
+    uint32_t rotationOp;
+    uint32_t rotation;
+    uint32_t fillColor;
+    uint32_t Reserved;
+    VBOXVHWA_COLORKEY DstCK;
+    VBOXVHWA_COLORKEY SrcCK;
+} VBOXVHWA_BLTFX;
+
+typedef struct _VBOXVHWA_OVERLAYFX
+{
+    uint32_t flags;
+    uint32_t Reserved1;
+    uint32_t rotationOp;
+    uint32_t Reserved2;
+    VBOXVHWA_COLORKEY DstCK;
+    VBOXVHWA_COLORKEY SrcCK;
+} VBOXVHWA_OVERLAYFX;
+
 #define VBOXVHWA_CAPS_BLT             0x00000001
 #define VBOXVHWA_CAPS_BLTCOLORFILL    0x00000002
 #define VBOXVHWA_CAPS_BLTFOURCC       0x00000004
 #define VBOXVHWA_CAPS_BLTSTRETCH      0x00000008
+#define VBOXVHWA_CAPS_BLTQUEUE        0x00000010
 
 #define VBOXVHWA_CAPS_OVERLAY         0x00000100
 #define VBOXVHWA_CAPS_OVERLAYFOURCC   0x00000200
 #define VBOXVHWA_CAPS_OVERLAYSTRETCH  0x00000400
 
-#define VBOXVHWA_CAPS_COLORKEY        0x00001000
-//#define VBOXVHWA_CAPS_COLORKEYHWASSIST         0x00002000 /* always set COLORKEYHWASSIST in case host reports colorkey support */
+#define VBOXVHWA_CAPS_COLORKEY        0x00010000
+#define VBOXVHWA_CAPS_COLORKEYHWASSIST         0x00020000
+
 
 #define VBOXVHWA_CAPS2_COPYFOURCC   0x00000001
 
 #define VBOXVHWA_SCAPS_FLIP             0x00000001
 #define VBOXVHWA_SCAPS_PRIMARYSURFACE   0x00000002
+#define VBOXVHWA_SCAPS_OFFSCREENPLAIN   0x00000004
 #define VBOXVHWA_SCAPS_OVERLAY          0x00000008
+#define VBOXVHWA_SCAPS_VISIBLE          0x00000010
+#define VBOXVHWA_SCAPS_VIDEOMEMORY      0x00000020
+#define VBOXVHWA_SCAPS_LOCALVIDMEM      0x00000040
+
 
 #define VBOXVHWA_PF_RGB                 0x00000001
 #define VBOXVHWA_PF_RGBTOYUV            0x00000002
@@ -398,6 +430,40 @@ typedef struct _VBOXVHWA_SURFACEDESC
 #define VBOXVHWA_SD_PIXELFORMAT         0x00000100
 //#define VBOXVHWA_SD_REFRESHRATE       0x00000200
 #define VBOXVHWA_SD_WIDTH               0x00000400
+
+#define VBOXVHWA_CKEYCAPS_DESTBLT                  0x00000001
+#define VBOXVHWA_CKEYCAPS_DESTBLTCLRSPACE          0x00000002
+#define VBOXVHWA_CKEYCAPS_DESTBLTCLRSPACEYUV       0x00000004
+#define VBOXVHWA_CKEYCAPS_DESTBLTYUV               0x00000008
+#define VBOXVHWA_CKEYCAPS_DESTOVERLAY              0x00000010
+#define VBOXVHWA_CKEYCAPS_DESTOVERLAYCLRSPACE      0x00000020
+#define VBOXVHWA_CKEYCAPS_DESTOVERLAYCLRSPACEYUV   0x00000040
+#define VBOXVHWA_CKEYCAPS_DESTOVERLAYONEACTIVE     0x00000080
+#define VBOXVHWA_CKEYCAPS_DESTOVERLAYYUV           0x00000100
+#define VBOXVHWA_CKEYCAPS_NOCOSTOVERLAY            0x00000200
+#define VBOXVHWA_CKEYCAPS_SRCBLT                   0x00000400
+#define VBOXVHWA_CKEYCAPS_SRCBLTCLRSPACE           0x00000800
+#define VBOXVHWA_CKEYCAPS_SRCBLTCLRSPACEYUV        0x00001000
+#define VBOXVHWA_CKEYCAPS_SRCBLTYUV                0x00002000
+#define VBOXVHWA_CKEYCAPS_SRCOVERLAY               0x00004000
+#define VBOXVHWA_CKEYCAPS_SRCOVERLAYCLRSPACE       0x00008000
+#define VBOXVHWA_CKEYCAPS_SRCOVERLAYCLRSPACEYUV    0x00010000
+#define VBOXVHWA_CKEYCAPS_SRCOVERLAYONEACTIVE      0x00020000
+#define VBOXVHWA_CKEYCAPS_SRCOVERLAYYUV            0x00040000
+
+
+#define VBOXVHWA_BLT_COLORFILL                      0x00000400
+#define VBOXVHWA_BLT_DDFX                           0x00000800
+#define VBOXVHWA_BLT_EXTENDED_FLAGS                 0x40000000
+#define VBOXVHWA_BLT_EXTENDED_LINEAR_CONTENT        0x00000004
+#define VBOXVHWA_BLT_EXTENDED_PRESENTATION_STRETCHFACTOR 0x00000010
+#define VBOXVHWA_BLT_KEYDESTOVERRIDE                0x00004000
+#define VBOXVHWA_BLT_KEYSRCOVERRIDE                 0x00010000
+#define VBOXVHWA_BLT_LAST_PRESENTATION              0x20000000
+#define VBOXVHWA_BLT_PRESENTATION                   0x10000000
+#define VBOXVHWA_BLT_ROP                            0x00020000
+
+
 
 
 #define VBOXVHWA_OFFSET64_VOID        (~0L)
@@ -510,9 +576,47 @@ typedef struct _VBOXVHWACMD_SURF_BLT
             VBOXVHWA_RECTL srcRect;
             uint32_t flags;
             uint32_t reserved;
+            VBOXVHWA_BLTFX desc;
         } in;
     } u;
 } VBOXVHWACMD_SURF_BLT;
+
+typedef struct _VBOXVHWACMD_SURF_OVERLAY_UPDATE
+{
+    union
+    {
+        struct
+        {
+            VBOXVHWA_SURFHANDLE hDstSurf;
+            uint64_t offDstSurface;
+            VBOXVHWA_RECTL dstRect;
+            VBOXVHWA_SURFHANDLE hSrcSurf;
+            uint64_t offSrcSurface;
+            VBOXVHWA_RECTL srcRect;
+            uint32_t flags;
+            uint32_t reserved;
+            VBOXVHWA_OVERLAYFX desc;
+        } in;
+    } u;
+}VBOXVHWACMD_SURF_OVERLAY_UPDATE;
+
+typedef struct _VBOXVHWACMD_SURF_OVERLAY_SETPOSITION
+{
+    union
+    {
+        struct
+        {
+            VBOXVHWA_SURFHANDLE hDstSurf;
+            uint64_t offDstSurface;
+            VBOXVHWA_SURFHANDLE hSrcSurf;
+            uint64_t offSrcSurface;
+            uint32_t xPos;
+            uint32_t yPos;
+            uint32_t flags;
+            uint32_t reserved;
+        } in;
+    } u;
+} VBOXVHWACMD_SURF_OVERLAY_SETPOSITION;
 
 #pragma pack()
 # endif /* #ifdef VBOX_WITH_VIDEOHWACCEL */

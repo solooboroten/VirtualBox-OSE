@@ -1769,11 +1769,11 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>Please complete the additionally fields like the username, password and the bucket. Finally you have to provide a filename for the OVF target.</source>
-        <translation type="unfinished">Completa i campi aggiuntivi come nome utente, password e  . Infine devi fornire un nome file per l&apos;OVF di destinazione.</translation>
+        <translation>Completa i campi aggiuntivi come nome utente, password e il bucket. Infine devi fornire un nome file per l&apos;OVF di destinazione.</translation>
     </message>
     <message>
         <source>Please complete the additionally fields like the username, password, hostname and the bucket. Finally you have to provide a filename for the OVF target.</source>
-        <translation type="unfinished">Completa i campi aggiuntivi come nome utente, password, nome host e  . Infine devi fornire un nome file per l&apos;OVF di destinazione.</translation>
+        <translation>Completa i campi aggiuntivi come nome utente, password, nome host e il bucket. Infine devi fornire un nome file per l&apos;OVF di destinazione.</translation>
     </message>
     <message>
         <source>Checking files ...</source>
@@ -1813,7 +1813,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>&amp;Bucket:</source>
-        <translation type="unfinished"></translation>
+        <translation></translation>
     </message>
     <message>
         <source>&amp;Hostname:</source>
@@ -3300,7 +3300,7 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Raw File</source>
         <comment>PortMode</comment>
-        <translation type="unfinished">File raw</translation>
+        <translation>File raw</translation>
     </message>
 </context>
 <context>
@@ -6370,7 +6370,7 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     </message>
     <message>
         <source>&amp;Discard Snapshot</source>
-        <translation type="obsolete">&amp;Scarta istantanea</translation>
+        <translation>&amp;Scarta istantanea</translation>
     </message>
     <message>
         <source>Ctrl+Shift+D</source>
@@ -6406,7 +6406,7 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     </message>
     <message>
         <source>Discard Current Snapshot and State</source>
-        <translation type="obsolete">Scarta lo stato e lo snapshot attuali</translation>
+        <translation>Scarta lo stato e lo snapshot attuali</translation>
     </message>
     <message>
         <source>D&amp;iscard Current Snapshot and State</source>
@@ -6482,7 +6482,7 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     </message>
     <message>
         <source>Discard the selected snapshot of the virtual machine</source>
-        <translation type="obsolete">Scarta l&apos;istantanea selezionata della macchina virtuale</translation>
+        <translation>Scarta l&apos;istantanea selezionata della macchina virtuale</translation>
     </message>
     <message>
         <source>Ctrl+Shift+S</source>
@@ -6526,11 +6526,11 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     </message>
     <message>
         <source>&amp;Merge Snapshot with Parent</source>
-        <translation type="unfinished">&amp;Unisci istantanea con genitrice</translation>
+        <translation>&amp;Unisci istantanea con origine</translation>
     </message>
     <message>
         <source>Merges the snapshot into the parent snapshot or disk image and then deletes the now redundant snapshot file.</source>
-        <translation type="unfinished">Unisce l&apos;istantanea all&apos;istantanea genitrice o all&apos;immagine del disco e poi elimina il file ridondante.</translation>
+        <translation>Unisce l&apos;istantanea all&apos;istantanea di origine o all&apos;immagine del disco e poi elimina il file ridondante.</translation>
     </message>
 </context>
 <context>
@@ -8801,7 +8801,7 @@ fa vedere al sistema Guest una scheda sonora, ignorando qualsiasi accesso ad ess
         <translation>Schermo</translation>
     </message>
     <message>
-        <source>you have selected a 64-bit guest OS type for this VM. As such guestsrequire hardware virtualization (VT-x/AMD-V), this feature will be enabled automatically.</source>
+        <source>you have selected a 64-bit guest OS type for this VM. As such guests require hardware virtualization (VT-x/AMD-V), this feature will be enabled automatically.</source>
         <translation>hai selezionato un sistema operativo guest a 64 bit per questa MV. Poiché questo tipo di guest richiede virtualizzazione hardware (VT-x/AMD-V), questa funzionalità sarà abilitata automaticamente.</translation>
     </message>
     <message>
@@ -9076,7 +9076,7 @@ fa vedere al sistema Guest una scheda sonora, ignorando qualsiasi accesso ad ess
     </message>
     <message>
         <source>&amp;Remember Runtime Changes</source>
-        <translation type="unfinished">Memo&amp;rizza le modifiche in esecuzione</translation>
+        <translation>Memo&amp;rizza le modifiche in esecuzione</translation>
     </message>
     <message>
         <source>Mini ToolBar:</source>
@@ -9714,11 +9714,11 @@ fa vedere al sistema Guest una scheda sonora, ignorando qualsiasi accesso ad ess
         <translation>hai assegnato più CPU virtuali alla macchina virtuale del numero di CPU fisiche del sistema host (&lt;b&gt;%1&lt;/b&gt;). Ciò degrada le prestazioni della macchina virtuale. Dovresti ridurre il numero di CPU virtuali.</translation>
     </message>
     <message>
-        <source>there is more than one virtual CPU assigned for this VM, which requires IO-APIC feature to be enabled too, else SMP will not be able to work, so this feature will be enabled automatically when you&apos;ll accept VM Settings by pressing OK button.</source>
+        <source>you have assigned more than one virtual CPU to this VM. This will not work unless the IO-APIC feature is also enabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
         <translation>c&apos;è più di una CPU virtuale assegnate a questa MV, che richiede che anche la funzionalità IO-APIC sia abilitata, altrimenti SMP non funzionerà, perciò questa funzionalità sarà abilitata automaticamente quando accetterai le impostazioni della MV premendo il pulsante OK.</translation>
     </message>
     <message>
-        <source>there is more than one virtual CPU assigned for this VM, which requires virtualization feature (VT-x/AMD-V) to be enabled too, else SMP will not be able to work, so this feature will be enabled automatically when you&apos;ll accept VM Settings by pressing OK button.</source>
+        <source>you have assigned more than one virtual CPU to this VM. This will not work unless hardware virtualization (VT-x/AMD-V) is also enabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
         <translation>c&apos;è più di una CPU virtuale assegnate a questa MV, che richiede che anche la funzionalità di virtualizzazione (VT-x/AMD-V) sia abilitata, altrimenti SMP non funzionerà, perciò questa funzionalità sarà abilitata automaticamente quando accetterai le impostazioni della MV premendo il pulsante OK.</translation>
     </message>
     <message>

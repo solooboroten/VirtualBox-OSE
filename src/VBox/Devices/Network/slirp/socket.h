@@ -74,14 +74,14 @@ struct socket
     int so_poll_index;
 #else /* !RT_OS_WINDOWS */
     /*
-     * FD_CLOSE event has been occured on socket 
+     * FD_CLOSE event has been occurred on socket 
      */
     int so_close; 
 #endif /* RT_OS_WINDOWS */
-#ifdef VBOX_WITH_SLIRP_DNS_PROXY
+
     void (* so_timeout)(PNATState pData, struct socket *so, void *arg);
     void *so_timeout_arg;
-#endif
+
 #ifdef VBOX_WITH_NAT_SERVICE
     /* storage of source ether address */
     unsigned char so_ethaddr[6]; 
@@ -166,7 +166,7 @@ int sosendoob (struct socket *);
 int sowrite (PNATState, struct socket *);
 void sorecvfrom (PNATState, struct socket *);
 int sosendto (PNATState, struct socket *, struct mbuf *);
-struct socket * solisten (PNATState, u_int, u_int32_t, u_int, int);
+struct socket * solisten (PNATState, u_int32_t, u_int, u_int32_t, u_int, int);
 void sorwakeup (struct socket *);
 void sowwakeup (struct socket *);
 void soisfconnecting (register struct socket *);

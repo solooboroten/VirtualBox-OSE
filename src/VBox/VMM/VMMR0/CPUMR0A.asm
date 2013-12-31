@@ -34,6 +34,13 @@
  %error "The jump table doesn't link on leopard."
 %endif
 
+;*******************************************************************************
+;*      Defined Constants And Macros                                           *
+;*******************************************************************************
+;; The offset of the XMM registers in X86FXSTATE.
+; Use define because I'm too lazy to convert the struct.
+%define XMM_OFF_IN_X86FXSTATE   160
+
 
 ;*******************************************************************************
 ;* External Symbols                                                            *
@@ -103,6 +110,21 @@ BEGINPROC cpumR0SaveHostRestoreGuestFPUState
     fxsave  [xDX + CPUMCPU.Host.fpu]    ; ASSUMES that all VT-x/AMD-V boxes sports fxsave/fxrstor (safe assumption)
     fxrstor [xDX + CPUMCPU.Guest.fpu]
 
+%ifdef VBOX_WITH_KERNEL_USING_XMM
+    ; Restore the non-volatile xmm registers. ASSUMING 64-bit windows
+    lea     r11, [xDX + CPUMCPU.Host.fpu + XMM_OFF_IN_X86FXSTATE]
+    movdqa  xmm6,  [r11 + 060h]
+    movdqa  xmm7,  [r11 + 070h]
+    movdqa  xmm8,  [r11 + 080h]
+    movdqa  xmm9,  [r11 + 090h]
+    movdqa  xmm10, [r11 + 0a0h]
+    movdqa  xmm11, [r11 + 0b0h]
+    movdqa  xmm12, [r11 + 0c0h]
+    movdqa  xmm13, [r11 + 0d0h]
+    movdqa  xmm14, [r11 + 0e0h]
+    movdqa  xmm15, [r11 + 0f0h]
+%endif
+
 .done:
     mov     cr0, xCX                    ; and restore old CR0 again ;; @todo optimize this.
     popf
@@ -147,7 +169,7 @@ BEGINPROC cpumR0SaveHostFPUState
     and     xAX, ~(X86_CR0_TS | X86_CR0_EM)
     mov     cr0, xAX                    ;; @todo optimize this.
 
-    fxsave  [xDX + CPUMCPU.Host.fpu]    ; ASSUMES that all VT-x/AMD-V boxes sports fxsave/fxrstor (safe assumption)
+    fxsave  [xDX + CPUMCPU.Host.fpu]    ; ASSUMES that all VT-x/AMD-V boxes support fxsave/fxrstor (safe assumption)
 
     mov     cr0, xCX                    ; and restore old CR0 again ;; @todo optimize this.
     popf
@@ -198,7 +220,7 @@ BEGINPROC cpumR0SaveGuestRestoreHostFPUState
 .legacy_mode:
 %endif ; VBOX_WITH_HYBRID_32BIT_KERNEL
 
-    fxsave  [xDX + CPUMCPU.Guest.fpu]   ; ASSUMES that all VT-x/AMD-V boxes sports fxsave/fxrstor (safe assumption)
+    fxsave  [xDX + CPUMCPU.Guest.fpu]   ; ASSUMES that all VT-x/AMD-V boxes support fxsave/fxrstor (safe assumption)
     fxrstor [xDX + CPUMCPU.Host.fpu]
 
 .done:

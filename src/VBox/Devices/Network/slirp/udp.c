@@ -230,14 +230,15 @@ udp_input(PNATState pData, register struct mbuf *m, int iphlen)
     so->so_faddr = ip->ip_dst;   /* XXX */
     so->so_fport = uh->uh_dport; /* XXX */
 
-#ifdef VBOX_WITH_SLIRP_DNS_PROXY
+    /*
+     * DNS proxy
+     */
     if (   (ip->ip_dst.s_addr == htonl(ntohl(special_addr.s_addr) | CTL_DNS))
         && (ntohs(uh->uh_dport) == 53)) 
     {
         dnsproxy_query(pData, so, m, iphlen);
         goto bad; /* it isn't bad, probably better to add additional label done for boot/tftf :)  */
     }
-#endif
 
     iphlen += sizeof(struct udphdr);
     m->m_len -= iphlen;
@@ -378,9 +379,13 @@ udp_attach(PNATState pData, struct socket *so, int service_port)
          * (sendto() on an unbound socket will bind it), it's done
          * here so that emulation of ytalk etc. don't have to do it
          */
+        memset(&addr, 0, sizeof(addr));
+#ifdef RT_OS_DARWIN
+        addr.sin_len = sizeof(addr);
+#endif
         addr.sin_family = AF_INET;
         addr.sin_port = service_port;
-        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_addr.s_addr = pData->bindIP.s_addr;
         fd_nonblock(so->s);
         if (bind(so->s, (struct sockaddr *)&addr, sizeof(addr)) < 0)
         {
@@ -716,7 +721,7 @@ udp_emu(PNATState pData, struct socket *so, struct mbuf *m)
 }
 
 struct socket *
-udp_listen(PNATState pData, u_int port, u_int32_t laddr, u_int lport, int flags)
+udp_listen(PNATState pData, u_int32_t bind_addr, u_int port, u_int32_t laddr, u_int lport, int flags)
 {
     struct sockaddr_in addr;
     struct socket *so;
@@ -741,12 +746,17 @@ udp_listen(PNATState pData, u_int port, u_int32_t laddr, u_int lport, int flags)
     NSOCK_INC();
     QSOCKET_UNLOCK(udb);
 
+    memset(&addr, 0, sizeof(addr));
+#ifdef RT_OS_DARWIN
+    addr.sin_len = sizeof(addr);
+#endif
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr.s_addr = bind_addr;
     addr.sin_port = port;
 
     if (bind(so->s,(struct sockaddr *)&addr, addrlen) < 0)
     {
+        LogRel(("NAT: bind to %R[IP4] has been failed\n", &addr.sin_addr));
         udp_detach(pData, so);
         return NULL;
     }

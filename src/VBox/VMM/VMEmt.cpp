@@ -136,7 +136,7 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                 rc = VMR3WaitU(pUVCpu);
                 if (RT_FAILURE(rc))
                 {
-                    AssertMsgFailed(("VMR3WaitU failed with %Rrc\n", rc));
+                    AssertLogRelMsgFailed(("VMR3WaitU failed with %Rrc\n", rc));
                     break;
                 }
             }
@@ -200,7 +200,7 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                 rc = VMR3WaitU(pUVCpu);
                 if (RT_FAILURE(rc))
                 {
-                    AssertMsgFailed(("VMR3WaitU failed with %Rrc\n", rc));
+                    AssertLogRelMsgFailed(("VMR3WaitU failed with %Rrc\n", rc));
                     break;
                 }
             }
@@ -975,7 +975,7 @@ VMMR3DECL(void) VMR3NotifyCpuFFU(PUVMCPU pUVCpu, uint32_t fFlags)
  * Halted VM Wait.
  * Any external event will unblock the thread.
  *
- * @returns VINF_SUCCESS unless a fatal error occured. In the latter
+ * @returns VINF_SUCCESS unless a fatal error occurred. In the latter
  *          case an appropriate status code is returned.
  * @param   pVM         VM handle.
  * @param   pVCpu       VMCPU handle.
@@ -1056,7 +1056,7 @@ VMMR3DECL(int) VMR3WaitHalted(PVM pVM, PVMCPU pVCpu, bool fIgnoreInterrupts)
  * Only a handful of forced actions will cause the function to
  * return to the caller.
  *
- * @returns VINF_SUCCESS unless a fatal error occured. In the latter
+ * @returns VINF_SUCCESS unless a fatal error occurred. In the latter
  *          case an appropriate status code is returned.
  * @param   pUVCpu          Pointer to the user mode VMCPU structure.
  * @thread  The emulation thread.

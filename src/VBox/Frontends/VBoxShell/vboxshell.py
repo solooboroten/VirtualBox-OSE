@@ -29,73 +29,6 @@
 import os,sys
 import traceback
 
-class PerfCollector:
-    """ This class provides a wrapper over IPerformanceCollector in order to
-    get more 'pythonic' interface.
-
-    To begin collection of metrics use setup() method.
-
-    To get collected data use query() method.
-
-    It is possible to disable metric collection without changing collection
-    parameters with disable() method. The enable() method resumes metric
-    collection.
-    """
-
-    def __init__(self, vb):
-        """ Initializes the instance.
-
-        Pass an instance of IVirtualBox as parameter.
-        """
-        self.collector = vb.performanceCollector
-
-    def setup(self, names, objects, period, nsamples):
-        """ Discards all previously collected values for the specified
-        metrics, sets the period of collection and the number of retained
-        samples, enables collection.
-        """
-        self.collector.setupMetrics(names, objects, period, nsamples)
-
-    def enable(self, names, objects):
-        """ Resumes metric collection for the specified metrics.
-        """
-        self.collector.enableMetrics(names, objects)
-
-    def disable(self, names, objects):
-        """ Suspends metric collection for the specified metrics.
-        """
-        self.collector.disableMetrics(names, objects)
-
-    def query(self, names, objects):
-        """ Retrieves collected metric values as well as some auxiliary
-        information. Returns an array of dictionaries, one dictionary per
-        metric. Each dictionary contains the following entries:
-        'name': metric name
-        'object': managed object this metric associated with
-        'unit': unit of measurement
-        'scale': divide 'values' by this number to get float numbers
-        'values': collected data
-        'values_as_string': pre-processed values ready for 'print' statement
-        """
-        (values, names_out, objects_out, units, scales, sequence_numbers,
-            indices, lengths) = self.collector.queryMetricsData(names, objects)
-        out = []
-        for i in xrange(0, len(names_out)):
-            scale = int(scales[i])
-            if scale != 1:
-                fmt = '%.2f%s'
-            else:
-                fmt = '%d %s'
-            out.append({
-                'name':str(names_out[i]),
-                'object':str(objects_out[i]),
-                'unit':str(units[i]),
-                'scale':scale,
-                'values':[int(values[j]) for j in xrange(int(indices[i]), int(indices[i])+int(lengths[i]))],
-                'values_as_string':'['+', '.join([fmt % (int(values[j])/scale, units[i]) for j in xrange(int(indices[i]), int(indices[i])+int(lengths[i]))])+']'
-            })
-        return out
-
 # Simple implementation of IConsoleCallback, one can use it as skeleton 
 # for custom implementations
 class GuestMonitor:
@@ -169,7 +102,7 @@ class VBoxMonitor:
     
     def onExtraDataCanChange(self, id, key, value):
         print "onExtraDataCanChange: %s %s=>%s" %(id, key, value)
-	return True
+	return True, ""
 
     def onExtraDataChange(self, id, key, value):
         print "onExtraDataChange: %s %s=>%s" %(id, key, value)
@@ -192,9 +125,8 @@ class VBoxMonitor:
     def onSnapshotChange(self, mach, id):
         print "onSnapshotChange: %s %s" %(mach, id)
 
-    def onGuestPropertyChange(self, id, val1, val2, val3):
-        print "onGuestPropertyChange: %s" %(id)
-    
+    def onGuestPropertyChange(self, id, name, newValue, flags):
+        print "onGuestPropertyChange: %s: %s=%s" %(id, name, newValue)
 
 g_hasreadline = 1
 try:
@@ -400,6 +332,7 @@ def cmdExistingVm(ctx,mach,cmd,args):
     ops={'pause' :     lambda: console.pause(),
          'resume':     lambda: console.resume(),
          'powerdown':  lambda: console.powerDown(),
+         'powerbutton':  lambda: console.powerButton(),
          'stats':      lambda: guestStats(ctx, mach),
          'guest':      lambda: guestExec(ctx, mach, console, args),
          'monitorGuest': lambda: monitorGuest(ctx, mach, console, args)
@@ -441,7 +374,9 @@ def argsToMach(ctx,args):
 def helpCmd(ctx, args):
     if len(args) == 1:
         print "Help page:"
-        for i in commands:
+        names = commands.keys()
+        names.sort()
+        for i in names:
             print "   ",i,":", commands[i][0]
     else:
         c = commands.get(args[1], None)
@@ -457,6 +392,7 @@ def listCmd(ctx, args):
     return 0
 
 def infoCmd(ctx,args):
+    import time
     if (len(args) < 2):
         print "usage: info [vmname|uuid]"
         return 0
@@ -464,19 +400,25 @@ def infoCmd(ctx,args):
     if mach == None:
         return 0
     os = ctx['vb'].getGuestOSType(mach.OSTypeId)
-    print "  Name: ",mach.name
-    print "  ID: ",mach.id
-    print "  OS Type: ",os.description
-    print "  RAM:  %dM" %(mach.memorySize)
-    print "  VRAM:  %dM" %(mach.VRAMSize)
-    print "  Clipboard mode:  %d" %(mach.clipboardMode)
-    print "  Machine status: " ,mach.sessionState
+    print " One can use setvar <mach> <var> <value> to change variable, using name in []."
+    print "  Name [name]: ",mach.name
+    print "  ID [n/a]: ",mach.id
+    print "  OS Type [n/a]: ",os.description
+    print "  CPUs [CPUCount]:  %d" %(mach.CPUCount)
+    print "  RAM [memorySize]:  %dM" %(mach.memorySize)
+    print "  VRAM [VRAMSize]:  %dM" %(mach.VRAMSize)
+    print "  Monitors [monitorCount]:  %d" %(mach.monitorCount)
+    print "  Clipboard mode [clipboardMode]:  %d" %(mach.clipboardMode)
+    print "  Machine status [n/a]: " ,mach.sessionState
     bios = mach.BIOSSettings
-    print "  BIOS ACPI: ",bios.ACPIEnabled
-    print "  PAE: ",mach.PAEEnabled
-    print "  Hardware virtualization: ",asState(mach.HWVirtExEnabled)
-    print "  Nested paging: ",asState(mach.HWVirtExNestedPagingEnabled)
-    print "  Last changed: ",mach.lastStateChange
+    print "  ACPI [BIOSSettings.ACPIEnabled]: %s" %(asState(bios.ACPIEnabled))
+    print "  APIC [BIOSSettings.IOAPICEnabled]: %s" %(asState(bios.IOAPICEnabled))
+    print "  PAE [PAEEnabled]: %s" %(asState(mach.PAEEnabled))
+    print "  Hardware virtualization [HWVirtExEnabled]: ",asState(mach.HWVirtExEnabled)
+    print "  VPID support [HWVirtExVPIDEnabled]: ",asState(mach.HWVirtExVPIDEnabled)
+    print "  Hardware 3d acceleration[accelerate3DEnabled]: ",asState(mach.accelerate3DEnabled)
+    print "  Nested paging [HWVirtExNestedPagingEnabled]: ",asState(mach.HWVirtExNestedPagingEnabled)
+    print "  Last changed [n/a]: ",time.asctime(time.localtime(mach.lastStateChange/1000))
 
     return 0
 
@@ -530,6 +472,13 @@ def powerdownCmd(ctx, args):
     cmdExistingVm(ctx, mach, 'powerdown', '')
     return 0
 
+def powerbuttonCmd(ctx, args):
+    mach = argsToMach(ctx,args)
+    if mach == None:
+        return 0
+    cmdExistingVm(ctx, mach, 'powerbutton', '')
+    return 0
+
 def resumeCmd(ctx, args):
     mach = argsToMach(ctx,args)
     if mach == None:
@@ -561,8 +510,7 @@ def setvarCmd(ctx, args):
     mach = argsToMach(ctx,args)
     if mach == None:
         return 0
-    session = ctx['mgr'].getSessionObject(vbox)
-    vbox.openSession(session, mach.id)
+    session = ctx['global'].openMachineSession(mach.id)
     mach = session.machine
     expr = 'mach.'+args[2]+' = '+args[3]
     print "Executing",expr
@@ -626,6 +574,76 @@ def monitorVboxCmd(ctx, args):
     monitorVbox(ctx, dur)
     return 0
 
+def getAdapterType(ctx, type):
+    if (type == ctx['global'].constants.NetworkAdapterType_Am79C970A or
+        type == ctx['global'].constants.NetworkAdapterType_Am79C973):
+        return "pcnet"
+    elif (type == ctx['global'].constants.NetworkAdapterType_I82540EM or
+          type == ctx['global'].constants.NetworkAdapterType_I82545EM or
+          type == ctx['global'].constants.NetworkAdapterType_I82543GC):
+        return "e1000"
+    elif (type == ctx['global'].constants.NetworkAdapterType_Null):
+        return None
+    else:
+        raise Exception("Unknown adapter type: "+type)    
+    
+
+def portForwardCmd(ctx, args):
+    if (len(args) != 5):
+        print "usage: portForward <vm> <adapter> <hostPort> <guestPort>"
+        return 0
+    mach = argsToMach(ctx,args)
+    if mach == None:
+        return 0
+    adapterNum = int(args[2])
+    hostPort = int(args[3])
+    guestPort = int(args[4])
+    proto = "TCP"
+    session = ctx['global'].openMachineSession(mach.id)
+    mach = session.machine
+
+    adapter = mach.getNetworkAdapter(adapterNum)
+    adapterType = getAdapterType(ctx, adapter.adapterType)
+
+    profile_name = proto+"_"+str(hostPort)+"_"+str(guestPort)
+    config = "VBoxInternal/Devices/" + adapterType + "/"
+    config = config + str(adapter.slot)  +"/LUN#0/Config/" + profile_name
+  
+    mach.setExtraData(config + "/Protocol", proto)
+    mach.setExtraData(config + "/HostPort", str(hostPort))
+    mach.setExtraData(config + "/GuestPort", str(guestPort))
+
+    mach.saveSettings()
+    session.close()
+   
+    return 0
+
+
+def showLogCmd(ctx, args):
+    if (len(args) < 2):
+        print "usage: showLog <vm> <num>"
+        return 0
+    mach = argsToMach(ctx,args)
+    if mach == None:
+        return 0
+
+    log = "VBox.log"
+    if (len(args) > 2):
+       log  += "."+args[2]
+    fileName = os.path.join(mach.logFolder, log)
+
+    try:
+        lf = open(fileName, 'r')
+    except IOError,e:
+        print "cannot open: ",e
+        return 0
+
+    for line in lf:
+        print line,
+    lf.close()
+
+    return 0
+
 def evalCmd(ctx, args):
    expr = ' '.join(args[1:])
    try:
@@ -636,6 +654,12 @@ def evalCmd(ctx, args):
             traceback.print_exc()
    return 0
 
+def reloadExtCmd(ctx, args):
+   # maybe will want more args smartness
+   checkUserExtensions(ctx, commands, ctx['vb'].homeFolder)
+   autoCompletion(commands, ctx)
+   return 0
+
 aliases = {'s':'start',
            'i':'info',
            'l':'list',
@@ -644,25 +668,29 @@ aliases = {'s':'start',
            'q':'quit', 'exit':'quit',
            'v':'verbose'}
 
-commands = {'help':['Prints help information', helpCmd],
-            'start':['Start virtual machine by name or uuid', startCmd],
-            'create':['Create virtual machine', createCmd],
-            'remove':['Remove virtual machine', removeCmd],
-            'pause':['Pause virtual machine', pauseCmd],
-            'resume':['Resume virtual machine', resumeCmd],
-            'stats':['Stats for virtual machine', statsCmd],
-            'powerdown':['Power down virtual machine', powerdownCmd],
-            'list':['Shows known virtual machines', listCmd],
-            'info':['Shows info on machine', infoCmd],
-            'aliases':['Shows aliases', aliasesCmd],
-            'verbose':['Toggle verbosity', verboseCmd],
-            'setvar':['Set VMs variable: setvar Fedora BIOSSettings.ACPIEnabled True', setvarCmd],
-            'eval':['Evaluate arbitrary Python construction: eval for m in getMachines(ctx): print m.name,"has",m.memorySize,"M"', evalCmd],
-            'quit':['Exits', quitCmd],
-            'host':['Show host information', hostCmd],
-            'guest':['Execute command for guest: guest Win32 console.mouse.putMouseEvent(20, 20, 0, 0)', guestCmd],
-            'monitorGuest':['Monitor what happens with the guest for some time: monitorGuest Win32 10', monitorGuestCmd],
-            'monitorVbox':['Monitor what happens with Virtual Box for some time: monitorVbox 10', monitorVboxCmd],
+commands = {'help':['Prints help information', helpCmd, 0],
+            'start':['Start virtual machine by name or uuid', startCmd, 0],
+            'create':['Create virtual machine', createCmd, 0],
+            'remove':['Remove virtual machine', removeCmd, 0],
+            'pause':['Pause virtual machine', pauseCmd, 0],
+            'resume':['Resume virtual machine', resumeCmd, 0],
+            'stats':['Stats for virtual machine', statsCmd, 0],
+            'powerdown':['Power down virtual machine', powerdownCmd, 0],
+            'powerbutton':['Effectively press power button', powerbuttonCmd, 0],
+            'list':['Shows known virtual machines', listCmd, 0],
+            'info':['Shows info on machine', infoCmd, 0],
+            'aliases':['Shows aliases', aliasesCmd, 0],
+            'verbose':['Toggle verbosity', verboseCmd, 0],
+            'setvar':['Set VMs variable: setvar Fedora BIOSSettings.ACPIEnabled True', setvarCmd, 0],
+            'eval':['Evaluate arbitrary Python construction: eval for m in getMachines(ctx): print m.name,"has",m.memorySize,"M"', evalCmd, 0],
+            'quit':['Exits', quitCmd, 0],
+            'host':['Show host information', hostCmd, 0],
+            'guest':['Execute command for guest: guest Win32 console.mouse.putMouseEvent(20, 20, 0, 0)', guestCmd, 0],
+            'monitorGuest':['Monitor what happens with the guest for some time: monitorGuest Win32 10', monitorGuestCmd, 0],
+            'monitorVbox':['Monitor what happens with Virtual Box for some time: monitorVbox 10', monitorVboxCmd, 0],
+            'portForward':['Setup permanent port forwarding for a VM, takes adapter number host port and guest port: portForward Win32 0 8080 80', portForwardCmd, 0],
+            'showLog':['Show log file of the VM, : showLog Win32', showLogCmd, 0],
+            'reloadExt':['Reload custom extensions: reloadExt', reloadExtCmd, 0],
             }
 
 def runCommand(ctx, cmd):
@@ -678,11 +706,41 @@ def runCommand(ctx, cmd):
         return 0
     return ci[1](ctx, args)
 
+#
+# To write your own custom commands to vboxshell, create
+# file ~/.VirtualBox/shellext.py with content like
+#
+# def runTestCmd(ctx, args):
+#    print "Testy test", ctx['vb']
+#    return 0
+#
+# commands = {
+#    'test': ['Test help', runTestCmd]
+# }
+# and issue reloadExt shell command.
+# This file also will be read automatically on startup.
+#
+def checkUserExtensions(ctx, cmds, folder):
+    name =  os.path.join(folder, "shellext.py")
+    if not os.path.isfile(name):
+        return
+    d = {}
+    try:
+        execfile(name, d, d)
+        for (k,v) in d['commands'].items():
+            if g_verbose:
+                print "customize: adding \"%s\" - %s" %(k, v[0])
+            cmds[k] = [v[0], v[1], 1]
+    except:
+        print "Error loading user extensions:"
+        traceback.print_exc()
 
 def interpret(ctx):
     vbox = ctx['vb']
     print "Running VirtualBox version %s" %(vbox.version)
-    ctx['perf'] = PerfCollector(vbox)
+    ctx['perf'] = ctx['global'].getPerfCollector(ctx['vb'])
+
+    checkUserExtensions(ctx, commands, vbox.homeFolder)
 
     autoCompletion(commands, ctx)
 

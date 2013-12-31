@@ -144,23 +144,17 @@ static int rtSemEventMultiWait(RTSEMEVENTMULTI EventMultiSem, unsigned cMillies,
 
     /*
      * Wait for it.
-     *
-     * We default to UserMode here as the waits might be aborted due to process termination. 
-     * @todo As far as I can tell this is currently safe as all calls are made on behalf of user threads.
+     * We're assuming interruptible waits should happen at UserMode level.
      */
-    NTSTATUS rcNt;
+    NTSTATUS        rcNt;
+    KPROCESSOR_MODE WaitMode   = fInterruptible ? UserMode : KernelMode;
     if (cMillies == RT_INDEFINITE_WAIT)
-        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, UserMode, fInterruptible, NULL);
+        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, WaitMode, fInterruptible, NULL);
     else
     {
-        /* Can't use the stack here as the wait is UserMode. */
-        PLARGE_INTEGER pTimeout = (PLARGE_INTEGER)RTMemAlloc(sizeof(*pTimeout));
-        if (!pTimeout)
-            return VERR_NO_MEMORY;
-
-        pTimeout->QuadPart = -(int64_t)cMillies * 10000;
-        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, UserMode, fInterruptible, pTimeout);
-        RTMemFree(pTimeout);
+        LARGE_INTEGER Timeout;
+        Timeout.QuadPart = -(int64_t)cMillies * 10000;
+        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, WaitMode, fInterruptible, &Timeout);
     }
     switch (rcNt)
     {

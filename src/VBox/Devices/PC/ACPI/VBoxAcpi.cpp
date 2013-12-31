@@ -71,10 +71,10 @@ static int patchAml(PPDMDEVINS pDevIns, uint8_t* pAml, size_t uAmlLen)
     bool fShowCpu;
     rc = CFGMR3QueryBoolDef(pDevIns->pCfgHandle, "ShowCpu", &fShowCpu, false);
     if (RT_FAILURE(rc))
-      return rc;
+        return rc;
 
     if (!fShowCpu)
-      cNumCpus = 0;
+        cNumCpus = 0;
 
     /**
      * Now search AML for:
