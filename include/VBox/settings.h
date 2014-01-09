@@ -201,7 +201,7 @@ struct NATHostLoopbackOffset
     {
         return (strLoopbackHostAddress == strAddr);
     }
-    
+
     bool operator == (uint32_t off)
     {
         return (this->u32Offset == off);
@@ -594,6 +594,7 @@ struct NetworkAdapter
     com::Utf8Str                        strInternalNetworkName;
     com::Utf8Str                        strGenericDriver;
     StringsMap                          genericProperties;
+    com::Utf8Str                        strNATNetworkName;
     uint32_t                            ulBootPriority;
     com::Utf8Str                        strBandwidthGroup; // requires settings version 1.13 (VirtualBox 4.2)
 };
@@ -910,7 +911,6 @@ struct Hardware
 
     ChipsetType_T       chipsetType;            // requires settings version 1.11 (VirtualBox 4.0)
 
-    bool                fEmulatedUSBWebcam;     // 1.13 (VirtualBox 4.2)
     bool                fEmulatedUSBCardReader; // 1.12 (VirtualBox 4.1)
 
     VRDESettings        vrdeSettings;

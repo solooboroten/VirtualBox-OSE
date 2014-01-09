@@ -23,6 +23,7 @@
 #include <QObject>
 #include <QCursor>
 #include <QEvent>
+#include <QMap>
 
 /* GUI includes: */
 #include "UIDefs.h"

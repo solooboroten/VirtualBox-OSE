@@ -33,9 +33,9 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_DEV_KBD
 #include <VBox/vmm/pdmdev.h>
+#include <VBox/version.h>
 #include <iprt/assert.h>
 #include <iprt/uuid.h>
-
 
 /** @page pg_busmouse DevBusMouse - Microsoft Bus Mouse Emulation
  *
@@ -608,11 +608,10 @@ static DECLCALLBACK(int) mouPutEventAbs(PPDMIMOUSEPORT pInterface, uint32_t x,
 }
 
 /**
- * @interface_method_impl{PDMIMOUSEPORT, pfnPutEventMT}
+ * @interface_method_impl{PDMIMOUSEPORT, pfnPutEventMultiTouch}
  */
-static DECLCALLBACK(int) mouPutEventMT(PPDMIMOUSEPORT pInterface, uint32_t x,
-                                       uint32_t y, uint32_t cContact,
-                                       uint32_t fContact)
+static DECLCALLBACK(int) mouPutEventMultiTouch(PPDMIMOUSEPORT pInterface, uint8_t cContacts,
+                                               const uint64_t *pau64Contacts, uint32_t u32ScanTime)
 {
     AssertFailedReturn(VERR_NOT_SUPPORTED);
 }
@@ -767,10 +766,10 @@ static DECLCALLBACK(int) mouConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNO
     pThis->pDevInsR3 = pDevIns;
     pThis->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
     pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
-    pThis->Mouse.IBase.pfnQueryInterface = mouQueryMouseInterface;
-    pThis->Mouse.IPort.pfnPutEvent       = mouPutEvent;
-    pThis->Mouse.IPort.pfnPutEventAbs    = mouPutEventAbs;
-    pThis->Mouse.IPort.pfnPutEventMT     = mouPutEventMT;
+    pThis->Mouse.IBase.pfnQueryInterface     = mouQueryMouseInterface;
+    pThis->Mouse.IPort.pfnPutEvent           = mouPutEvent;
+    pThis->Mouse.IPort.pfnPutEventAbs        = mouPutEventAbs;
+    pThis->Mouse.IPort.pfnPutEventMultiTouch = mouPutEventMultiTouch;
 
     /*
      * Create the interrupt timer.
@@ -875,6 +874,23 @@ const PDMDEVREG g_DeviceBusMouse =
     /* u32VersionEnd */
     PDM_DEVREG_VERSION
 };
+
+#ifdef VBOX_IN_EXTPACK_R3
+/**
+ * @callback_method_impl{FNPDMVBOXDEVICESREGISTER}
+ */
+extern "C" DECLEXPORT(int) VBoxDevicesRegister(PPDMDEVREGCB pCallbacks, uint32_t u32Version)
+{
+    AssertLogRelMsgReturn(u32Version >= VBOX_VERSION,
+                          ("u32Version=%#x VBOX_VERSION=%#x\n", u32Version, VBOX_VERSION),
+                          VERR_EXTPACK_VBOX_VERSION_MISMATCH);
+    AssertLogRelMsgReturn(pCallbacks->u32Version == PDM_DEVREG_CB_VERSION,
+                          ("pCallbacks->u32Version=%#x PDM_DEVREG_CB_VERSION=%#x\n", pCallbacks->u32Version, PDM_DEVREG_CB_VERSION),
+                          VERR_VERSION_MISMATCH);
+
+    return pCallbacks->pfnRegister(pCallbacks, &g_DeviceBusMouse);
+}
+#endif /* VBOX_IN_EXTPACK_R3 */
 
 # endif /* IN_RING3 */
 #endif /* !VBOX_DEVICE_STRUCT_TESTCASE */

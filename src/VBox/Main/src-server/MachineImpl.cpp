@@ -204,7 +204,6 @@ Machine::HWData::HWData()
     mKeyboardHIDType = KeyboardHIDType_PS2Keyboard;
     mPointingHIDType = PointingHIDType_PS2Mouse;
     mChipsetType = ChipsetType_PIIX3;
-    mEmulatedUSBWebcamEnabled = FALSE;
     mEmulatedUSBCardReaderEnabled = FALSE;
 
     for (size_t i = 0; i < RT_ELEMENTS(mCPUAttached); i++)
@@ -1621,46 +1620,6 @@ STDMETHODIMP Machine::COMSETTER(EmulatedUSBCardReaderEnabled)(BOOL aEnabled)
     setModified(IsModified_MachineData);
     mHWData.backup();
     mHWData->mEmulatedUSBCardReaderEnabled = aEnabled;
-
-    return S_OK;
-#else
-    NOREF(aEnabled);
-    return E_NOTIMPL;
-#endif
-}
-
-STDMETHODIMP Machine::COMGETTER(EmulatedUSBWebcameraEnabled)(BOOL *aEnabled)
-{
-#ifdef VBOX_WITH_USB_VIDEO
-    CheckComArgOutPointerValid(aEnabled);
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    *aEnabled = mHWData->mEmulatedUSBWebcamEnabled;
-
-    return S_OK;
-#else
-    NOREF(aEnabled);
-    return E_NOTIMPL;
-#endif
-}
-
-STDMETHODIMP Machine::COMSETTER(EmulatedUSBWebcameraEnabled)(BOOL aEnabled)
-{
-#ifdef VBOX_WITH_USB_VIDEO
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    HRESULT rc = checkStateDependency(MutableStateDep);
-    if (FAILED(rc)) return rc;
-
-    setModified(IsModified_MachineData);
-    mHWData.backup();
-    mHWData->mEmulatedUSBWebcamEnabled = aEnabled;
 
     return S_OK;
 #else
@@ -3657,6 +3616,17 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
 
         if (fLaunchingVMProcess)
         {
+            if (mData->mSession.mPID == NIL_RTPROCESS)
+            {
+                // two or more clients racing for a lock, the one which set the
+                // session state to Spawning will win, the others will get an
+                // error as we can't decide here if waiting a little would help
+                // (only for shared locks this would avoid an error)
+                return setError(VBOX_E_INVALID_OBJECT_STATE,
+                                tr("The machine '%s' already has a lock request pending"),
+                                mUserData->s.strName.c_str());
+            }
+
             // this machine is awaiting for a spawning session to be opened:
             // then the calling process must be the one that got started by
             // LaunchVMProcess()
@@ -3693,10 +3663,18 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
             SessionState_T origState = mData->mSession.mState;
             mData->mSession.mState = SessionState_Spawning;
 
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
             /* Get the client token ID to be passed to the client process */
             Utf8Str strTokenId;
             sessionMachine->getTokenId(strTokenId);
             Assert(!strTokenId.isEmpty());
+#else /* VBOX_WITH_GENERIC_SESSION_WATCHER */
+            /* Get the client token to be passed to the client process */
+            ComPtr<IToken> pToken(sessionMachine->getToken());
+            /* The token is now "owned" by pToken, fix refcount */
+            if (!pToken.isNull())
+                pToken->Release();
+#endif /* VBOX_WITH_GENERIC_SESSION_WATCHER */
 
             /*
              *  Release the lock before calling the client process -- it will call
@@ -3711,7 +3689,13 @@ STDMETHODIMP Machine::LockMachine(ISession *aSession,
             alock.release();
 
             LogFlowThisFunc(("Calling AssignMachine()...\n"));
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
             rc = pSessionControl->AssignMachine(sessionMachine, lockType, Bstr(strTokenId).raw());
+#else /* VBOX_WITH_GENERIC_SESSION_WATCHER */
+            rc = pSessionControl->AssignMachine(sessionMachine, lockType, pToken);
+            /* Now the token is owned by the client process. */
+            pToken.setNull();
+#endif /* VBOX_WITH_GENERIC_SESSION_WATCHER */
             LogFlowThisFunc(("AssignMachine() returned %08X\n", rc));
 
             /* The failure may occur w/o any error info (from RPC), so provide one */
@@ -5292,6 +5276,18 @@ STDMETHODIMP Machine::SetExtraData(IN_BSTR aKey, IN_BSTR aValue)
         mParent->onExtraDataChange(mData->mUuid, aKey, aValue);
 
     return S_OK;
+}
+
+STDMETHODIMP Machine::SetSettingsFilePath(IN_BSTR aFilePath, IProgress **aProgress)
+{
+    CheckComArgStrNotEmptyOrNull(aFilePath);
+    CheckComArgOutPointerValid(aProgress);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    *aProgress = NULL;
+    ReturnComNotImplemented();
 }
 
 STDMETHODIMP Machine::SaveSettings()
@@ -8116,7 +8112,11 @@ HRESULT Machine::launchVMProcess(IInternalSessionControl *aControl,
 
     /* inform the session that it will be a remote one */
     LogFlowThisFunc(("Calling AssignMachine (NULL)...\n"));
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
     HRESULT rc = aControl->AssignMachine(NULL, LockType_Write, Bstr::Empty.raw());
+#else /* VBOX_WITH_GENERIC_SESSION_WATCHER */
+    HRESULT rc = aControl->AssignMachine(NULL, LockType_Write, NULL);
+#endif /* VBOX_WITH_GENERIC_SESSION_WATCHER */
     LogFlowThisFunc(("AssignMachine (NULL) returned %08X\n", rc));
 
     if (FAILED(rc))
@@ -8206,6 +8206,7 @@ bool Machine::isSessionSpawning()
     return false;
 }
 
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
 /**
  * Called from the client watcher thread to check for unexpected client process
  * death during Session_Spawning state (e.g. before it successfully opened a
@@ -8299,6 +8300,7 @@ bool Machine::checkForSpawnFailure()
 
     return false;
 }
+#endif /* !VBOX_WITH_GENERIC_SESSION_WATCHER */
 
 /**
  *  Checks whether the machine can be registered. If so, commits and saves
@@ -9254,7 +9256,6 @@ HRESULT Machine::loadHardware(const settings::Hardware &data, const settings::De
         mHWData->mPointingHIDType = data.pointingHIDType;
         mHWData->mKeyboardHIDType = data.keyboardHIDType;
         mHWData->mChipsetType = data.chipsetType;
-        mHWData->mEmulatedUSBWebcamEnabled = data.fEmulatedUSBWebcam;
         mHWData->mEmulatedUSBCardReaderEnabled = data.fEmulatedUSBCardReader;
         mHWData->mHPETEnabled = data.fHPETEnabled;
 
@@ -10528,7 +10529,6 @@ HRESULT Machine::saveHardware(settings::Hardware &data, settings::Debugging *pDb
         // chipset
         data.chipsetType = mHWData->mChipsetType;
 
-        data.fEmulatedUSBWebcam     = !!mHWData->mEmulatedUSBWebcamEnabled;
         data.fEmulatedUSBCardReader = !!mHWData->mEmulatedUSBCardReaderEnabled;
 
         // HPET
@@ -12687,7 +12687,7 @@ HRESULT SessionMachine::init(Machine *aMachine)
     /* create the machine client token */
     try
     {
-        mClientToken = new ClientToken(aMachine);
+        mClientToken = new ClientToken(aMachine, this);
         if (!mClientToken->isReady())
         {
             delete mClientToken;
@@ -12786,7 +12786,8 @@ HRESULT SessionMachine::init(Machine *aMachine)
 
 /**
  *  Uninitializes this session object. If the reason is other than
- *  Uninit::Unexpected, then this method MUST be called from #checkForDeath().
+ *  Uninit::Unexpected, then this method MUST be called from #checkForDeath()
+ *  or the client watcher code.
  *
  *  @param aReason          uninitialization reason
  *
@@ -13033,10 +13034,6 @@ void SessionMachine::uninit(Uninit::Reason aReason)
     /* release the exclusive lock before setting the below two to NULL */
     multilock.release();
 
-    RTThreadSleep(500);
-    mParent->AddRef();
-    LONG c = mParent->Release();
-    LogFlowThisFunc(("vbox ref=%d\n", c)); NOREF(c);
     unconst(mParent) = NULL;
     unconst(mPeer) = NULL;
 
@@ -13880,6 +13877,7 @@ STDMETHODIMP SessionMachine::EjectMedium(IMediumAttachment *aAttachment,
 // public methods only for internal purposes
 /////////////////////////////////////////////////////////////////////////////
 
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
 /**
  * Called from the client watcher thread to check for expected or unexpected
  * death of the client process that has a direct session to this machine.
@@ -13948,6 +13946,21 @@ void SessionMachine::getTokenId(Utf8Str &strTokenId)
     if (mClientToken)
         mClientToken->getId(strTokenId);
 }
+#else /* VBOX_WITH_GENERIC_SESSION_WATCHER */
+IToken *SessionMachine::getToken()
+{
+    LogFlowThisFunc(("\n"));
+
+    AutoCaller autoCaller(this);
+    AssertComRCReturn(autoCaller.rc(), NULL);
+
+    Assert(mClientToken);
+    if (mClientToken)
+        return mClientToken->getToken();
+    else
+        return NULL;
+}
+#endif /* VBOX_WITH_GENERIC_SESSION_WATCHER */
 
 Machine::ClientToken *SessionMachine::getClientToken()
 {

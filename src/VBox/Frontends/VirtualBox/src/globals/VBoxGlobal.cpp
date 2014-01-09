@@ -931,7 +931,7 @@ bool VBoxGlobal::toLPTPortNumbers (const QString &aName, ulong &aIRQ,
     return false;
 }
 
-QString VBoxGlobal::details(const CMedium &cmedium, bool fPredictDiff, bool fUseHtml /*= true*/)
+QString VBoxGlobal::details(const CMedium &cmedium, bool fPredictDiff, bool fUseHtml /* = true*/)
 {
     /* Search for corresponding UI medium: */
     const QString strMediumID = cmedium.isNull() ? UIMedium::nullID() : cmedium.GetId();
@@ -1150,10 +1150,10 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
             ? tr ("Enabled", "details report (ACPI)")
             : tr ("Disabled", "details report (ACPI)");
 
-        /* IO APIC */
+        /* I/O APIC */
         QString ioapic = biosSettings.GetIOAPICEnabled()
-            ? tr ("Enabled", "details report (IO APIC)")
-            : tr ("Disabled", "details report (IO APIC)");
+            ? tr ("Enabled", "details report (I/O APIC)")
+            : tr ("Disabled", "details report (I/O APIC)");
 
         /* PAE/NX */
         QString pae = aMachine.GetCpuProperty(KCpuPropertyType_PAE)
@@ -1191,7 +1191,7 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
                      + QString (sSectionItemTpl2).arg (tr ("Boot Order", "details report"), bootOrder)
 #ifdef VBOX_WITH_FULL_DETAILS_REPORT
                      + QString (sSectionItemTpl2).arg (tr ("ACPI", "details report"), acpi)
-                     + QString (sSectionItemTpl2).arg (tr ("IO APIC", "details report"), ioapic)
+                     + QString (sSectionItemTpl2).arg (tr ("I/O APIC", "details report"), ioapic)
                      + QString (sSectionItemTpl2).arg (tr ("PAE/NX", "details report"), pae)
 #endif /* VBOX_WITH_FULL_DETAILS_REPORT */
                      ;
@@ -1396,6 +1396,9 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
                 else if (type == KNetworkAttachmentType_Generic)
                     attType = attType.arg (tr ("Generic, '%1'",
                         "details report (network)").arg (adapter.GetGenericDriver()));
+                else if (type == KNetworkAttachmentType_NATNetwork)
+                    attType = attType.arg (tr ("NAT network, '%1'",
+                        "details report (network)").arg (adapter.GetNATNetwork()));
                 else
                     attType = attType.arg (gpConverter->toString (type));
 
@@ -1810,10 +1813,14 @@ QString VBoxGlobal::openMedium(UIMediumType mediumType, QString strMediumLocatio
     return QString();
 }
 
-void VBoxGlobal::startMediumEnumeration(bool fForceStart /*= true*/)
+void VBoxGlobal::startMediumEnumeration(bool fForceStart /* = true*/)
 {
     /* Make sure VBoxGlobal is already valid: */
     AssertReturnVoid(mValid);
+
+    /* Make sure medium-enumerator is already created: */
+    if (!m_pMediumEnumerator)
+        return;
 
     /* Make sure enumeration is not already started: */
     if (isMediumEnumerationInProgress())
@@ -3376,8 +3383,8 @@ bool VBoxGlobal::shouldWeShowMachine(CMachine &machine)
 
 /* static */
 bool VBoxGlobal::shouldWeAllowMachineReconfiguration(CMachine &machine,
-                                                     bool fIncludingMachineGeneralCheck /*= false*/,
-                                                     bool fIncludingMachineStateCheck /*= false*/)
+                                                     bool fIncludingMachineGeneralCheck /* = false*/,
+                                                     bool fIncludingMachineStateCheck /* = false*/)
 {
     /* Should we perform machine general check? */
     if (fIncludingMachineGeneralCheck)
@@ -3406,7 +3413,7 @@ bool VBoxGlobal::shouldWeAllowMachineReconfiguration(CMachine &machine,
 
 /* static */
 bool VBoxGlobal::shouldWeShowDetails(CMachine &machine,
-                                     bool fIncludingMachineGeneralCheck /*= false*/)
+                                     bool fIncludingMachineGeneralCheck /* = false*/)
 {
     /* Should we perform machine general check? */
     if (fIncludingMachineGeneralCheck)
@@ -3427,7 +3434,7 @@ bool VBoxGlobal::shouldWeShowDetails(CMachine &machine,
 
 /* static */
 bool VBoxGlobal::shouldWeAutoMountGuestScreens(CMachine &machine,
-                                               bool fIncludingSanityCheck /*= true*/)
+                                               bool fIncludingSanityCheck /* = true*/)
 {
     if (fIncludingSanityCheck)
     {
@@ -3448,7 +3455,7 @@ bool VBoxGlobal::shouldWeAutoMountGuestScreens(CMachine &machine,
 
 /* static */
 bool VBoxGlobal::shouldWeAllowSnapshotOperations(CMachine &machine,
-                                                 bool fIncludingSanityCheck /*= true*/)
+                                                 bool fIncludingSanityCheck /* = true*/)
 {
     if (fIncludingSanityCheck)
     {
@@ -3723,6 +3730,9 @@ bool VBoxGlobal::openURL (const QString &aURL)
 
 void VBoxGlobal::sltGUILanguageChange(QString strLang)
 {
+    /* Make sure medium-enumeration is not in progress! */
+    AssertReturnVoid(!isMediumEnumerationInProgress());
+    /* Load passed language: */
     loadLanguage(strLang);
 }
 

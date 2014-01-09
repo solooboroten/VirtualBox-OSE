@@ -646,6 +646,7 @@ static int hmR3InitCPU(PVM pVM)
         AssertRC(rc);
 
 #ifdef VBOX_WITH_STATISTICS
+        HM_REG_COUNTER(&pVCpu->hm.s.StatExitAll,                "/HM/CPU%d/Exit/All", "Exits (total).");
         HM_REG_COUNTER(&pVCpu->hm.s.StatExitShadowNM,           "/HM/CPU%d/Exit/Trap/Shw/#NM", "Shadow #NM (device not available, no math co-processor) exception.");
         HM_REG_COUNTER(&pVCpu->hm.s.StatExitGuestNM,            "/HM/CPU%d/Exit/Trap/Gst/#NM", "Guest #NM (device not available, no math co-processor) exception.");
         HM_REG_COUNTER(&pVCpu->hm.s.StatExitShadowPF,           "/HM/CPU%d/Exit/Trap/Shw/#PF", "Shadow #PF (page fault) exception.");
@@ -771,7 +772,7 @@ static int hmR3InitCPU(PVM pVM)
 
         pVCpu->hm.s.paStatExitReason = NULL;
 
-        rc = MMHyperAlloc(pVM, MAX_EXITREASON_STAT*sizeof(*pVCpu->hm.s.paStatExitReason), 0, MM_TAG_HM,
+        rc = MMHyperAlloc(pVM, MAX_EXITREASON_STAT * sizeof(*pVCpu->hm.s.paStatExitReason), 0 /* uAlignment */, MM_TAG_HM,
                           (void **)&pVCpu->hm.s.paStatExitReason);
         AssertRC(rc);
         if (RT_SUCCESS(rc))
@@ -991,14 +992,15 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
 
     LogRel(("HM: Using VT-x implementation 2.0!\n"));
     LogRel(("HM: Host CR4                        = %#RX64\n", pVM->hm.s.vmx.u64HostCr4));
+    LogRel(("HM: Host EFER                       = %#RX64\n", pVM->hm.s.vmx.u64HostEfer));
     LogRel(("HM: MSR_IA32_FEATURE_CONTROL        = %#RX64\n", pVM->hm.s.vmx.Msrs.u64FeatureCtrl));
     LogRel(("HM: MSR_IA32_VMX_BASIC_INFO         = %#RX64\n", pVM->hm.s.vmx.Msrs.u64BasicInfo));
     LogRel(("HM:   VMCS id                             = %#x\n", MSR_IA32_VMX_BASIC_INFO_VMCS_ID(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
     LogRel(("HM:   VMCS size                           = %u\n", MSR_IA32_VMX_BASIC_INFO_VMCS_SIZE(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
     LogRel(("HM:   VMCS physical address limit         = %s\n", MSR_IA32_VMX_BASIC_INFO_VMCS_PHYS_WIDTH(pVM->hm.s.vmx.Msrs.u64BasicInfo) ? "< 4 GB" : "None"));
     LogRel(("HM:   VMCS memory type                    = %#x\n", MSR_IA32_VMX_BASIC_INFO_VMCS_MEM_TYPE(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
-    LogRel(("HM:   Dual-monitor treatment support      = %RTbool\n", !!MSR_IA32_VMX_BASIC_INFO_VMCS_DUAL_MON(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
-    LogRel(("HM:   OUTS & INS instruction-info         = %RTbool\n", !!MSR_IA32_VMX_BASIC_INFO_VMCS_INS_OUTS(pVM->hm.s.vmx.Msrs.u64BasicInfo)));
+    LogRel(("HM:   Dual-monitor treatment support      = %RTbool\n", RT_BOOL(MSR_IA32_VMX_BASIC_INFO_VMCS_DUAL_MON(pVM->hm.s.vmx.Msrs.u64BasicInfo))));
+    LogRel(("HM:   OUTS & INS instruction-info         = %RTbool\n", RT_BOOL(MSR_IA32_VMX_BASIC_INFO_VMCS_INS_OUTS(pVM->hm.s.vmx.Msrs.u64BasicInfo))));
     LogRel(("HM: Max resume loops                = %u\n", pVM->hm.s.cMaxResumeLoops));
 
     LogRel(("HM: MSR_IA32_VMX_PINBASED_CTLS      = %#RX64\n", pVM->hm.s.vmx.Msrs.VmxPinCtls.u));
@@ -1117,13 +1119,13 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
                 MSR_IA32_VMX_MISC_PREEMPT_TSC_BIT(val), pVM->hm.s.vmx.cPreemptTimerShift));
     }
 
-    LogRel(("HM:   MSR_IA32_VMX_MISC_STORE_EFERLMA_VMEXIT = %RTbool\n", !!MSR_IA32_VMX_MISC_STORE_EFERLMA_VMEXIT(val)));
+    LogRel(("HM:   MSR_IA32_VMX_MISC_STORE_EFERLMA_VMEXIT = %RTbool\n", RT_BOOL(MSR_IA32_VMX_MISC_STORE_EFERLMA_VMEXIT(val))));
     LogRel(("HM:   MSR_IA32_VMX_MISC_ACTIVITY_STATES      = %#x\n", MSR_IA32_VMX_MISC_ACTIVITY_STATES(val)));
     LogRel(("HM:   MSR_IA32_VMX_MISC_CR3_TARGET           = %#x\n", MSR_IA32_VMX_MISC_CR3_TARGET(val)));
     LogRel(("HM:   MSR_IA32_VMX_MISC_MAX_MSR              = %u\n", MSR_IA32_VMX_MISC_MAX_MSR(val)));
-    LogRel(("HM:   MSR_IA32_VMX_MISC_RDMSR_SMBASE_MSR_SMM = %RTbool\n", !!MSR_IA32_VMX_MISC_RDMSR_SMBASE_MSR_SMM(val)));
-    LogRel(("HM:   MSR_IA32_VMX_MISC_SMM_MONITOR_CTL_B2   = %RTbool\n", !!MSR_IA32_VMX_MISC_SMM_MONITOR_CTL_B2(val)));
-    LogRel(("HM:   MSR_IA32_VMX_MISC_VMWRITE_VMEXIT_INFO  = %RTbool\n", !!MSR_IA32_VMX_MISC_VMWRITE_VMEXIT_INFO(val)));
+    LogRel(("HM:   MSR_IA32_VMX_MISC_RDMSR_SMBASE_MSR_SMM = %RTbool\n", RT_BOOL(MSR_IA32_VMX_MISC_RDMSR_SMBASE_MSR_SMM(val))));
+    LogRel(("HM:   MSR_IA32_VMX_MISC_SMM_MONITOR_CTL_B2   = %RTbool\n", RT_BOOL(MSR_IA32_VMX_MISC_SMM_MONITOR_CTL_B2(val))));
+    LogRel(("HM:   MSR_IA32_VMX_MISC_VMWRITE_VMEXIT_INFO  = %RTbool\n", RT_BOOL(MSR_IA32_VMX_MISC_VMWRITE_VMEXIT_INFO(val))));
     LogRel(("HM:   MSR_IA32_VMX_MISC_MSEG_ID              = %#x\n", MSR_IA32_VMX_MISC_MSEG_ID(val)));
 
     /* Paranoia */
@@ -1239,7 +1241,7 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
     /*
      * Call ring-0 to set up the VM.
      */
-    rc = SUPR3CallVMMR0Ex(pVM->pVMR0, 0 /*idCpu*/, VMMR0_DO_HM_SETUP_VM, 0, NULL);
+    rc = SUPR3CallVMMR0Ex(pVM->pVMR0, 0 /* idCpu */, VMMR0_DO_HM_SETUP_VM, 0 /* u64Arg */, NULL /* pReqHdr */);
     if (rc != VINF_SUCCESS)
     {
         AssertMsgFailed(("%Rrc\n", rc));
@@ -1247,8 +1249,8 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
         for (VMCPUID i = 0; i < pVM->cCpus; i++)
         {
             PVMCPU pVCpu = &pVM->aCpus[i];
-            LogRel(("HM: CPU[%u] Last instruction error %#x\n", i, pVCpu->hm.s.vmx.LastError.u32InstrError));
-            LogRel(("HM: CPU[%u] HM error               %#x (%u)\n", i, pVCpu->hm.s.u32HMError, pVCpu->hm.s.u32HMError));
+            LogRel(("HM: CPU[%u] Last instruction error  %#x\n", i, pVCpu->hm.s.vmx.LastError.u32InstrError));
+            LogRel(("HM: CPU[%u] HM error                %#x (%u)\n", i, pVCpu->hm.s.u32HMError, pVCpu->hm.s.u32HMError));
         }
         return VMSetError(pVM, rc, RT_SRC_POS, "VT-x setup failed: %Rrc", rc);
     }
@@ -1269,22 +1271,17 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
         CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_SYSCALL);            /* 64 bits only on Intel CPUs */
         CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_LAHF);
         CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_NX);
-#if 0 /** @todo r=bird: This ain't making any sense whatsoever. */
-#if RT_ARCH_X86
-        if (   !CPUMGetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_PAE)
-            || !(pVM->hm.s.vmx.u64HostEfer & MSR_K6_EFER_NXE))
-            LogRel(("NX is only supported for 64-bit guests!\n"));
-#endif
-#endif
     }
     /* Turn on NXE if PAE has been enabled *and* the host has turned on NXE
        (we reuse the host EFER in the switcher). */
     /** @todo this needs to be fixed properly!! */
-    else if (   CPUMGetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_PAE)
-             && (pVM->hm.s.vmx.u64HostEfer & MSR_K6_EFER_NXE))
-        CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_NX);
-    else
-        LogRel(("HM: NX not supported by the host.\n"));
+    else if (CPUMGetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_PAE))
+    {
+        if (pVM->hm.s.vmx.u64HostEfer & MSR_K6_EFER_NXE)
+            CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_NX);
+        else
+            LogRel(("HM: NX not enabled on the host, unavailable to PAE guest.\n"));
+    }
 
     /*
      * Log configuration details.
@@ -1298,11 +1295,11 @@ static int hmR3InitFinalizeR0Intel(PVM pVM)
         if (pVM->hm.s.vmx.enmFlushEpt == VMX_FLUSH_EPT_SINGLE_CONTEXT)
             LogRel(("HM:   EPT flush type                = VMX_FLUSH_EPT_SINGLE_CONTEXT\n"));
         else if (pVM->hm.s.vmx.enmFlushEpt == VMX_FLUSH_EPT_ALL_CONTEXTS)
-            LogRel(("HM:   EPT flush type               = VMX_FLUSH_EPT_ALL_CONTEXTS\n"));
+            LogRel(("HM:   EPT flush type                = VMX_FLUSH_EPT_ALL_CONTEXTS\n"));
         else if (pVM->hm.s.vmx.enmFlushEpt == VMX_FLUSH_EPT_NOT_SUPPORTED)
-            LogRel(("HM:   EPT flush type               = VMX_FLUSH_EPT_NOT_SUPPORTED\n"));
+            LogRel(("HM:   EPT flush type                = VMX_FLUSH_EPT_NOT_SUPPORTED\n"));
         else
-            LogRel(("HM:   EPT flush type               = %d\n", pVM->hm.s.vmx.enmFlushEpt));
+            LogRel(("HM:   EPT flush type                = %d\n", pVM->hm.s.vmx.enmFlushEpt));
 
         if (pVM->hm.s.vmx.fUnrestrictedGuest)
             LogRel(("HM: Unrestricted guest execution enabled!\n"));
@@ -1627,8 +1624,9 @@ static int hmR3TermCPU(PVM pVM)
  */
 VMMR3_INT_DECL(void) HMR3ResetCpu(PVMCPU pVCpu)
 {
-    /* On first entry we'll sync everything. */
-    pVCpu->hm.s.fContextUseFlags = (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_ALL_GUEST);
+    /* Sync. entire state on VM reset R0-reentry. It's safe to reset
+       the HM flags here, all other EMTs are in ring-3. See VMR3Reset(). */
+    VMCPU_HMCF_RESET_TO(pVCpu, HM_CHANGED_HOST_CONTEXT | HM_CHANGED_ALL_GUEST);
 
     pVCpu->hm.s.vmx.u32CR0Mask     = 0;
     pVCpu->hm.s.vmx.u32CR4Mask     = 0;
@@ -2018,7 +2016,7 @@ DECLCALLBACK(VBOXSTRICTRC) hmR3PatchTprInstr(PVM pVM, PVMCPU pVCpu, void *pvUser
      * We're racing other VCPUs here, so don't try patch the instruction twice
      * and make sure there is still room for our patch record.
      */
-    PCPUMCTX        pCtx   = CPUMQueryGuestCtxPtr(pVCpu);
+    PCPUMCTX    pCtx   = CPUMQueryGuestCtxPtr(pVCpu);
     PHMTPRPATCH pPatch = (PHMTPRPATCH)RTAvloU32Get(&pVM->hm.s.PatchTree, (AVLOU32KEY)pCtx->eip);
     if (pPatch)
     {
@@ -2059,23 +2057,23 @@ DECLCALLBACK(VBOXSTRICTRC) hmR3PatchTprInstr(PVM pVM, PVMCPU pVCpu, void *pvUser
         if (pDis->Param1.fUse == DISUSE_DISPLACEMENT32)
         {
             /*
-                * TPR write:
-                *
-                * push ECX                      [51]
-                * push EDX                      [52]
-                * push EAX                      [50]
-                * xor EDX,EDX                   [31 D2]
-                * mov EAX,EAX                   [89 C0]
-                *  or
-                * mov EAX,0000000CCh            [B8 CC 00 00 00]
-                * mov ECX,0C0000082h            [B9 82 00 00 C0]
-                * wrmsr                         [0F 30]
-                * pop EAX                       [58]
-                * pop EDX                       [5A]
-                * pop ECX                       [59]
-                * jmp return_address            [E9 return_address]
-                *
-                */
+             * TPR write:
+             *
+             * push ECX                      [51]
+             * push EDX                      [52]
+             * push EAX                      [50]
+             * xor EDX,EDX                   [31 D2]
+             * mov EAX,EAX                   [89 C0]
+             *  or
+             * mov EAX,0000000CCh            [B8 CC 00 00 00]
+             * mov ECX,0C0000082h            [B9 82 00 00 C0]
+             * wrmsr                         [0F 30]
+             * pop EAX                       [58]
+             * pop EDX                       [5A]
+             * pop ECX                       [59]
+             * jmp return_address            [E9 return_address]
+             *
+             */
             bool fUsesEax = (pDis->Param2.fUse == DISUSE_REG_GEN32 && pDis->Param2.Base.idxGenReg == DISGREG_EAX);
 
             aPatch[off++] = 0x51;    /* push ecx */
@@ -2113,20 +2111,20 @@ DECLCALLBACK(VBOXSTRICTRC) hmR3PatchTprInstr(PVM pVM, PVMCPU pVCpu, void *pvUser
         else
         {
             /*
-                * TPR read:
-                *
-                * push ECX                      [51]
-                * push EDX                      [52]
-                * push EAX                      [50]
-                * mov ECX,0C0000082h            [B9 82 00 00 C0]
-                * rdmsr                         [0F 32]
-                * mov EAX,EAX                   [89 C0]
-                * pop EAX                       [58]
-                * pop EDX                       [5A]
-                * pop ECX                       [59]
-                * jmp return_address            [E9 return_address]
-                *
-                */
+             * TPR read:
+             *
+             * push ECX                      [51]
+             * push EDX                      [52]
+             * push EAX                      [50]
+             * mov ECX,0C0000082h            [B9 82 00 00 C0]
+             * rdmsr                         [0F 32]
+             * mov EAX,EAX                   [89 C0]
+             * pop EAX                       [58]
+             * pop EDX                       [5A]
+             * pop ECX                       [59]
+             * jmp return_address            [E9 return_address]
+             *
+             */
             Assert(pDis->Param1.fUse == DISUSE_REG_GEN32);
 
             if (pDis->Param1.Base.idxGenReg != DISGREG_ECX)
@@ -2253,48 +2251,40 @@ VMMR3_INT_DECL(int) HMR3PatchTprInstr(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
  * @returns true if selector is suitable for VMX, otherwise
  *        false.
  * @param   pSel        Pointer to the selector to check (CS).
- *          uStackDpl   The DPL of the stack segment.
+ *          uStackDpl   The CPL, aka the DPL of the stack segment.
  */
 static bool hmR3IsCodeSelectorOkForVmx(PCPUMSELREG pSel, unsigned uStackDpl)
 {
-    bool    rc = false;
+    /*
+     * Segment must be an accessed code segment, it must be present and it must
+     * be usable.
+     * Note! These are all standard requirements and if CS holds anything else
+     *       we've got buggy code somewhere!
+     */
+    AssertCompile(X86DESCATTR_TYPE == 0xf);
+    AssertMsgReturn(   (pSel->Attr.u & (X86_SEL_TYPE_ACCESSED | X86_SEL_TYPE_CODE | X86DESCATTR_DT | X86DESCATTR_P | X86DESCATTR_UNUSABLE))
+                    ==                 (X86_SEL_TYPE_ACCESSED | X86_SEL_TYPE_CODE | X86DESCATTR_DT | X86DESCATTR_P),
+                    ("%#x\n", pSel->Attr.u),
+                    false);
 
-    do
-    {
-        /* Segment must be accessed. */
-        if (!(pSel->Attr.u & X86_SEL_TYPE_ACCESSED))
-            break;
-        /* Segment must be a code segment. */
-        if (!(pSel->Attr.u & X86_SEL_TYPE_CODE))
-            break;
-        /* The S bit must be set. */
-        if (!pSel->Attr.n.u1DescType)
-            break;
-        if (pSel->Attr.n.u4Type & X86_SEL_TYPE_CONF)
-        {
-            /* For conforming segments, CS.DPL must be <= SS.DPL. */
-            if (pSel->Attr.n.u2Dpl > uStackDpl)
-                break;
-        }
-        else
-        {
-            /* For non-conforming segments, CS.DPL must equal SS.DPL. */
-            if (pSel->Attr.n.u2Dpl != uStackDpl)
-                break;
-        }
-        /* Segment must be present. */
-        if (!pSel->Attr.n.u1Present)
-            break;
-        /* G bit must be set if any high limit bits are set. */
-        if ((pSel->u32Limit & 0xfff00000) && !pSel->Attr.n.u1Granularity)
-            break;
-        /* G bit must be clear if any low limit bits are clear. */
-        if ((pSel->u32Limit & 0x0fff) != 0x0fff && pSel->Attr.n.u1Granularity)
-            break;
+    /* For conforming segments, CS.DPL must be <= SS.DPL, while CS.DPL
+       must equal SS.DPL for non-confroming segments.
+       Note! This is also a hard requirement like above. */
+    AssertMsgReturn(  pSel->Attr.n.u4Type & X86_SEL_TYPE_CONF
+                    ? pSel->Attr.n.u2Dpl <= uStackDpl
+                    : pSel->Attr.n.u2Dpl == uStackDpl,
+                    ("u4Type=%#x u2Dpl=%u uStackDpl=%u\n", pSel->Attr.n.u4Type, pSel->Attr.n.u2Dpl, uStackDpl),
+                    false);
 
-        rc = true;
-    } while (0);
-    return rc;
+    /*
+     * The following two requirements are VT-x specific:
+     *  - G bit must be set if any high limit bits are set.
+     *  - G bit must be clear if any low limit bits are clear.
+     */
+    if (   ((pSel->u32Limit & 0xfff00000) == 0x00000000 ||  pSel->Attr.n.u1Granularity)
+        && ((pSel->u32Limit & 0x00000fff) == 0x00000fff || !pSel->Attr.n.u1Granularity) )
+        return true;
+    return false;
 }
 
 
@@ -2310,41 +2300,48 @@ static bool hmR3IsCodeSelectorOkForVmx(PCPUMSELREG pSel, unsigned uStackDpl)
  */
 static bool hmR3IsDataSelectorOkForVmx(PCPUMSELREG pSel)
 {
-    bool    rc = false;
-
-    /* If attributes are all zero, consider the segment unusable and therefore OK.
-     * This logic must be in sync with HMVMXR0.cpp!
+    /*
+     * Unusable segments are OK.  These days they should be marked as such, as
+     * but as an alternative we for old saved states and AMD<->VT-x migration
+     * we also treat segments with all the attributes cleared as unusable.
      */
-    if (!pSel->Attr.u)
+    if (pSel->Attr.n.u1Unusable || !pSel->Attr.u)
         return true;
 
-    do
-    {
-        /* Segment must be accessed. */
-        if (!(pSel->Attr.u & X86_SEL_TYPE_ACCESSED))
-            break;
-        /* Code segments must also be readable. */
-        if (pSel->Attr.u & X86_SEL_TYPE_CODE && !(pSel->Attr.u & X86_SEL_TYPE_READ))
-            break;
-        /* The S bit must be set. */
-        if (!pSel->Attr.n.u1DescType)
-            break;
-        /* Except for conforming segments, DPL >= RPL. */
-        if (pSel->Attr.n.u4Type <= X86_SEL_TYPE_ER_ACC && pSel->Attr.n.u2Dpl < (pSel->Sel & X86_SEL_RPL))
-            break;
-        /* Segment must be present. */
-        if (!pSel->Attr.n.u1Present)
-            break;
-        /* G bit must be set if any high limit bits are set. */
-        if ((pSel->u32Limit & 0xfff00000) && !pSel->Attr.n.u1Granularity)
-            break;
-        /* G bit must be clear if any low limit bits are clear. */
-        if ((pSel->u32Limit & 0x0fff) != 0x0fff && pSel->Attr.n.u1Granularity)
-            break;
+    /** @todo tighten these checks. Will require CPUM load adjusting. */
 
-        rc = true;
-    } while (0);
-    return rc;
+    /* Segment must be accessed. */
+    if (pSel->Attr.u & X86_SEL_TYPE_ACCESSED)
+    {
+        /* Code segments must also be readable. */
+        if (  !(pSel->Attr.u & X86_SEL_TYPE_CODE)
+            || (pSel->Attr.u & X86_SEL_TYPE_READ))
+        {
+            /* The S bit must be set. */
+            if (pSel->Attr.n.u1DescType)
+            {
+                /* Except for conforming segments, DPL >= RPL. */
+                if (   pSel->Attr.n.u2Dpl  >= (pSel->Sel & X86_SEL_RPL)
+                    || pSel->Attr.n.u4Type >= X86_SEL_TYPE_ER_ACC)
+                {
+                    /* Segment must be present. */
+                    if (pSel->Attr.n.u1Present)
+                    {
+                        /*
+                         * The following two requirements are VT-x specific:
+                         *  - G bit must be set if any high limit bits are set.
+                         *  - G bit must be clear if any low limit bits are clear.
+                         */
+                        if (   ((pSel->u32Limit & 0xfff00000) == 0x00000000 ||  pSel->Attr.n.u1Granularity)
+                            && ((pSel->u32Limit & 0x00000fff) == 0x00000fff || !pSel->Attr.n.u1Granularity) )
+                            return true;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 
@@ -2358,44 +2355,41 @@ static bool hmR3IsDataSelectorOkForVmx(PCPUMSELREG pSel)
  */
 static bool hmR3IsStackSelectorOkForVmx(PCPUMSELREG pSel)
 {
-    bool    rc = false;
-
-    /* If attributes are all zero, consider the segment unusable and therefore OK.
-     * This logic must be in sync with HMVMXR0.cpp!
+    /*
+     * Unusable segments are OK.  These days they should be marked as such, as
+     * but as an alternative we for old saved states and AMD<->VT-x migration
+     * we also treat segments with all the attributes cleared as unusable.
      */
-    if (!pSel->Attr.u)
+    /** @todo r=bird: actually all zeros isn't gonna cut it... SS.DPL == CPL. */
+    if (pSel->Attr.n.u1Unusable || !pSel->Attr.u)
         return true;
 
-    do
-    {
-        /* Segment must be accessed. */
-        if (!(pSel->Attr.u & X86_SEL_TYPE_ACCESSED))
-            break;
-        /* Segment must be writable. */
-        if (!(pSel->Attr.u & X86_SEL_TYPE_WRITE))
-            break;
-        /* Segment must not be a code segment. */
-        if (pSel->Attr.u & X86_SEL_TYPE_CODE)
-            break;
-        /* The S bit must be set. */
-        if (!pSel->Attr.n.u1DescType)
-            break;
-        /* DPL must equal RPL. */
-        if (pSel->Attr.n.u2Dpl != (pSel->Sel & X86_SEL_RPL))
-            break;
-        /* Segment must be present. */
-        if (!pSel->Attr.n.u1Present)
-            break;
-        /* G bit must be set if any high limit bits are set. */
-        if ((pSel->u32Limit & 0xfff00000) && !pSel->Attr.n.u1Granularity)
-            break;
-        /* G bit must be clear if any low limit bits are clear. */
-        if ((pSel->u32Limit & 0x0fff) != 0x0fff && pSel->Attr.n.u1Granularity)
-            break;
+    /*
+     * Segment must be an accessed writable segment, it must be present.
+     * Note! These are all standard requirements and if SS holds anything else
+     *       we've got buggy code somewhere!
+     */
+    AssertCompile(X86DESCATTR_TYPE == 0xf);
+    AssertMsgReturn(   (pSel->Attr.u & (X86_SEL_TYPE_ACCESSED | X86_SEL_TYPE_WRITE | X86DESCATTR_DT | X86DESCATTR_P | X86_SEL_TYPE_CODE))
+                    ==                 (X86_SEL_TYPE_ACCESSED | X86_SEL_TYPE_WRITE | X86DESCATTR_DT | X86DESCATTR_P),
+                    ("%#x\n", pSel->Attr.u),
+                    false);
 
-        rc = true;
-    } while (0);
-    return rc;
+    /* DPL must equal RPL.
+       Note! This is also a hard requirement like above. */
+    AssertMsgReturn(pSel->Attr.n.u2Dpl == (pSel->Sel & X86_SEL_RPL),
+                    ("u2Dpl=%u Sel=%#x\n", pSel->Attr.n.u2Dpl, pSel->Sel),
+                    false);
+
+    /*
+     * The following two requirements are VT-x specific:
+     *  - G bit must be set if any high limit bits are set.
+     *  - G bit must be clear if any low limit bits are clear.
+     */
+    if (   ((pSel->u32Limit & 0xfff00000) == 0x00000000 ||  pSel->Attr.n.u1Granularity)
+        && ((pSel->u32Limit & 0x00000fff) == 0x00000fff || !pSel->Attr.n.u1Granularity) )
+        return true;
+    return false;
 }
 
 
@@ -2501,7 +2495,6 @@ VMMR3DECL(bool) HMR3CanExecuteGuest(PVM pVM, PCPUMCTX pCtx)
             }
             else
             {
-                PGMMODE enmGuestMode = PGMGetGuestMode(pVCpu);
                 /* Verify the requirements for executing code in protected
                    mode. VT-x can't handle the CPU state right after a switch
                    from real to protected mode. (all sorts of RPL & DPL assumptions). */
@@ -2651,7 +2644,7 @@ VMMR3_INT_DECL(bool) HMR3IsRescheduleRequired(PVM pVM, PCPUMCTX pCtx)
  */
 VMMR3_INT_DECL(void) HMR3NotifyScheduled(PVMCPU pVCpu)
 {
-    pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_ALL_GUEST;
+    VMCPU_HMCF_SET(pVCpu, HM_CHANGED_ALL_GUEST);
 }
 
 
@@ -2662,7 +2655,7 @@ VMMR3_INT_DECL(void) HMR3NotifyScheduled(PVMCPU pVCpu)
  */
 VMMR3_INT_DECL(void) HMR3NotifyEmulated(PVMCPU pVCpu)
 {
-    pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_ALL_GUEST;
+    VMCPU_HMCF_SET(pVCpu, HM_CHANGED_ALL_GUEST);
 }
 
 

@@ -1010,6 +1010,11 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
         hrc = pMachine->GetHWVirtExProperty(HWVirtExPropertyType_UnrestrictedExecution, &fEnableUX); H();
         InsertConfigInteger(pHM, "EnableUX", fEnableUX);
 
+        /* Reset overwrite. */
+        if (isResetTurnedIntoPowerOff())
+            InsertConfigInteger(pRoot, "PowerOffInsteadOfReset", 1);
+
+
         /*
          * MM values.
          */
@@ -2378,21 +2383,6 @@ int Console::configConstructorInner(PUVM pUVM, PVM pVM, AutoWriteLock *pAlock)
                 // that it's documented somewhere.) Users needing it can use:
                 //      VBoxManage setextradata "myvm" "VBoxInternal/USB/USBProxy/GlobalConfig/Force11PacketSize" 1
                 //InsertConfigInteger(pCfg, "Force11PacketSize", true);
-            }
-#endif
-
-#ifdef VBOX_WITH_USB_VIDEO
-            BOOL aEmulatedUSBWebcamEnabled = FALSE;
-            hrc = pMachine->COMGETTER(EmulatedUSBWebcameraEnabled)(&aEmulatedUSBWebcamEnabled);    H();
-            if (aEmulatedUSBWebcamEnabled)
-            {
-                InsertConfigNode(pUsbDevices, "Webcam", &pDev);
-                InsertConfigNode(pDev,     "0", &pInst);
-                InsertConfigNode(pInst,    "Config", &pCfg);
-                InsertConfigNode(pInst,    "LUN#0", &pLunL0);
-                InsertConfigString(pLunL0, "Driver", "EmWebcam");
-                InsertConfigNode(pLunL0,   "Config", &pCfg);
-                InsertConfigInteger(pCfg,  "Object", (uintptr_t)mEmWebcam);
             }
 #endif
 
@@ -4866,6 +4856,23 @@ int Console::configNetwork(const char *pszDevice,
                 break;
             }
 
+            case NetworkAttachmentType_NATNetwork:
+            {
+                hrc = aNetworkAdapter->COMGETTER(NATNetwork)(bstr.asOutParam());            H();
+                if (!bstr.isEmpty())
+                {
+                    /** @todo add intnet prefix to separate namespaces, and add trunk if dealing with vboxnatX */
+                    InsertConfigString(pLunL0, "Driver", "IntNet");
+                    InsertConfigNode(pLunL0, "Config", &pCfg);
+                    InsertConfigString(pCfg, "Network", bstr);
+                    InsertConfigInteger(pCfg, "TrunkType", kIntNetTrunkType_WhateverNone);
+                    InsertConfigString(pCfg, "IfPolicyPromisc", pszPromiscuousGuestPolicy);
+                    networkName = bstr;
+                    trunkType = Bstr(TRUNKTYPE_WHATEVER);
+                }
+                break;
+            }
+
             default:
                 AssertMsgFailed(("should not get here!\n"));
                 break;
@@ -4884,6 +4891,7 @@ int Console::configNetwork(const char *pszDevice,
             case NetworkAttachmentType_HostOnly:
             case NetworkAttachmentType_NAT:
             case NetworkAttachmentType_Generic:
+            case NetworkAttachmentType_NATNetwork:
             {
                 if (SUCCEEDED(hrc) && SUCCEEDED(rc))
                 {

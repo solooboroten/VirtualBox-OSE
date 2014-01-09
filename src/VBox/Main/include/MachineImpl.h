@@ -305,7 +305,6 @@ public:
         KeyboardHIDType_T   mKeyboardHIDType;
         PointingHIDType_T   mPointingHIDType;
         ChipsetType_T       mChipsetType;
-        BOOL                mEmulatedUSBWebcamEnabled;
         BOOL                mEmulatedUSBCardReaderEnabled;
 
         BOOL                mIOCacheEnabled;
@@ -418,8 +417,6 @@ public:
     STDMETHOD(COMSETTER(CPUExecutionCap))(ULONG aExecutionCap);
     STDMETHOD(COMGETTER(EmulatedUSBCardReaderEnabled))(BOOL *aEnabled);
     STDMETHOD(COMSETTER(EmulatedUSBCardReaderEnabled))(BOOL aEnabled);
-    STDMETHOD(COMGETTER(EmulatedUSBWebcameraEnabled))(BOOL *aEnabled);
-    STDMETHOD(COMSETTER(EmulatedUSBWebcameraEnabled))(BOOL aEnabled);
     STDMETHOD(COMGETTER(HPETEnabled))(BOOL *enabled);
     STDMETHOD(COMSETTER(HPETEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(MemoryBalloonSize))(ULONG *memoryBalloonSize);
@@ -569,6 +566,7 @@ public:
     STDMETHOD(RemoveAllCPUIDLeaves)();
     STDMETHOD(GetHWVirtExProperty)(HWVirtExPropertyType_T property, BOOL *aVal);
     STDMETHOD(SetHWVirtExProperty)(HWVirtExPropertyType_T property, BOOL aVal);
+    STDMETHOD(SetSettingsFilePath)(IN_BSTR aFilePath, IProgress **aProgress);
     STDMETHOD(SaveSettings)();
     STDMETHOD(DiscardSettings)();
     STDMETHOD(Unregister)(CleanupMode_T cleanupMode, ComSafeArrayOut(IMedium*, aMedia));
@@ -790,7 +788,9 @@ public:
                                 ComPtr<IInternalSessionControl> *aControl = NULL)
     { return isSessionOpen(aMachine, aControl, true /* aAllowClosing */); }
 
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
     bool checkForSpawnFailure();
+#endif /* !VBOX_WITH_GENERIC_SESSION_WATCHER */
 
     HRESULT prepareRegister();
 
@@ -1036,9 +1036,16 @@ public:
     HRESULT FinalConstruct();
     void FinalRelease();
 
+    struct Uninit
+    {
+        enum Reason { Unexpected, Abnormal, Normal };
+    };
+
     // public initializer/uninitializer for internal purposes only
     HRESULT init(Machine *aMachine);
     void uninit() { uninit(Uninit::Unexpected); }
+    void uninit(Uninit::Reason aReason);
+
 
     // util::Lockable interface
     RWLockHandle *lockHandle() const;
@@ -1098,9 +1105,13 @@ public:
         return true;
     }
 
+#ifndef VBOX_WITH_GENERIC_SESSION_WATCHER
     bool checkForDeath();
 
     void getTokenId(Utf8Str &strTokenId);
+#else /* VBOX_WITH_GENERIC_SESSION_WATCHER */
+    IToken *getToken();
+#endif /* VBOX_WITH_GENERIC_SESSION_WATCHER */
     // getClientToken must be only used by callers who can guarantee that
     // the object cannot be deleted in the mean time, i.e. have a caller/lock.
     ClientToken *getClientToken();
@@ -1154,19 +1165,12 @@ private:
         Utf8Str strStateFilePath;
     };
 
-    struct Uninit
-    {
-        enum Reason { Unexpected, Abnormal, Normal };
-    };
-
     struct SnapshotTask;
     struct DeleteSnapshotTask;
     struct RestoreSnapshotTask;
 
     friend struct DeleteSnapshotTask;
     friend struct RestoreSnapshotTask;
-
-    void uninit(Uninit::Reason aReason);
 
     HRESULT endSavingState(HRESULT aRC, const Utf8Str &aErrMsg);
     void releaseSavedStateFile(const Utf8Str &strSavedStateFile, Snapshot *pSnapshotToIgnore);

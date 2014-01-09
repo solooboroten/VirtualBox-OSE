@@ -42,7 +42,39 @@ static ConfigurationManager *g_ConfigurationManager = ConfigurationManager::getC
 
 static NetworkManager *g_NetworkManager = NetworkManager::getNetworkManager();
 
+int BaseConfigEntity::match(Client& client, BaseConfigEntity **cfg)
+{
+        int iMatch = (m_criteria && m_criteria->check(client)? m_MatchLevel: 0);
+        if (m_children.empty())
+        {
+            if (iMatch > 0)
+            {
+                *cfg = this;
+                return iMatch;
+            }
+        }
+        else
+        {
+            *cfg = this;
+            /* XXX: hack */
+            BaseConfigEntity *matching = this;
+            int matchingLevel = m_MatchLevel;
 
+            for (std::vector<BaseConfigEntity *>::iterator it = m_children.begin();
+                 it != m_children.end();
+                 ++it)
+            {
+                iMatch = (*it)->match(client, &matching);
+                if (iMatch > matchingLevel)
+                {
+                    *cfg = matching;
+                    matchingLevel = iMatch;
+                }
+            }
+            return matchingLevel;
+        }
+        return iMatch;
+}
 
 /* Client */
 
@@ -352,6 +384,83 @@ HostConfigEntity *ConfigurationManager::addHost(NetworkConfigEntity* pCfg,
     return new HostConfigEntity(address, strname, pCfg, criteria);
 }
 
+int ConfigurationManager::addToAddressList(uint8_t u8OptId, RTNETADDRIPV4& address)
+{
+    switch(u8OptId)
+    {
+        case RTNET_DHCP_OPT_DNS:
+            m_nameservers.push_back(address);
+            break;
+        case RTNET_DHCP_OPT_ROUTERS:
+            m_routers.push_back(address);
+            break;
+        default:
+            Log(("dhcp-opt: list (%d) unsupported\n", u8OptId));
+    }
+    return VINF_SUCCESS;
+}
+
+int ConfigurationManager::flushAddressList(uint8_t u8OptId)
+{
+    switch(u8OptId)
+    {
+        case RTNET_DHCP_OPT_DNS:
+            m_nameservers.clear();
+            break;
+        case RTNET_DHCP_OPT_ROUTERS:
+            m_routers.clear();
+            break;
+        default:
+            Log(("dhcp-opt: list (%d) unsupported\n", u8OptId));
+    }
+    return VINF_SUCCESS;
+}
+
+const Ipv4AddressContainer& ConfigurationManager::getAddressList(uint8_t u8OptId)
+{
+    switch(u8OptId)
+    {
+        case RTNET_DHCP_OPT_DNS:
+            return m_nameservers;
+
+        case RTNET_DHCP_OPT_ROUTERS:
+            return m_routers;
+
+    }
+    /* XXX: Grrr !!! */
+    return m_empty;
+}
+
+int ConfigurationManager::setString(uint8_t u8OptId, const std::string& str)
+{
+    switch (u8OptId)
+    {
+        case RTNET_DHCP_OPT_DOMAIN_NAME:
+            m_domainName = str;
+            break;
+        default:
+            break;
+    }
+
+    return VINF_SUCCESS;
+}
+
+const std::string& ConfigurationManager::getString(uint8_t u8OptId)
+{
+    switch (u8OptId)
+    {
+        case RTNET_DHCP_OPT_DOMAIN_NAME:
+            if (m_domainName.length())
+                return m_domainName;
+            else
+                return m_noString;
+        default:
+            break;
+    }
+
+    return m_noString;
+}
+
 /**
  * Network manager
  */
@@ -646,6 +755,17 @@ int NetworkManager::processParameterReqList(Client* client, uint8_t *pu8ReqList,
                 }
                 break;
             case RTNET_DHCP_OPT_DOMAIN_NAME:
+                {
+                    std::string domainName = g_ConfigurationManager->getString(pReqList[idxParam]);
+                    if (domainName == g_ConfigurationManager->m_noString)
+                        break;
+
+                    char *pszDomainName = (char *)&opt.au8RawOpt[0];
+
+                    strcpy(pszDomainName, domainName.c_str());
+                    opt.cbRawOpt = domainName.length();
+                    client->rawOptions.push_back(opt);
+                }
                 break;
             default:
                 Log(("opt: %d is ignored\n", pReqList[idxParam]));

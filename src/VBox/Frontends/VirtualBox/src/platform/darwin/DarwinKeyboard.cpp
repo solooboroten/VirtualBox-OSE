@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2011 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,10 +21,13 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_GUI
+//#define VBOX_WITH_KBD_LEDS_SYNC
+
 #include "DarwinKeyboard.h"
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/time.h>
+#include <iprt/mem.h>
 #include <VBox/log.h>
 #ifdef DEBUG_PRINTF
 # include <iprt/stream.h>
@@ -35,11 +38,11 @@
 # include <mach/mach_error.h>
 # include <IOKit/IOKitLib.h>
 # include <IOKit/IOCFPlugIn.h>
-# include <IOKit/hid/IOHIDLib.h>
 # include <IOKit/hid/IOHIDUsageTables.h>
 # include <IOKit/usb/USB.h>
 # include <CoreFoundation/CoreFoundation.h>
 #endif
+#include <IOKit/hid/IOHIDLib.h>
 #include <ApplicationServices/ApplicationServices.h>
 #include <Carbon/Carbon.h>
 
@@ -286,6 +289,22 @@ static uint32_t     g_fOldHIDModifierMask;
 
 #endif /* USE_HID_FOR_MODIFIERS */
 
+#ifdef VBOX_WITH_KBD_LEDS_SYNC
+/* HID LEDs synchronization data: LED states. */
+typedef struct VBoxHidLeds_t {
+    bool             fNumLockOn;
+    bool             fCapsLockOn;
+    bool             fScrollLockOn;
+} VBoxHidLeds_t;
+
+/* HID LEDs synchronization data: IOKit specific data. */
+typedef struct VBoxHidsState_t {
+    IOHIDManagerRef  hidManagerRef;
+    IOHIDDeviceRef  *hidDevicesCollection;
+    VBoxHidLeds_t   *hidLedsCollection;
+    CFIndex          cDevices;
+} VBoxHidsState_t;
+#endif // !VBOX_WITH_KBD_LEDS_SYNC
 
 /*******************************************************************************
 *   Internal Functions                                                         *
@@ -1131,3 +1150,442 @@ void     DarwinReleaseKeyboard(void)
 #endif /* USE_HID_FOR_MODIFIERS */
 }
 
+#ifdef VBOX_WITH_KBD_LEDS_SYNC
+/** Prepare dictionary that will be used to match HID LED device(s) while discovering. */
+static CFDictionaryRef darwinGetLedDeviceMatchingDictionary()
+{
+    CFDictionaryRef deviceMatchingDictRef;
+
+    /* Use two (key, value) pairs:
+     *      - (kIOHIDDeviceUsagePageKey, kHIDPage_GenericDesktop),
+     *      - (kIOHIDDeviceUsageKey,     kHIDUsage_GD_Keyboard). */
+
+    CFNumberRef usagePageKeyCFNumberRef; int usagePageKeyCFNumberValue = kHIDPage_GenericDesktop;
+    CFNumberRef usageKeyCFNumberRef;     int usageKeyCFNumberValue     = kHIDUsage_GD_Keyboard;
+
+    usagePageKeyCFNumberRef = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &usagePageKeyCFNumberValue);
+    if (usagePageKeyCFNumberRef)
+    {
+        usageKeyCFNumberRef = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &usageKeyCFNumberValue);
+        if (usageKeyCFNumberRef)
+        {
+            CFStringRef dictionaryKeys[2] = { CFSTR(kIOHIDDeviceUsagePageKey), CFSTR(kIOHIDDeviceUsageKey) };
+            CFNumberRef dictionaryVals[2] = { usagePageKeyCFNumberRef,         usageKeyCFNumberRef         };
+
+            deviceMatchingDictRef = CFDictionaryCreate(kCFAllocatorDefault,
+                                                       (const void **)dictionaryKeys,
+                                                       (const void **)dictionaryVals,
+                                                       2, /** two (key, value) pairs */
+                                                       &kCFTypeDictionaryKeyCallBacks,
+                                                       &kCFTypeDictionaryValueCallBacks);
+
+            CFRelease(usageKeyCFNumberRef);
+            CFRelease(usagePageKeyCFNumberRef);
+
+            return deviceMatchingDictRef;
+        }
+
+        CFRelease(usagePageKeyCFNumberRef);
+    }
+
+    return NULL;
+}
+
+/** Prepare dictionary that will be used to match HID LED device element(s) while discovering. */
+static CFDictionaryRef darwinGetLedElementMatchingDictionary()
+{
+    CFDictionaryRef elementMatchingDictRef;
+
+    /* Use only one (key, value) pair to match LED device element:
+     *      - (kIOHIDElementUsagePageKey, kHIDPage_LEDs).  */
+
+    CFNumberRef usagePageKeyCFNumberRef; int usagePageKeyCFNumberValue = kHIDPage_LEDs;
+
+    usagePageKeyCFNumberRef = CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &usagePageKeyCFNumberValue);
+    if (usagePageKeyCFNumberRef)
+    {
+        CFStringRef dictionaryKeys[1] = { CFSTR(kIOHIDElementUsagePageKey), };
+        CFNumberRef dictionaryVals[1] = { usagePageKeyCFNumberRef,          };
+
+        elementMatchingDictRef = CFDictionaryCreate(kCFAllocatorDefault,
+                                                    (const void **)dictionaryKeys,
+                                                    (const void **)dictionaryVals,
+                                                    1, /** one (key, value) pair */
+                                                    &kCFTypeDictionaryKeyCallBacks,
+                                                    &kCFTypeDictionaryValueCallBacks);
+
+        CFRelease(usagePageKeyCFNumberRef);
+        return elementMatchingDictRef;
+    }
+
+    return NULL;
+}
+
+/** Turn ON or OFF a particular LED. */
+static int darwinLedElementSetValue(IOHIDDeviceRef hidDevice, IOHIDElementRef element, bool fEnabled)
+{
+    IOHIDValueRef valueRef;
+    IOReturn      rc = kIOReturnError;
+
+    valueRef = IOHIDValueCreateWithIntegerValue(kCFAllocatorDefault, element, 0, (fEnabled) ? 1 : 0);
+    if (valueRef)
+    {
+        rc = IOHIDDeviceSetValue(hidDevice, element, valueRef);
+        if (rc != kIOReturnSuccess)
+            Log2(("Warning! Something went wrong in attempt to turn %s HID device led (error %d)!\n", ((fEnabled) ? "on" : "off"), rc));
+        else
+            Log2(("Led (%d) is turned %s\n", (int)IOHIDElementGetUsage(element), ((fEnabled) ? "on" : "off")));
+
+        CFRelease(valueRef);
+    }
+
+    return rc;
+}
+
+/** Get state of a particular led. */
+static int darwinLedElementGetValue(IOHIDDeviceRef hidDevice, IOHIDElementRef element, bool *fEnabled)
+{
+    IOHIDValueRef valueRef;
+    IOReturn      rc;
+    CFIndex       integerValue;
+
+    rc = IOHIDDeviceGetValue(hidDevice, element, &valueRef);
+    if (rc == kIOReturnSuccess)
+    {
+        integerValue = IOHIDValueGetIntegerValue(valueRef);
+        switch (integerValue)
+        {
+            case 0:
+                *fEnabled = false;
+                break;
+            case 1:
+                *fEnabled = true;
+                break;
+            default:
+                rc = kIOReturnError;
+        }
+    }
+
+    return rc;
+}
+
+/** Set corresponding states from NumLock, CapsLock and ScrollLock leds. */
+static int darwinSetDeviceLedsState(IOHIDDeviceRef hidDevice, CFDictionaryRef elementMatchingDict,
+                                    bool fNumLockOn, bool fCapsLockOn, bool fScrollLockOn)
+{
+    CFArrayRef matchingElementsArrayRef;
+    int        rc2 = 0;
+
+    matchingElementsArrayRef = IOHIDDeviceCopyMatchingElements(hidDevice, elementMatchingDict, 0);
+    if (matchingElementsArrayRef)
+    {
+        CFIndex cElements = CFArrayGetCount(matchingElementsArrayRef);
+
+        /* Cycle though all the elements we found */
+        for (CFIndex i = 0; i < cElements; i++)
+        {
+            IOHIDElementRef element = (IOHIDElementRef)CFArrayGetValueAtIndex(matchingElementsArrayRef, i);
+            uint32_t        usage   = IOHIDElementGetUsage(element);
+            int             rc = 0;
+
+            switch (usage)
+            {
+                case kHIDUsage_LED_NumLock:
+                    rc = darwinLedElementSetValue(hidDevice, element, fNumLockOn);
+                    break;
+
+                case kHIDUsage_LED_CapsLock:
+                    rc = darwinLedElementSetValue(hidDevice, element, fCapsLockOn);
+                    break;
+
+                case kHIDUsage_LED_ScrollLock:
+                    rc = darwinLedElementSetValue(hidDevice, element, fScrollLockOn);
+                    break;
+            }
+            if (rc != 0)
+            {
+                Log2(("Failed to set led (%d) state\n", (int)IOHIDElementGetUsage(element)));
+                rc2 = kIOReturnError;
+            }
+
+        }
+    }
+
+    return rc2;
+}
+
+/** Get corresponding states for NumLock, CapsLock and ScrollLock leds. */
+static int darwinGetDeviceLedsState(IOHIDDeviceRef hidDevice, CFDictionaryRef elementMatchingDict,
+                                    bool *fNumLockOn, bool *fCapsLockOn, bool *fScrollLockOn)
+{
+    CFArrayRef matchingElementsArrayRef;
+    int        rc2 = 0;
+
+    matchingElementsArrayRef = IOHIDDeviceCopyMatchingElements(hidDevice, elementMatchingDict, 0);
+    if (matchingElementsArrayRef)
+    {
+        CFIndex cElements = CFArrayGetCount(matchingElementsArrayRef);
+
+        /* Cycle though all the elements we found */
+        for (CFIndex i = 0; i < cElements; i++)
+        {
+            IOHIDElementRef element = (IOHIDElementRef)CFArrayGetValueAtIndex(matchingElementsArrayRef, i);
+            uint32_t        usage   = IOHIDElementGetUsage(element);
+            int             rc = 0;
+
+            switch (usage)
+            {
+                case kHIDUsage_LED_NumLock:
+                    rc = darwinLedElementGetValue(hidDevice, element, fNumLockOn);
+                    break;
+
+                case kHIDUsage_LED_CapsLock:
+                    rc = darwinLedElementGetValue(hidDevice, element, fCapsLockOn);
+                    break;
+
+                case kHIDUsage_LED_ScrollLock:
+                    rc = darwinLedElementGetValue(hidDevice, element, fScrollLockOn);
+                    break;
+            }
+            if (rc != 0)
+            {
+                Log2(("Failed to get led (%d) state\n", (int)IOHIDElementGetUsage(element)));
+                rc2 = kIOReturnError;
+            }
+        }
+    }
+
+    return rc2;
+}
+#endif // !VBOX_WITH_KBD_LEDS_SYNC
+
+/** Save the states of leds for all HID devices attached to the system and return it. */
+void * DarwinHidDevicesKeepLedsState(void)
+{
+#ifdef VBOX_WITH_KBD_LEDS_SYNC
+    IOReturn         rc;
+    VBoxHidsState_t *hidsState;
+
+    hidsState = (VBoxHidsState_t *)RTMemAllocZ(sizeof(VBoxHidsState_t));
+    if (hidsState)
+    {
+        hidsState->hidManagerRef = IOHIDManagerCreate(kCFAllocatorDefault, 0);
+        if (hidsState->hidManagerRef)
+        {
+
+            CFDictionaryRef deviceMatchingDictRef = darwinGetLedDeviceMatchingDictionary();
+            if (deviceMatchingDictRef)
+            {
+                IOHIDManagerSetDeviceMatching(hidsState->hidManagerRef, deviceMatchingDictRef);
+
+                rc = IOHIDManagerOpen(hidsState->hidManagerRef, kIOHIDOptionsTypeNone);
+                if (rc == kIOReturnSuccess)
+                {
+                    CFSetRef hidDevicesSetRef;
+
+                    hidDevicesSetRef = IOHIDManagerCopyDevices(hidsState->hidManagerRef);
+                    if (hidDevicesSetRef)
+                    {
+                        /* Get all the available devices and cycle through them. */
+                        hidsState->cDevices = CFSetGetCount(hidDevicesSetRef);
+                        hidsState->hidDevicesCollection = (IOHIDDeviceRef *)RTMemAllocZ((size_t)hidsState->cDevices * sizeof(IOHIDDeviceRef));
+                        if (hidsState->hidDevicesCollection)
+                        {
+                            hidsState->hidLedsCollection = (VBoxHidLeds_t *)RTMemAllocZ((size_t)hidsState->cDevices * sizeof(VBoxHidLeds_t));
+                            if (hidsState->hidLedsCollection)
+                            {
+                                CFSetGetValues(hidDevicesSetRef, (const void **)hidsState->hidDevicesCollection);
+
+                                CFDictionaryRef elementMatchingDict = darwinGetLedElementMatchingDictionary();
+                                if (elementMatchingDict)
+                                {
+                                    for (CFIndex i = 0; i < hidsState->cDevices; i++)
+                                    {
+                                        if (IOHIDDeviceConformsTo(hidsState->hidDevicesCollection[i], kHIDPage_GenericDesktop, kHIDUsage_GD_Keyboard))
+                                        {
+                                            rc = darwinGetDeviceLedsState(hidsState->hidDevicesCollection[i],
+                                                                          elementMatchingDict,
+                                                                          &hidsState->hidLedsCollection[i].fNumLockOn,
+                                                                          &hidsState->hidLedsCollection[i].fCapsLockOn,
+                                                                          &hidsState->hidLedsCollection[i].fScrollLockOn);
+                                            /* This should never happen, but if happened -- mark all the leds of current
+                                             * device as turned OFF. */
+                                            if (rc != 0)
+                                            {
+                                                Log2(("Unable to get leds state for device %d. Mark leds as turned off\n", (int)i));
+                                                hidsState->hidLedsCollection[i].fNumLockOn    =
+                                                hidsState->hidLedsCollection[i].fCapsLockOn   =
+                                                hidsState->hidLedsCollection[i].fScrollLockOn = false;
+                                            }
+
+                                        }
+                                    }
+
+                                    CFRelease(deviceMatchingDictRef);
+                                    CFRelease(elementMatchingDict);
+
+                                    return hidsState;
+                                }
+
+                                RTMemFree(hidsState->hidLedsCollection);
+                            }
+
+                            RTMemFree(hidsState->hidDevicesCollection);
+                        }
+                    }
+
+                    rc = IOHIDManagerClose(hidsState->hidManagerRef, 0);
+                    if (rc != kIOReturnSuccess)
+                        Log2(("Warning! Something went wrong in attempt to close HID device manager!\n"));
+                }
+
+                CFRelease(deviceMatchingDictRef);
+            }
+
+            CFRelease(hidsState->hidManagerRef);
+        }
+
+        RTMemFree(hidsState);
+    }
+
+    return NULL;
+#else // !VBOX_WITH_KBD_LEDS_SYNC
+    return NULL;
+#endif
+}
+
+/**
+ * Apply LEDs state stored in *pState and release resources aquired by *pState.
+ *
+ * @param pState            Pointer to saved LEDs state
+ *
+ * @return 0 on success, error code otherwise.
+ */
+int DarwinHidDevicesApplyAndReleaseLedsState(void *pState)
+{
+#ifdef VBOX_WITH_KBD_LEDS_SYNC
+    VBoxHidsState_t *hidsState = (VBoxHidsState_t *)pState;
+
+    CFIndex     i;
+    IOReturn    rc, rc2 = 0;
+
+    if (hidsState)
+    {
+        CFDictionaryRef elementMatchingDict = darwinGetLedElementMatchingDictionary();
+        if (elementMatchingDict)
+        {
+            /* Restore LEDs */
+            for (i = 0; i < hidsState->cDevices; i++)
+            {
+                rc = darwinSetDeviceLedsState(hidsState->hidDevicesCollection[i],
+                                              elementMatchingDict,
+                                              hidsState->hidLedsCollection[i].fNumLockOn,
+                                              hidsState->hidLedsCollection[i].fCapsLockOn,
+                                              hidsState->hidLedsCollection[i].fScrollLockOn);
+                if (rc != 0)
+                {
+                    Log2(("Unable to restore led states for device (%d)!\n", (int)i));
+                    rc2 = kIOReturnError;
+                }
+            }
+        }
+
+        /* Free resources */
+
+        RTMemFree(hidsState->hidLedsCollection);
+        RTMemFree(hidsState->hidDevicesCollection);
+
+        rc = IOHIDManagerClose(hidsState->hidManagerRef, 0);
+        if (rc != kIOReturnSuccess)
+            Log2(("Warning! Something went wrong in attempt to close HID device manager!\n"));
+
+        CFRelease(hidsState->hidManagerRef);
+
+        RTMemFree(hidsState);
+    }
+
+    return rc2;
+#else // !VBOX_WITH_KBD_LEDS_SYNC
+    (void)pState;
+    return 0;
+#endif
+}
+
+/**
+ * Set states for host keyboard LEDs.
+ *
+ * NOTE: This function will set led values for all
+ * keyboard devices attached to the system.
+ *
+ * @param fNumLockOn        Turn on NumLock led if TRUE, turn off otherwise
+ * @param fCapsLockOn       Turn on CapsLock led if TRUE, turn off otherwise
+ * @param fScrollLockOn     Turn on ScrollLock led if TRUE, turn off otherwise
+ */
+void DarwinHidDevicesBroadcastLeds(bool fNumLockOn, bool fCapsLockOn, bool fScrollLockOn)
+{
+/* Temporary disabled */
+#ifdef VBOX_WITH_KBD_LEDS_SYNC
+    IOReturn        rc;
+    IOHIDManagerRef hidManagerRef;
+
+    hidManagerRef = IOHIDManagerCreate(kCFAllocatorDefault, 0);
+    if (hidManagerRef)
+    {
+        CFDictionaryRef deviceMatchingDictRef = darwinGetLedDeviceMatchingDictionary();
+        if (deviceMatchingDictRef)
+        {
+            IOHIDManagerSetDeviceMatching(hidManagerRef, deviceMatchingDictRef);
+
+            rc = IOHIDManagerOpen(hidManagerRef, kIOHIDOptionsTypeNone);
+            if (rc == kIOReturnSuccess)
+            {
+                CFSetRef hidDevicesSetRef;
+
+                hidDevicesSetRef = IOHIDManagerCopyDevices(hidManagerRef);
+                if (hidDevicesSetRef)
+                {
+                    /* Get all the available devices and cycle through them. */
+                    CFIndex cDevices = CFSetGetCount(hidDevicesSetRef);
+                    IOHIDDeviceRef *hidDevicesCollection = (IOHIDDeviceRef *)RTMemAllocZ((size_t)cDevices * sizeof(IOHIDDeviceRef));
+                    if (hidDevicesCollection)
+                    {
+                        CFSetGetValues(hidDevicesSetRef, (const void **)hidDevicesCollection);
+
+                        CFDictionaryRef elementMatchingDict = darwinGetLedElementMatchingDictionary();
+                        if (elementMatchingDict)
+                        {
+                            for (CFIndex i = 0; i < cDevices; i++)
+                            {
+                                if (IOHIDDeviceConformsTo(hidDevicesCollection[i], kHIDPage_GenericDesktop, kHIDUsage_GD_Keyboard))
+                                {
+                                    rc = darwinSetDeviceLedsState(hidDevicesCollection[i], elementMatchingDict,
+                                                                  fNumLockOn, fCapsLockOn, fScrollLockOn);
+                                    if (rc != 0)
+                                        Log2(("Unable to broadcast LEDs state to device (%d)\n", (int)i));
+                                }
+                            }
+
+                            CFRelease(elementMatchingDict);
+                        }
+
+                        RTMemFree(hidDevicesCollection);
+                    }
+                }
+
+                rc = IOHIDManagerClose(hidManagerRef, 0);
+                if (rc != kIOReturnSuccess)
+                    Log2(("Warning! Something went wrong in attempt to close HID device manager!\n"));
+            }
+
+            CFRelease(deviceMatchingDictRef);
+        }
+
+        CFRelease(hidManagerRef);
+    }
+#else // !VBOX_WITH_KBD_LEDS_SYNC
+
+    (void)fNumLockOn;
+    (void)fCapsLockOn;
+    (void)fScrollLockOn;
+#endif
+}

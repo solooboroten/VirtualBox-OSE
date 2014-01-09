@@ -28,7 +28,7 @@
 /* GUI includes: */
 #include "UIFilmContainer.h"
 
-UIFilmContainer::UIFilmContainer(QWidget *pParent /*= 0*/)
+UIFilmContainer::UIFilmContainer(QWidget *pParent /* = 0*/)
     : QWidget(pParent)
     , m_pMainLayout(0)
     , m_pScroller(0)
@@ -120,7 +120,7 @@ void UIFilmContainer::prepareScroller()
     m_pMainLayout->addWidget(m_pScroller);
 }
 
-UIFilm::UIFilm(int iScreenIndex, BOOL fEnabled, QWidget *pParent /*= 0*/)
+UIFilm::UIFilm(int iScreenIndex, BOOL fEnabled, QWidget *pParent /* = 0*/)
     : QIWithRetranslateUI<QWidget>(pParent)
     , m_iScreenIndex(iScreenIndex)
     , m_fWasEnabled(fEnabled)
@@ -140,7 +140,7 @@ void UIFilm::retranslateUi()
 {
     /* Translate check-box: */
     m_pCheckBox->setText(QApplication::translate("UIMachineSettingsDisplay", "Screen %1").arg(m_iScreenIndex + 1));
-    m_pCheckBox->setToolTip(QApplication::translate("UIMachineSettingsDisplay", "Enable video recording for screen %1.").arg(m_iScreenIndex + 1));
+    m_pCheckBox->setWhatsThis(QApplication::translate("UIMachineSettingsDisplay", "Enable video recording for screen %1.").arg(m_iScreenIndex + 1));
 }
 
 void UIFilm::prepare()

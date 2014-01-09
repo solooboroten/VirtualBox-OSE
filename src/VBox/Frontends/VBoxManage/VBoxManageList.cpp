@@ -75,10 +75,31 @@ static const char*getDeviceTypeText(DeviceType_T enmType)
 
 
 /**
+ * List internal networks.
+ *
+ * @returns See produceList.
+ * @param   pVirtualBox         Reference to the IVirtualBox smart pointer.
+ */
+static HRESULT listInternalNetworks(const ComPtr<IVirtualBox> pVirtualBox)
+{
+    HRESULT rc;
+    com::SafeArray<BSTR> internalNetworks;
+    CHECK_ERROR(pVirtualBox, COMGETTER(InternalNetworks)(ComSafeArrayAsOutParam(internalNetworks)));
+    for (size_t i = 0; i < internalNetworks.size(); ++i)
+    {
+        RTPrintf("Name:        %ls\n", internalNetworks[i]);
+    }
+    return rc;
+}
+
+
+/**
  * List network interfaces information (bridged/host only).
  *
  * @returns See produceList.
  * @param   pVirtualBox         Reference to the IVirtualBox smart pointer.
+ * @param   fIsBridged          Selects between listing host interfaces (for
+ *                              use with bridging) or host only interfaces.
  */
 static HRESULT listNetworkInterfaces(const ComPtr<IVirtualBox> pVirtualBox,
                                      bool fIsBridged)
@@ -282,8 +303,8 @@ static HRESULT listHddBackends(const ComPtr<IVirtualBox> pVirtualBox)
                 i, id.raw(), description.raw(), caps);
 
         /* File extensions */
-        com::SafeArray <BSTR> fileExtensions;
-        com::SafeArray <DeviceType_T> deviceTypes;
+        com::SafeArray<BSTR> fileExtensions;
+        com::SafeArray<DeviceType_T> deviceTypes;
         CHECK_ERROR(mediumFormats[i],
                     DescribeFileExtensions(ComSafeArrayAsOutParam(fileExtensions), ComSafeArrayAsOutParam(deviceTypes)));
         for (size_t j = 0; j < fileExtensions.size(); ++j)
@@ -295,11 +316,11 @@ static HRESULT listHddBackends(const ComPtr<IVirtualBox> pVirtualBox)
         RTPrintf("'");
 
         /* Configuration keys */
-        com::SafeArray <BSTR> propertyNames;
-        com::SafeArray <BSTR> propertyDescriptions;
-        com::SafeArray <DataType_T> propertyTypes;
-        com::SafeArray <ULONG> propertyFlags;
-        com::SafeArray <BSTR> propertyDefaults;
+        com::SafeArray<BSTR> propertyNames;
+        com::SafeArray<BSTR> propertyDescriptions;
+        com::SafeArray<DataType_T> propertyTypes;
+        com::SafeArray<ULONG> propertyFlags;
+        com::SafeArray<BSTR> propertyDefaults;
         CHECK_ERROR(mediumFormats[i],
                     DescribeProperties(ComSafeArrayAsOutParam(propertyNames),
                                         ComSafeArrayAsOutParam(propertyDescriptions),
@@ -711,6 +732,35 @@ static HRESULT listGroups(const ComPtr<IVirtualBox> &pVirtualBox)
 
 
 /**
+ * List video capture devices.
+ *
+ * @returns See produceList.
+ * @param   pVirtualBox         Reference to the IVirtualBox pointer.
+ */
+static HRESULT listVideoInputDevices(const ComPtr<IVirtualBox> pVirtualBox)
+{
+    HRESULT rc;
+    ComPtr<IHost> host;
+    CHECK_ERROR(pVirtualBox, COMGETTER(Host)(host.asOutParam()));
+    com::SafeIfaceArray<IHostVideoInputDevice> hostVideoInputDevices;
+    CHECK_ERROR(host, COMGETTER(VideoInputDevices)(ComSafeArrayAsOutParam(hostVideoInputDevices)));
+    RTPrintf("Video Input Devices: %u\n", hostVideoInputDevices.size());
+    for (size_t i = 0; i < hostVideoInputDevices.size(); ++i)
+    {
+        ComPtr<IHostVideoInputDevice> p = hostVideoInputDevices[i];
+        Bstr name;
+        p->COMGETTER(Name)(name.asOutParam());
+        Bstr path;
+        p->COMGETTER(Path)(path.asOutParam());
+        Bstr alias;
+        p->COMGETTER(Alias)(alias.asOutParam());
+        RTPrintf("%ls \"%ls\"\n%ls\n", alias.raw(), name.raw(), path.raw());
+    }
+    return rc;
+}
+
+
+/**
  * The type of lists we can produce.
  */
 enum enmListType
@@ -721,6 +771,7 @@ enum enmListType
     kListOsTypes,
     kListHostDvds,
     kListHostFloppies,
+    kListInternalNetworks,
     kListBridgedInterfaces,
 #if defined(VBOX_WITH_NETFLT)
     kListHostOnlyInterfaces,
@@ -737,7 +788,8 @@ enum enmListType
     kListDhcpServers,
     kListExtPacks,
     kListGroups,
-    kListNatNetworks
+    kListNatNetworks,
+    kListVideoInputDevices
 };
 
 
@@ -893,6 +945,10 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
             break;
         }
 
+        case kListInternalNetworks:
+            rc = listInternalNetworks(pVirtualBox);
+            break;
+
         case kListBridgedInterfaces:
 #if defined(VBOX_WITH_NETFLT)
         case kListHostOnlyInterfaces:
@@ -1037,7 +1093,7 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
                 RTPrintf("DHCP Enabled:   %s\n", fEnabled ? "Yes" : "No");
                 net->COMGETTER(Enabled)(&fEnabled);
                 RTPrintf("Enabled:        %s\n", fEnabled ? "Yes" : "No");
-                
+
 #define PRINT_STRING_ARRAY(title) \
                 if (strs.size() > 0)    \
                 { \
@@ -1045,7 +1101,7 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
                     size_t j = 0; \
                     for (;j < strs.size(); ++j) \
                         RTPrintf("        %s\n", Utf8Str(strs[j]).c_str()); \
-                } 
+                }
 
                 com::SafeArray<BSTR> strs;
 
@@ -1066,6 +1122,10 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
             }
             break;
         }
+
+        case kListVideoInputDevices:
+            rc = listVideoInputDevices(pVirtualBox);
+            break;
 
         /* No default here, want gcc warnings. */
 
@@ -1095,11 +1155,14 @@ int handleList(HandlerArg *a)
         { "ostypes",            kListOsTypes,            RTGETOPT_REQ_NOTHING },
         { "hostdvds",           kListHostDvds,           RTGETOPT_REQ_NOTHING },
         { "hostfloppies",       kListHostFloppies,       RTGETOPT_REQ_NOTHING },
+        { "intnets",            kListInternalNetworks,   RTGETOPT_REQ_NOTHING },
         { "hostifs",            kListBridgedInterfaces,  RTGETOPT_REQ_NOTHING }, /* backward compatibility */
         { "bridgedifs",         kListBridgedInterfaces,  RTGETOPT_REQ_NOTHING },
 #if defined(VBOX_WITH_NETFLT)
         { "hostonlyifs",        kListHostOnlyInterfaces, RTGETOPT_REQ_NOTHING },
 #endif
+        { "natnetworks",        kListNatNetworks,        RTGETOPT_REQ_NOTHING },
+        { "natnets",            kListNatNetworks,        RTGETOPT_REQ_NOTHING },
         { "hostinfo",           kListHostInfo,           RTGETOPT_REQ_NOTHING },
         { "hostcpuids",         kListHostCpuIDs,         RTGETOPT_REQ_NOTHING },
         { "hddbackends",        kListHddBackends,        RTGETOPT_REQ_NOTHING },
@@ -1112,7 +1175,7 @@ int handleList(HandlerArg *a)
         { "dhcpservers",        kListDhcpServers,        RTGETOPT_REQ_NOTHING },
         { "extpacks",           kListExtPacks,           RTGETOPT_REQ_NOTHING },
         { "groups",             kListGroups,             RTGETOPT_REQ_NOTHING },
-        { "natnetworks",        kListNatNetworks,        RTGETOPT_REQ_NOTHING },
+        { "webcams",            kListVideoInputDevices,  RTGETOPT_REQ_NOTHING },
     };
 
     int                 ch;
@@ -1140,6 +1203,7 @@ int handleList(HandlerArg *a)
             case kListOsTypes:
             case kListHostDvds:
             case kListHostFloppies:
+            case kListInternalNetworks:
             case kListBridgedInterfaces:
 #if defined(VBOX_WITH_NETFLT)
             case kListHostOnlyInterfaces:
@@ -1157,6 +1221,7 @@ int handleList(HandlerArg *a)
             case kListExtPacks:
             case kListGroups:
             case kListNatNetworks:
+            case kListVideoInputDevices:
                 enmOptCommand = (enum enmListType)ch;
                 if (fOptMultiple)
                 {

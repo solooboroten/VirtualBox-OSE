@@ -24,6 +24,7 @@
 #include <QImageWriter>
 #include <QPainter>
 #include <QTimer>
+#include <QDateTime>
 #ifdef Q_WS_MAC
 # include <QMenuBar>
 #endif /* Q_WS_MAC */
@@ -79,6 +80,9 @@
 #ifdef VBOX_WITH_DEBUGGER_GUI
 # include <iprt/ldr.h>
 #endif /* VBOX_WITH_DEBUGGER_GUI */
+#ifdef Q_WS_MAC
+# include "DarwinKeyboard.h"
+#endif
 
 /* External includes: */
 #ifdef Q_WS_X11
@@ -195,6 +199,7 @@ void UIMachineLogic::prepare()
     sltMachineStateChanged();
     sltAdditionsStateChanged();
     sltMouseCapabilityChanged();
+    sltSwitchKeyboardLedsToGuestLeds();
 
 #ifdef VBOX_WITH_DEBUGGER_GUI
     /* Prepare debugger: */
@@ -207,6 +212,9 @@ void UIMachineLogic::prepare()
 
 void UIMachineLogic::cleanup()
 {
+    /* Deinitialization: */
+    sltSwitchKeyboardLedsToPreviousLeds();
+
 #ifdef VBOX_WITH_DEBUGGER_GUI
     /* Cleanup debugger: */
     cleanupDebugger();
@@ -480,6 +488,9 @@ void UIMachineLogic::sltKeyboardLedsChanged()
     /* Here we have to update host LED lock states using values provided by UISession:
      * [bool] uisession() -> isNumLock(), isCapsLock(), isScrollLock() can be used for that. */
     LogRelFlow(("UIMachineLogic::sltKeyboardLedsChanged: Updating host LED lock states (NOT IMPLEMENTED).\n"));
+#ifdef Q_WS_MAC
+    DarwinHidDevicesBroadcastLeds(uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
+#endif
 }
 
 void UIMachineLogic::sltUSBDeviceStateChange(const CUSBDevice &device, bool fIsAttached, const CVirtualBoxErrorInfo &error)
@@ -555,6 +566,7 @@ UIMachineLogic::UIMachineLogic(QObject *pParent, UISession *pSession, UIVisualSt
     , m_pDockIconPreview(0)
     , m_pDockPreviewSelectMonitorGroup(0)
     , m_DockIconPreviewMonitor(0)
+    , m_pHostLedsState(NULL)
 #endif /* Q_WS_MAC */
 {
 }
@@ -1005,6 +1017,42 @@ void UIMachineLogic::cleanupActionGroups()
 {
 }
 
+bool UIMachineLogic::eventFilter(QObject *pWatched, QEvent *pEvent)
+{
+    /* Handle machine-window events: */
+    if (UIMachineWindow *pMachineWindow = qobject_cast<UIMachineWindow*>(pWatched))
+    {
+        /* Make sure this window still registered: */
+        if (isMachineWindowsCreated() && m_machineWindowsList.contains(pMachineWindow))
+        {
+            switch (pEvent->type())
+            {
+                /* Handle *window activated* event: */
+                case QEvent::WindowActivate:
+                {
+                    /* We should save current lock states as *previous* and
+                     * set current lock states to guest values we have,
+                     * As we have no ipc between threads of different VMs
+                     * we are using 100ms timer as lazy sync timout: */
+                    QTimer::singleShot(100, this, SLOT(sltSwitchKeyboardLedsToGuestLeds()));
+                    break;
+                }
+                /* Handle *window deactivated* event: */
+                case QEvent::WindowDeactivate:
+                {
+                    /* We should restore lock states to *previous* known: */
+                    sltSwitchKeyboardLedsToPreviousLeds();
+                    break;
+                }
+                /* Default: */
+                default: break;
+            }
+        }
+    }
+    /* Call to base-class: */
+    return QIWithRetranslateUI3<QObject>::eventFilter(pWatched, pEvent);
+}
+
 void UIMachineLogic::sltCheckRequestedModes()
 {
     /* Do not try to enter extended mode if machine was not started yet: */
@@ -1336,18 +1384,18 @@ void UIMachineLogic::sltClose()
 }
 
 void UIMachineLogic::sltOpenVMSettingsDialog(const QString &strCategory /* = QString() */,
-                                             const QString &strControl /*= QString()*/)
+                                             const QString &strControl /* = QString()*/)
 {
     /* Do not process if window(s) missed! */
     if (!isMachineWindowsCreated())
         return;
 
-    /* Create VM settings dialog on the heap!
+    /* Create VM settings window on the heap!
      * Its necessary to allow QObject hierarchy cleanup to delete this dialog if necessary: */
     QPointer<UISettingsDialogMachine> pDialog = new UISettingsDialogMachine(activeMachineWindow(),
                                                                             session().GetMachine().GetId(),
                                                                             strCategory, strControl);
-    /* Executing VM settings dialog.
+    /* Executing VM settings window.
      * This blocking function calls for the internal event-loop to process all further events,
      * including event which can delete the dialog itself. */
     pDialog->execute();
@@ -2129,6 +2177,43 @@ void UIMachineLogic::sltChangeDockIconUpdate(bool fEnabled)
     }
 }
 #endif /* Q_WS_MAC */
+
+void UIMachineLogic::sltSwitchKeyboardLedsToGuestLeds()
+{
+//    /* Log statement (printf): */
+//    QString strDt = QDateTime::currentDateTime().toString("HH:mm:ss:zzz");
+//    printf("%s: UIMachineLogic: sltSwitchKeyboardLedsToGuestLeds called, machine name is {%s}\n",
+//           strDt.toAscii().constData(),
+//           session().GetMachine().GetName().toAscii().constData());
+
+    /* Here we have to store host LED lock states. */
+
+    /* Here we have to update host LED lock states using values provided by UISession registry.
+     * [bool] uisession() -> isNumLock(), isCapsLock(), isScrollLock() can be used for that. */
+#ifdef Q_WS_MAC
+    if (m_pHostLedsState == NULL)
+        m_pHostLedsState = DarwinHidDevicesKeepLedsState();
+    DarwinHidDevicesBroadcastLeds(uisession()->isNumLock(), uisession()->isCapsLock(), uisession()->isScrollLock());
+#endif /* Q_WS_MAC */
+}
+
+void UIMachineLogic::sltSwitchKeyboardLedsToPreviousLeds()
+{
+//    /* Log statement (printf): */
+//    QString strDt = QDateTime::currentDateTime().toString("HH:mm:ss:zzz");
+//    printf("%s: UIMachineLogic: sltSwitchKeyboardLedsToPreviousLeds called, machine name is {%s}\n",
+//           strDt.toAscii().constData(),
+//           session().GetMachine().GetName().toAscii().constData());
+
+    /* Here we have to restore host LED lock states. */
+#ifdef Q_WS_MAC
+    if (m_pHostLedsState)
+    {
+        DarwinHidDevicesApplyAndReleaseLedsState(m_pHostLedsState);
+        m_pHostLedsState = NULL;
+    }
+#endif /* Q_WS_MAC */
+}
 
 int UIMachineLogic::searchMaxSnapshotIndex(const CMachine &machine,
                                            const CSnapshot &snapshot,

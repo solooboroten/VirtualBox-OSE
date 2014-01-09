@@ -165,6 +165,9 @@ protected:
     //virtual void cleanupSessionConnections() {}
     //virtual void cleanupRequiredFeatures() {}
 
+    /* Handler: Event-filter stuff: */
+    bool eventFilter(QObject *pWatched, QEvent *pEvent);
+
 private slots:
 
     /* Mode request watch dog: */
@@ -221,6 +224,10 @@ private slots:
     void sltChangeDockIconUpdate(bool fEnabled);
 #endif /* RT_OS_DARWIN */
 
+    /* Handlers: Keyboard LEDs sync logic: */
+    void sltSwitchKeyboardLedsToGuestLeds();
+    void sltSwitchKeyboardLedsToPreviousLeds();
+
 private:
 
     /* Helpers: */
@@ -260,6 +267,7 @@ private:
     UIDockIconPreview *m_pDockIconPreview;
     QActionGroup *m_pDockPreviewSelectMonitorGroup;
     int m_DockIconPreviewMonitor;
+    void *m_pHostLedsState;
 #endif /* Q_WS_MAC */
 
     /* Friend classes: */

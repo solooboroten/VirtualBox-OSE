@@ -112,8 +112,9 @@ enum
     MODIFYVM_BRIDGEADAPTER,
     MODIFYVM_HOSTONLYADAPTER,
     MODIFYVM_INTNET,
-    MODIFYVM_NATNET,
     MODIFYVM_GENERICDRV,
+    MODIFYVM_NATNETWORKNAME,
+    MODIFYVM_NATNET,
     MODIFYVM_NATBINDIP,
     MODIFYVM_NATSETTINGS,
     MODIFYVM_NATPF,
@@ -185,9 +186,6 @@ enum
 #ifdef VBOX_WITH_PCI_PASSTHROUGH
     MODIFYVM_ATTACH_PCI,
     MODIFYVM_DETACH_PCI,
-#endif
-#ifdef VBOX_WITH_USB_VIDEO
-    MODIFYVM_USBWEBCAM,
 #endif
 #ifdef VBOX_WITH_USB_CARDREADER
     MODIFYVM_USBCARDREADER,
@@ -275,8 +273,10 @@ static const RTGETOPTDEF g_aModifyVMOptions[] =
     { "--bridgeadapter",            MODIFYVM_BRIDGEADAPTER,             RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--hostonlyadapter",          MODIFYVM_HOSTONLYADAPTER,           RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--intnet",                   MODIFYVM_INTNET,                    RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
-    { "--natnet",                   MODIFYVM_NATNET,                    RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--nicgenericdrv",            MODIFYVM_GENERICDRV,                RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
+    { "--nat-network",              MODIFYVM_NATNETWORKNAME,            RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
+    { "--natnetwork",               MODIFYVM_NATNETWORKNAME,            RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
+    { "--natnet",                   MODIFYVM_NATNET,                    RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--natbindip",                MODIFYVM_NATBINDIP,                 RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--natsettings",              MODIFYVM_NATSETTINGS,               RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--natpf",                    MODIFYVM_NATPF,                     RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
@@ -357,9 +357,6 @@ static const RTGETOPTDEF g_aModifyVMOptions[] =
 #ifdef VBOX_WITH_PCI_PASSTHROUGH
     { "--pciattach",                MODIFYVM_ATTACH_PCI,                RTGETOPT_REQ_STRING },
     { "--pcidetach",                MODIFYVM_DETACH_PCI,                RTGETOPT_REQ_STRING },
-#endif
-#ifdef VBOX_WITH_USB_VIDEO
-    { "--usbwebcam",                MODIFYVM_USBWEBCAM,                 RTGETOPT_REQ_BOOL_ONOFF },
 #endif
 #ifdef VBOX_WITH_USB_CARDREADER
     { "--usbcardreader",            MODIFYVM_USBCARDREADER,             RTGETOPT_REQ_BOOL_ONOFF },
@@ -1414,6 +1411,12 @@ int handleModifyVM(HandlerArg *a)
                     CHECK_ERROR(nic, COMSETTER(Enabled)(TRUE));
                     CHECK_ERROR(nic, COMSETTER(AttachmentType)(NetworkAttachmentType_Generic));
                 }
+                else if (!RTStrICmp(ValueUnion.psz, "natnetwork"))
+                {
+
+                    CHECK_ERROR(nic, COMSETTER(Enabled)(TRUE));
+                    CHECK_ERROR(nic, COMSETTER(AttachmentType)(NetworkAttachmentType_NATNetwork));
+                }
                 else
                 {
                     errorArgument("Invalid type '%s' specfied for NIC %u", ValueUnion.psz, GetOptState.uIndex);
@@ -1498,6 +1501,17 @@ int handleModifyVM(HandlerArg *a)
                 ASSERT(nic);
 
                 CHECK_ERROR(nic, COMSETTER(GenericDriver)(Bstr(ValueUnion.psz).raw()));
+                break;
+            }
+
+            case MODIFYVM_NATNETWORKNAME:
+            {
+                ComPtr<INetworkAdapter> nic;
+
+                CHECK_ERROR_BREAK(machine, GetNetworkAdapter(GetOptState.uIndex - 1, nic.asOutParam()));
+                ASSERT(nic);
+
+                CHECK_ERROR(nic, COMSETTER(NATNetwork)(Bstr(ValueUnion.psz).raw()));
                 break;
             }
 
@@ -2657,14 +2671,6 @@ int handleModifyVM(HandlerArg *a)
                 break;
             }
 #endif
-
-#ifdef VBOX_WITH_USB_VIDEO
-            case MODIFYVM_USBWEBCAM:
-            {
-                CHECK_ERROR(machine, COMSETTER(EmulatedUSBWebcameraEnabled)(ValueUnion.f));
-                break;
-            }
-#endif /* VBOX_WITH_USB_VIDEO */
 
 #ifdef VBOX_WITH_USB_CARDREADER
             case MODIFYVM_USBCARDREADER:

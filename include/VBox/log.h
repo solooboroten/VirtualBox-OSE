@@ -273,6 +273,8 @@ typedef enum LOGGROUP
     LOG_GROUP_MAIN_DISPLAY,
     /** Main group, IDragAndDropModeChangedEvent. */
     LOG_GROUP_MAIN_DRAGANDDROPMODECHANGEDEVENT,
+    /** Main group, IEmulatedUSB. */
+    LOG_GROUP_MAIN_EMULATEDUSB,
     /** Main group, IEvent. */
     LOG_GROUP_MAIN_EVENT,
     /** Main group, IEventListener. */
@@ -373,6 +375,8 @@ typedef enum LOGGROUP
     LOG_GROUP_MAIN_HOSTUSBDEVICE,
     /** Main group, IHostUSBDeviceFilter. */
     LOG_GROUP_MAIN_HOSTUSBDEVICEFILTER,
+    /** Main group, IHostVideoInputDevice. */
+    LOG_GROUP_MAIN_HOSTVIDEOINPUTDEVICE,
     /** Main group, IInternalMachineControl. */
     LOG_GROUP_MAIN_INTERNALMACHINECONTROL,
     /** Main group, IInternalSessionControl. */
@@ -789,6 +793,7 @@ typedef enum LOGGROUP
     "MAIN_DIRECTORY", \
     "MAIN_DISPLAY", \
     "MAIN_DRAGANDDROPMODECHANGEDEVENT", \
+    "MAIN_EMULATEDUSB",   \
     "MAIN_EVENT",   \
     "MAIN_EVENTLISTENER", \
     "MAIN_EVENTSOURCE", \
@@ -839,6 +844,7 @@ typedef enum LOGGROUP
     "MAIN_HOSTPCIDEVICEPLUGEVENT", \
     "MAIN_HOSTUSBDEVICE", \
     "MAIN_HOSTUSBDEVICEFILTER", \
+    "MAIN_HOSTVIDEOINPUTDEVICE", \
     "MAIN_INTERNALMACHINECONTROL", \
     "MAIN_INTERNALSESSIONCONTROL", \
     "MAIN_KEYBOARD", \

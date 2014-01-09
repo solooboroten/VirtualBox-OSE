@@ -279,12 +279,16 @@ VMMR0_INT_DECL(int) CPUMR0InitVM(PVM pVM)
 
 
 /**
- * Lazily sync in the FPU/XMM state
+ * Lazily sync the guest-FPU/XMM state if possible.
+ *
+ * Loads the guest-FPU state, if it isn't already loaded, into the CPU if the
+ * guest is not expecting a #NM trap.
  *
  * @returns VBox status code.
- * @param   pVM         Pointer to the VM.
- * @param   pVCpu       Pointer to the VMCPU.
- * @param   pCtx        Pointer to the guest CPU context.
+ * @retval VINF_SUCCESS           if the guest FPU state is loaded.
+ * @retval VINF_EM_RAW_GUEST_TRAP if it is a guest trap.
+ *
+ * @remarks This relies on CPUMIsGuestFPUStateActive() reflecting reality.
  */
 VMMR0_INT_DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 {
@@ -485,15 +489,20 @@ VMMR0_INT_DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 
         /* Clear MSR_K6_EFER_FFXSR or else we'll be unable to save/restore the XMM state with fxsave/fxrstor. */
         uint64_t oldMsrEFERHost = 0;
+        bool fRestoreEfer = false;
         if (pVCpu->cpum.s.fUseFlags & CPUM_USED_MANUAL_XMM_RESTORE)
         {
             oldMsrEFERHost = ASMRdMsr(MSR_K6_EFER);
-            ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost & ~MSR_K6_EFER_FFXSR);
+            if (oldMsrEFERHost & MSR_K6_EFER_FFXSR)
+            {
+                ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost & ~MSR_K6_EFER_FFXSR);
+                fRestoreEfer = true;
+            }
         }
         cpumR0SaveGuestRestoreHostFPUState(&pVCpu->cpum.s);
 
         /* Restore EFER MSR */
-        if (pVCpu->cpum.s.fUseFlags & CPUM_USED_MANUAL_XMM_RESTORE)
+        if (fRestoreEfer)
             ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost | MSR_K6_EFER_FFXSR);
 
 # ifdef VBOX_WITH_KERNEL_USING_XMM

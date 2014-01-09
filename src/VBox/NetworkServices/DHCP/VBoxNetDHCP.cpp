@@ -66,11 +66,15 @@
 #ifdef RT_OS_WINDOWS /* WinMain */
 # include <Windows.h>
 # include <stdlib.h>
+# ifdef INET_ADDRSTRLEN
+/* On Windows INET_ADDRSTRLEN defined as 22 Ws2ipdef.h, because it include port number */
+#  undef INET_ADDRSTRLEN
+# endif
+# define INET_ADDRSTRLEN 16
+#else
+# include <netinet/in.h>
 #endif
 
-#ifndef INET4_ADDRLEN
-# define INET4_ADDRLEN 17
-#endif
 
 #include "Config.h"
 /*******************************************************************************
@@ -365,7 +369,7 @@ int VBoxNetDhcp::init()
     ConfigurationManager *confManager = ConfigurationManager::getConfigurationManager();
     AssertPtrReturn(confManager, VERR_INTERNAL_ERROR);
 
-    /**
+    /*
      * if we have nat netework of the same name
      * this is good chance that we are assigned to this network.
      */
@@ -384,12 +388,12 @@ int VBoxNetDhcp::init()
         confManager->addToAddressList(RTNET_DHCP_OPT_ROUTERS, gateway);
 
         unsigned int i;
-        int count_strs;
+        unsigned int count_strs;
         com::SafeArray<BSTR> strs;
         std::map<RTNETADDRIPV4, uint32_t> MapIp4Addr2Off;
 
         hrc = m_NATNetwork->COMGETTER(LocalMappings)(ComSafeArrayAsOutParam(strs));
-        if (   SUCCEEDED(hrc) 
+        if (   SUCCEEDED(hrc)
             && (count_strs = strs.size()))
         {
             for (i = 0; i < count_strs; ++i)
@@ -398,21 +402,20 @@ int VBoxNetDhcp::init()
                 RTNETADDRIPV4 ip4addr;
                 char *pszTerm;
                 uint32_t u32Off;
-                const char *pszLo2Off = com::Utf8Str(strs[i]).c_str();
-        
+                com::Utf8Str strLo2Off(strs[i]);
+                const char *pszLo2Off = strLo2Off.c_str();
+
                 RT_ZERO(aszAddr);
-                
-                pszTerm = RTStrStr(pszLo2Off, ";");
+
+                pszTerm = RTStrStr(pszLo2Off, "=");
 
                 if (   pszTerm
-                       && (pszTerm - pszLo2Off) >= 17)
+                    && (pszTerm - pszLo2Off) <= INET_ADDRSTRLEN)
                 {
-                
                     memcpy(aszAddr, pszLo2Off, (pszTerm - pszLo2Off));
                     int rc = RTNetStrToIPv4Addr(aszAddr, &ip4addr);
                     if (RT_SUCCESS(rc))
                     {
-
                         u32Off = RTStrToUInt32(pszTerm + 1);
                         if (u32Off != 0)
                             MapIp4Addr2Off.insert(
@@ -440,13 +443,13 @@ int VBoxNetDhcp::init()
                         {
                             if (MapIp4Addr2Off[addr] != 0)
                             {
-                                addr.u = RT_H2N_U32(RT_N2H_U32(m_Ipv4Address.u & m_Ipv4Netmask.u) 
+                                addr.u = RT_H2N_U32(RT_N2H_U32(m_Ipv4Address.u & m_Ipv4Netmask.u)
                                                     + MapIp4Addr2Off[addr]);
                             }
                             else
                                 continue;
                         }
-                        
+
                         confManager->addToAddressList(RTNET_DHCP_OPT_DNS, addr);
                     }
                 }
@@ -459,13 +462,12 @@ int VBoxNetDhcp::init()
                 /* XXX: todo. */;
             }
             strs.setNull();
-
-            Bstr domain;
-            if (SUCCEEDED(host->COMGETTER(DomainName)(domain.asOutPutParam())))
-            {
-                /* XXX: todo. */
-            }
 #endif
+            com::Bstr domain;
+            if (SUCCEEDED(host->COMGETTER(DomainName)(domain.asOutParam())))
+                confManager->setString(RTNET_DHCP_OPT_DOMAIN_NAME, std::string(com::Utf8Str(domain).c_str()));
+            
+
         }
     }
 
@@ -729,10 +731,10 @@ bool VBoxNetDhcp::handleDhcpReqDiscover(PCRTNETBOOTP pDhcpMsg, size_t cb)
         AssertPtrReturn(lease, VINF_SUCCESS);
 
         int rc = ConfigurationManager::extractRequestList(pDhcpMsg, cb, opt);
-        
+
         /* 3. Send of offer */
         NetworkManager *networkManager = NetworkManager::getNetworkManager();
-        
+
         lease->fBinding = true;
         lease->u64TimestampBindingStarted = RTTimeMilliTS();
         lease->u32BindExpirationPeriod = 300; /* 3 min. */

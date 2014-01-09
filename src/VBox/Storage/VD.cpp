@@ -1430,7 +1430,9 @@ static int vdIoCtxProcessLocked(PVDIOCTX pIoCtx)
              || rc == VERR_VD_NOT_ENOUGH_METADATA
              || rc == VERR_VD_IOCTX_HALT)
         rc = VERR_VD_ASYNC_IO_IN_PROGRESS;
-    else if (RT_FAILURE(rc) && (rc != VERR_VD_ASYNC_IO_IN_PROGRESS))
+    else if (   RT_FAILURE(rc) 
+                && (rc != VERR_VD_ASYNC_IO_IN_PROGRESS)
+                && (rc != VERR_DISK_FULL))
     {
         ASMAtomicCmpXchgS32(&pIoCtx->rcReq, rc, VINF_SUCCESS);
         /*
@@ -1654,7 +1656,10 @@ static int vdIoCtxProcessSync(PVDIOCTX pIoCtx)
         rc = pDisk->rcSync;
     }
     else /* Success or error. */
+    {
+        rc = pIoCtx->rcReq;
         vdIoCtxFree(pDisk, pIoCtx);
+    }
 
     return rc;
 }
@@ -5523,6 +5528,7 @@ VBOXDDU_DECL(int) VDOpen(PVBOXHDD pDisk, const char *pszBackend,
          * first if it was openend in read-write mode and open again afterwards.
          */
         if (   RT_UNLIKELY(rc == VERR_VD_IMAGE_CORRUPTED)
+            && !(uOpenFlags & VD_OPEN_FLAGS_READONLY)
             && pImage->Backend->pfnRepair)
         {
             rc = pImage->Backend->pfnRepair(pszFilename, pDisk->pVDIfsDisk, pImage->pVDIfsImage, 0 /* fFlags */);

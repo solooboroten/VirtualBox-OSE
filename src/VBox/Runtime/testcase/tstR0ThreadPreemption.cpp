@@ -371,6 +371,7 @@ DECLEXPORT(int) TSTR0ThreadPreemptionSrvReqHandler(PSUPDRVSESSION pSession, uint
             RTCPUID         uCurrentCpuId        = NIL_RTCPUID;
             for (;;)
             {
+                RTThreadYield();
                 RTThreadPreemptDisable(&PreemptState);
                 uCurrentCpuId = RTMpCpuId();
                 RTThreadPreemptRestore(&PreemptState);

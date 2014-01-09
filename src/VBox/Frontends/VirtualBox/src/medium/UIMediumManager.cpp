@@ -224,7 +224,7 @@ private:
 UIMediumManager* UIMediumManager::m_spInstance = 0;
 UIMediumManager* UIMediumManager::instance() { return m_spInstance; }
 
-UIMediumManager::UIMediumManager(QWidget *pCenterWidget, bool fRefresh /*= true*/)
+UIMediumManager::UIMediumManager(QWidget *pCenterWidget, bool fRefresh /* = true*/)
     : QIWithRetranslateUI2<QIMainDialog>(0, Qt::Dialog)
     , m_pCenterWidget(pCenterWidget)
     , m_fRefresh(fRefresh)
@@ -249,7 +249,7 @@ UIMediumManager::~UIMediumManager()
 }
 
 /* static */
-void UIMediumManager::showModeless(QWidget *pCenterWidget /*= 0*/, bool fRefresh /*= true*/)
+void UIMediumManager::showModeless(QWidget *pCenterWidget /* = 0*/, bool fRefresh /* = true*/)
 {
     /* Prepare instance if not prepared: */
     if (!m_spInstance)
@@ -1248,11 +1248,11 @@ void UIMediumManager::retranslateUi()
     m_pActionRelease->setToolTip(m_pActionRelease->text().remove('&') + QString(" (%1)").arg(m_pActionRelease->shortcut().toString()));
     m_pActionRefresh->setToolTip(m_pActionRefresh->text().remove('&') + QString(" (%1)").arg(m_pActionRefresh->shortcut().toString()));
     /* Action status-tips: */
-    m_pActionCopy->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Copy an existing medium"));
-    m_pActionModify->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Modify the attributes of the selected medium"));
-    m_pActionRemove->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Remove the selected medium"));
-    m_pActionRelease->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Release the selected medium by detaching it from the machines"));
-    m_pActionRefresh->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Refresh the media list"));
+    m_pActionCopy->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Copy an existing disk image file"));
+    m_pActionModify->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Modify the attributes of the selected disk image file"));
+    m_pActionRemove->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Remove the selected disk image file"));
+    m_pActionRelease->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Release the selected disk image file by detaching it from the machines"));
+    m_pActionRefresh->setStatusTip(QApplication::translate("VBoxMediaManagerDlg", "Refresh the list of disk image files"));
 
     /* Tool-bar: */
 #ifdef Q_WS_MAC

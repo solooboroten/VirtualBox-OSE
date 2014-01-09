@@ -1913,7 +1913,6 @@ Hardware::Hardware()
           pointingHIDType(PointingHIDType_PS2Mouse),
           keyboardHIDType(KeyboardHIDType_PS2Keyboard),
           chipsetType(ChipsetType_PIIX3),
-          fEmulatedUSBWebcam(false),
           fEmulatedUSBCardReader(false),
           clipboardMode(ClipboardMode_Disabled),
           dragAndDropMode(DragAndDropMode_Disabled),
@@ -1987,7 +1986,6 @@ bool Hardware::operator==(const Hardware& h) const
                   && (pointingHIDType           == h.pointingHIDType)
                   && (keyboardHIDType           == h.keyboardHIDType)
                   && (chipsetType               == h.chipsetType)
-                  && (fEmulatedUSBWebcam        == h.fEmulatedUSBWebcam)
                   && (fEmulatedUSBCardReader    == h.fEmulatedUSBCardReader)
                   && (vrdeSettings              == h.vrdeSettings)
                   && (biosSettings              == h.biosSettings)
@@ -2422,6 +2420,13 @@ void MachineConfigFile::readAttachedNetworkMode(const xml::ElementNode &elmMode,
                     throw ConfigFileError(this, pelmModeChild, N_("Required GenericInterface/Property/@name or @value attribute is missing"));
             }
         }
+    }
+    else if (elmMode.nameEquals("NATNetwork"))
+    {
+        enmAttachmentType = NetworkAttachmentType_NATNetwork;
+
+        if (!elmMode.getAttributeValue("name", nic.strNATNetworkName))    // required network name
+            throw ConfigFileError(this, &elmMode, N_("Required NATNetwork/@name element is missing"));
     }
     else if (elmMode.nameEquals("VDE"))
     {
@@ -3245,16 +3250,11 @@ void MachineConfigFile::readHardware(const xml::ElementNode &elmHardware,
         }
         else if (pelmHwChild->nameEquals("EmulatedUSB"))
         {
-            const xml::ElementNode *pelmCardReader, *pelmWebcam;
+            const xml::ElementNode *pelmCardReader;
 
             if ((pelmCardReader = pelmHwChild->findChildElement("CardReader")))
             {
                 pelmCardReader->getAttributeValue("enabled", hw.fEmulatedUSBCardReader);
-            }
-
-            if ((pelmWebcam = pelmHwChild->findChildElement("Webcam")))
-            {
-                pelmWebcam->getAttributeValue("enabled", hw.fEmulatedUSBWebcam);
             }
         }
         else if (pelmHwChild->nameEquals("Frontend"))
@@ -4466,6 +4466,8 @@ void MachineConfigFile::buildHardwareXML(xml::ElementNode &elmParent,
                 buildNetworkXML(NetworkAttachmentType_HostOnly, *pelmDisabledNode, false, nic);
             if (nic.mode != NetworkAttachmentType_Generic)
                 buildNetworkXML(NetworkAttachmentType_Generic, *pelmDisabledNode, false, nic);
+            if (nic.mode != NetworkAttachmentType_NATNetwork)
+                buildNetworkXML(NetworkAttachmentType_NATNetwork, *pelmDisabledNode, false, nic);
             buildNetworkXML(nic.mode, *pelmAdapter, true, nic);
         }
     }
@@ -4659,12 +4661,6 @@ void MachineConfigFile::buildHardwareXML(xml::ElementNode &elmParent,
 
         xml::ElementNode *pelmCardReader = pelmEmulatedUSB->createChild("CardReader");
         pelmCardReader->setAttribute("enabled", hw.fEmulatedUSBCardReader);
-
-        if (m->sv >= SettingsVersion_v1_13)
-        {
-            xml::ElementNode *pelmWebcam = pelmEmulatedUSB->createChild("Webcam");
-            pelmWebcam->setAttribute("enabled", hw.fEmulatedUSBWebcam);
-        }
     }
 
     if (   m->sv >= SettingsVersion_v1_14
@@ -4784,6 +4780,11 @@ void MachineConfigFile::buildNetworkXML(NetworkAttachmentType_T mode,
                     pelmProp->setAttribute("value", it->second);
                 }
             }
+            break;
+
+        case NetworkAttachmentType_NATNetwork:
+            if (fEnabled || !nic.strNATNetworkName.isEmpty())
+                elmParent.createChild("NATNetwork")->setAttribute("name", nic.strNATNetworkName);
             break;
 
         default: /*case NetworkAttachmentType_Null:*/
@@ -5331,13 +5332,27 @@ void MachineConfigFile::bumpSettingsVersionIfNeeded()
     if (m->sv < SettingsVersion_v1_14)
     {
         // VirtualBox 4.3 adds default frontend setting, graphics controller
-        // setting, explicit long mode setting and video capturing.
+        // setting, explicit long mode setting, video capturing and NAT networking.
         if (   !hardwareMachine.strDefaultFrontend.isEmpty()
             || hardwareMachine.graphicsControllerType != GraphicsControllerType_VBoxVGA
             || hardwareMachine.enmLongMode != Hardware::LongMode_Legacy
             || machineUserData.ovIcon.length() > 0
             || hardwareMachine.fVideoCaptureEnabled)
+        {
             m->sv = SettingsVersion_v1_14;
+            return;
+        }
+        NetworkAdaptersList::const_iterator netit;
+        for (netit = hardwareMachine.llNetworkAdapters.begin();
+             netit != hardwareMachine.llNetworkAdapters.end();
+             ++netit)
+        {
+            if (netit->mode == NetworkAttachmentType_NATNetwork)
+            {
+                m->sv = SettingsVersion_v1_14;
+                break;
+            }
+        }
     }
 
     if (m->sv < SettingsVersion_v1_14)
@@ -5403,13 +5418,6 @@ void MachineConfigFile::bumpSettingsVersionIfNeeded()
                 break;
             }
         }
-    }
-
-    if (m->sv < SettingsVersion_v1_13)
-    {
-        /* 4.2: Emulated USB Webcam. */
-        if (hardwareMachine.fEmulatedUSBWebcam)
-            m->sv = SettingsVersion_v1_13;
     }
 
     if (m->sv < SettingsVersion_v1_12)

@@ -175,6 +175,10 @@ VirtualBox_INCS = \
 # Necessary for the hdd backend enumeration
 VirtualBox_LIBS = $(LIB_DDU)
 
+if1of ($(KBUILD_TARGET), linux freebsd netbsd openbsd)
+ VirtualBox_LIBS += dl
+endif
+
 # This library is required for multi-monitor support
 VirtualBox_LIBS.linux   += Xinerama
 VirtualBox_LIBS.solaris += Xinerama
@@ -201,7 +205,7 @@ endif
 #endif
 
 VirtualBox_LDFLAGS.darwin = \
-	-framework AppKit -framework Carbon \
+	-framework AppKit -framework Carbon -framework IOKit \
 	$(if $(VBOX_WITH_HARDENING),-install_name $(VBOX_DYLD_EXECUTABLE_PATH)/VirtualBox.dylib)
 ifdef VBOX_WITH_ICHAT_THEATER
  VirtualBox_LDFLAGS.darwin += -framework InstantMessage -framework QuartzCore
@@ -350,7 +354,9 @@ VirtualBox_QT_MOCHDRS = \
 	src/settings/global/UIGlobalSettingsLanguage.h \
 	src/settings/global/UIGlobalSettingsDisplay.h \
 	src/settings/global/UIGlobalSettingsNetwork.h \
-	src/settings/global/UIGlobalSettingsNetworkDetails.h \
+	src/settings/global/UIGlobalSettingsNetworkDetailsNAT.h \
+	src/settings/global/UIGlobalSettingsNetworkDetailsHost.h \
+	src/settings/global/UIGlobalSettingsPortForwardingDlg.h \
 	src/settings/global/UIGlobalSettingsProxy.h \
 	src/settings/global/UIGlobalSettingsUpdate.h \
 	src/settings/machine/UIMachineSettingsAudio.h \
@@ -380,6 +386,7 @@ VirtualBox_QT_MOCHDRS = \
 	src/widgets/UIPopupPaneButtonPane.h \
 	src/widgets/UIPopupStack.h \
 	src/widgets/UIPopupStackViewport.h \
+	src/widgets/UIPortForwardingTable.h \
 	src/widgets/UIProgressDialog.h \
 	src/widgets/UISpacerWidgets.h \
 	src/widgets/UISpecialControls.h \
@@ -452,10 +459,10 @@ VirtualBox_QT_MOCSRCS = \
 	src/selector/UIActionPoolSelector.cpp \
 	src/selector/UIVMDesktop.cpp \
 	src/settings/UISettingsDialogSpecific.cpp \
-	src/settings/machine/UIMachineSettingsPortForwardingDlg.cpp \
 	src/settings/machine/UIMachineSettingsStorage.cpp \
 	src/settings/machine/UIMachineSettingsUSB.cpp \
 	src/widgets/UIHotKeyEditor.cpp \
+	src/widgets/UIPortForwardingTable.cpp \
 	src/wizards/importappliance/UIWizardImportApp.cpp
 
 VirtualBox_QT_MOCSRCS.darwin += \
@@ -603,7 +610,9 @@ VirtualBox_SOURCES = \
 	src/settings/global/UIGlobalSettingsLanguage.cpp \
 	src/settings/global/UIGlobalSettingsDisplay.cpp \
 	src/settings/global/UIGlobalSettingsNetwork.cpp \
-	src/settings/global/UIGlobalSettingsNetworkDetails.cpp \
+	src/settings/global/UIGlobalSettingsNetworkDetailsNAT.cpp \
+	src/settings/global/UIGlobalSettingsNetworkDetailsHost.cpp \
+	src/settings/global/UIGlobalSettingsPortForwardingDlg.cpp \
 	src/settings/global/UIGlobalSettingsProxy.cpp \
 	src/settings/global/UIGlobalSettingsUpdate.cpp \
 	src/settings/machine/UIMachineSettingsAudio.cpp \
@@ -633,6 +642,7 @@ VirtualBox_SOURCES = \
 	src/widgets/UIPopupPaneButtonPane.cpp \
 	src/widgets/UIPopupStack.cpp \
 	src/widgets/UIPopupStackViewport.cpp \
+	src/widgets/UIPortForwardingTable.cpp \
 	src/widgets/UIProgressDialog.cpp \
 	src/widgets/UISpecialControls.cpp \
 	src/widgets/UIToolBar.cpp \

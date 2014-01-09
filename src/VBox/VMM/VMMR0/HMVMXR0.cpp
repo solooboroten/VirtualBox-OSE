@@ -41,6 +41,7 @@
 #define HMVMX_ALWAYS_CHECK_GUEST_STATE
 #define HMVMX_ALWAYS_TRAP_ALL_XCPTS
 #define HMVMX_ALWAYS_TRAP_PF
+#define HMVMX_ALWAYS_SWAP_FPU_STATE
 #endif
 
 
@@ -140,8 +141,8 @@ typedef RTHCUINTREG                   HMVMXHCUINTREG;
  * Exception bitmap mask for real-mode guests (real-on-v86).
  *
  * We need to intercept all exceptions manually (except #PF). #NM is also
- * handled separately, see hmR0VmxLoadGuestControlRegs(). #PF need not be
- * intercepted even in real-mode if we have Nested Paging support.
+ * handled separately, see hmR0VmxLoadSharedCR0(). #PF need not be intercepted
+ * even in real-mode if we have Nested Paging support.
  */
 #define HMVMX_REAL_MODE_XCPT_MASK    (  RT_BIT(X86_XCPT_DE)             | RT_BIT(X86_XCPT_DB)    | RT_BIT(X86_XCPT_NMI)   \
                                       | RT_BIT(X86_XCPT_BP)             | RT_BIT(X86_XCPT_OF)    | RT_BIT(X86_XCPT_BR)    \
@@ -260,6 +261,12 @@ typedef struct VMXTRANSIENT
     /** Whether the VM-exit was caused by a page-fault during delivery of a
      *  contributory exception or a page-fault. */
     bool            fVectoringPF;
+    /** Whether the guest FPU was active at the time of VM-exit. */
+    bool            fWasGuestFPUStateActive;
+    /** Whether the guest debug state was active at the time of VM-exit. */
+    bool            fWasGuestDebugStateActive;
+    /** Whether the hyper debug state was active at the time of VM-exit. */
+    bool            fWasHyperDebugStateActive;
 } VMXTRANSIENT;
 AssertCompileMemberAlignment(VMXTRANSIENT, uExitReason,    sizeof(uint64_t));
 AssertCompileMemberAlignment(VMXTRANSIENT, uExitIntrInfo,  sizeof(uint64_t));
@@ -1924,7 +1931,7 @@ static int hmR0VmxSetupMiscCtls(PVM pVM, PVMCPU pVCpu)
 
     /* All fields are zero-initialized during allocation; but don't remove the commented block below. */
 #if 0
-    /* All CR3 accesses cause VM-exits. Later we optimize CR3 accesses (see hmR0VmxLoadGuestControlRegs())*/
+    /* All CR3 accesses cause VM-exits. Later we optimize CR3 accesses (see hmR0VmxLoadGuestCR3AndCR4())*/
     rc = VMXWriteVmcs32(VMX_VMCS32_CTRL_CR3_TARGET_COUNT, 0);           AssertRCReturn(rc, rc);
     rc = VMXWriteVmcs64(VMX_VMCS64_CTRL_TSC_OFFSET_FULL, 0);            AssertRCReturn(rc, rc);
 
@@ -2624,14 +2631,14 @@ DECLINLINE(int) hmR0VmxLoadGuestEntryCtls(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
             Assert(!(val & VMX_VMCS_CTRL_ENTRY_IA32E_MODE_GUEST));
 
         /*
-         * The following should not be set (since we're not in SMM mode):
+         * The following should -not- be set (since we're not in SMM mode):
          * - VMX_VMCS_CTRL_ENTRY_ENTRY_SMM
          * - VMX_VMCS_CTRL_ENTRY_DEACTIVATE_DUALMON
          */
 
         /** @todo VMX_VMCS_CTRL_ENTRY_LOAD_GUEST_PERF_MSR,
          *        VMX_VMCS_CTRL_ENTRY_LOAD_GUEST_PAT_MSR,
-         *  VMX_VMCS_CTRL_ENTRY_LOAD_GUEST_EFER_MSR */
+         *        VMX_VMCS_CTRL_ENTRY_LOAD_GUEST_EFER_MSR */
 
         if ((val & zap) != val)
         {
@@ -3114,21 +3121,29 @@ static int hmR0VmxLoadSharedCR0(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
                     | X86_CR0_ET    /* Bit ignored on VM-entry and VM-exit. Don't let the guest modify the host CR0.ET */
                     | X86_CR0_CD    /* Bit ignored on VM-entry and VM-exit. Don't let the guest modify the host CR0.CD */
                     | X86_CR0_NW;   /* Bit ignored on VM-entry and VM-exit. Don't let the guest modify the host CR0.NW */
+
+        /** @todo Avoid intercepting CR0.PE with unrestricted guests. Fix PGM
+         *        enmGuestMode to be in-sync with the current mode. See @bugref{6398}
+         *        and @bugref{6944}. */
+#if 0
         if (pVM->hm.s.vmx.fUnrestrictedGuest)
             u32CR0Mask &= ~X86_CR0_PE;
+#endif
         if (pVM->hm.s.fNestedPaging)
             u32CR0Mask &= ~X86_CR0_WP;
 
         /* If the guest FPU state is active, don't need to VM-exit on writes to FPU related bits in CR0. */
         if (fInterceptNM)
-            u32CR0Mask |=  (X86_CR0_TS | X86_CR0_MP);
-        else
-            u32CR0Mask &= ~(X86_CR0_TS | X86_CR0_MP);
+        {
+            u32CR0Mask |=  X86_CR0_TS
+                         | X86_CR0_MP;
+        }
 
         /* Write the CR0 mask into the VMCS and update the VCPU's copy of the current CR0 mask. */
         pVCpu->hm.s.vmx.u32CR0Mask = u32CR0Mask;
         rc = VMXWriteVmcs32(VMX_VMCS_CTRL_CR0_MASK, u32CR0Mask);
         AssertRCReturn(rc, rc);
+        Log4(("Load: VMX_VMCS_CTRL_CR0_MASK=%#RX32\n", u32CR0Mask));
 
         pVCpu->hm.s.fContextUseFlags &= ~HM_CHANGED_GUEST_CR0;
     }
@@ -3399,15 +3414,28 @@ static int hmR0VmxLoadSharedDebugState(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
          *
          * Note! DBGF expects a clean DR6 state before executing guest code.
          */
-        if (!CPUMIsHyperDebugStateActive(pVCpu))
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+        if (   CPUMIsGuestInLongModeEx(pMixedCtx)
+            && !CPUMIsHyperDebugStateActivePending(pVCpu))
+        {
             CPUMR0LoadHyperDebugState(pVCpu, true /* include DR6 */);
-        Assert(!CPUMIsGuestDebugStateActive(pVCpu));
-        Assert(CPUMIsHyperDebugStateActive(pVCpu) || HC_ARCH_BITS == 32);
+            Assert(CPUMIsHyperDebugStateActivePending(pVCpu));
+            Assert(!CPUMIsGuestDebugStateActivePending(pVCpu));
+        }
+        else
+#endif
+        if (!CPUMIsHyperDebugStateActive(pVCpu))
+        {
+            CPUMR0LoadHyperDebugState(pVCpu, true /* include DR6 */);
+            Assert(CPUMIsHyperDebugStateActive(pVCpu));
+            Assert(!CPUMIsGuestDebugStateActive(pVCpu));
+        }
 
         /* Update DR7. (The other DRx values are handled by CPUM one way or the other.) */
         rc = VMXWriteVmcs32(VMX_VMCS_GUEST_DR7, (uint32_t)CPUMGetHyperDR7(pVCpu));
         AssertRCReturn(rc, rc);
 
+        pVCpu->hm.s.fUsingHyperDR7 = true;
         fInterceptDB = true;
         fInterceptMovDRx = true;
     }
@@ -3419,26 +3447,46 @@ static int hmR0VmxLoadSharedDebugState(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
          */
         if (pMixedCtx->dr[7] & (X86_DR7_ENABLED_MASK | X86_DR7_GD)) /** @todo Why GD? */
         {
-            if (!CPUMIsGuestDebugStateActive(pVCpu))
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+            if (   CPUMIsGuestInLongModeEx(pMixedCtx)
+                && !CPUMIsGuestDebugStateActivePending(pVCpu))
             {
                 CPUMR0LoadGuestDebugState(pVCpu, true /* include DR6 */);
+                Assert(CPUMIsGuestDebugStateActivePending(pVCpu));
+                Assert(!CPUMIsHyperDebugStateActivePending(pVCpu));
                 STAM_COUNTER_INC(&pVCpu->hm.s.StatDRxArmed);
             }
-            Assert(!CPUMIsHyperDebugStateActive(pVCpu));
-            Assert(CPUMIsGuestDebugStateActive(pVCpu) || HC_ARCH_BITS == 32);
+            else
+#endif
+            if (CPUMIsGuestDebugStateActive(pVCpu))
+            {
+                CPUMR0LoadGuestDebugState(pVCpu, true /* include DR6 */);
+                Assert(CPUMIsGuestDebugStateActive(pVCpu));
+                Assert(!CPUMIsHyperDebugStateActive(pVCpu));
+                STAM_COUNTER_INC(&pVCpu->hm.s.StatDRxArmed);
+            }
         }
         /*
          * If no debugging enabled, we'll lazy load DR0-3.  Unlike on AMD-V, we
          * must intercept #DB in order to maintain a correct DR6 guest value.
          */
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+        else if (   (   CPUMIsGuestInLongModeEx(pMixedCtx)
+                     && !CPUMIsGuestDebugStateActivePending(pVCpu))
+                 || !CPUMIsGuestDebugStateActive(pVCpu))
+#else
         else if (!CPUMIsGuestDebugStateActive(pVCpu))
+#endif
         {
             fInterceptMovDRx = true;
             fInterceptDB = true;
         }
 
+        /* Update guest DR7. */
         rc = VMXWriteVmcs32(VMX_VMCS_GUEST_DR7, pMixedCtx->dr[7]);
         AssertRCReturn(rc, rc);
+
+        pVCpu->hm.s.fUsingHyperDR7 = false;
     }
 
     /*
@@ -3688,7 +3736,7 @@ static int hmR0VmxWriteSegmentReg(PVMCPU pVCpu, uint32_t idxSel, uint32_t idxLim
     AssertMsg((u32Access & X86DESCATTR_UNUSABLE) || (u32Access & X86_SEL_TYPE_ACCESSED),
               ("Access bit not set for usable segment. idx=%#x sel=%#x attr %#x\n", idxBase, pSelReg, pSelReg->Attr.u));
 
-    rc = VMXWriteVmcs32(idxAccess, u32Access);           /* 32-bit guest segment access-rights field. */
+    rc = VMXWriteVmcs32(idxAccess, u32Access);              /* 32-bit guest segment access-rights field. */
     AssertRCReturn(rc, rc);
     return rc;
 }
@@ -3996,7 +4044,7 @@ static int hmR0VmxLoadGuestMsrs(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
      */
     if (pVCpu->hm.s.fContextUseFlags & HM_CHANGED_GUEST_SYSENTER_CS_MSR)
     {
-        rc = VMXWriteVmcs32(VMX_VMCS32_GUEST_SYSENTER_CS,   pMixedCtx->SysEnter.cs);    AssertRCReturn(rc, rc);
+        rc = VMXWriteVmcs32(VMX_VMCS32_GUEST_SYSENTER_CS, pMixedCtx->SysEnter.cs);      AssertRCReturn(rc, rc);
         pVCpu->hm.s.fContextUseFlags &= ~HM_CHANGED_GUEST_SYSENTER_CS_MSR;
     }
     if (pVCpu->hm.s.fContextUseFlags & HM_CHANGED_GUEST_SYSENTER_EIP_MSR)
@@ -4106,7 +4154,7 @@ DECLINLINE(int) hmR0VmxRunGuest(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
      * using SSE instructions. Some XMM registers (XMM6-XMM15) are callee-saved and thus the need for this XMM wrapper.
      * Refer MSDN docs. "Configuring Programs for 64-bit / x64 Software Conventions / Register Usage" for details.
      */
-    const bool fResumeVM = !!(pVCpu->hm.s.vmx.uVmcsState & HMVMX_VMCS_STATE_LAUNCHED);
+    const bool fResumeVM = RT_BOOL(pVCpu->hm.s.vmx.uVmcsState & HMVMX_VMCS_STATE_LAUNCHED);
     /** @todo Add stats for resume vs launch. */
 #ifdef VBOX_WITH_KERNEL_USING_XMM
     return HMR0VMXStartVMWrapXMM(fResumeVM, pCtx, &pVCpu->hm.s.vmx.VMCSCache, pVM, pVCpu, pVCpu->hm.s.vmx.pfnStartVM);
@@ -5098,6 +5146,7 @@ static int hmR0VmxSaveGuestCR0(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
         uint32_t uVal    = 0;
         int rc = VMXReadVmcs32(VMX_VMCS_GUEST_CR0,            &uVal);
         AssertRCReturn(rc, rc);
+
         uint32_t uShadow = 0;
         rc     = VMXReadVmcs32(VMX_VMCS_CTRL_CR0_READ_SHADOW, &uShadow);
         AssertRCReturn(rc, rc);
@@ -5743,7 +5792,7 @@ static int hmR0VmxSaveGuestDR7(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
 {
     if (!(pVCpu->hm.s.vmx.fUpdatedGuestState & HMVMX_UPDATED_GUEST_DEBUG))
     {
-        if (!CPUMIsHyperDebugStateActive(pVCpu))
+        if (!pVCpu->hm.s.fUsingHyperDR7)
         {
             /* Upper 32-bits are always zero. See Intel spec. 2.7.3 "Loading and Storing Debug Registers". */
             uint32_t u32Val;
@@ -6086,15 +6135,16 @@ static void hmR0VmxPendingEventToTrpmTrap(PVMCPU pVCpu)
  * (longjmp, preemption, voluntary exits to ring-3) from VT-x.
  *
  * @returns VBox status code.
- * @param   pVM         Pointer to the VM.
- * @param   pVCpu       Pointer to the VMCPU.
- * @param   pMixedCtx   Pointer to the guest-CPU context. The data may be
- *                      out-of-sync. Make sure to update the required fields
- *                      before using them.
+ * @param   pVM                 Pointer to the VM.
+ * @param   pVCpu               Pointer to the VMCPU.
+ * @param   pMixedCtx           Pointer to the guest-CPU context. The data may
+ *                              be out-of-sync. Make sure to update the required
+ *                              fields before using them.
+ * @param   fSaveGuestState     Whether to save the guest state or not.
  *
  * @remarks No-long-jmp zone!!!
  */
-static int hmR0VmxLeave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx)
+static int hmR0VmxLeave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx, bool fSaveGuestState)
 {
     Assert(!RTThreadPreemptIsEnabled(NIL_RTTHREAD));
     Assert(!VMMRZCallRing3IsEnabled(pVCpu));
@@ -6103,7 +6153,8 @@ static int hmR0VmxLeave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx)
     Log4Func(("HostCpuId=%u\n", idCpu));
 
     /* Save the guest state if necessary. */
-    if (pVCpu->hm.s.vmx.fUpdatedGuestState != HMVMX_UPDATED_GUEST_ALL)
+    if (   fSaveGuestState
+        && pVCpu->hm.s.vmx.fUpdatedGuestState != HMVMX_UPDATED_GUEST_ALL)
     {
         int rc = hmR0VmxSaveGuestState(pVCpu, pMixedCtx);
         AssertRCReturn(rc, rc);
@@ -6113,6 +6164,11 @@ static int hmR0VmxLeave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx)
     /* Restore host FPU state if necessary and resync on next R0 reentry .*/
     if (CPUMIsGuestFPUStateActive(pVCpu))
     {
+        if (!fSaveGuestState)
+        {
+            int rc = hmR0VmxSaveGuestCR0(pVCpu, pMixedCtx);
+            AssertRCReturn(rc, rc);
+        }
         CPUMR0SaveGuestFPU(pVM, pVCpu, pMixedCtx);
         Assert(!CPUMIsGuestFPUStateActive(pVCpu));
         pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_GUEST_CR0;
@@ -6125,8 +6181,8 @@ static int hmR0VmxLeave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx)
 #endif
     if (CPUMR0DebugStateMaybeSaveGuestAndRestoreHost(pVCpu, true /* save DR6 */))
         pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_GUEST_DEBUG;
-    Assert(!CPUMIsGuestDebugStateActive(pVCpu));
-    Assert(!CPUMIsHyperDebugStateActive(pVCpu));
+    Assert(!CPUMIsGuestDebugStateActive(pVCpu) && !CPUMIsGuestDebugStateActivePending(pVCpu));
+    Assert(!CPUMIsHyperDebugStateActive(pVCpu) && !CPUMIsHyperDebugStateActivePending(pVCpu));
 
 #if HC_ARCH_BITS == 64
     /* Restore host-state bits that VT-x only restores partially. */
@@ -6193,8 +6249,8 @@ DECLINLINE(int) hmR0VmxLeaveSession(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx)
        and done this from the VMXR0ThreadCtxCallback(). */
     if (!pVCpu->hm.s.fLeaveDone)
     {
-        int rc2 = hmR0VmxLeave(pVM, pVCpu, pMixedCtx);
-        AssertRCReturn(rc2, rc2);
+        int rc2 = hmR0VmxLeave(pVM, pVCpu, pMixedCtx, true /* fSaveGuestState */);
+        AssertRCReturnStmt(rc2, HM_RESTORE_PREEMPT_IF_NEEDED(), rc2);
         pVCpu->hm.s.fLeaveDone = true;
     }
 
@@ -6255,18 +6311,12 @@ static int hmR0VmxExitToRing3(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx, int rcE
     Assert(pMixedCtx);
     HMVMX_ASSERT_PREEMPT_SAFE();
 
-    if (RT_UNLIKELY(rcExit == VERR_VMX_INVALID_GUEST_STATE))
-    {
-        /* We've done what is required in hmR0VmxExitErrInvalidGuestState(). We're not going to continue guest execution... */
-        return VINF_SUCCESS;
-    }
-    else if (RT_UNLIKELY(rcExit == VERR_VMX_INVALID_VMCS_PTR))
+    if (RT_UNLIKELY(rcExit == VERR_VMX_INVALID_VMCS_PTR))
     {
         VMXGetActivatedVmcs(&pVCpu->hm.s.vmx.LastError.u64VMCSPhys);
         pVCpu->hm.s.vmx.LastError.u32VMCSRevision = *(uint32_t *)pVCpu->hm.s.vmx.pvVmcs;
         pVCpu->hm.s.vmx.LastError.idEnteredCpu    = pVCpu->hm.s.idEnteredCpu;
         /* LastError.idCurrentCpu was updated in hmR0VmxPreRunGuestCommitted(). */
-        return VINF_SUCCESS;
     }
 
     /* Please, no longjumps here (any logging shouldn't flush jump back to ring-3). NO LOGGING BEFORE THIS POINT! */
@@ -6282,6 +6332,7 @@ static int hmR0VmxExitToRing3(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx, int rcE
 
     /* Save guest state and restore host state bits. */
     int rc = hmR0VmxLeaveSession(pVM, pVCpu, pMixedCtx);
+    AssertRCReturn(rc, rc);
     STAM_COUNTER_DEC(&pVCpu->hm.s.StatSwitchLongJmpToR3);
 
     /* Sync recompiler state. */
@@ -6336,15 +6387,44 @@ static int hmR0VmxExitToRing3(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx, int rcE
  * @param   pvUser          Opaque pointer to the guest-CPU context. The data
  *                          may be out-of-sync. Make sure to update the required
  *                          fields before using them.
- *
- * @remarks Must never be called with @a enmOperation ==
- *          VMMCALLRING3_VM_R0_ASSERTION. We can't assert it here because if it
- *          it -does- get called with VMMCALLRING3_VM_R0_ASSERTION, we'll end up
- *          with an infinite recursion.
  */
 DECLCALLBACK(int) hmR0VmxCallRing3Callback(PVMCPU pVCpu, VMMCALLRING3 enmOperation, void *pvUser)
 {
-    /* VMMRZCallRing3() already makes sure we never get called as a result of an longjmp due to an assertion. */
+    if (enmOperation == VMMCALLRING3_VM_R0_ASSERTION)
+    {
+        VMMRZCallRing3RemoveNotification(pVCpu);
+        HM_DISABLE_PREEMPT_IF_NEEDED();
+
+        /* If anything here asserts or fails, good luck. */
+        if (CPUMIsGuestFPUStateActive(pVCpu))
+            CPUMR0SaveGuestFPU(pVCpu->CTX_SUFF(pVM), pVCpu, (PCPUMCTX)pvUser);
+
+        CPUMR0DebugStateMaybeSaveGuestAndRestoreHost(pVCpu, true /* save DR6 */);
+
+#if HC_ARCH_BITS == 64
+        /* Restore host-state bits that VT-x only restores partially. */
+        if (   (pVCpu->hm.s.vmx.fRestoreHostFlags & VMX_RESTORE_HOST_REQUIRED)
+            && (pVCpu->hm.s.vmx.fRestoreHostFlags & ~VMX_RESTORE_HOST_REQUIRED))
+        {
+            VMXRestoreHostState(pVCpu->hm.s.vmx.fRestoreHostFlags, &pVCpu->hm.s.vmx.RestoreHost);
+            pVCpu->hm.s.vmx.fRestoreHostFlags = 0;
+        }
+#endif
+        VMCPU_CMPXCHG_STATE(pVCpu, VMCPUSTATE_STARTED_HM, VMCPUSTATE_STARTED_EXEC);
+        if (pVCpu->hm.s.vmx.uVmcsState & HMVMX_VMCS_STATE_ACTIVE)
+        {
+            VMXClearVmcs(pVCpu->hm.s.vmx.HCPhysVmcs);
+            pVCpu->hm.s.vmx.uVmcsState = HMVMX_VMCS_STATE_CLEAR;
+        }
+
+        if (VMMR0ThreadCtxHooksAreRegistered(pVCpu))
+            VMMR0ThreadCtxHooksDeregister(pVCpu);
+
+        HMR0LeaveCpu(pVCpu);
+        HM_RESTORE_PREEMPT_IF_NEEDED();
+        return VINF_SUCCESS;
+    }
+
     Assert(pVCpu);
     Assert(pvUser);
     Assert(VMMRZCallRing3IsEnabled(pVCpu));
@@ -6353,7 +6433,9 @@ DECLCALLBACK(int) hmR0VmxCallRing3Callback(PVMCPU pVCpu, VMMCALLRING3 enmOperati
     VMMRZCallRing3Disable(pVCpu);
     Assert(VMMR0IsLogFlushDisabled(pVCpu));
 
-    Log4(("hmR0VmxCallRing3Callback->hmR0VmxLongJmpToRing3 pVCpu=%p idCpu=%RU32\n", pVCpu, pVCpu->idCpu));
+    Log4(("hmR0VmxCallRing3Callback->hmR0VmxLongJmpToRing3 pVCpu=%p idCpu=%RU32\n enmOperation=%d", pVCpu, pVCpu->idCpu,
+          enmOperation));
+
     int rc = hmR0VmxLongJmpToRing3(pVCpu->CTX_SUFF(pVM), pVCpu, (PCPUMCTX)pvUser);
     AssertRCReturn(rc, rc);
 
@@ -6397,8 +6479,8 @@ static void hmR0VmxEvaluatePendingEvent(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
 
     /* Get the current interruptibility-state of the guest and then figure out what can be injected. */
     uint32_t uIntrState = hmR0VmxGetGuestIntrState(pVCpu, pMixedCtx);
-    bool fBlockMovSS    = !!(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_MOVSS);
-    bool fBlockSti      = !!(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI);
+    bool fBlockMovSS    = RT_BOOL(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_MOVSS);
+    bool fBlockSti      = RT_BOOL(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI);
 
     Assert(!fBlockSti || (pVCpu->hm.s.vmx.fUpdatedGuestState & HMVMX_UPDATED_GUEST_RFLAGS));
     Assert(   !(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_NMI)      /* We don't support block-by-NMI and SMI yet.*/
@@ -6479,8 +6561,8 @@ static int hmR0VmxInjectPendingEvent(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
 
     /* Get the current interruptibility-state of the guest and then figure out what can be injected. */
     uint32_t uIntrState = hmR0VmxGetGuestIntrState(pVCpu, pMixedCtx);
-    bool fBlockMovSS    = !!(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_MOVSS);
-    bool fBlockSti      = !!(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI);
+    bool fBlockMovSS    = RT_BOOL(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_MOVSS);
+    bool fBlockSti      = RT_BOOL(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI);
 
     Assert(!fBlockSti || (pVCpu->hm.s.vmx.fUpdatedGuestState & HMVMX_UPDATED_GUEST_RFLAGS));
     Assert(   !(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_NMI)      /* We don't support block-by-NMI and SMI yet.*/
@@ -6515,8 +6597,8 @@ static int hmR0VmxInjectPendingEvent(PVMCPU pVCpu, PCPUMCTX pMixedCtx)
 
         /* Update the interruptibility-state as it could have been changed by
            hmR0VmxInjectEventVmcs() (e.g. real-on-v86 guest injecting software interrupts) */
-        fBlockMovSS = !!(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_MOVSS);
-        fBlockSti   = !!(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI);
+        fBlockMovSS = RT_BOOL(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_MOVSS);
+        fBlockSti   = RT_BOOL(uIntrState & VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE_BLOCK_STI);
 
 #ifdef VBOX_WITH_STATISTICS
         if (uIntrType == VMX_EXIT_INTERRUPTION_INFO_TYPE_EXT_INT)
@@ -6739,7 +6821,7 @@ static int hmR0VmxInjectEventVmcs(PVMCPU pVCpu, PCPUMCTX pMixedCtx, uint64_t u64
     Assert(puIntrState);
     uint32_t u32IntrInfo = (uint32_t)u64IntrInfo;
 
-    const uint32_t uVector = VMX_EXIT_INTERRUPTION_INFO_VECTOR(u32IntrInfo);
+    const uint32_t uVector   = VMX_EXIT_INTERRUPTION_INFO_VECTOR(u32IntrInfo);
     const uint32_t uIntrType = VMX_EXIT_INTERRUPTION_INFO_TYPE(u32IntrInfo);
 
 #ifdef VBOX_STRICT
@@ -6909,7 +6991,8 @@ static int hmR0VmxInjectEventVmcs(PVMCPU pVCpu, PCPUMCTX pMixedCtx, uint64_t u64
 
 
 /**
- * Clears the current event in the VMCS.
+ * Clears the interrupt-window exiting control in the VMCS and if necessary
+ * clears the current event in the VMCS as well.
  *
  * @returns VBox status code.
  * @param   pVCpu         Pointer to the VMCPU.
@@ -6920,18 +7003,29 @@ static int hmR0VmxInjectEventVmcs(PVMCPU pVCpu, PCPUMCTX pMixedCtx, uint64_t u64
  */
 static void hmR0VmxClearEventVmcs(PVMCPU pVCpu)
 {
+    int rc;
+    Log4Func(("vcpu[%d]\n", pVCpu->idCpu));
+
+    /* Clear interrupt-window exiting control. */
+    if (pVCpu->hm.s.vmx.u32ProcCtls & VMX_VMCS_CTRL_PROC_EXEC_INT_WINDOW_EXIT)
+    {
+        pVCpu->hm.s.vmx.u32ProcCtls &= ~VMX_VMCS_CTRL_PROC_EXEC_INT_WINDOW_EXIT;
+        rc = VMXWriteVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, pVCpu->hm.s.vmx.u32ProcCtls);
+        AssertRC(rc);
+    }
+
     if (!pVCpu->hm.s.Event.fPending)
         return;
 
 #ifdef VBOX_STRICT
     uint32_t u32EntryInfo;
-    int rc2 = VMXReadVmcs32(VMX_VMCS32_CTRL_ENTRY_INTERRUPTION_INFO, &u32EntryInfo);
-    AssertRC(rc2);
+    rc = VMXReadVmcs32(VMX_VMCS32_CTRL_ENTRY_INTERRUPTION_INFO, &u32EntryInfo);
+    AssertRC(rc);
     Assert(VMX_ENTRY_INTERRUPTION_INFO_VALID(u32EntryInfo));
 #endif
 
     /* Clear the entry-interruption field (including the valid bit). */
-    int rc = VMXWriteVmcs32(VMX_VMCS32_CTRL_ENTRY_INTERRUPTION_INFO, 0);
+    rc = VMXWriteVmcs32(VMX_VMCS32_CTRL_ENTRY_INTERRUPTION_INFO, 0);
     AssertRC(rc);
 
     /* Clear the pending debug exception field. */
@@ -6957,7 +7051,8 @@ VMMR0DECL(int) VMXR0Enter(PVM pVM, PVMCPU pVCpu, PHMGLOBALCPUINFO pCpu)
     NOREF(pCpu);
 
     LogFlowFunc(("pVM=%p pVCpu=%p\n", pVM, pVCpu));
-    Assert(pVCpu->hm.s.fContextUseFlags & (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_HOST_GUEST_SHARED_STATE));
+    Assert((pVCpu->hm.s.fContextUseFlags & (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_HOST_GUEST_SHARED_STATE))
+                                        == (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_HOST_GUEST_SHARED_STATE));
 
 #ifdef VBOX_STRICT
     /* Make sure we're in VMX root mode. */
@@ -7010,10 +7105,14 @@ VMMR0DECL(void) VMXR0ThreadCtxCallback(RTTHREADCTXEVENT enmEvent, PVMCPU pVCpu, 
             VMMRZCallRing3Disable(pVCpu);
             Log4Func(("Preempting: HostCpuId=%u\n", RTMpCpuId()));
 
-            /* Save the guest-state, restore host-state (FPU, debug etc.). */
+            /*
+             * Restore host-state (FPU, debug etc.)
+             */
             if (!pVCpu->hm.s.fLeaveDone)
             {
-                hmR0VmxLeave(pVM, pVCpu, pMixedCtx);
+                /* Do -not- save guest-state here as we might already be in the middle of saving it (esp. bad if we are
+                   holding the PGM lock while saving the guest state (see hmR0VmxSaveGuestControlRegs()). */
+                hmR0VmxLeave(pVM, pVCpu, pMixedCtx, false /* fSaveGuestState */);
                 pVCpu->hm.s.fLeaveDone = true;
             }
 
@@ -7041,7 +7140,8 @@ VMMR0DECL(void) VMXR0ThreadCtxCallback(RTTHREADCTXEVENT enmEvent, PVMCPU pVCpu, 
                initializing VT-x if necessary (onlined CPUs, local init etc.) */
             int rc = HMR0EnterCpu(pVCpu);
             AssertRC(rc);
-            Assert(pVCpu->hm.s.fContextUseFlags & (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_HOST_GUEST_SHARED_STATE));
+            Assert((pVCpu->hm.s.fContextUseFlags & (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_HOST_GUEST_SHARED_STATE))
+                                                == (HM_CHANGED_HOST_CONTEXT | HM_CHANGED_HOST_GUEST_SHARED_STATE));
 
             /* Load the active VMCS as the current one. */
             if (pVCpu->hm.s.vmx.uVmcsState & HMVMX_VMCS_STATE_CLEAR)
@@ -7470,14 +7570,19 @@ static void hmR0VmxPreRunGuestCommitted(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCt
         hmR0VmxLoadGuestSegmentRegs(pVCpu, pMixedCtx);
     }
 
+#ifdef HMVMX_ALWAYS_SWAP_FPU_STATE
+    if (!CPUMIsGuestFPUStateActive(pVCpu))
+        CPUMR0LoadGuestFPU(pVM, pVCpu, pMixedCtx);
+    pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_GUEST_CR0;
+#endif
+
     /*
      * Load the host state bits as we may've been preempted (only happens when
-     * thread-context hooks are used).
+     * thread-context hooks are used or when hmR0VmxSetupVMRunHandler() changes pfnStartVM).
      */
     if (pVCpu->hm.s.fContextUseFlags & HM_CHANGED_HOST_CONTEXT)
     {
         /* This ASSUMES that pfnStartVM has been set up already. */
-        Assert(VMMR0ThreadCtxHooksAreRegistered(pVCpu));
         int rc = hmR0VmxSaveHostState(pVM, pVCpu);
         AssertRC(rc);
         STAM_COUNTER_INC(&pVCpu->hm.s.StatPreemptSaveHostState);
@@ -7490,6 +7595,21 @@ static void hmR0VmxPreRunGuestCommitted(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCt
     if (pVCpu->hm.s.fContextUseFlags & HM_CHANGED_HOST_GUEST_SHARED_STATE)
         hmR0VmxLoadSharedState(pVM, pVCpu, pMixedCtx);
     AssertMsg(!pVCpu->hm.s.fContextUseFlags, ("fContextUseFlags=%#x\n", pVCpu->hm.s.fContextUseFlags));
+
+    /* Store status of the shared guest-host state at the time of VM-entry. */
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+    if (CPUMIsGuestInLongModeEx(pMixedCtx))
+    {
+        pVmxTransient->fWasGuestDebugStateActive = CPUMIsGuestDebugStateActivePending(pVCpu);
+        pVmxTransient->fWasHyperDebugStateActive = CPUMIsHyperDebugStateActivePending(pVCpu);
+    }
+    else
+#endif
+    {
+        pVmxTransient->fWasGuestDebugStateActive = CPUMIsGuestDebugStateActive(pVCpu);
+        pVmxTransient->fWasHyperDebugStateActive = CPUMIsHyperDebugStateActive(pVCpu);
+    }
+    pVmxTransient->fWasGuestFPUStateActive = CPUMIsGuestFPUStateActive(pVCpu);
 
     /*
      * Cache the TPR-shadow for checking on every VM-exit if it might have changed.
@@ -7577,6 +7697,15 @@ static void hmR0VmxPostRunGuest(PVM pVM, PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXT
     TMNotifyEndOfExecution(pVCpu);                                    /* Notify TM that the guest is no longer running. */
     Assert(!(ASMGetFlags() & X86_EFL_IF));
     VMCPU_SET_STATE(pVCpu, VMCPUSTATE_STARTED_HM);
+
+#ifdef HMVMX_ALWAYS_SWAP_FPU_STATE
+    if (CPUMIsGuestFPUStateActive(pVCpu))
+    {
+        hmR0VmxSaveGuestCR0(pVCpu, pMixedCtx);
+        CPUMR0SaveGuestFPU(pVM, pVCpu, pMixedCtx);
+        pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_GUEST_CR0;
+    }
+#endif
 
     pVCpu->hm.s.vmx.fRestoreHostFlags |= VMX_RESTORE_HOST_REQUIRED;   /* Host state messed up by VT-x, we must restore. */
     pVCpu->hm.s.vmx.uVmcsState |= HMVMX_VMCS_STATE_LAUNCHED;          /* Use VMRESUME instead of VMLAUNCH in the next run. */
@@ -7673,6 +7802,7 @@ static int hmR0VmxRunGuestCodeNormal(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 
         /* Handle the VM-exit. */
         AssertMsg(VmxTransient.uExitReason <= VMX_EXIT_MAX, ("%#x\n", VmxTransient.uExitReason));
+        STAM_COUNTER_INC(&pVCpu->hm.s.StatExitAll);
         STAM_COUNTER_INC(&pVCpu->hm.s.paStatExitReasonR0[VmxTransient.uExitReason & MASK_EXITREASON_STAT]);
         STAM_PROFILE_ADV_STOP_START(&pVCpu->hm.s.StatExit1, &pVCpu->hm.s.StatExit2, x);
         HMVMX_START_EXIT_DISPATCH_PROF();
@@ -7747,6 +7877,7 @@ static int hmR0VmxRunGuestCodeStep(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 
         /* Handle the VM-exit. */
         AssertMsg(VmxTransient.uExitReason <= VMX_EXIT_MAX, ("%#x\n", VmxTransient.uExitReason));
+        STAM_COUNTER_INC(&pVCpu->hm.s.StatExitAll);
         STAM_COUNTER_INC(&pVCpu->hm.s.paStatExitReasonR0[VmxTransient.uExitReason & MASK_EXITREASON_STAT]);
         STAM_PROFILE_ADV_STOP_START(&pVCpu->hm.s.StatExit1, &pVCpu->hm.s.StatExit2, x);
         HMVMX_START_EXIT_DISPATCH_PROF();
@@ -7984,9 +8115,8 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
 #define HMVMX_IS_CANONICAL(a_u64Addr)       ((uint64_t)(a_u64Addr) + UINT64_C(0x800000000000) < UINT64_C(0x1000000000000))
 
     int      rc;
-    uint64_t u64Val;
-    uint32_t u32Val;
     uint32_t uError             = VMX_IGS_ERROR;
+    uint32_t u32Val;
     bool     fUnrestrictedGuest = pVM->hm.s.vmx.fUnrestrictedGuest;
 
     do
@@ -8001,13 +8131,14 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         if (fUnrestrictedGuest)
             uSetCR0 &= ~(X86_CR0_PE | X86_CR0_PG);
 
-        rc = VMXReadVmcs32(VMX_VMCS_GUEST_CR0, &u32Val);
+        uint32_t u32GuestCR0;
+        rc = VMXReadVmcs32(VMX_VMCS_GUEST_CR0, &u32GuestCR0);
         AssertRCBreak(rc);
-        HMVMX_CHECK_BREAK((u32Val & uSetCR0) == uSetCR0, VMX_IGS_CR0_FIXED1);
-        HMVMX_CHECK_BREAK(!(u32Val & ~uZapCR0), VMX_IGS_CR0_FIXED0);
+        HMVMX_CHECK_BREAK((u32GuestCR0 & uSetCR0) == uSetCR0, VMX_IGS_CR0_FIXED1);
+        HMVMX_CHECK_BREAK(!(u32GuestCR0 & ~uZapCR0), VMX_IGS_CR0_FIXED0);
         if (   !fUnrestrictedGuest
-            && (u32Val & X86_CR0_PG)
-            && !(u32Val & X86_CR0_PE))
+            && (u32GuestCR0 & X86_CR0_PG)
+            && !(u32GuestCR0 & X86_CR0_PE))
         {
             HMVMX_ERROR_BREAK(VMX_IGS_CR0_PG_PE_COMBO);
         }
@@ -8017,14 +8148,17 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
          */
         uint64_t uSetCR4 = (pVM->hm.s.vmx.Msrs.u64Cr4Fixed0 & pVM->hm.s.vmx.Msrs.u64Cr4Fixed1);
         uint64_t uZapCR4 = (pVM->hm.s.vmx.Msrs.u64Cr4Fixed0 | pVM->hm.s.vmx.Msrs.u64Cr4Fixed1);
-        rc = VMXReadVmcs32(VMX_VMCS_GUEST_CR4, &u32Val);
+
+        uint32_t u32GuestCR4;
+        rc = VMXReadVmcs32(VMX_VMCS_GUEST_CR4, &u32GuestCR4);
         AssertRCBreak(rc);
-        HMVMX_CHECK_BREAK((u32Val & uSetCR4) == uSetCR4, VMX_IGS_CR4_FIXED1);
-        HMVMX_CHECK_BREAK(!(u32Val & ~uZapCR4), VMX_IGS_CR4_FIXED0);
+        HMVMX_CHECK_BREAK((u32GuestCR4 & uSetCR4) == uSetCR4, VMX_IGS_CR4_FIXED1);
+        HMVMX_CHECK_BREAK(!(u32GuestCR4 & ~uZapCR4), VMX_IGS_CR4_FIXED0);
 
         /*
          * IA32_DEBUGCTL MSR.
          */
+        uint64_t u64Val;
         rc = VMXReadVmcs64(VMX_VMCS64_GUEST_DEBUGCTL_FULL, &u64Val);
         AssertRCBreak(rc);
         if (   (pVCpu->hm.s.vmx.u32EntryCtls & VMX_VMCS_CTRL_ENTRY_LOAD_DEBUG)
@@ -8035,11 +8169,11 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         uint64_t u64DebugCtlMsr = u64Val;
 
 #ifdef VBOX_STRICT
-        rc = VMXReadVmcs32(VMX_VMCS32_CTRL_PROC_EXEC, &u32Val);
+        rc = VMXReadVmcs32(VMX_VMCS32_CTRL_ENTRY, &u32Val);
         AssertRCBreak(rc);
         Assert(u32Val == pVCpu->hm.s.vmx.u32ProcCtls);
 #endif
-        bool const fLongModeGuest = !!(pVCpu->hm.s.vmx.u32ProcCtls & VMX_VMCS_CTRL_ENTRY_IA32E_MODE_GUEST);
+        bool const fLongModeGuest = RT_BOOL(pVCpu->hm.s.vmx.u32EntryCtls & VMX_VMCS_CTRL_ENTRY_IA32E_MODE_GUEST);
 
         /*
          * RIP and RFLAGS.
@@ -8079,7 +8213,8 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         }
 
         if (   fLongModeGuest
-            || !(pCtx->cr0 & X86_CR0_PE))
+            || (   fUnrestrictedGuest
+                && !(u32GuestCR0 & X86_CR0_PE)))
         {
             HMVMX_CHECK_BREAK(!(u32Eflags & X86_EFL_VM), VMX_IGS_RFLAGS_VM_INVALID);
         }
@@ -8090,7 +8225,7 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
         if (   VMX_ENTRY_INTERRUPTION_INFO_VALID(u32EntryInfo)
             && VMX_ENTRY_INTERRUPTION_INFO_TYPE(u32EntryInfo) == VMX_EXIT_INTERRUPTION_INFO_TYPE_EXT_INT)
         {
-            HMVMX_CHECK_BREAK(u32Val & X86_EFL_IF, VMX_IGS_RFLAGS_IF_INVALID);
+            HMVMX_CHECK_BREAK(u32Eflags & X86_EFL_IF, VMX_IGS_RFLAGS_IF_INVALID);
         }
 
         /*
@@ -8102,12 +8237,12 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
             if (   fLongModeGuest
                 && !fUnrestrictedGuest)
             {
-                HMVMX_CHECK_BREAK(CPUMIsGuestPagingEnabledEx(pCtx), VMX_IGS_CR0_PG_LONGMODE);
-                HMVMX_CHECK_BREAK((pCtx->cr4 & X86_CR4_PAE), VMX_IGS_CR4_PAE_LONGMODE);
+                HMVMX_CHECK_BREAK(u32GuestCR0 & X86_CR0_PG, VMX_IGS_CR0_PG_LONGMODE);
+                HMVMX_CHECK_BREAK(u32GuestCR4 & X86_CR4_PAE, VMX_IGS_CR4_PAE_LONGMODE);
             }
 
             if (   !fLongModeGuest
-                && (pCtx->cr4 & X86_CR4_PCIDE))
+                && (u32GuestCR4 & X86_CR4_PCIDE))
             {
                 HMVMX_ERROR_BREAK(VMX_IGS_CR4_PCIDE);
             }
@@ -8178,7 +8313,7 @@ static uint32_t hmR0VmxCheckGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
             HMVMX_CHECK_BREAK((u64Val & MSR_K6_EFER_LMA) == (pVCpu->hm.s.vmx.u32EntryCtls & VMX_VMCS_CTRL_ENTRY_IA32E_MODE_GUEST),
                               VMX_IGS_EFER_LMA_GUEST_MODE_MISMATCH);
             HMVMX_CHECK_BREAK(   fUnrestrictedGuest
-                              || (u64Val & MSR_K6_EFER_LMA) == (pCtx->cr0 & X86_CR0_PG), VMX_IGS_EFER_LMA_PG_MISMATCH);
+                              || (u64Val & MSR_K6_EFER_LMA) == (u32GuestCR0 & X86_CR0_PG), VMX_IGS_EFER_LMA_PG_MISMATCH);
         }
 
         /*
@@ -9714,8 +9849,10 @@ HMVMX_EXIT_DECL hmR0VmxExitIoInstr(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIE
         {
             STAM_COUNTER_INC(&pVCpu->hm.s.StatDRxIoCheck);
 
-            /* We're playing with the host CPU state here, make sure we don't preempt. */
+            /* We're playing with the host CPU state here, make sure we don't preempt or longjmp. */
+            VMMRZCallRing3Disable(pVCpu);
             HM_DISABLE_PREEMPT_IF_NEEDED();
+
             bool fIsGuestDbgActive = CPUMR0DebugStateMaybeSaveGuest(pVCpu, true /*fDr6*/);
 
             VBOXSTRICTRC rcStrict2 = DBGFBpCheckIo(pVM, pVCpu, pMixedCtx, uIOPort, cbValue);
@@ -9735,6 +9872,7 @@ HMVMX_EXIT_DECL hmR0VmxExitIoInstr(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIE
                 rcStrict = rcStrict2;
 
             HM_RESTORE_PREEMPT_IF_NEEDED();
+            VMMRZCallRing3Enable(pVCpu);
         }
     }
 
@@ -9914,8 +10052,8 @@ HMVMX_EXIT_DECL hmR0VmxExitMovDRx(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIEN
 {
     HMVMX_VALIDATE_EXIT_HANDLER_PARAMS();
 
-    /* We should -not- get this VM-exit if the guest is debugging. */
-    if (CPUMIsGuestDebugStateActive(pVCpu))
+    /* We should -not- get this VM-exit if the guest's debug registers were active. */
+    if (pVmxTransient->fWasGuestDebugStateActive)
     {
         AssertMsgFailed(("Unexpected MOV DRx exit. pVCpu=%p pMixedCtx=%p\n", pVCpu, pMixedCtx));
         return VERR_VMX_UNEXPECTED_EXIT_CODE;
@@ -9924,7 +10062,7 @@ HMVMX_EXIT_DECL hmR0VmxExitMovDRx(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIEN
     int rc = VERR_INTERNAL_ERROR_5;
     if (   !DBGFIsStepping(pVCpu)
         && !pVCpu->hm.s.fSingleInstruction
-        && !CPUMIsHyperDebugStateActive(pVCpu))
+        && !pVmxTransient->fWasHyperDebugStateActive)
     {
         /* Don't intercept MOV DRx and #DB any more. */
         pVCpu->hm.s.vmx.u32ProcCtls &= ~VMX_VMCS_CTRL_PROC_EXEC_MOV_DR_EXIT;
@@ -9940,7 +10078,8 @@ HMVMX_EXIT_DECL hmR0VmxExitMovDRx(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIEN
 #endif
         }
 
-        /* We're playing with the host CPU state here, make sure we can't preempt. */
+        /* We're playing with the host CPU state here, make sure we can't preempt or longjmp. */
+        VMMRZCallRing3Disable(pVCpu);
         HM_DISABLE_PREEMPT_IF_NEEDED();
 
         /* Save the host & load the guest debug state, restart execution of the MOV DRx instruction. */
@@ -9949,6 +10088,7 @@ HMVMX_EXIT_DECL hmR0VmxExitMovDRx(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIEN
         Assert(CPUMIsGuestDebugStateActive(pVCpu) || HC_ARCH_BITS == 32);
 
         HM_RESTORE_PREEMPT_IF_NEEDED();
+        VMMRZCallRing3Enable(pVCpu);
 
 #ifdef VBOX_WITH_STATISTICS
         rc = hmR0VmxReadExitQualificationVmcs(pVCpu, pVmxTransient);
@@ -10211,6 +10351,7 @@ static int hmR0VmxExitXcptDB(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIENT pVm
          * IA32_DEBUGCTL.LBR before forwarding it.
          * (See Intel spec. 27.1 "Architectural State before a VM-Exit".)
          */
+        VMMRZCallRing3Disable(pVCpu);
         HM_DISABLE_PREEMPT_IF_NEEDED();
 
         pMixedCtx->dr[6] &= ~X86_DR6_B_MASK;
@@ -10219,6 +10360,7 @@ static int hmR0VmxExitXcptDB(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIENT pVm
             ASMSetDR6(pMixedCtx->dr[6]);
 
         HM_RESTORE_PREEMPT_IF_NEEDED();
+        VMMRZCallRing3Enable(pVCpu);
 
         rc = hmR0VmxSaveGuestDR7(pVCpu, pMixedCtx);
         AssertRCReturn(rc, rc);
@@ -10250,7 +10392,7 @@ static int hmR0VmxExitXcptDB(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIENT pVm
      * Update DR6 in case someone is interested in it.
      */
     AssertMsg(rc == VINF_EM_DBG_STEPPED || rc == VINF_EM_DBG_BREAKPOINT, ("%Rrc\n", rc));
-    AssertReturn(CPUMIsHyperDebugStateActive(pVCpu), VERR_HM_IPE_5);
+    AssertReturn(pVmxTransient->fWasHyperDebugStateActive, VERR_HM_IPE_5);
     CPUMSetHyperDR6(pVCpu, uDR6);
 
     return rc;
@@ -10265,40 +10407,50 @@ static int hmR0VmxExitXcptNM(PVMCPU pVCpu, PCPUMCTX pMixedCtx, PVMXTRANSIENT pVm
 {
     HMVMX_VALIDATE_EXIT_XCPT_HANDLER_PARAMS();
 
-#ifndef HMVMX_ALWAYS_TRAP_ALL_XCPTS
-    Assert(!CPUMIsGuestFPUStateActive(pVCpu));
-#endif
-
     /* We require CR0 and EFER. EFER is always up-to-date. */
     int rc = hmR0VmxSaveGuestCR0(pVCpu, pMixedCtx);
     AssertRCReturn(rc, rc);
 
-    /* We're playing with the host CPU state here, have to disable preemption. */
+    /* We're playing with the host CPU state here, have to disable preemption or longjmp. */
+    VMMRZCallRing3Disable(pVCpu);
     HM_DISABLE_PREEMPT_IF_NEEDED();
 
-    /* Lazy FPU loading; load the guest-FPU state transparently and continue execution of the guest. */
-    PVM pVM = pVCpu->CTX_SUFF(pVM);
-    rc = CPUMR0LoadGuestFPU(pVM, pVCpu, pMixedCtx);
-    if (rc == VINF_SUCCESS)
+    /* If the guest FPU was active at the time of the #NM exit, then it's a guest fault. */
+    if (pVmxTransient->fWasGuestFPUStateActive)
     {
-        Assert(CPUMIsGuestFPUStateActive(pVCpu));
-        HM_RESTORE_PREEMPT_IF_NEEDED();
-
-        pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_GUEST_CR0;
-        STAM_COUNTER_INC(&pVCpu->hm.s.StatExitShadowNM);
-        return VINF_SUCCESS;
+        rc = VINF_EM_RAW_GUEST_TRAP;
+        Assert(CPUMIsGuestFPUStateActive(pVCpu) || (pVCpu->hm.s.fContextUseFlags & HM_CHANGED_GUEST_CR0));
+    }
+    else
+    {
+#ifndef HMVMX_ALWAYS_TRAP_ALL_XCPTS
+        Assert(!pVmxTransient->fWasGuestFPUStateActive);
+#endif
+        /* Lazy FPU loading; load the guest-FPU state transparently and continue execution of the guest. */
+        rc = CPUMR0LoadGuestFPU(pVCpu->CTX_SUFF(pVM), pVCpu, pMixedCtx);
+        Assert(rc == VINF_EM_RAW_GUEST_TRAP || (rc == VINF_SUCCESS && CPUMIsGuestFPUStateActive(pVCpu)));
     }
 
     HM_RESTORE_PREEMPT_IF_NEEDED();
+    VMMRZCallRing3Enable(pVCpu);
 
-    /* Forward #NM to the guest. */
-    Assert(rc == VINF_EM_RAW_GUEST_TRAP);
-    rc = hmR0VmxReadExitIntrInfoVmcs(pVCpu, pVmxTransient);
-    AssertRCReturn(rc, rc);
-    hmR0VmxSetPendingEvent(pVCpu, VMX_VMCS_CTRL_ENTRY_IRQ_INFO_FROM_EXIT_INT_INFO(pVmxTransient->uExitIntrInfo),
-                           pVmxTransient->cbInstr, 0 /* error code */, 0 /* GCPtrFaultAddress */);
-    STAM_COUNTER_INC(&pVCpu->hm.s.StatExitGuestNM);
-    return rc;
+    if (rc == VINF_SUCCESS)
+    {
+        pVCpu->hm.s.fContextUseFlags |= HM_CHANGED_GUEST_CR0;
+        STAM_COUNTER_INC(&pVCpu->hm.s.StatExitShadowNM);
+    }
+    else
+    {
+        /* Forward #NM to the guest. */
+        Assert(rc == VINF_EM_RAW_GUEST_TRAP);
+        rc = hmR0VmxReadExitIntrInfoVmcs(pVCpu, pVmxTransient);
+        AssertRCReturn(rc, rc);
+        hmR0VmxSetPendingEvent(pVCpu, VMX_VMCS_CTRL_ENTRY_IRQ_INFO_FROM_EXIT_INT_INFO(pVmxTransient->uExitIntrInfo),
+                               pVmxTransient->cbInstr, 0 /* error code */, 0 /* GCPtrFaultAddress */);
+        STAM_COUNTER_INC(&pVCpu->hm.s.StatExitGuestNM);
+    }
+
+    return VINF_SUCCESS;
 }
 
 

@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2012 Oracle Corporation
+ * Copyright (C) 2012-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -177,7 +177,7 @@ template<> QString toString(const KDeviceType &type)
     {
         case KDeviceType_Null:         return QApplication::translate("VBoxGlobal", "None", "DeviceType");
         case KDeviceType_Floppy:       return QApplication::translate("VBoxGlobal", "Floppy", "DeviceType");
-        case KDeviceType_DVD:          return QApplication::translate("VBoxGlobal", "CD/DVD-ROM", "DeviceType");
+        case KDeviceType_DVD:          return QApplication::translate("VBoxGlobal", "CD/DVD", "DeviceType");
         case KDeviceType_HardDisk:     return QApplication::translate("VBoxGlobal", "Hard Disk", "DeviceType");
         case KDeviceType_Network:      return QApplication::translate("VBoxGlobal", "Network", "DeviceType");
         case KDeviceType_USB:          return QApplication::translate("VBoxGlobal", "USB", "DeviceType");
@@ -222,9 +222,9 @@ template<> QString toString(const KPointingHIDType &type)
     {
         case KPointingHIDType_PS2Mouse:      return QApplication::translate("VBoxGlobal", "PS/2 Mouse", "PointingHIDType");
         case KPointingHIDType_USBMouse:      return QApplication::translate("VBoxGlobal", "USB Mouse", "PointingHIDType");
-        case KPointingHIDType_USBTablet:     return QApplication::translate("VBoxGlobal", "USB Mouse/Tablet", "PointingHIDType");
+        case KPointingHIDType_USBTablet:     return QApplication::translate("VBoxGlobal", "USB Tablet", "PointingHIDType");
         case KPointingHIDType_ComboMouse:    return QApplication::translate("VBoxGlobal", "PS/2 and USB Mouse", "PointingHIDType");
-        case KPointingHIDType_USBMultiTouch: return QApplication::translate("VBoxGlobal", "USB Multi-Touch Mouse/Tablet", "PointingHIDType");
+        case KPointingHIDType_USBMultiTouch: return QApplication::translate("VBoxGlobal", "USB Multi-Touch Tablet", "PointingHIDType");
         default: AssertMsgFailed(("No text for %d", type)); break;
     }
     return QString();
@@ -283,12 +283,13 @@ template<> QString toString(const KNetworkAttachmentType &type)
 {
     switch (type)
     {
-        case KNetworkAttachmentType_Null:     return QApplication::translate("VBoxGlobal", "Not attached", "NetworkAttachmentType");
-        case KNetworkAttachmentType_NAT:      return QApplication::translate("VBoxGlobal", "NAT", "NetworkAttachmentType");
-        case KNetworkAttachmentType_Bridged:  return QApplication::translate("VBoxGlobal", "Bridged Adapter", "NetworkAttachmentType");
-        case KNetworkAttachmentType_Internal: return QApplication::translate("VBoxGlobal", "Internal Network", "NetworkAttachmentType");
-        case KNetworkAttachmentType_HostOnly: return QApplication::translate("VBoxGlobal", "Host-only Adapter", "NetworkAttachmentType");
-        case KNetworkAttachmentType_Generic:  return QApplication::translate("VBoxGlobal", "Generic Driver", "NetworkAttachmentType");
+        case KNetworkAttachmentType_Null:       return QApplication::translate("VBoxGlobal", "Not attached", "NetworkAttachmentType");
+        case KNetworkAttachmentType_NAT:        return QApplication::translate("VBoxGlobal", "NAT", "NetworkAttachmentType");
+        case KNetworkAttachmentType_Bridged:    return QApplication::translate("VBoxGlobal", "Bridged Adapter", "NetworkAttachmentType");
+        case KNetworkAttachmentType_Internal:   return QApplication::translate("VBoxGlobal", "Internal Network", "NetworkAttachmentType");
+        case KNetworkAttachmentType_HostOnly:   return QApplication::translate("VBoxGlobal", "Host-only Adapter", "NetworkAttachmentType");
+        case KNetworkAttachmentType_Generic:    return QApplication::translate("VBoxGlobal", "Generic Driver", "NetworkAttachmentType");
+        case KNetworkAttachmentType_NATNetwork: return QApplication::translate("VBoxGlobal", "NAT Network", "NetworkAttachmentType");
         default: AssertMsgFailed(("No text for %d", type)); break;
     }
     return QString();
@@ -471,6 +472,41 @@ template<> QString toString(const KNATProtocol &protocol)
         AssertMsgFailed(("No text for %d", protocol)); break;
     }
     return QString();
+}
+
+/* QString <= KNATProtocol: */
+template<> QString toInternalString(const KNATProtocol &protocol)
+{
+    QString strResult;
+    switch (protocol)
+    {
+        case KNATProtocol_UDP: strResult = "udp"; break;
+        case KNATProtocol_TCP: strResult = "tcp"; break;
+        default:
+        {
+            AssertMsgFailed(("No text for protocol type=%d", protocol));
+            break;
+        }
+    }
+    return strResult;
+}
+
+/* KNATProtocol <= QString: */
+template<> KNATProtocol fromInternalString<KNATProtocol>(const QString &strProtocol)
+{
+    /* Here we have some fancy stuff allowing us
+     * to search through the keys using 'case-insensitive' rule: */
+    QStringList keys; QList<KNATProtocol> values;
+    keys << "udp";    values << KNATProtocol_UDP;
+    keys << "tcp";    values << KNATProtocol_TCP;
+    /* Invalid type for unknown words: */
+    if (!keys.contains(strProtocol, Qt::CaseInsensitive))
+    {
+        AssertMsgFailed(("No value for '%s'"));
+        return KNATProtocol_UDP;
+    }
+    /* Corresponding type for known words: */
+    return values.at(keys.indexOf(QRegExp(strProtocol, Qt::CaseInsensitive)));
 }
 
 /* KPortMode <= QString: */

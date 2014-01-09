@@ -2584,7 +2584,7 @@ static DECLCALLBACK(int) ahciR3PortQueryDeviceLocation(PPDMIBLOCKPORT pInterface
     return VINF_SUCCESS;
 }
 
-#ifdef DEBUG
+#ifdef LOG_ENABLED
 
 /**
  * Dump info about the FIS
@@ -2699,7 +2699,8 @@ static void ahciDumpCmdHdrInfo(PAHCIPort pAhciPort, CmdHdr *pCmdHdr)
     ahciLog(("%s: Command FIS length %u DW\n", __FUNCTION__, (pCmdHdr->u32DescInf & AHCI_CMDHDR_CFL_MASK)));
     ahciLog(("%s: *** End command header info dump. ***\n", __FUNCTION__));
 }
-#endif /* DEBUG */
+
+#endif /* LOG_ENABLED */
 
 /**
  * Post the first D2H FIS from the device into guest memory.
@@ -3059,6 +3060,7 @@ static int atapiReadTOCRawSS(PAHCIREQ, PAHCIPort, size_t, size_t *);
 static int atapiReadTrackInformationSS(PAHCIREQ, PAHCIPort, size_t, size_t *);
 static int atapiRequestSenseSS(PAHCIREQ, PAHCIPort, size_t, size_t *);
 static int atapiPassthroughSS(PAHCIREQ, PAHCIPort, size_t, size_t *);
+static int atapiReadDVDStructureSS(PAHCIREQ, PAHCIPort, size_t, size_t *);
 
 /**
  * Source/sink function indexes for g_apfnAtapiFuncs.
@@ -3081,6 +3083,7 @@ typedef enum ATAPIFN
     ATAFN_SS_ATAPI_READ_TRACK_INFORMATION,
     ATAFN_SS_ATAPI_REQUEST_SENSE,
     ATAFN_SS_ATAPI_PASSTHROUGH,
+    ATAFN_SS_ATAPI_READ_DVD_STRUCTURE,
     ATAFN_SS_MAX
 } ATAPIFN;
 
@@ -3105,7 +3108,8 @@ static const PAtapiFunc g_apfnAtapiFuncs[ATAFN_SS_MAX] =
     atapiReadTOCRawSS,
     atapiReadTrackInformationSS,
     atapiRequestSenseSS,
-    atapiPassthroughSS
+    atapiPassthroughSS,
+    atapiReadDVDStructureSS
 };
 
 static int atapiIdentifySS(PAHCIREQ pAhciReq, PAHCIPort pAhciPort, size_t cbData, size_t *pcbData)
@@ -4064,6 +4068,166 @@ static int atapiPassthroughSS(PAHCIREQ pAhciReq, PAHCIPort pAhciPort, size_t cbD
     return VINF_SUCCESS;
 }
 
+/** @todo: Revise ASAP. */
+/* Keep in sync with DevATA.cpp! */
+static int atapiReadDVDStructureSS(PAHCIREQ pAhciReq, PAHCIPort pAhciPort, size_t cbData, size_t *pcbData)
+{
+    uint8_t aBuf[25]; /* Counted a maximum of 20 bytes but better be on the safe side. */
+    uint8_t *buf = aBuf;
+    int media = pAhciReq->aATAPICmd[1];
+    int format = pAhciReq->aATAPICmd[7];
+
+    uint16_t max_len = ataBE2H_U16(&pAhciReq->aATAPICmd[8]);
+
+    memset(buf, 0, max_len);
+
+    switch (format) {
+        case 0x00:
+        case 0x01:
+        case 0x02:
+        case 0x03:
+        case 0x04:
+        case 0x05:
+        case 0x06:
+        case 0x07:
+        case 0x08:
+        case 0x09:
+        case 0x0a:
+        case 0x0b:
+        case 0x0c:
+        case 0x0d:
+        case 0x0e:
+        case 0x0f:
+        case 0x10:
+        case 0x11:
+        case 0x30:
+        case 0x31:
+        case 0xff:
+            if (media == 0)
+            {
+                int uASC = SCSI_ASC_NONE;
+
+                switch (format)
+                {
+                    case 0x0: /* Physical format information */
+                        {
+                            int layer = pAhciReq->aATAPICmd[6];
+                            uint64_t total_sectors;
+
+                            if (layer != 0)
+                            {
+                                uASC = -SCSI_ASC_INV_FIELD_IN_CMD_PACKET;
+                                break;
+                            }
+
+                            total_sectors = pAhciPort->cTotalSectors;
+                            total_sectors >>= 2;
+                            if (total_sectors == 0)
+                            {
+                                uASC = -SCSI_ASC_MEDIUM_NOT_PRESENT;
+                                break;
+                            }
+
+                            buf[4] = 1;   /* DVD-ROM, part version 1 */
+                            buf[5] = 0xf; /* 120mm disc, minimum rate unspecified */
+                            buf[6] = 1;   /* one layer, read-only (per MMC-2 spec) */
+                            buf[7] = 0;   /* default densities */
+
+                            /* FIXME: 0x30000 per spec? */
+                            ataH2BE_U32(buf + 8, 0); /* start sector */
+                            ataH2BE_U32(buf + 12, total_sectors - 1); /* end sector */
+                            ataH2BE_U32(buf + 16, total_sectors - 1); /* l0 end sector */
+
+                            /* Size of buffer, not including 2 byte size field */
+                            ataH2BE_U32(&buf[0], 2048 + 2);
+
+                            /* 2k data + 4 byte header */
+                            uASC = (2048 + 4);
+                        }
+                        break;
+                    case 0x01: /* DVD copyright information */
+                        buf[4] = 0; /* no copyright data */
+                        buf[5] = 0; /* no region restrictions */
+
+                        /* Size of buffer, not including 2 byte size field */
+                        ataH2BE_U16(buf, 4 + 2);
+
+                        /* 4 byte header + 4 byte data */
+                        uASC = (4 + 4);
+
+                    case 0x03: /* BCA information - invalid field for no BCA info */
+                        uASC = -SCSI_ASC_INV_FIELD_IN_CMD_PACKET;
+                        break;
+
+                    case 0x04: /* DVD disc manufacturing information */
+                        /* Size of buffer, not including 2 byte size field */
+                        ataH2BE_U16(buf, 2048 + 2);
+
+                        /* 2k data + 4 byte header */
+                        uASC = (2048 + 4);
+                        break;
+                    case 0xff:
+                        /*
+                         * This lists all the command capabilities above.  Add new ones
+                         * in order and update the length and buffer return values.
+                         */
+
+                        buf[4] = 0x00; /* Physical format */
+                        buf[5] = 0x40; /* Not writable, is readable */
+                        ataH2BE_U16((buf + 6), 2048 + 4);
+
+                        buf[8] = 0x01; /* Copyright info */
+                        buf[9] = 0x40; /* Not writable, is readable */
+                        ataH2BE_U16((buf + 10), 4 + 4);
+
+                        buf[12] = 0x03; /* BCA info */
+                        buf[13] = 0x40; /* Not writable, is readable */
+                        ataH2BE_U16((buf + 14), 188 + 4);
+
+                        buf[16] = 0x04; /* Manufacturing info */
+                        buf[17] = 0x40; /* Not writable, is readable */
+                        ataH2BE_U16((buf + 18), 2048 + 4);
+
+                        /* Size of buffer, not including 2 byte size field */
+                        ataH2BE_U16(buf, 16 + 2);
+
+                        /* data written + 4 byte header */
+                        uASC = (16 + 4);
+                        break;
+                    default: /* TODO: formats beyond DVD-ROM requires */
+                        uASC = -SCSI_ASC_INV_FIELD_IN_CMD_PACKET;
+                }
+
+                if (uASC < 0)
+                {
+                    atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_ILLEGAL_REQUEST, -uASC);
+                    return false;
+                }
+                break;
+            }
+            /* TODO: BD support, fall through for now */
+
+        /* Generic disk structures */
+        case 0x80: /* TODO: AACS volume identifier */
+        case 0x81: /* TODO: AACS media serial number */
+        case 0x82: /* TODO: AACS media identifier */
+        case 0x83: /* TODO: AACS media key block */
+        case 0x90: /* TODO: List of recognized format layers */
+        case 0xc0: /* TODO: Write protection status */
+        default:
+            atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_ILLEGAL_REQUEST,
+                                SCSI_ASC_INV_FIELD_IN_CMD_PACKET);
+            return false;
+    }
+
+    /* Copy the buffer into the scatter gather list. */
+    *pcbData = ahciCopyToPrdtl(pAhciPort->pDevInsR3, pAhciReq, (void *)&aBuf[0],
+                               RT_MIN(cbData, max_len));
+
+    atapiCmdOK(pAhciPort, pAhciReq);
+    return false;
+}
+
 static int atapiDoTransfer(PAHCIPort pAhciPort, PAHCIREQ pAhciReq, size_t cbMax, ATAPIFN iSourceSink)
 {
     size_t cbTransfered = 0;
@@ -4236,7 +4400,7 @@ static AHCITXDIR atapiParseCmdVirtualATAPI(PAHCIPort pAhciPort, PAHCIREQ pAhciRe
                     atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_UNIT_ATTENTION, SCSI_ASC_MEDIUM_MAY_HAVE_CHANGED); /* media changed */
                     break;
                 }
-                else if (!pAhciPort->pDrvMount->pfnIsMounted(pAhciPort->pDrvMount))
+                if (!pAhciPort->pDrvMount->pfnIsMounted(pAhciPort->pDrvMount))
                 {
                     atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_NOT_READY, SCSI_ASC_MEDIUM_NOT_PRESENT);
                     break;
@@ -4257,11 +4421,11 @@ static AHCITXDIR atapiParseCmdVirtualATAPI(PAHCIPort pAhciPort, PAHCIREQ pAhciRe
                      * guests that insist on reading from places outside the
                      * valid area this often generates too many release log
                      * entries otherwise. */
-                    static uint64_t uLastLogTS = 0;
-                    if (RTTimeMilliTS() >= uLastLogTS + 1000)
+                    static uint64_t s_uLastLogTS = 0;
+                    if (RTTimeMilliTS() >= s_uLastLogTS + 1000)
                     {
                         LogRel(("AHCI ATAPI: LUN#%d: CD-ROM block number %Ld invalid (READ)\n", pAhciPort->iLUN, (uint64_t)iATAPILBA + cSectors));
-                        uLastLogTS = RTTimeMilliTS();
+                        s_uLastLogTS = RTTimeMilliTS();
                     }
                     atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ASC_LOGICAL_BLOCK_OOR);
                     break;
@@ -4298,11 +4462,11 @@ static AHCITXDIR atapiParseCmdVirtualATAPI(PAHCIPort pAhciPort, PAHCIREQ pAhciRe
                      * guests that insist on reading from places outside the
                      * valid area this often generates too many release log
                      * entries otherwise. */
-                    static uint64_t uLastLogTS = 0;
-                    if (RTTimeMilliTS() >= uLastLogTS + 1000)
+                    static uint64_t s_uLastLogTS = 0;
+                    if (RTTimeMilliTS() >= s_uLastLogTS + 1000)
                     {
                         LogRel(("AHCI ATA: LUN#%d: CD-ROM block number %Ld invalid (READ CD)\n", pAhciPort->iLUN, (uint64_t)iATAPILBA + cSectors));
-                        uLastLogTS = RTTimeMilliTS();
+                        s_uLastLogTS = RTTimeMilliTS();
                     }
                     atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ASC_LOGICAL_BLOCK_OOR);
                     break;
@@ -4351,11 +4515,11 @@ static AHCITXDIR atapiParseCmdVirtualATAPI(PAHCIPort pAhciPort, PAHCIREQ pAhciRe
                      * guests that insist on seeking to places outside the
                      * valid area this often generates too many release log
                      * entries otherwise. */
-                    static uint64_t uLastLogTS = 0;
-                    if (RTTimeMilliTS() >= uLastLogTS + 1000)
+                    static uint64_t s_uLastLogTS = 0;
+                    if (RTTimeMilliTS() >= s_uLastLogTS + 1000)
                     {
                         LogRel(("AHCI ATAPI: LUN#%d: CD-ROM block number %Ld invalid (SEEK)\n", pAhciPort->iLUN, (uint64_t)iATAPILBA));
-                        uLastLogTS = RTTimeMilliTS();
+                        s_uLastLogTS = RTTimeMilliTS();
                     }
                     atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ASC_LOGICAL_BLOCK_OOR);
                     break;
@@ -4497,6 +4661,10 @@ static AHCITXDIR atapiParseCmdVirtualATAPI(PAHCIPort pAhciPort, PAHCIREQ pAhciRe
         case SCSI_INQUIRY:
             cbMax = pbPacket[4];
             atapiDoTransfer(pAhciPort, pAhciReq, cbMax, ATAFN_SS_ATAPI_INQUIRY);
+            break;
+        case SCSI_READ_DVD_STRUCTURE:
+            cbMax = ataBE2H_U16(pbPacket + 8);
+            atapiDoTransfer(pAhciPort, pAhciReq, cbMax, ATAFN_SS_ATAPI_READ_DVD_STRUCTURE);
             break;
         default:
             atapiCmdErrorSimple(pAhciPort, pAhciReq, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ASC_ILLEGAL_OPCODE);
@@ -4822,11 +4990,7 @@ static AHCITXDIR atapiParseCmd(PAHCIPort pAhciPort, PAHCIREQ pAhciReq)
     const uint8_t *pbPacket;
 
     pbPacket = pAhciReq->aATAPICmd;
-#ifdef DEBUG
     Log(("%s: LUN#%d CMD=%#04x \"%s\"\n", __FUNCTION__, pAhciPort->iLUN, pbPacket[0], SCSICmdText(pbPacket[0])));
-#else /* !DEBUG */
-    Log(("%s: LUN#%d CMD=%#04x\n", __FUNCTION__, pAhciPort->iLUN, pbPacket[0]));
-#endif /* !DEBUG */
     Log2(("%s: limit=%#x packet: %.*Rhxs\n", __FUNCTION__, pAhciReq->cmdFis[AHCI_CMDFIS_CYLL] | (pAhciReq->cmdFis[AHCI_CMDFIS_CYLH] << 8), ATAPI_PACKET_SIZE, pbPacket));
 
     if (pAhciPort->fATAPIPassthrough)
@@ -6169,7 +6333,7 @@ static void ahciPortTaskGetCommandFis(PAHCIPort pAhciPort, PAHCIREQ pAhciReq)
              pAhciReq->GCPhysCmdHdrAddr, sizeof(CmdHdr)));
     PDMDevHlpPhysRead(pAhciPort->CTX_SUFF(pDevIns), pAhciReq->GCPhysCmdHdrAddr, &pAhciReq->cmdHdr, sizeof(CmdHdr));
 
-#ifdef DEBUG
+#ifdef LOG_ENABLED
     /* Print some infos about the command header. */
     ahciDumpCmdHdrInfo(pAhciPort, &pAhciReq->cmdHdr);
 #endif
@@ -6207,7 +6371,7 @@ static void ahciPortTaskGetCommandFis(PAHCIPort pAhciPort, PAHCIREQ pAhciReq)
     pAhciReq->GCPhysPrdtl = AHCI_RTGCPHYS_FROM_U32(pAhciReq->cmdHdr.u32CmdTblAddrUp, pAhciReq->cmdHdr.u32CmdTblAddr) + AHCI_CMDHDR_PRDT_OFFSET;
     pAhciReq->cPrdtlEntries = AHCI_CMDHDR_PRDTL_ENTRIES(pAhciReq->cmdHdr.u32DescInf);
 
-#ifdef DEBUG
+#ifdef LOG_ENABLED
     /* Print some infos about the FIS. */
     ahciDumpFisInfo(pAhciPort, &pAhciReq->cmdFis[0]);
 

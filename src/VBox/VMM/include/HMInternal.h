@@ -512,7 +512,9 @@ typedef struct HMCPU
     bool                        fClearTrapFlag;
     /** Whether we've completed the inner HM leave function. */
     bool                        fLeaveDone;
-    uint8_t                     abAlignment[2];
+    /** Whether we're using the hyper DR7 or guest DR7. */
+    bool                        fUsingHyperDR7;
+    uint8_t                     abAlignment[1];
 
     /** World switch exit counter. */
     volatile uint32_t           cWorldSwitchExits;
@@ -770,6 +772,7 @@ typedef struct HMCPU
     STAMCOUNTER             StatInjectXcpt;
     STAMCOUNTER             StatInjectPendingReflect;
 
+    STAMCOUNTER             StatExitAll;
     STAMCOUNTER             StatExitShadowNM;
     STAMCOUNTER             StatExitGuestNM;
     STAMCOUNTER             StatExitShadowPF;       /* Misleading, currently used for MMIO #PFs as well. */

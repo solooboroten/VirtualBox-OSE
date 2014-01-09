@@ -341,7 +341,7 @@ int UIKeyboardHandler::keyboardState() const
 }
 
 #ifdef VBOX_WITH_DEBUGGER_GUI
-void UIKeyboardHandler::setDebuggerActive(bool aActive /*= true*/)
+void UIKeyboardHandler::setDebuggerActive(bool aActive /* = true*/)
 {
     if (aActive)
     {
@@ -1197,8 +1197,10 @@ bool UIKeyboardHandler::keyEventHandleNormal(int iKey, uint8_t uScan, int fFlags
         /* Check if the guest has the same view on the modifier keys
          * (NumLock, CapsLock, ScrollLock) as the X server.
          * If not, send KeyPress events to synchronize the state: */
+#if !defined(Q_WS_MAC)
         if (fFlags & KeyPressed)
             fixModifierState(pCodes, puCodesCount);
+#endif
 
         /* Prepend 'extended' scancode if needed: */
         if (fFlags & KeyExtended)

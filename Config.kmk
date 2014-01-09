@@ -218,7 +218,7 @@ VBOX_BUILD_PUBLISHER =
 # Note! The BETA[n],ALPHA[n],RC[n] indicators should be inserted before the
 #       publisher so that RTStrVersionCompare have a chance of comparing
 #       prerelease from different publishers correctly.
-VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)_BETA2$(VBOX_BUILD_PUBLISHER)
+VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)_BETA3$(VBOX_BUILD_PUBLISHER)
 
 # Force the additions.sh script to get an exact additions build when we're doing the release.
 ifeq ($(int-mod $(VBOX_VERSION_BUILD),2),0)
@@ -495,8 +495,6 @@ if1of ($(KBUILD_TARGET), darwin freebsd linux solaris win)
 endif
 # Emulated USB smart card reader
 VBOX_WITH_USB_CARDREADER = 1
-# Emulated USB webcam
-VBOX_WITH_USB_VIDEO = 1
 ## @}
 
 
@@ -1696,6 +1694,11 @@ endif
 #
 # Note! Yes, --max-branchs is a typo, but not by me.
 #
+# Note! Users of older pylint release (< 1.0) needs to define
+#       VBOX_WITH_PYLINT_PRE_V1_0 in LocalConfig because they changed the
+#	 output arguments in an backwards incompatible way and added more
+#       attribute regex options.
+#
 ifndef VBOX_PYLINT
  VBOX_PYLINT        := $(firstword $(which pylint-2.7) $(which pylint-2.6) $(which pylint2) $(which pylint))
  ifdef VBOX_PYLINT
@@ -1705,11 +1708,15 @@ endif
 if !defined(VBOX_WITH_PYLINT) && defined(VBOX_PYLINT)
  VBOX_WITH_PYLINT := 1
 endif
-VBOX_PYLINT_FLAGS    = --report=n --output-format=parseable --include-ids=y --persistent=n \
+VBOX_PYLINT_FLAGS   := --report=n \
+	$(if-expr !defined(VBOX_WITH_PYLINT_PRE_V1_0)\
+	  ,--msg-template='{path}:{line}: {msg_id}({obj}:{symbol}): {msg}' \
+	  ,--output-format=msvs --include-ids=y) \
+	--persistent=n \
 	--rcfile=$(if-expr "$(KBUILD_HOST)" == "win",nul,/dev/null) \
 	--max-line-length=130 \
 	--max-attributes=20 \
-	--max-branchs=50 \
+	--max-branch$(if-expr !defined(VBOX_WITH_PYLINT_PRE_V1_0),e,)s=50 \
 	--max-statements=100 \
 	--max-returns=100 \
 	--max-public-methods=139 \
@@ -1726,6 +1733,7 @@ VBOX_PYLINT_FLAGS    = --report=n --output-format=parseable --include-ids=y --pe
 	--class-rgx='(td|)[A-Z_][a-zA-Z0-9_]+$(DOLLAR)' \
 	--const-rgx='(g_(k|)[abcdefhmnpilorstu]+[A-Z][a-zA-Z0-9]+|[A-Z_][A-Z0-9_]+|__copyright__|__version__|__file__|__all__)$(DOLLAR)' \
 	--good-names='i,j,k,t,o,c,e,_' \
+	$(if-expr !defined(VBOX_WITH_PYLINT_PRE_V1_0),--class-attribute-rgx='(k[abcdefhmnpilorstu]+[A-Z0-9][a-zA-Z0-9_]{0,32}|[A-Z_][A-Z0-9_]{2,32})',) \
 	--disable=W0301,W0511,W0603,W0702,W0703,C0321,R0201,I0011 \
 	--ignored-classes=testdriver.vboxcon \
 
@@ -2203,43 +2211,77 @@ endif
 # These tests never worked on Windows because of /dev/null, so, there
 # can be no harm in just dropping them until cygwin is mp safe.
 ifeq ($(KBUILD_HOST),win)
-VBOX_GCC_CHECK_CC = $(2)
-VBOX_GCC_CHECK_CXX = $(2)
-VBOX_GCC_CHECK_LD = $(2)
-VBOX_GCC32_CHECK_CXX = $(2)
+ VBOX_GCC_CHECK_EX_CC  = $(3)
+ VBOX_GCC_CHECK_EX_CXX = $(3)
+ VBOX_GCC_CHECK_EX_LD  = $(3)
+ VBOX_GCC_CHECK_CC = $(2)
+ VBOX_GCC_CHECK_CXX = $(2)
+ VBOX_GCC_CHECK_LD = $(2)
+ VBOX_GCC32_CHECK_CXX = $(2)
 else
-VBOX_GCC_CHECK_CC = $(shell \
-   if $(TOOL_$(VBOX_GCC_TOOL)_CC) $(subst -Wno-,-W,$(1)) -S -o /dev/null -xc /dev/null > /dev/null 2>&1; \
-   then echo "$(1)"; \
-   else echo "$(2)"; fi; )
+ VBOX_GCC_CHECK_EX_CC = $(shell \
+    if $(1) $(subst -Wno-,-W,$(2)) -S -o /dev/null -xc /dev/null > /dev/null 2>&1; then echo "$(2)"; else echo "$(3)"; fi; )
+ VBOX_GCC_CHECK_EX_CXX = $(shell \
+    if $(1) $(subst -Wno-,-W,$(2)) -S -o /dev/null -xc++ /dev/null > /dev/null 2>&1; then echo "$(2)"; else echo "$(3)"; fi; )
+ VBOX_GCC_CHECK_EX_LD = $(shell \
+    if $(1) -Wl,$(2) $(if $(eq $(KBUILD_HOST),darwin),-Wl$(COMMA)-u$(COMMA)start -Wl$(COMMA)-undefined$(COMMA)dynamic_lookup,) \
+            -nostdlib -o /dev/null -xc /dev/null > /dev/null 2>&1; \
+    then echo "-Wl,$(2)"; else echo "$(3)"; fi; )
 
-VBOX_GCC_CHECK_CXX = $(shell \
-   if $(TOOL_$(VBOX_GCC_TOOL)_CXX) $(subst -Wno-,-W,$(1)) -S -o /dev/null -xc++ /dev/null > /dev/null 2>&1; \
-   then echo "$(1)"; \
-   else echo "$(2)"; fi; )
-
-VBOX_GCC_CHECK_LD = $(shell \
-   if $(TOOL_$(VBOX_GCC_TOOL)_LD) -Wl,$(1) $(if $(eq $(KBUILD_HOST),darwin),-Wl$(COMMA)-u$(COMMA)start -Wl$(COMMA)-undefined$(COMMA)dynamic_lookup,) -nostdlib -o /dev/null -xc /dev/null > /dev/null 2>&1 ;\
-   then echo "-Wl,$(1)"; \
-   else echo "$(2)"; fi; )
-
-VBOX_GCC32_CHECK_CXX = $(shell \
-   if $(TOOL_$(VBOX_GCC32_TOOL)_CXX) $(1) -S -o /dev/null -xc++ /dev/null > /dev/null 2>&1; \
-   then echo "$(1)"; \
-   else echo "$(2)"; fi; )
+ VBOX_GCC_CHECK_CC    = $(call VBOX_GCC_CHECK_EX_CC,  $(TOOL_$(VBOX_GCC_TOOL)_CC),$1,$2)
+ VBOX_GCC_CHECK_CXX   = $(call VBOX_GCC_CHECK_EX_CXX, $(TOOL_$(VBOX_GCC_TOOL)_CXX),$1,$2)
+ VBOX_GCC_CHECK_LD    = $(call VBOX_GCC_CHECK_EX_LD,  $(TOOL_$(VBOX_GCC_TOOL)_LD),$1,$2)
+ VBOX_GCC32_CHECK_CXX = $(call VBOX_GCC_CHECK_EX_CXX, $(TOOL_$(VBOX_GCC32_TOOL)_CXX),$1,$2)
 endif
 
-ifeq ($(KBUILD_HOST),win)
-# This isn't important (yet) on windows, so cook the result until
-# cygwin is feeling better.
-VBOX_GCC_VERSION := $(int-add $(int-mul 10000, 3), $(int-mul 100, 3), 3)
+ifeq ($(KBUILD_HOST),win) ## @todo can drop this now, we're not using cygwin.
+ # This isn't important (yet) on windows, so cook the result until
+ # cygwin is feeling better.
+ VBOX_GCC_VERSION := $(int-add $(int-mul 10000, 3), $(int-mul 100, 3), 3)
 else
-# This is kind of bad, the returned string needs to be re-evaluated before use.
-# The reason for this hack is that the windows kmk_ash cannot deal with $((1+1)).
-# Some versions of gcc (e.g. openSUSE11) return only major.minor on `gcc -dumpversion`.
-VBOX_GCC_VERSION = $(shell \
-  $(1) -dumpversion | $(SED_EXT) 's|\([0-9]\)\.\([0-9]\)\.\{0,1\}\([0-9]\{0,1\}\).*|$$(int-add $$(int-mul 10000, \1), $$(int-mul 100, \2), $$(firstword \3 0))|' )
+ # This is kind of bad, the returned string needs to be re-evaluated before use.
+ # The reason for this hack is that the windows kmk_ash cannot deal with $((1+1)).
+ # Some versions of gcc (e.g. openSUSE11) return only major.minor on `gcc -dumpversion`.
+ VBOX_GCC_VERSION = $(shell \
+    $(1) -dumpversion | $(SED_EXT) 's|\([0-9]\)\.\([0-9]\)\.\{0,1\}\([0-9]\{0,1\}\).*|$$(int-add $$(int-mul 10000, \1), $$(int-mul 100, \2), $$(firstword \3 0))|' )
 endif
+
+# Find MinGW cross compilers for EFI on non-windows systems. We need to probe
+# them for supported options in the Dynamic Config.kmk section below.
+ifdef VBOX_WITH_EFI
+ ifneq ($(KBUILD_HOST),win)
+  ifndef VBOX_PATH_PREFIX_MINGW32
+   VBOX_PATH_PREFIX_MINGW32 := $(firstword \
+   	$(which i686-w64-mingw32-gcc) \
+   	$(which i686-w32-mingw32-gcc) \
+   	$(which i686-pc-mingw32-gcc) \
+   	$(which i586-mingw32msvc-gcc) \
+        )# Add more variants.
+   ifdef VBOX_PATH_PREFIX_MINGW32
+    VBOX_PATH_PREFIX_MINGW32 := $(substr $(VBOX_PATH_PREFIX_MINGW32), 1, $(expr $(length-var VBOX_PATH_PREFIX_MINGW32) - 3))
+   endif
+  endif
+  ifndef VBOX_PATH_PREFIX_MINGW64
+   VBOX_PATH_PREFIX_MINGW64 := $(firstword \
+   	$(which x86_64-w64-mingw64-gcc) \
+   	$(which x86_64-w64-mingw32-gcc) \
+   	$(which x86_64-pc-mingw64-gcc) \
+   	$(which x86_64-pc-mingw32-gcc) \
+   	$(which x86_64-w32-mingw32-gcc) \
+        )# Add more variants.
+   ifdef VBOX_PATH_PREFIX_MINGW64
+    VBOX_PATH_PREFIX_MINGW64 := $(substr $(VBOX_PATH_PREFIX_MINGW64), 1, $(expr $(length-var VBOX_PATH_PREFIX_MINGW64) - 3))
+   endif
+  endif
+  if defined(VBOX_PATH_PREFIX_MINGW32) || defined(VBOX_PATH_PREFIX_MINGW64)
+   if !defined(VBOX_PATH_PREFIX_MINGW32)
+    VBOX_PATH_PREFIX_MINGW32 = $(VBOX_PATH_PREFIX_MINGW64)
+   else if !defined(VBOX_PATH_PREFIX_MINGW64)
+    VBOX_PATH_PREFIX_MINGW64 = $(VBOX_PATH_PREFIX_MINGW32)
+   endif
+  endif
+ endif # !win
+endif # VBOX_WITH_EFI
 
 # YASM macros
 ifndef DONT_USE_YASM
@@ -2353,6 +2395,22 @@ endif
 # YASM
 	$(QUIET)$(APPEND) '$@' 'VBOX_YASM_Wno-segreg-in-64bit  ?= $(call VBOX_YASM_CHECK,-Wno-segreg-in-64bit,)'
 
+ifdef VBOX_PATH_PREFIX_MINGW32
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW32_VERSION_CC                  ?= $(call VBOX_GCC_VERSION,$(VBOX_PATH_PREFIX_MINGW32)gcc -m32)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW32_VERSION_CXX                 ?= $(call VBOX_GCC_VERSION,$(VBOX_PATH_PREFIX_MINGW32)g++ -m32)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW32_Wno-array-bounds            ?= $(call VBOX_GCC_CHECK_EX_CXX,$(VBOX_PATH_PREFIX_MINGW32)g++ -m32,-Wno-array-bounds,)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW32_Wno-unused-but-set-variable ?= $(call VBOX_GCC_CHECK_EX_CXX,$(VBOX_PATH_PREFIX_MINGW32)g++ -m32,-Wno-unused-but-set-variable,)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW32_Wno-maybe-uninitialized     ?= $(call VBOX_GCC_CHECK_EX_CXX,$(VBOX_PATH_PREFIX_MINGW32)g++ -m32,-Wno-maybe-uninitialized,)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW32_USER_LABEL_PREFIX           ?= $(shell echo "__USER_LABEL_PREFIX__" | $(VBOX_PATH_PREFIX_MINGW32)g++ -m32 -E -xc++ - | $(SED) -e "/^$(HASH)/d")'
+endif
+ifdef VBOX_PATH_PREFIX_MINGW64
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW64_VERSION_CC                  ?= $(call VBOX_GCC_VERSION,$(VBOX_PATH_PREFIX_MINGW64)gcc -m64)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW64_VERSION_CXX                 ?= $(call VBOX_GCC_VERSION,$(VBOX_PATH_PREFIX_MINGW64)g++ -m64)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW64_Wno-array-bounds            ?= $(call VBOX_GCC_CHECK_EX_CXX,$(VBOX_PATH_PREFIX_MINGW64)g++ -m64,-Wno-array-bounds,)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW64_Wno-unused-but-set-variable ?= $(call VBOX_GCC_CHECK_EX_CXX,$(VBOX_PATH_PREFIX_MINGW64)g++ -m64,-Wno-unused-but-set-variable,)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW64_Wno-maybe-uninitialized     ?= $(call VBOX_GCC_CHECK_EX_CXX,$(VBOX_PATH_PREFIX_MINGW64)g++ -m64,-Wno-maybe-uninitialized,)'
+	$(QUIET)$(APPEND) '$@' 'VBOX_MINGW64_USER_LABEL_PREFIX           ?= $(shell echo "__USER_LABEL_PREFIX__" | $(VBOX_PATH_PREFIX_MINGW64)g++ -m64 -E -xc++ - | $(SED) -e "/^$(HASH)/d")'
+endif
 	$(QUIET)$(ECHO) '========= START OF $@ ========='
 	$(QUIET)$(CAT) $@
 	$(QUIET)$(ECHO) '=========== END OF $@ ========='
@@ -2826,6 +2884,7 @@ if1of ($(KBUILD_TARGET), linux)
    #
    VBOX_LINUX_INCS  += $(kernelpath)/include/asm-i386/mach-default \
                        $(kernelpath)/include/asm-x86/mach-default \
+                       $(kernelpath)/include/drm \
                        $(kernelpath)/arch/x86/include \
                        $(kernelpath)/arch/x86/include/asm/mach-default \
                        $(kernelpath)/arch/x86/include/uapi \
@@ -5173,6 +5232,7 @@ TEMPLATE_VBOXGUESTR0_SDKS.win.amd64 = ReorderCompilerIncs $(VBOX_WINDDK_GST) $(V
 TEMPLATE_VBOXGUESTR0_LIBS.win.x86   = \
 	$(PATH_SDK_$(VBOX_WINDDK)_LIB)/int64.lib
 TEMPLATE_VBOXGUESTR0_DEFS        = $(TEMPLATE_VBOXR0DRV_DEFS) IN_GUEST IN_GUEST_R0
+TEMPLATE_VBOXGUESTR0_DEFS.linux  = RT_NO_EXPORT_SYMBOL
 ifeq ($(KBUILD_TARGET),solaris)
  TEMPLATE_VBOXGUESTR0_LDFLAGS    = -r -dy
 endif
@@ -5608,13 +5668,18 @@ else
  	$(VBOX_JAVA_HOME)/include/$(VBOX_MD_OS)
 endif
 
-ifeq ($(KBUILD_TARGET), win)
-  VBOX_SEP=\;
+
+#
+# VBOX_SEP needs to be quoted when used on the shell command line.
+#
+if1of ($(KBUILD_TARGET), os2 win)
+ VBOX_SEP = $(SEMICOLON)
 else
-  VBOX_SEP=:
+ VBOX_SEP = $(COLON)
 endif
 VBOX_JAVAC_OPTS   = -encoding UTF-8 -source 1.5 -target 1.5 -Xlint:unchecked
 VBOX_JAVADOC_OPTS = -encoding UTF-8
+
 
 #
 # Legacy.

@@ -127,6 +127,10 @@
         <source>The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or there is a permission problem with /dev/vboxdrv. Please reinstall the kernel module by executing&lt;br/&gt;&lt;br/&gt;  &lt;font color=blue&gt;&apos;/etc/init.d/vboxdrv setup&apos;&lt;/font&gt;&lt;br/&gt;&lt;br/&gt;as root. If it is available in your distribution, you should install the DKMS package first. This package keeps track of Linux kernel changes and recompiles the vboxdrv kernel module if necessary.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Frame Size: %1x%2, Frame Rate: %3fps, Bit Rate: %4kbps</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>QIArrowSplitter</name>
@@ -184,7 +188,7 @@
     </message>
     <message>
         <source>Ignore</source>
-        <translation>Ezikusi</translation>
+        <translation type="obsolete">Ezikusi</translation>
     </message>
     <message>
         <source>&amp;Details</source>
@@ -215,20 +219,20 @@
     <message>
         <source>not complete</source>
         <comment>value state</comment>
-        <translation>ez betea</translation>
+        <translation type="obsolete">ez betea</translation>
     </message>
     <message>
         <source>invalid</source>
         <comment>value state</comment>
-        <translation>baliogabea</translation>
+        <translation type="obsolete">baliogabea</translation>
     </message>
     <message>
         <source>&lt;qt&gt;The value of the &lt;b&gt;%1&lt;/b&gt; field on the &lt;b&gt;%2&lt;/b&gt; page is %3.&lt;/qt&gt;</source>
-        <translation>&lt;qt&gt;&lt;b&gt;%2&lt;/b&gt; orrialdeko &lt;b&gt;%1&lt;/b&gt; eremuaren balioa %3 da.&lt;/qt&gt;</translation>
+        <translation type="obsolete">&lt;qt&gt;&lt;b&gt;%2&lt;/b&gt; orrialdeko &lt;b&gt;%1&lt;/b&gt; eremuaren balioa %3 da.&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&lt;qt&gt;One of the values on the &lt;b&gt;%1&lt;/b&gt; page is %2.&lt;/qt&gt;</source>
-        <translation>&lt;qt&gt;&lt;b&gt;%1&lt;/b&gt; orrialdeko balio bat %2 da.&lt;/qt&gt;</translation>
+        <translation type="obsolete">&lt;qt&gt;&lt;b&gt;%1&lt;/b&gt; orrialdeko balio bat %2 da.&lt;/qt&gt;</translation>
     </message>
 </context>
 <context>
@@ -378,16 +382,12 @@
         <translation>&amp;USB Gailuak</translation>
     </message>
     <message>
-        <source>&amp;Network Adapters...</source>
-        <translation></translation>
-    </message>
-    <message>
         <source>Change the settings of network adapters</source>
         <translation></translation>
     </message>
     <message>
         <source>&amp;Shared Folders...</source>
-        <translation>&amp;Partekatutako Karpetak...</translation>
+        <translation type="obsolete">&amp;Partekatutako Karpetak...</translation>
     </message>
     <message>
         <source>Create or modify shared folders</source>
@@ -436,15 +436,6 @@
         <translation></translation>
     </message>
     <message>
-        <source>Enable remote desktop (RDP) connections to this machine</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable &amp;Logging...</source>
-        <comment>debug action</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Switch to &amp;Fullscreen</source>
         <translation type="unfinished"></translation>
     </message>
@@ -461,15 +452,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Switch to &amp;Scale Mode</source>
+        <source>Switch to &amp;Scaled Mode</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Switch between normal and scale mode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable R&amp;emote Display</source>
+        <source>Switch between normal and scaled mode</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -521,7 +508,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Show a dialog with product information</source>
+        <source>Show a window with product information</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -555,7 +542,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Display the Virtual Media Manager dialog</source>
+        <source>Display the Virtual Media Manager window</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -580,7 +567,7 @@
         <translation type="unfinished">Hobes&amp;penak...</translation>
     </message>
     <message>
-        <source>Display the global settings dialog</source>
+        <source>Display the global settings window</source>
         <translation type="unfinished">Ezarpen orokor leihoa bistarazi</translation>
     </message>
     <message>
@@ -811,6 +798,62 @@
         <source>Shared &amp;Clipboard</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Drag&apos;n&apos;Drop</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save the machine state of the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Power off the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Network Settings...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Shared Folders Settings...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>R&amp;emote Display</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Toggle remote desktop (RDP) connections to this machine</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Video Capture</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Toggle video capture</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Video Capture Settings...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Configure video capture settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Logging...</source>
+        <comment>debug action</comment>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UIActonPool</name>
+    <message>
+        <source>Popup Menu</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIApplianceEditorWidget</name>
@@ -956,15 +999,15 @@
     <name>UIDescriptionPagePrivate</name>
     <message>
         <source>No description. Press the Edit button below to add it.</source>
-        <translation type="unfinished">Azalpenik ez. Editatu botoia sakatu berau gehitzeko.</translation>
+        <translation type="obsolete">Azalpenik ez. Editatu botoia sakatu berau gehitzeko.</translation>
     </message>
     <message>
         <source>Edit</source>
-        <translation type="unfinished">Editatu</translation>
+        <translation type="obsolete">Editatu</translation>
     </message>
     <message>
         <source>Edit (Ctrl+E)</source>
-        <translation type="unfinished">Editatu (Ktrl+E)</translation>
+        <translation type="obsolete">Editatu (Ktrl+E)</translation>
     </message>
 </context>
 <context>
@@ -972,231 +1015,112 @@
     <message>
         <source>Name</source>
         <comment>details report</comment>
-        <translation type="unfinished">Izena</translation>
+        <translation type="obsolete">Izena</translation>
     </message>
     <message>
         <source>OS Type</source>
         <comment>details report</comment>
-        <translation type="unfinished">SE mota</translation>
-    </message>
-    <message>
-        <source>Information inaccessible</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">SE mota</translation>
     </message>
     <message>
         <source>Base Memory</source>
         <comment>details report</comment>
-        <translation type="unfinished">Oinarri Memoria</translation>
+        <translation type="obsolete">Oinarri Memoria</translation>
     </message>
     <message>
         <source>&lt;nobr&gt;%1 MB&lt;/nobr&gt;</source>
         <comment>details report</comment>
-        <translation type="unfinished">&lt;nobr&gt;%4 MB&lt;/nobr&gt; {1 ?}</translation>
-    </message>
-    <message>
-        <source>Processors</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Execution Cap</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;nobr&gt;%1%&lt;/nobr&gt;</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">&lt;nobr&gt;%4 MB&lt;/nobr&gt; {1 ?}</translation>
     </message>
     <message>
         <source>Boot Order</source>
         <comment>details report</comment>
-        <translation type="unfinished">Abio Ordena</translation>
+        <translation type="obsolete">Abio Ordena</translation>
     </message>
     <message>
         <source>ACPI</source>
         <comment>details report</comment>
-        <translation type="unfinished">ACPI</translation>
+        <translation type="obsolete">ACPI</translation>
     </message>
     <message>
-        <source>IO APIC</source>
+        <source>I/O APIC</source>
         <comment>details report</comment>
-        <translation type="unfinished">IO APIC</translation>
-    </message>
-    <message>
-        <source>BIOS</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>VT-x/AMD-V</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Nested Paging</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>PAE/NX</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Acceleration</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">I/O APIC</translation>
     </message>
     <message>
         <source>Video Memory</source>
         <comment>details report</comment>
-        <translation type="unfinished">Bideo Memoria</translation>
-    </message>
-    <message>
-        <source>Screens</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>2D Video</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Bideo Memoria</translation>
     </message>
     <message>
         <source>3D</source>
         <comment>details report</comment>
-        <translation type="unfinished">3D</translation>
-    </message>
-    <message>
-        <source>Remote Desktop Server Port</source>
-        <comment>details report (VRDE Server)</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Remote Desktop Server</source>
-        <comment>details report (VRDE Server)</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">3D</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (VRDE Server)</comment>
-        <translation type="unfinished">Ezgaiturik</translation>
-    </message>
-    <message>
-        <source>(CD/DVD)</source>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Ezgaiturik</translation>
     </message>
     <message>
         <source>Not Attached</source>
         <comment>details report (Storage)</comment>
-        <translation type="unfinished">Ez erantsia</translation>
-    </message>
-    <message>
-        <source>Host Driver</source>
-        <comment>details report (audio)</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Controller</source>
-        <comment>details report (audio)</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Ez erantsia</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (audio)</comment>
-        <translation type="unfinished">Ezgaiturik</translation>
-    </message>
-    <message>
-        <source>Bridged adapter, %1</source>
-        <comment>details report (network)</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Internal network, &apos;%1&apos;</source>
-        <comment>details report (network)</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Host-only adapter, &apos;%1&apos;</source>
-        <comment>details report (network)</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Generic driver, &apos;%1&apos;</source>
-        <comment>details report (network)</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Generic driver, &apos;%1&apos; {&amp;nbsp;%2&amp;nbsp;}</source>
-        <comment>details report (network)</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Ezgaiturik</translation>
     </message>
     <message>
         <source>Adapter %1</source>
         <comment>details report (network)</comment>
-        <translation type="unfinished">%1 Moldagailua</translation>
+        <translation type="obsolete">%1 Moldagailua</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (network)</comment>
-        <translation type="unfinished">Ezgaiturik</translation>
-    </message>
-    <message>
-        <source>Port %1</source>
-        <comment>details report (serial ports)</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Ezgaiturik</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (serial ports)</comment>
-        <translation type="unfinished">Ezgaiturik</translation>
-    </message>
-    <message>
-        <source>Port %1</source>
-        <comment>details report (parallel ports)</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Ezgaiturik</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (parallel ports)</comment>
-        <translation type="unfinished">Ezgaiturik</translation>
+        <translation type="obsolete">Ezgaiturik</translation>
     </message>
     <message>
         <source>Device Filters</source>
         <comment>details report (USB)</comment>
-        <translation type="unfinished">Gailu Iragazkiak</translation>
+        <translation type="obsolete">Gailu Iragazkiak</translation>
     </message>
     <message>
         <source>%1 (%2 active)</source>
         <comment>details report (USB)</comment>
-        <translation type="unfinished">%1 (%2 aktibo)</translation>
+        <translation type="obsolete">%1 (%2 aktibo)</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (USB)</comment>
-        <translation type="unfinished">Ezgaiturik</translation>
+        <translation type="obsolete">Ezgaiturik</translation>
     </message>
     <message>
         <source>Shared Folders</source>
         <comment>details report (shared folders)</comment>
-        <translation type="unfinished">Partekatutako Karpetak</translation>
+        <translation type="obsolete">Partekatutako Karpetak</translation>
     </message>
     <message>
         <source>None</source>
         <comment>details report (shared folders)</comment>
-        <translation type="unfinished">Batez</translation>
+        <translation type="obsolete">Batez</translation>
     </message>
     <message>
         <source>None</source>
         <comment>details report (description)</comment>
-        <translation type="unfinished">Batez</translation>
+        <translation type="obsolete">Batez</translation>
     </message>
 </context>
 <context>
@@ -1232,9 +1156,9 @@
         <translation type="obsolete">ACPI</translation>
     </message>
     <message>
-        <source>IO APIC</source>
+        <source>I/O APIC</source>
         <comment>details report</comment>
-        <translation type="obsolete">IO APIC</translation>
+        <translation type="obsolete">I/O APIC</translation>
     </message>
     <message>
         <source>Video Memory</source>
@@ -1318,62 +1242,32 @@
     <message>
         <source>General</source>
         <comment>details report</comment>
-        <translation type="unfinished">Orokorra</translation>
-    </message>
-    <message>
-        <source>System</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Preview</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Display</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Storage</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Orokorra</translation>
     </message>
     <message>
         <source>Audio</source>
         <comment>details report</comment>
-        <translation type="unfinished">Audioa</translation>
+        <translation type="obsolete">Audioa</translation>
     </message>
     <message>
         <source>Network</source>
         <comment>details report</comment>
-        <translation type="unfinished">Sarea</translation>
+        <translation type="obsolete">Sarea</translation>
     </message>
     <message>
         <source>Serial Ports</source>
         <comment>details report</comment>
-        <translation type="unfinished">Serie Atakak</translation>
-    </message>
-    <message>
-        <source>Parallel Ports</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Serie Atakak</translation>
     </message>
     <message>
         <source>USB</source>
         <comment>details report</comment>
-        <translation type="unfinished">USB</translation>
+        <translation type="obsolete">USB</translation>
     </message>
     <message>
         <source>Shared Folders</source>
         <comment>details report</comment>
-        <translation type="unfinished">Partekatutako Karpetak</translation>
-    </message>
-    <message>
-        <source>Description</source>
-        <comment>details report</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Partekatutako Karpetak</translation>
     </message>
 </context>
 <context>
@@ -1397,11 +1291,11 @@
         <translation type="obsolete">Utzi</translation>
     </message>
     <message>
-        <source>Downloading the VirtualBox Guest Additions CD image from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
+        <source>Downloading the VirtualBox Guest Additions disk image file from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
         <translation type="obsolete">VirtualBox Bezero Gehigarri CD irudia &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;-etik deskargatzen...&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>Cancel the VirtualBox Guest Additions CD image download</source>
+        <source>Cancel the VirtualBox Guest Additions disk image file download</source>
         <translation type="obsolete">Utzi VirtualBox Bezero Gehigarri CD irudi deskarga</translation>
     </message>
     <message>
@@ -1452,11 +1346,11 @@
         <translation type="obsolete">Utzi</translation>
     </message>
     <message>
-        <source>Downloading the VirtualBox Guest Additions CD image from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
+        <source>Downloading the VirtualBox Guest Additions disk image file from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
         <translation type="obsolete">VirtualBox Bezero Gehigarri CD irudia &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;-etik deskargatzen...&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>Cancel the VirtualBox Guest Additions CD image download</source>
+        <source>Cancel the VirtualBox Guest Additions disk image file download</source>
         <translation type="obsolete">Utzi VirtualBox Bezero Gehigarri CD irudi deskarga</translation>
     </message>
     <message>
@@ -1524,8 +1418,8 @@
         <translation type="obsolete">Euskarri Mota</translation>
     </message>
     <message>
-        <source>&amp;CD/DVD-ROM Device</source>
-        <translation type="obsolete">&amp;CD/DVD-ROM Gailua</translation>
+        <source>&amp;CD/DVD Device</source>
+        <translation type="obsolete">&amp;CD/DVD Gailua</translation>
     </message>
     <message>
         <source>Alt+C</source>
@@ -1584,8 +1478,8 @@
         <translation type="obsolete">Laburpena</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM Device</source>
-        <translation type="obsolete">CD/DVD-ROM Gailua</translation>
+        <source>CD/DVD Device</source>
+        <translation type="obsolete">CD/DVD Gailua</translation>
     </message>
     <message>
         <source>Floppy Device</source>
@@ -1600,7 +1494,7 @@
         <translation type="obsolete">&lt;table&gt;&lt;tr&gt;&lt;td&gt;Mota:&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Jatorria:&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for booting an operating system of your choice on the virtual machine.&lt;/p&gt;&lt;p&gt;Note that you will not be able to install an operating system into this virtual machine right now because you did not attach any hard disk to it. If this is not what you want, you can cancel the execution of this wizard, select &lt;b&gt;Settings&lt;/b&gt; from the &lt;b&gt;Machine&lt;/b&gt; menu of the main VirtualBox window to access the settings dialog of this machine and change the hard disk configuration.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel the execution of this wizard.&lt;/p&gt;</source>
+        <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for booting an operating system of your choice on the virtual machine.&lt;/p&gt;&lt;p&gt;Note that you will not be able to install an operating system into this virtual machine right now because you did not attach any hard disk to it. If this is not what you want, you can cancel the execution of this wizard, select &lt;b&gt;Settings&lt;/b&gt; from the &lt;b&gt;Machine&lt;/b&gt; menu of the main VirtualBox window to access the settings window of this machine and change the hard disk configuration.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel the execution of this wizard.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Sortu  berri duzun makina birtuala lehen aldiz abiarazi duzu. Morroi honek hautatu duzun sistema eragile makina birtualean abiarazteko bete beharreko urratsak betetzen lagunduko zaitu.&lt;/p&gt;&lt;p&gt;Kontutan izan ezin duzula sistema eragile bat orain instalatu makina birtual honetan ez bait duzu disko gogorrik erantsi makina birtualari. Hau ez bada nahi duzuna, morroi honen exekuzioa utzi dezakezu, &lt;b&gt;Ezarpenak&lt;/b&gt; hautatu VirtusalBox leiho nagusiaren &lt;b&gt;Makina&lt;/b&gt; menutik makina honen ezapen leihoa eskuratzeko eta disko gogor konfigurazioa aldatu.&lt;/p&gt;&lt;p&gt;Erabili &lt;b&gt;Hurrengoa&lt;/b&gt; botoia morroiko hurrengo orrialdera joateko eta &lt;b&gt;Atzera&lt;/b&gt; botoia sakatu aurreko orrialdera joateko. &lt;b&gt;Utzi&lt;/b&gt; sakatu dezakezu morroiaren exekuzioa bertan behera uzteko.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -1677,8 +1571,68 @@
         <translation type="obsolete">Laburpena</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM Device</source>
-        <translation type="obsolete">CD/DVD-ROM Gailua</translation>
+        <source>CD/DVD Device</source>
+        <translation type="obsolete">CD/DVD Gailua</translation>
+    </message>
+</context>
+<context>
+    <name>UIGChooserItemGroup</name>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt;</source>
+        <comment>Group item tool-tip / Group name</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n group(s)</source>
+        <comment>Group item tool-tip / Group info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Group info wrapper</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>%n machine(s)</source>
+        <comment>Group item tool-tip / Machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>(%n running)</source>
+        <comment>Group item tool-tip / Running machine info</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;nobr&gt;%1 %2&lt;/nobr&gt;</source>
+        <comment>Group item tool-tip / Machine info wrapper, including running</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Collapse group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Expand group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enter group</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exit group</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1920,6 +1874,31 @@
         <comment>details (shared folders)</comment>
         <translation type="unfinished">Partekatutako Karpetak</translation>
     </message>
+    <message>
+        <source>Video Capture File</source>
+        <comment>details (display/video capture)</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Video Capture Attributes</source>
+        <comment>details (display/video capture)</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Video Capture</source>
+        <comment>details (display/video capture)</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <comment>details (display/video capture)</comment>
+        <translation type="unfinished">Ezgaiturik</translation>
+    </message>
+    <message>
+        <source>NAT Network, &apos;%1&apos;</source>
+        <comment>details (network)</comment>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIGDetailsUpdateThreadAudio</name>
@@ -2123,10 +2102,6 @@
 <context>
     <name>UIGlobalSettingsExtension</name>
     <message>
-        <source>&amp;Extension Packages:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Lists all installed packages.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2162,19 +2137,23 @@
         <source>Extensions</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>&amp;Extension Packages</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIGlobalSettingsGeneral</name>
     <message>
-        <source>Displays the path to the default VDI folder. This folder is used, if not explicitly specified otherwise, when adding existing or creating new virtual hard disks.</source>
+        <source>Holds the path to the default VDI folder. This folder is used, if not explicitly specified otherwise, when adding existing or creating new virtual hard disks.</source>
         <translation type="obsolete">Lehenetsiriko VDI karpetaren bidea bistaratzen du. Karpeta hau erabiliko, beste ezer zehazten ez den bitartean, disko gogor birtual sortu edo gehitzerakoan.</translation>
     </message>
     <message>
-        <source>Displays the path to the default virtual machine folder. This folder is used, if not explicitly specified otherwise, when creating new virtual machines.</source>
+        <source>Holds the path to the default virtual machine folder. This folder is used, if not explicitly specified otherwise, when creating new virtual machines.</source>
         <translation type="unfinished">Lehenetsiriko makina birtual karpetaren bidea bistaratzen du. Karpeta hau erabiliko, beste ezer zehazten ez den bitartean, makina birtualak sortzerakoan.</translation>
     </message>
     <message>
-        <source>Displays the path to the library that provides authentication for Remote Display (VRDP) clients.</source>
+        <source>Holds the path to the library that provides authentication for Remote Display (VRDP) clients.</source>
         <translation type="unfinished">Urruneko Pantaila (VRDP) bezeroentzat autentifikazioaz hornitzen duen liburutegiaren bidea erakusten du.</translation>
     </message>
     <message>
@@ -2186,35 +2165,35 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>When checked, the application will provide an icon with the context menu in the system tray.</source>
+        <source>&amp;Dock and Menubar:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Show System Tray Icon</source>
+        <source>Auto-Show in Fullscreen</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <source>When checked, the host dock and menu bar will be shown when the virtual machine is in fullscreen mode.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>When checked, the host screen saver will be disabled whenever a virtual machine is running.</source>
+        <source>&amp;Host Screensaver:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Disable Host &amp;ScreenSaver</source>
+        <source>When checked, the host screensaver will be disabled whenever a virtual machine is running.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Disable When Running Virtual Machines</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>UIGlobalSettingsInput</name>
     <message>
-        <source>Host &amp;Key:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
-        <translation type="unfinished">MB leihoan Ostalari Tekla bezala erabilitakoa tekla erakusten du. Eremua gaitu eta Ostalari Tekla berria sakatu. Kontutan izan alfazenbakizkoak, kurtsore mugimenduak eta edizio teklak ezin direla Ostalari tekla bezala erabili.</translation>
+        <source>Holds the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
+        <translation type="obsolete">MB leihoan Ostalari Tekla bezala erabilitakoa tekla erakusten du. Eremua gaitu eta Ostalari Tekla berria sakatu. Kontutan izan alfazenbakizkoak, kurtsore mugimenduak eta edizio teklak ezin direla Ostalari tekla bezala erabili.</translation>
     </message>
     <message>
         <source>When checked, the keyboard is automatically captured every time the VM window is activated. When the keyboard is captured, all keystrokes (including system ones like Alt-Tab) are directed to the VM.</source>
@@ -2225,11 +2204,27 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Reset host combination</source>
+        <source>Host Key Combination</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Resets the key combination used as the host combination in the VM window.</source>
+        <source>Some items have the same shortcuts assigned.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;VirtualBox Manager</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Virtual &amp;Machine</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Lists all the available shortcuts which can be configured.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enter a sequence to filter the shortcut list.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2260,10 +2255,6 @@
         <translation type="unfinished">Hizkuntza:</translation>
     </message>
     <message>
-        <source>&amp;Interface Language:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Lists all available user interface languages. The effective language is written in &lt;b&gt;bold&lt;/b&gt;. Select &lt;i&gt;Default&lt;/i&gt; to reset to the system default language.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2287,37 +2278,13 @@
         <source>Author(s):</source>
         <translation type="unfinished">Egilea(k):</translation>
     </message>
+    <message>
+        <source>&amp;Interface Languages</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIGlobalSettingsNetwork</name>
-    <message>
-        <source>host IPv4 address of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>host IPv4 network mask of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>host IPv6 address of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>DHCP server address of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>DHCP server network mask of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>DHCP lower address bound of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>DHCP upper address bound of &lt;b&gt;%1&lt;/b&gt; is wrong</source>
-        <translation type="unfinished"></translation>
-    </message>
     <message>
         <source>Adapter</source>
         <translation type="unfinished">Moldagailua</translation>
@@ -2411,10 +2378,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Host-only Networks:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Lists all available host-only networks.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -2426,9 +2389,134 @@
         <source>Networking</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>&amp;NAT Networks</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Lists all available NAT networks.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Host-only Networks</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No new name specified for the NAT network previously called &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No CIDR specified for the NAT network &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No CIDR specified for the NAT network previously called &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Invalid CIDR specified (&lt;i&gt;%1&lt;/i&gt;) for the NAT network &lt;b&gt;%2&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Invalid CIDR specified (&lt;i&gt;%1&lt;/i&gt;) for the NAT network previously called &lt;b&gt;%2&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network Name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>[empty]</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 (renamed from %2)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Old Network Name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>New Network Name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network CIDR</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Supports DHCP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>yes</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>no</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Supports IPv6</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Default IPv6 route</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid IPv4 address.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid IPv4 network mask.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid IPv6 address.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid DHCP server address.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid DHCP server mask.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid DHCP server lower address bound.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Host interface &lt;b&gt;%1&lt;/b&gt; does not currently have a valid DHCP server upper address bound.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The name &lt;b&gt;%1&lt;/b&gt; is being used for several NAT networks.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Active</source>
+        <comment>NAT network</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Add NAT network</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Remove NAT network</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Edit NAT network</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
-    <name>UIGlobalSettingsNetworkDetails</name>
+    <name>UIGlobalSettingsNetworkDetailsHost</name>
     <message>
         <source>Host-only Network Details</source>
         <translation type="unfinished"></translation>
@@ -2450,7 +2538,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the host IPv4 address for this adapter.</source>
+        <source>Holds the host IPv4 address for this adapter.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2458,7 +2546,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the host IPv4 network mask for this adapter.</source>
+        <source>Holds the host IPv4 network mask for this adapter.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2466,7 +2554,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the host IPv6 address for this adapter if IPv6 is supported.</source>
+        <source>Holds the host IPv6 address for this adapter if IPv6 is supported.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2474,7 +2562,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the host IPv6 network mask prefix length for this adapter if IPv6 is supported.</source>
+        <source>Holds the host IPv6 network mask prefix length for this adapter if IPv6 is supported.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2494,7 +2582,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the address of the DHCP server servicing the network associated with this host-only adapter.</source>
+        <source>Holds the address of the DHCP server servicing the network associated with this host-only adapter.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2502,7 +2590,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the network mask of the DHCP server servicing the network associated with this host-only adapter.</source>
+        <source>Holds the network mask of the DHCP server servicing the network associated with this host-only adapter.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2510,7 +2598,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the lower address bound offered by the DHCP server servicing the network associated with this host-only adapter.</source>
+        <source>Holds the lower address bound offered by the DHCP server servicing the network associated with this host-only adapter.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2518,7 +2606,89 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the upper address bound offered by the DHCP server servicing the network associated with this host-only adapter.</source>
+        <source>Holds the upper address bound offered by the DHCP server servicing the network associated with this host-only adapter.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UIGlobalSettingsNetworkDetailsNAT</name>
+    <message>
+        <source>NAT Network Details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Enable Network</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enable this NAT network.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network &amp;Name:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Holds the name for this network.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network &amp;CIDR:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Holds the CIDR for this network.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Network Options:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Supports &amp;DHCP</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Determines whether this network supports DHCP.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Supports &amp;IPv6</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Determines whether this network supports IPv6.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Advertise Default IPv6 &amp;Route</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Determines whether this network should be advertised as the default IPv6 route.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Opens a window to manage port forwarding rules.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Port Forwarding</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UIGlobalSettingsPortForwardingDlg</name>
+    <message>
+        <source>Port Forwarding Rules</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>IPv4</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>IPv6</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2529,7 +2699,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Enable proxy</source>
+        <source>&amp;Enable Proxy</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2549,27 +2719,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>When checked the authentication supplied will be used with the proxy server.</source>
+        <source>No proxy host is currently specified.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Use authentication</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>User &amp;name:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Changes the user name used for authentication.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Pass&amp;word:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Changes the password used for authentication.</source>
+        <source>No proxy port is currently specified.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2580,7 +2734,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Check for updates</source>
+        <source>&amp;Check for Updates</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2604,7 +2758,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Stable release versions</source>
+        <source>&amp;Stable Release Versions</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2612,7 +2766,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;All new releases</source>
+        <source>&amp;All New Releases</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -2620,7 +2774,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>All new releases and &amp;pre-releases</source>
+        <source>All New Releases and &amp;Pre-Releases</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -2634,12 +2788,16 @@
 <context>
     <name>UIHostComboEditor</name>
     <message>
+        <source>&lt;key_%1&gt;</source>
+        <translation type="unfinished">&lt;%1_tekla&gt;</translation>
+    </message>
+    <message>
         <source>Left </source>
-        <translation>Ezker </translation>
+        <translation type="unfinished">Ezker </translation>
     </message>
     <message>
         <source>Right </source>
-        <translation>Eskuin </translation>
+        <translation type="unfinished">Eskuin </translation>
     </message>
     <message>
         <source>Left Shift</source>
@@ -2663,35 +2821,102 @@
     </message>
     <message>
         <source>Right Alt</source>
-        <translation>Eskuin Alt</translation>
+        <translation type="unfinished">Eskuin Alt</translation>
     </message>
     <message>
         <source>Left WinKey</source>
-        <translation>Ezker WinTekla</translation>
+        <translation type="unfinished">Ezker WinTekla</translation>
     </message>
     <message>
         <source>Right WinKey</source>
-        <translation>Eskuin WinTekla</translation>
+        <translation type="unfinished">Eskuin WinTekla</translation>
     </message>
     <message>
         <source>Menu key</source>
-        <translation>Menu tekla</translation>
+        <translation type="unfinished">Menu tekla</translation>
     </message>
     <message>
         <source>Alt Gr</source>
-        <translation>Alt Gr</translation>
+        <translation type="unfinished">Alt Gr</translation>
     </message>
     <message>
         <source>Caps Lock</source>
-        <translation>Caps Lock</translation>
+        <translation type="unfinished">Caps Lock</translation>
     </message>
     <message>
         <source>Scroll Lock</source>
-        <translation>Scroll Lock</translation>
+        <translation type="unfinished">Scroll Lock</translation>
+    </message>
+    <message>
+        <source>Host+</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>None</source>
+        <translation type="unfinished">Batez</translation>
+    </message>
+</context>
+<context>
+    <name>UIHotKeyEditor</name>
+    <message>
+        <source>Left </source>
+        <translation type="obsolete">Ezker </translation>
+    </message>
+    <message>
+        <source>Right </source>
+        <translation type="obsolete">Eskuin </translation>
+    </message>
+    <message>
+        <source>Left Shift</source>
+        <translation type="obsolete">Esker Shift</translation>
+    </message>
+    <message>
+        <source>Right Shift</source>
+        <translation type="obsolete">Eskuin Shift</translation>
+    </message>
+    <message>
+        <source>Left Ctrl</source>
+        <translation type="obsolete">Ezker Ktrl</translation>
+    </message>
+    <message>
+        <source>Right Ctrl</source>
+        <translation type="obsolete">Eskuin Ktrl</translation>
+    </message>
+    <message>
+        <source>Left Alt</source>
+        <translation type="obsolete">Ezker Alt</translation>
+    </message>
+    <message>
+        <source>Right Alt</source>
+        <translation type="obsolete">Eskuin Alt</translation>
+    </message>
+    <message>
+        <source>Left WinKey</source>
+        <translation type="obsolete">Ezker WinTekla</translation>
+    </message>
+    <message>
+        <source>Right WinKey</source>
+        <translation type="obsolete">Eskuin WinTekla</translation>
+    </message>
+    <message>
+        <source>Menu key</source>
+        <translation type="obsolete">Menu tekla</translation>
+    </message>
+    <message>
+        <source>Alt Gr</source>
+        <translation type="obsolete">Alt Gr</translation>
+    </message>
+    <message>
+        <source>Caps Lock</source>
+        <translation type="obsolete">Caps Lock</translation>
+    </message>
+    <message>
+        <source>Scroll Lock</source>
+        <translation type="obsolete">Scroll Lock</translation>
     </message>
     <message>
         <source>&lt;key_%1&gt;</source>
-        <translation>&lt;%1_tekla&gt;</translation>
+        <translation type="obsolete">&lt;%1_tekla&gt;</translation>
     </message>
     <message>
         <source>F1</source>
@@ -2791,7 +3016,26 @@
     </message>
     <message>
         <source>None</source>
-        <translation type="unfinished">Batez</translation>
+        <translation type="obsolete">Batez</translation>
+    </message>
+    <message>
+        <source>Reset shortcut to default</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unset shortcut</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UIHotKeyTableModel</name>
+    <message>
+        <source>Name</source>
+        <translation type="unfinished">Izena</translation>
+    </message>
+    <message>
+        <source>Shortcut</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -2921,15 +3165,19 @@
         <translation></translation>
     </message>
     <message>
-        <source>Indicates whether the Remote Desktop Server is enabled (&lt;img src=:/vrdp_16px.png/&gt;) or not (&lt;img src=:/vrdp_disabled_16px.png/&gt;).</source>
+        <source>&lt;nobr&gt;Indicates video capturing activity:&lt;/nobr&gt;&lt;br&gt;%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;hr&gt;The Remote Desktop Server is listening on port %1</source>
+        <source>&lt;nobr&gt;&lt;b&gt;Video capture disabled&lt;/b&gt;&lt;/nobr&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Indicates the status of different features used by this virtual machine:&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%1:&lt;/b&gt;&amp;nbsp;%2&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%3:&lt;/b&gt;&amp;nbsp;%4&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%5:&lt;/b&gt;&amp;nbsp;%6%&lt;/nobr&gt;</source>
+        <source>&lt;nobr&gt;&lt;b&gt;Video capture file:&lt;/b&gt; %1&lt;/nobr&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Additional feature status:&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%1:&lt;/b&gt;&amp;nbsp;%2&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%3:&lt;/b&gt;&amp;nbsp;%4&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%5:&lt;/b&gt;&amp;nbsp;%6&lt;/nobr&gt;&lt;br&gt;&lt;nobr&gt;&lt;b&gt;%7:&lt;/b&gt;&amp;nbsp;%8%&lt;/nobr&gt;</source>
         <comment>Virtualization Stuff LED</comment>
         <translation type="unfinished"></translation>
     </message>
@@ -2954,22 +3202,6 @@
     <message>
         <source>Snapshot %1</source>
         <translation>%1 egoera-argazkia</translation>
-    </message>
-    <message>
-        <source>No CD/DVD Devices Attached</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>No CD/DVD devices attached to that VM</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>No Floppy Devices Attached</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>No floppy devices attached to that VM</source>
-        <translation></translation>
     </message>
     <message>
         <source>No USB Devices Connected</source>
@@ -3013,10 +3245,6 @@
 </context>
 <context>
     <name>UIMachineSettingsDisplay</name>
-    <message>
-        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
-        <translation type="unfinished"></translation>
-    </message>
     <message>
         <source>&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</source>
         <translation type="unfinished">&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</translation>
@@ -3082,10 +3310,6 @@
         <translation type="unfinished">Bezero autentifikazioen denbora-muga ezartzen du, milisegundotan.</translation>
     </message>
     <message>
-        <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required for HD Video to be played efficiently.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>When checked, the virtual machine will be given access to the Video Acceleration capabilities available on the host.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -3118,15 +3342,130 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>you have 3D Acceleration enabled for a operation system which uses the WDDM video driver. For maximal performance set the guest VRAM to at least &lt;b&gt;%1&lt;/b&gt;.</source>
+        <source>Video &amp;Capture</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>you have 2D Video Acceleration enabled. As 2D Video Acceleration is supported for Windows guests only, this feature will be disabled.</source>
+        <source>When checked, VirtualBox will record the virtual machine session as a video file.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>you enabled 3D acceleration. However, 3D acceleration is not working on the current host setup so you will not be able to start the VM.</source>
+        <source>&amp;Enable Video Capture</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>File &amp;Path:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the filename VirtualBox uses to save the recorded content.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Frame &amp;Size:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the resolution (frame size) of the recorded video.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the &lt;b&gt;horizontal&lt;/b&gt; resolution (frame width) of the recorded video.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the &lt;b&gt;vertical&lt;/b&gt; resolution (frame height) of the recorded video.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Frame Rate:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the maximum number of &lt;b&gt;frames per second&lt;/b&gt;. Additional frames will be skipped. Reducing this value will increase the number of skipped frames and reduce the file size.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Quality:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the &lt;b&gt;quality&lt;/b&gt;. Increasing this value will make the video look better at the cost of an increased file size.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This setting determines the bitrate in &lt;b&gt;kilobits per second&lt;/b&gt;. Increasing this value will make the video look better at the cost of an increased file size.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Screens:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The virtual machine is set up to use hardware graphics acceleration. However the host system does not currently provide this, so you will not be able to start the machine.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The virtual machine is currently assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required to switch to fullscreen or seamless mode.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The virtual machine is currently assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required for High Definition Video to be played efficiently.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The virtual machine is set up to use hardware graphics acceleration and the operating system hint is set to Windows Vista or later. For best performance you should set the machine&apos;s video memory to at least b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The virtual machine is set up to use Video Stream Acceleration. As this feature only works with Windows guest systems it will be disabled.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The VRDE server port value is not currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The VRDE authentication timeout value is not currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>User Defined</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 fps</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>fps</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>low</source>
+        <comment>quality</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>medium</source>
+        <comment>quality</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>high</source>
+        <comment>quality</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>kbps</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Screen %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enable video recording for screen %1.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -3137,7 +3476,7 @@
         <translation type="obsolete">&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</translation>
     </message>
     <message>
-        <source>Displays the path where snapshots of this virtual machine will be stored. Be aware that snapshots can take quite a lot of disk space.</source>
+        <source>Holds the path where snapshots of this virtual machine will be stored. Be aware that snapshots can take quite a lot of disk space.</source>
         <translation type="unfinished">Makina birtual honen egoera-argazkiak gordeko diren bidea erakusten du. Kontutan izan egoera-argazkiek disko leku asko erabili dezaketela.</translation>
     </message>
     <message>
@@ -3145,11 +3484,11 @@
         <translation type="unfinished">&amp;Basikoa</translation>
     </message>
     <message>
-        <source>Displays the name of the virtual machine.</source>
+        <source>Holds the name of the virtual machine.</source>
         <translation type="obsolete">Makina birtualaren izena bistaratzen du.</translation>
     </message>
     <message>
-        <source>Displays the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
+        <source>Selects the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
         <translation type="obsolete">Makina birtual honetan instalatzea pentsatzen duzun sistema eragilea erakusten du (sistema eragile bezeroa deiturikoa).</translation>
     </message>
     <message>
@@ -3233,11 +3572,11 @@
         <translation type="unfinished">A&amp;zalpena</translation>
     </message>
     <message>
-        <source>Displays the description of the virtual machine. The description field is useful for commenting on configuration details of the installed guest OS.</source>
+        <source>Holds the description of the virtual machine. The description field is useful for commenting on configuration details of the installed guest OS.</source>
         <translation type="unfinished">Makina birtualaren azalpena erakusten du. Azalpenen eremua instalaturiko bezero sistemaren eragileari edo konfigurazioari buruz iruzkinak egiteko da erabilgarria.</translation>
     </message>
     <message>
-        <source>If checked, any change to mounted CD/DVD or Floppy media performed during machine execution will be saved in the settings file in order to preserve the configuration of mounted media between runs.</source>
+        <source>If checked, any CD/DVD or floppy disks inserted into or removed from the virtual drives while the machine is running will be remembered.</source>
         <translation type="unfinished">Markaturik badago, Muntaturiko CD/DVD edo diskete euskarrietan eginiko edozein aldaketa gorde egingo da, abiarazteen artean muntaturiko medioen konfigurazioa mantentzeko.</translation>
     </message>
     <message>
@@ -3257,7 +3596,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Show In &amp;Fullscreen/Seamless</source>
+        <source>Show in &amp;Fullscreen/Seamless</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3265,11 +3604,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Show At &amp;Top Of Screen</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>you have selected a 64-bit guest OS type for this VM. As such guests require hardware virtualization (VT-x/AMD-V), this feature will be enabled automatically.</source>
+        <source>Show at &amp;Top of Screen</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3280,21 +3615,17 @@
         <source>Selects which data will be copied between the guest and the host OS by drag&apos;n&apos;drop. This feature requires Guest Additions to be installed in the guest OS.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>No name specified for the virtual machine.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The virtual machine operating system hint is set to a 64-bit type. 64-bit guest systems require hardware virtualization, so this will be enabled automatically if you confirm the changes.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIMachineSettingsNetwork</name>
-    <message>
-        <source>no bridged network adapter is selected</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no internal network name is specified</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no host-only network adapter is selected</source>
-        <translation type="unfinished"></translation>
-    </message>
     <message>
         <source>Not selected</source>
         <comment>network adapter name</comment>
@@ -3363,11 +3694,11 @@
         <translation type="obsolete">Ka&amp;blea Konektaturik</translation>
     </message>
     <message>
-        <source>Displays the TAP interface name.</source>
+        <source>Holds the TAP interface name.</source>
         <translation type="obsolete">TAP interfaze izena bistaratzen du.</translation>
     </message>
     <message>
-        <source>Displays the command executed to set up the TAP interface.</source>
+        <source>Holds the command executed to set up the TAP interface.</source>
         <translation type="obsolete">TAP interfazea konfiguratzeko exekutatutako komandoa bistaratzen du.</translation>
     </message>
     <message>
@@ -3375,7 +3706,7 @@
         <translation type="obsolete">Konfigurazio aplikazioa Hautatzen du.</translation>
     </message>
     <message>
-        <source>Displays the command executed to terminate the TAP interface.</source>
+        <source>Holds the command executed to terminate the TAP interface.</source>
         <translation type="obsolete">TAP interfazea amaitzeko exekutatutako komandoa bistaratzen du.</translation>
     </message>
     <message>
@@ -3395,15 +3726,15 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the MAC address of this adapter. It contains exactly 12 characters chosen from {0-9,A-F}. Note that the second character must be an even digit.</source>
+        <source>Holds the MAC address of this adapter. It contains exactly 12 characters chosen from {0-9,A-F}. Note that the second character must be an even digit.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Cable connected</source>
+        <source>&amp;Cable Connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Opens dialog to manage port forwarding rules.</source>
+        <source>Opens a window to manage port forwarding rules.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3427,15 +3758,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>no generic driver is selected</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Selects the network adapter on the host system that traffic to and from this network card will go through.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Enter the name of the internal network that this network card will be connected to. You can create a new internal network by choosing a name which is not used by any other network cards in this virtual machine or others.</source>
+        <source>Holds the name of the internal network that this network card will be connected to. You can create a new internal network by choosing a name which is not used by any other network cards in this virtual machine or others.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3451,11 +3778,35 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>the MAC address must be 12 hexadecimal digits long.</source>
+        <source>No bridged network adapter is currently selected.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>the second digit in the MAC address may not be odd as only unicast addresses are allowed.</source>
+        <source>No internal network name is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No host-only network adapter is currently selected.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No generic driver is currently selected.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The MAC address must be 12 hexadecimal digits long.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The second digit in the MAC address may not be odd as only unicast addresses are allowed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No NAT network name is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Holds the name of the NAT network that this network card will be connected to. You can create and remove networks using the global network settings in the virtual machine manager window.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -3490,7 +3841,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the parallel port number. You can choose one of the standard parallel ports or select &lt;b&gt;User-defined&lt;/b&gt; and specify port parameters manually.</source>
+        <source>Holds the parallel port number. You can choose one of the standard parallel ports or select &lt;b&gt;User-defined&lt;/b&gt; and specify port parameters manually.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3506,15 +3857,15 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the host parallel device name.</source>
+        <source>Holds the host parallel device name.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the IRQ number of this parallel port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;IO APIC&lt;/b&gt; setting is enabled for this virtual machine.</source>
+        <source>Holds the IRQ number of this parallel port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;I/O APIC&lt;/b&gt; setting is enabled for this virtual machine.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the base I/O port address of this parallel port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
+        <source>Holds the base I/O port address of this parallel port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -3522,15 +3873,31 @@
     <name>UIMachineSettingsParallelPage</name>
     <message>
         <source>Duplicate port number selected </source>
-        <translation type="unfinished">Bikoizturiko ataka zenbakia hautatu da </translation>
-    </message>
-    <message>
-        <source>Port path not specified </source>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Bikoizturiko ataka zenbakia hautatu da </translation>
     </message>
     <message>
         <source>Duplicate port path entered </source>
-        <translation type="unfinished">Bikoizturiko ataka bidea idatzi da </translation>
+        <translation type="obsolete">Bikoizturiko ataka bidea idatzi da </translation>
+    </message>
+    <message>
+        <source>No IRQ is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No I/O port is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Two or more ports have the same settings.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No port path is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>There are currently duplicate port paths specified.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -3627,7 +3994,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Auto-Mount</source>
+        <source>Auto-mount</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3658,7 +4025,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the name of the shared folder (as it will be seen by the guest OS).</source>
+        <source>Holds the name of the shared folder (as it will be seen by the guest OS).</source>
         <translation type="unfinished">Partekatutako karpetaren izen bistaratzen du (Ostalari PC-an ikusiko den bezala).</translation>
     </message>
     <message>
@@ -3706,7 +4073,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the serial port number. You can choose one of the standard serial ports or select &lt;b&gt;User-defined&lt;/b&gt; and specify port parameters manually.</source>
+        <source>Selects the serial port number. You can choose one of the standard serial ports or select &lt;b&gt;User-defined&lt;/b&gt; and specify port parameters manually.</source>
         <translation type="unfinished">Serie ataka zenbakia bistarazi. Serie ataka estandarretako bat hautatu edo &lt;b&gt;Erabiltzaileak-definituriko&lt;/b&gt; bat eta ataka parametroak eskuz ezarri.</translation>
     </message>
     <message>
@@ -3714,15 +4081,15 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the IRQ number of this serial port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;IO APIC&lt;/b&gt; is enabled for this virtual machine.</source>
-        <translation type="obsolete">Serie ataka honen IRQ zenbakia bistarazi. Balio erabilgarriak zenbaki osoak &lt;tt&gt;0&lt;/tt&gt; eta &lt;tt&gt;255&lt;/tt&gt; artean. &lt;tt&gt;15&lt;/tt&gt; baina balioa handiagoak erabiltzeko &lt;b&gt;IO APIC&lt;/b&gt; gaiturik egon behar da makina birtual honetan.</translation>
+        <source>Holds the IRQ number of this serial port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;I/O APIC&lt;/b&gt; is enabled for this virtual machine.</source>
+        <translation type="obsolete">Serie ataka honen IRQ zenbakia bistarazi. Balio erabilgarriak zenbaki osoak &lt;tt&gt;0&lt;/tt&gt; eta &lt;tt&gt;255&lt;/tt&gt; artean. &lt;tt&gt;15&lt;/tt&gt; baina balioa handiagoak erabiltzeko &lt;b&gt;I/O APIC&lt;/b&gt; gaiturik egon behar da makina birtual honetan.</translation>
     </message>
     <message>
         <source>I/O Po&amp;rt:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the base I/O port address of this serial port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
+        <source>Holds the base I/O port address of this serial port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
         <translation type="obsolete">Serie ataka honen oinarri S/I helbidea bistaratzen du. Balio erabilgarria zenbaki osoak &lt;tt&gt;0&lt;/tt&gt; eta &lt;tt&gt;0xFFFF&lt;/tt&gt; tartean.</translation>
     </message>
     <message>
@@ -3742,7 +4109,7 @@
         <translation type="unfinished">&amp;Sortu Kanalizazioa</translation>
     </message>
     <message>
-        <source>Displays the path to the serial port&apos;s pipe on the host when the port is working in &lt;b&gt;Host Pipe&lt;/b&gt; mode, or the host serial device name when the port is working in &lt;b&gt;Host Device&lt;/b&gt; mode.</source>
+        <source>Holds the path to the serial port&apos;s pipe on the host when the port is working in &lt;b&gt;Host Pipe&lt;/b&gt; mode, or the host serial device name when the port is working in &lt;b&gt;Host Device&lt;/b&gt; mode.</source>
         <translation type="unfinished">Ostalarian Serial atakarako kanalizazioaren bidea erakusten du ataka &lt;b&gt;Ostalari Kanalizazio&lt;/b&gt; moduan funtzionatzean, edo serie ataka izena atakak &lt;b&gt;Ostalari Gailua&lt;/b&gt; moduan funtzinoatzean.</translation>
     </message>
     <message>
@@ -3750,11 +4117,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the IRQ number of this serial port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;IO APIC&lt;/b&gt; setting is enabled for this virtual machine.</source>
+        <source>Holds the IRQ number of this serial port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;I/O APIC&lt;/b&gt; setting is enabled for this virtual machine.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the base I/O port address of this serial port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
+        <source>Holds the base I/O port address of this serial port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -3762,15 +4129,31 @@
     <name>UIMachineSettingsSerialPage</name>
     <message>
         <source>Duplicate port number selected </source>
-        <translation type="unfinished">Bikoizturiko ataka zenbakia hautatu da </translation>
-    </message>
-    <message>
-        <source>Port path not specified </source>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">Bikoizturiko ataka zenbakia hautatu da </translation>
     </message>
     <message>
         <source>Duplicate port path entered </source>
-        <translation type="unfinished">Bikoizturiko ataka bidea idatzi da </translation>
+        <translation type="obsolete">Bikoizturiko ataka bidea idatzi da </translation>
+    </message>
+    <message>
+        <source>No IRQ is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No I/O port is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Two or more ports have the same settings.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No port path is currently specified.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>There are currently duplicate port paths specified.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -3793,10 +4176,6 @@
     </message>
     <message>
         <source>&lt;nobr&gt;Add&amp;nbsp;Floppy&amp;nbsp;Device&lt;/nobr&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;i&gt;%1&lt;/i&gt; uses a medium that is already attached to &lt;i&gt;%2&lt;/i&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3857,22 +4236,6 @@
     </message>
     <message>
         <source>Removes the attachment highlighted in the Storage Tree.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>IDE Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>SATA Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>SCSI Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Floppy Controller</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3948,7 +4311,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Attached To:</source>
+        <source>Attached to:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -3956,15 +4319,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Use host I/O cache</source>
+        <source>Use Host I/O Cache</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Add SAS Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>SAS Controller</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4044,23 +4403,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Solid-state drive</source>
+        <source>&amp;Solid-state Drive</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Details:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no name specified for controller at position &lt;b&gt;%1&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>controller at position &lt;b&gt;%1&lt;/b&gt; uses the name that is already used by controller at position &lt;b&gt;%2&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>no hard disk is selected for &lt;i&gt;%1&lt;/i&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4074,10 +4421,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>you are currently using more storage controllers than a %1 chipset supports. Please change the chipset type on the System settings page or reduce the number of the following storage controllers on the Storage settings page: %2.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&amp;Port Count:</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4085,33 +4428,33 @@
         <source>Selects the port count of the SATA storage controller currently selected in the Storage Tree. This must be at least one more than the highest port number you need to use.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Controller: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No name is currently specified for the controller at position &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The controller at position &lt;b&gt;%1&lt;/b&gt; has the same name as the controller at position &lt;b&gt;%2&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No hard disk is selected for &lt;i&gt;%1&lt;/i&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;i&gt;%1&lt;/i&gt; is using a disk that is already attached to &lt;i&gt;%2&lt;/i&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The machine currently has more storage controllers assigned than a %1 chipset supports. Please change the chipset type on the System settings page or reduce the number of the following storage controllers on the Storage settings page: %2</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIMachineSettingsSystem</name>
-    <message>
-        <source>you have assigned more than &lt;b&gt;%1%&lt;/b&gt; of your computer&apos;s memory (&lt;b&gt;%2&lt;/b&gt;) to the virtual machine. Not enough memory is left for your host operating system. Please select a smaller amount.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>you have assigned more than &lt;b&gt;%1%&lt;/b&gt; of your computer&apos;s memory (&lt;b&gt;%2&lt;/b&gt;) to the virtual machine. There might not be enough memory left for your host operating system. Continue at your own risk.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>for performance reasons, the number of virtual CPUs attached to the virtual machine may not be more than twice the number of physical CPUs on the host (&lt;b&gt;%1&lt;/b&gt;). Please reduce the number of virtual CPUs.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>you have assigned more virtual CPUs to the virtual machine than the number of physical CPUs on your host system (&lt;b&gt;%1&lt;/b&gt;). This is likely to degrade the performance of your virtual machine. Please consider reducing the number of virtual CPUs.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>you have assigned more than one virtual CPU to this VM. This will not work unless the IO-APIC feature is also enabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>you have assigned more than one virtual CPU to this VM. This will not work unless hardware virtualization (VT-x/AMD-V) is also enabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
-        <translation type="unfinished"></translation>
-    </message>
     <message>
         <source>&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</source>
         <translation type="unfinished">&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</translation>
@@ -4166,11 +4509,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>When checked, the virtual machine will support the Input Output APIC (IO APIC), which may slightly decrease performance. &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable this feature after having installed a Windows guest operating system!</source>
+        <source>When checked, the virtual machine will support the Input Output APIC (I/O APIC), which may slightly decrease performance. &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable this feature after having installed a Windows guest operating system!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Enable &amp;IO APIC</source>
+        <source>Enable &amp;I/O APIC</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4231,19 +4574,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Hardware clock in &amp;UTC time</source>
+        <source>Hardware Clock in &amp;UTC Time</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Controls the number of virtual CPUs in the virtual machine. You need hardware virtualization support on your host system to use more than one virtual CPU.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>If checked, an absolute pointing device (a USB tablet) will be supported. Otherwise, only a standard PS/2 mouse will be emulated.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Enable &amp;absolute pointing device</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4263,14 +4598,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>you have set the processor execution cap to a low value. This can make the machine feel slow to respond.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>you have enabled a USB HID (Human Interface Device). This will not work unless USB emulation is also enabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;qt&gt;%1%&lt;/qt&gt;</source>
         <comment>Min CPU execution cap in %</comment>
         <translation type="unfinished"></translation>
@@ -4281,7 +4608,47 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>you have assigned ICH9 chipset type to this VM. It will not work properly unless the IO-APIC feature is also enabled. This will be done automatically when you accept the VM Settings by pressing the OK button.</source>
+        <source>&amp;Pointing Device:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Determines whether the emulated pointing device is a standard PS/2 mouse, a USB tablet or a USB multi-touch tablet.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>More than &lt;b&gt;%1%&lt;/b&gt; of the host computer&apos;s memory (&lt;b&gt;%2&lt;/b&gt;) is assigned to the virtual machine. Not enough memory is left for the host operating system. Please select a smaller amount.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>More than &lt;b&gt;%1%&lt;/b&gt; of the host computer&apos;s memory (&lt;b&gt;%2&lt;/b&gt;) is assigned to the virtual machine. There might not be enough memory left for the host operating system. Please consider selecting a smaller amount.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The I/O APIC feature is not currently enabled in the Motherboard section of the System page. This is needed in order to support a chip set of type ICH9. It will be done automatically if you confirm your changes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>USB controller emulation is not currently enabled on the USB page. This is needed to support an emulated USB input device. It will be done automatically if you confirm your changes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>For performance reasons, the number of virtual CPUs attached to the virtual machine may not be more than twice the number of physical CPUs on the host (&lt;b&gt;%1&lt;/b&gt;). Please reduce the number of virtual CPUs.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>More virtual CPUs are assigned to the virtual machine than the number of physical CPUs on the host system (&lt;b&gt;%1&lt;/b&gt;). This is likely to degrade the performance of your virtual machine. Please consider reducing the number of virtual CPUs.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The I/O APIC feature is not currently enabled in the Motherboard section of the System page. This is needed in order to support more than one virtual processor. It will be done automatically if you confirm your changes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hardware virtualization is not currently enabled in the Acceleration section of the System page. This is needed in order to support more than one virtual processor. It will be done automatically if you confirm your changes.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The processor execution cap is set to a low value. This may make the machine feel slow to respond.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4409,7 +4776,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>USB 2.0 is currently enabled for this virtual machine. However, this requires the &lt;b&gt;%1&lt;/b&gt; to be installed. Please install the Extension Pack from the VirtualBox download site. After this you will be able to re-enable USB 2.0. It will be disabled in the meantime unless you cancel the current settings changes.</source>
+        <source>USB 2.0 is currently enabled for this virtual machine. However, this requires the &lt;b&gt;%1&lt;/b&gt; to be installed. Please install the Extension Pack from the VirtualBox download site or disable USB 2.0 to be able to start the machine.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4435,7 +4802,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the filter name.</source>
+        <source>Holds the filter name.</source>
         <translation type="unfinished">Iragazki izena bistarazten du.</translation>
     </message>
     <message>
@@ -4503,14 +4870,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Action:</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Defines an action performed by the host computer when a matching device is attached: give it up to the host OS (&lt;i&gt;Ignore&lt;/i&gt;) or grab it for later usage by virtual machines (&lt;i&gt;Hold&lt;/i&gt;).</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>USB Filter Details</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4545,7 +4904,7 @@
     </message>
     <message>
         <source>&amp;Select</source>
-        <translation type="unfinished">&amp;Hautatu</translation>
+        <translation type="obsolete">&amp;Hautatu</translation>
     </message>
     <message>
         <source>C&amp;lose</source>
@@ -4559,11 +4918,11 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;You are about to change the attributes of the virtual disk located in &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please choose one of the following medium types and press &lt;b&gt;%2&lt;/b&gt; to proceed or &lt;b&gt;%3&lt;/b&gt; otherwise.&lt;/p&gt;</source>
+        <source>&lt;p&gt;You are about to change the settings of the disk image file &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please choose one of the following modes and press &lt;b&gt;%2&lt;/b&gt; to proceed or &lt;b&gt;%3&lt;/b&gt; otherwise.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Choose medium type:</source>
+        <source>Choose mode:</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4633,11 +4992,11 @@
     </message>
     <message>
         <source>Failed to create a new virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
-        <translation>Huts &lt;b&gt;%1&lt;/b&gt; makina birtual berria sortzerakoan.</translation>
+        <translation type="obsolete">Huts &lt;b&gt;%1&lt;/b&gt; makina birtual berria sortzerakoan.</translation>
     </message>
     <message>
         <source>Failed to apply the settings to the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
-        <translation>Huts hobespenak &lt;b&gt;%1&lt;/b&gt; makina birtualean ezartzerakoan.</translation>
+        <translation type="obsolete">Huts hobespenak &lt;b&gt;%1&lt;/b&gt; makina birtualean ezartzerakoan.</translation>
     </message>
     <message>
         <source>Failed to save the settings of the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
@@ -4793,7 +5152,7 @@
     </message>
     <message>
         <source>Failed to remove the shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) from the virtual machine &lt;b&gt;%3&lt;/b&gt;.</source>
-        <translation>Huts &lt;b&gt;%1&lt;/b&gt; partekatutako karpeta (&lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;-ra lotua) &lt;b&gt;%3&lt;/b&gt; makina birtualetik kentzerakoan.</translation>
+        <translation type="obsolete">Huts &lt;b&gt;%1&lt;/b&gt; partekatutako karpeta (&lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;-ra lotua) &lt;b&gt;%3&lt;/b&gt; makina birtualetik kentzerakoan.</translation>
     </message>
     <message>
         <source>&lt;p&gt;The Virtual Machine reports that the guest OS does not support &lt;b&gt;mouse pointer integration&lt;/b&gt; in the current video mode. You need to capture the mouse (by clicking over the VM display or pressing the host key) in order to use the mouse inside the guest OS.&lt;/p&gt;</source>
@@ -4804,16 +5163,12 @@
         <translation>&lt;p&gt;Makina Birtuala orain &lt;b&gt;Gelditurik&lt;/b&gt; egoeran dago eta horregatik ez du sagu edo teklatu sarrerarik onartzen. MB barnean lanean jarraitu nahi izanez gero berau jarraitu behar duzu dagokion ekintza hautatuaz menu barratik.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;One or more of the registered virtual hard disks, CD/DVD or floppy media are not currently accessible. As a result, you will not be able to operate virtual machines that use these media until they become accessible later.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to open the Virtual Disk Manager window and see what media are inaccessible, or press &lt;b&gt;Ignore&lt;/b&gt; to ignore this message.&lt;/p&gt;</source>
+        <source>&lt;p&gt;One or more of the registered virtual hard disks, CD/DVD or floppy disk image files are not currently accessible. As a result, you will not be able to operate virtual machines that use these files until they become accessible later.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to open the Virtual Disk Manager window and see which files are inaccessible, or press &lt;b&gt;Ignore&lt;/b&gt; to ignore this message.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Erregistraturik dauden disko gogor, CD/DVD edo diskete euskarriren bat ez dago eskuragarri. Honegatik, euskarri hori erabiltzen duen makina birtualik ezingo duzu erabili, berriz eskuragarri egon arte.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Ados&lt;/b&gt; sakatu Disko Gogor Kudeatzailea ireki eta zein euskarri eskuragarri dauden ikusteko, edo &lt;b&gt;Baztertu&lt;/b&gt; sakatu mezu hau albo batetara uzteko.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;Cannot run VirtualBox in &lt;i&gt;VM Selector&lt;/i&gt; mode due to local restrictions.&lt;/p&gt;&lt;p&gt;The application will now terminate.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Murrizpen lokalak direla eta ezin da VirtualBox &lt;i&gt;MB hautatzaile&lt;/i&gt; moduan abiarazi.&lt;/p&gt;&lt;p&gt;Aplikazioa itxi egingo da.&lt;/p&gt;</translation>
-    </message>
-    <message>
-        <source>Failed to open appliance.</source>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">&lt;p&gt;Murrizpen lokalak direla eta ezin da VirtualBox &lt;i&gt;MB hautatzaile&lt;/i&gt; moduan abiarazi.&lt;/p&gt;&lt;p&gt;Aplikazioa itxi egingo da.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Failed to open/interpret appliance &lt;b&gt;%1&lt;/b&gt;.</source>
@@ -4824,15 +5179,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Failed to create appliance.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Failed to prepare the export of the appliance &lt;b&gt;%1&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Failed to create an appliance.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4902,12 +5249,8 @@
         <translation>Deitura eta RC: </translation>
     </message>
     <message>
-        <source>&lt;p&gt;Could not find a language file for the language &lt;b&gt;%1&lt;/b&gt; in the directory &lt;b&gt;&lt;nobr&gt;%2&lt;/nobr&gt;&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;The language will be temporarily reset to the system default language. Please go to the &lt;b&gt;Preferences&lt;/b&gt; dialog which you can open from the &lt;b&gt;File&lt;/b&gt; menu of the main VirtualBox window, and select one of the existing languages on the &lt;b&gt;Language&lt;/b&gt; page.&lt;/p&gt;</source>
-        <translation></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Could not load the language file &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt;. &lt;p&gt;The language will be temporarily reset to English (built-in). Please go to the &lt;b&gt;Preferences&lt;/b&gt; dialog which you can open from the &lt;b&gt;File&lt;/b&gt; menu of the main VirtualBox window, and select one of the existing languages on the &lt;b&gt;Language&lt;/b&gt; page.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Ezin da &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; hizkuntza fitxategia kargatu.&lt;p&gt;Hizkuntza aldiroko Ingelesera (barneratua) berrezarriko da. Mesedez joan VirtualBox leiho nagusiko &lt;b&gt;Fitxategia&lt;/b&gt; menuan aurki dezakezun &lt;b&gt;Hobespenak&lt;/b&gt; leihora eta hautatu erabilgarri daudenetako bat &lt;b&gt;Hizkuntza&lt;/b&gt; orrialdean.&lt;/p&gt;</translation>
+        <source>&lt;p&gt;Could not load the language file &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt;. &lt;p&gt;The language will be temporarily reset to English (built-in). Please go to the &lt;b&gt;Preferences&lt;/b&gt; window which you can open from the &lt;b&gt;File&lt;/b&gt; menu of the main VirtualBox window, and select one of the existing languages on the &lt;b&gt;Language&lt;/b&gt; page.&lt;/p&gt;</source>
+        <translation type="obsolete">&lt;p&gt;Ezin da &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; hizkuntza fitxategia kargatu.&lt;p&gt;Hizkuntza aldiroko Ingelesera (barneratua) berrezarriko da. Mesedez joan VirtualBox leiho nagusiko &lt;b&gt;Fitxategia&lt;/b&gt; menuan aurki dezakezun &lt;b&gt;Hobespenak&lt;/b&gt; leihora eta hautatu erabilgarri daudenetako bat &lt;b&gt;Hizkuntza&lt;/b&gt; orrialdean.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The VirtualBox Guest Additions installed in the Guest OS are too old: the installed version is %1, the expected version is %2. Some features that require Guest Additions (mouse integration, guest display auto-resize) will most likely stop working properly.&lt;/p&gt;&lt;p&gt;Please update the Guest Additions to the current version by choosing &lt;b&gt;Install Guest Additions&lt;/b&gt; from the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
@@ -4934,20 +5277,20 @@
         <translation>&lt;p&gt;Huts &lt;b&gt;%1&lt;/b&gt; partekatutako kapeta (&lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;-ra lotua dagoena) &lt;b&gt;%3&lt;/b&gt; makina birtualetik ezabatzerakoan.&lt;/p&gt; &lt;p&gt;Mesedez itxi partekatutako karpeta hori erabiltzen ari diren sistema eragileko aplikazioak eta berriz saiatu.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions CD image file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; or &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this CD image from the Internet?&lt;/p&gt;</source>
+        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions disk image file file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; or &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this disk image file from the Internet?&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Ez da &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; edo &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; VirtualBox Bezero Gehigarri irudia aurkitu.&lt;/p&gt;&lt;p&gt;Irudi hau internetetik deskargatu nahi al duzu?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Failed to download the VirtualBox Guest Additions CD image from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;%3&lt;/p&gt;</source>
+        <source>&lt;p&gt;Failed to download the VirtualBox Guest Additions disk image file from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;%3&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Huts Virtualbox Bezero Gehigarri CD irudia &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;-etik deskargatzean.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;%3&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to download the VirtualBox Guest Additions CD image from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; (size %3 bytes)?&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Ziur zaude VirtualBox Bezero Gehigarrien CD irudia &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;-etik deskargatu nahi duzula &lt;/nobr&gt; (tamaina %3 byte)?&lt;/p&gt;</translation>
+        <source>&lt;p&gt;Are you sure you want to download the VirtualBox Guest Additions disk image file from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; (size %3 bytes)?&lt;/p&gt;</source>
+        <translation type="obsolete">&lt;p&gt;Ziur zaude VirtualBox Bezero Gehigarrien CD irudia &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;-etik deskargatu nahi duzula &lt;/nobr&gt; (tamaina %3 byte)?&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;The VirtualBox Guest Additions CD image has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to register this CD image and mount it on the virtual CD/DVD drive?&lt;/p&gt;</source>
-        <translation>&lt;p&gt;VirtualBox Bezero Gehigarri CD irudia behar bezala deskargatu da &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; -etik eta &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;bezala gorde da.&lt;/nobr&gt;&lt;/p&gt; &lt;p&gt;CD irudi hori erregistratu eta CD/DVD birtualean kargatu nahi al duzu?&lt;/p&gt;</translation>
+        <source>&lt;p&gt;The VirtualBox Guest Additions disk image file has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to register this disk image file and insert it into the virtual CD/DVD drive?&lt;/p&gt;</source>
+        <translation type="obsolete">&lt;p&gt;VirtualBox Bezero Gehigarri CD irudia behar bezala deskargatu da &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; -etik eta &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;bezala gorde da.&lt;/nobr&gt;&lt;/p&gt; &lt;p&gt;CD irudi hori erregistratu eta CD/DVD birtualean kargatu nahi al duzu?&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;. Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
@@ -4962,12 +5305,8 @@
         <translation>&lt;p&gt;Makina birtualaren leihoa &lt;b&gt;%1&amp;nbsp;bit&lt;/b&gt; kolore moduan funtzionatzeko garatua izan da baina pantaila birtualaren kalitatea &lt;b&gt;%2&amp;nbsp;bitera&lt;/b&gt; ezarririk dago.&lt;/p&gt;&lt;p&gt;Mesedez ireki bezero sistema eragileko pantaila propietateak eta hautatu &lt;b&gt;%3&amp;nbsp;bit&lt;/b&gt; duen modu bat, erabilgarri badago, bideo birtual azpisistemak ahal den hobekien funtzionatzeko.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Kontutan izan&lt;/b&gt; OS/2 bezalako zenbait sistema eragilek 32 bit-eako moduan lan egiten dutela, baina 24 bit-etara (16 Milioi kolore) dagoela dirudi. Beste kolore kalitate bat hautatzea probatu dezakezu, edo mezu hau baztertu dezakezu ziur bazaude eskatutako kolore kalitatea (%4&amp;nbsp;bit) ezin dela Sistema eragile bezeroan erabili.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings dialog or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you wish to continue?&lt;/p&gt;</source>
+        <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings window or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you wish to continue?&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Ez duzu disko gogor birtualik erantsi makina birtual honetara. Makina ez da abiarazteko gai izango sistema eragile duen disko gogor bat edo beste euskarri abiarazgarri baten bat erantsi arte, berau beranduago egiteko ezarpen leiho edo Lehen Abiarazte Morroiaren bidez egin dezakezu.&lt;/p&gt;&lt;p&gt;Aurrera jarraitu nahi al duzu?&lt;/p&gt;</translation>
-    </message>
-    <message>
-        <source>Failed to find license files in &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Failed to open the license file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;. Check file permissions.</source>
@@ -4975,10 +5314,6 @@
     </message>
     <message>
         <source>Failed to send the ACPI Power Button press event to the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Congratulations! You have been successfully registered as a user of VirtualBox.&lt;/p&gt;&lt;p&gt;Thank you for finding time to fill out the registration form!&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -4991,10 +5326,6 @@
     </message>
     <message>
         <source>Failed to save the settings of the virtual machine &lt;b&gt;%1&lt;/b&gt; to &lt;b&gt;&lt;nobr&gt;%2&lt;/nobr&gt;&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Failed to load the settings of the virtual machine &lt;b&gt;%1&lt;/b&gt; from &lt;b&gt;&lt;nobr&gt;%2&lt;/nobr&gt;&lt;/b&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5016,11 +5347,6 @@
         <source>Disable</source>
         <comment>hard disk</comment>
         <translation type="obsolete">Ezgaitu</translation>
-    </message>
-    <message>
-        <source>Download</source>
-        <comment>additions</comment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Mount</source>
@@ -5051,16 +5377,6 @@
         <source>Cancel</source>
         <comment>warnAboutAutoConvertedSettings message box</comment>
         <translation type="obsolete">Utzi</translation>
-    </message>
-    <message>
-        <source>Switch</source>
-        <comment>fullscreen</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Switch</source>
-        <comment>seamless</comment>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Reset</source>
@@ -5147,10 +5463,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to release the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;?&lt;/p&gt;&lt;p&gt;This will detach it from the following virtual machine(s): &lt;b&gt;%3&lt;/b&gt;.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>The following files already exist:&lt;br /&gt;&lt;br /&gt;%1&lt;br /&gt;&lt;br /&gt;Are you sure you want to replace them? Replacing them will overwrite their contents.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5188,18 +5500,6 @@
         <translation type="unfinished">Atera</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to remove the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; from the list of known media?&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Note that as this hard disk is inaccessible its storage unit cannot be deleted right now.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>The next dialog will let you choose whether you also want to delete the storage unit of this hard disk or keep it for later usage.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Remove</source>
         <comment>medium</comment>
         <translation type="unfinished">Kendu</translation>
@@ -5231,15 +5531,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Failed to open the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Failed to close the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Failed to determine the accessibility state of the medium &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <source>Failed to access the disk image file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5247,19 +5539,7 @@
         <translation type="obsolete">&lt;p&gt;Hautaturiko &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; sare interfazea ezabatu nahi al duzu? &lt;/p&gt;&lt;p&gt;&lt;b&gt;Oharra:&lt;/b&gt; Interfaze hau erabilia egon daiteke sare moldagailu bat edo gehiagorengatik beste MB batetan. Ezabatu ondoren sare moldagailu horiek ez dute funtzionatuko ezarpen horiek aldatu arte  edo beste interfaze izen bat hautatuz o moldagailu eranste modu ezberdin bat hautatuaz.&lt;/p&gt;</translation>
     </message>
     <message>
-        <source>Failed to create the host-only network interface.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Failed to connect to the VirtualBox online registration service due to the following error:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;One or more virtual hard disks, CD/DVD or floppy media are not currently accessible. As a result, you will not be able to operate virtual machines that use these media until they become accessible later.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Check&lt;/b&gt; to open the Virtual Media Manager window and see what media are inaccessible, or press &lt;b&gt;Ignore&lt;/b&gt; to ignore this message.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Your existing VirtualBox settings files will be automatically converted from the old format to a new format required by the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;Exit&lt;/b&gt; if you want to terminate the VirtualBox application without any further actions.&lt;/p&gt;</source>
+        <source>&lt;p&gt;One or more virtual hard disks, CD/DVD or floppy disk image files are not currently accessible. As a result, you will not be able to operate virtual machines that use these files until they become accessible later.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Check&lt;/b&gt; to open the Virtual Media Manager window and see which files are inaccessible, or press &lt;b&gt;Ignore&lt;/b&gt; to ignore this message.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5292,14 +5572,6 @@
     </message>
     <message>
         <source>&lt;p&gt;VT-x/AMD-V hardware acceleration has been enabled, but is not operational. Certain guests (e.g. OS/2 and QNX) require this feature.&lt;/p&gt;&lt;p&gt;Please ensure that you have enabled VT-x/AMD-V properly in the BIOS of your host computer.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Invalid e-mail address or password specified.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Failed to register the VirtualBox product.&lt;/p&gt;&lt;p&gt;%1&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5344,62 +5616,28 @@
         <translation type="obsolete">&amp;Hautatu</translation>
     </message>
     <message>
-        <source>Unable to mount the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; on the machine &lt;b&gt;%3&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source> Would you like to force mounting of this medium?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Unable to unmount the %1 &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt; from the machine &lt;b&gt;%3&lt;/b&gt;.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source> Would you like to force unmounting of this medium?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Force Unmount</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Could not insert the VirtualBox Guest Additions installer CD image into the virtual machine &lt;b&gt;%1&lt;/b&gt;, as the machine has no CD/DVD-ROM drives. Please add a drive using the storage page of the virtual machine settings dialog.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>E&amp;xit</source>
         <comment>warnAboutSettingsAutoConversion message box</comment>
-        <translation type="unfinished">I&amp;rten</translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;The following VirtualBox settings files will be automatically converted from the old format to a new format required by the new version of VirtualBox.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;OK&lt;/b&gt; to start VirtualBox now or press &lt;b&gt;Exit&lt;/b&gt; if you want to terminate the VirtualBox application without any further actions.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">I&amp;rten</translation>
     </message>
     <message>
         <source>hard disk</source>
         <comment>failed to mount ...</comment>
-        <translation type="unfinished">disko gogorra</translation>
-    </message>
-    <message>
-        <source>CD/DVD</source>
-        <comment>failed to mount ... host-drive</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">disko gogorra</translation>
     </message>
     <message>
         <source>CD/DVD image</source>
         <comment>failed to mount ...</comment>
-        <translation type="unfinished">CD/DVD irudia</translation>
-    </message>
-    <message>
-        <source>floppy</source>
-        <comment>failed to mount ... host-drive</comment>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">CD/DVD irudia</translation>
     </message>
     <message>
         <source>floppy image</source>
         <comment>failed to mount ...</comment>
-        <translation type="unfinished">Diskete irudia</translation>
+        <translation type="obsolete">Diskete irudia</translation>
     </message>
     <message>
         <source>hard disk</source>
@@ -5407,7 +5645,7 @@
         <translation type="obsolete">disko gogorra</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD-ROM device?&lt;/p&gt;&lt;p&gt;You will not be able to mount any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
+        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD device?&lt;/p&gt;&lt;p&gt;You will not be able to insert any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5436,30 +5674,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;Can not switch the guest display to fullscreen mode. You have more virtual screens configured than physical screens are attached to your host.&lt;/p&gt;&lt;p&gt;Please either lower the virtual screens in your VM configuration or attach additional screens to your host.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Can not switch the guest display to seamless mode. You have more virtual screens configured than physical screens are attached to your host.&lt;/p&gt;&lt;p&gt;Please either lower the virtual screens in your VM configuration or attach additional screens to your host.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Could not find the VirtualBox User Manual &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this file from the Internet?&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Are you sure you want to download the VirtualBox User Manual from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; (size %3 bytes)?&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;The VirtualBox User Manual has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;The VirtualBox User Manual has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%2&lt;/a&gt;&lt;/nobr&gt; but can&apos;t be saved locally as &lt;nobr&gt;&lt;b&gt;%3&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Please choose another location for that file.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Failed to open virtual machine located in %1.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5484,27 +5698,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Create &amp;new disk</source>
-        <comment>add attachment routine</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Choose existing disk</source>
-        <comment>add attachment routine</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;p&gt;You are about to add a new CD/DVD drive to controller &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Would you like to choose a virtual CD/DVD disk to put in the drive or to leave it empty for now?&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Choose disk</source>
-        <comment>add attachment routine</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Leave &amp;empty</source>
-        <comment>add attachment routine</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5524,7 +5718,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Failed to update Guest Additions. The Guest Additions installation image will be mounted to provide a manual installation.</source>
+        <source>Failed to update Guest Additions. The Guest Additions disk image file will be inserted for user installation.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5576,12 +5770,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;Scale&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in scale mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Switch</source>
-        <comment>scale</comment>
+        <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;Scale&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in scaled mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5590,10 +5779,6 @@
     </message>
     <message>
         <source>&lt;p&gt;You are about to install a VirtualBox extension pack. Extension packs complement the functionality of VirtualBox and can contain system level software that could be potentially harmful to your system. Please review the description below and only proceed if you have obtained the extension pack from a trusted source.&lt;/p&gt;&lt;p&gt;&lt;table cellpadding=0 cellspacing=0&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Name:&amp;nbsp;&amp;nbsp;&lt;/b&gt;&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Version:&amp;nbsp;&amp;nbsp;&lt;/b&gt;&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Description:&amp;nbsp;&amp;nbsp;&lt;/b&gt;&lt;/td&gt;&lt;td&gt;%3&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Install</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5665,15 +5850,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;p&gt;Error changing medium type from &lt;b&gt;%1&lt;/b&gt; to &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Sorry, some generic error happens.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;USB 2.0 is currently enabled for this virtual machine. However, this requires the &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; to be installed.&lt;/p&gt;&lt;p&gt;Please install the Extension Pack from the VirtualBox download site. After this you will be able to re-enable USB 2.0. It will be disabled in the meantime unless you cancel the current settings changes.&lt;/p&gt;</source>
+        <source>&lt;p&gt;Error changing disk image mode from &lt;b&gt;%1&lt;/b&gt; to &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5702,15 +5879,10 @@
     </message>
     <message>
         <source>&lt;p&gt;Failed to save the downloaded file as &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;</source>
-        <translation type="unfinished">&lt;p&gt;Huts deskargatutako fitxategia &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt; bezala gordetzerakoan.&lt;/nobr&gt;&lt;/p&gt;</translation>
+        <translation type="obsolete">&lt;p&gt;Huts deskargatutako fitxategia &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt; bezala gordetzerakoan.&lt;/nobr&gt;&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;You have an old version (%1) of the &lt;b&gt;&lt;nobr&gt;%2&lt;/nobr&gt;&lt;/b&gt; installed.&lt;/p&gt;&lt;p&gt;Do you wish to download latest one from the Internet?&lt;/p&gt;</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Download</source>
-        <comment>extension pack</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5735,20 +5907,8 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Ok</source>
-        <comment>extension pack</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>&lt;p&gt;Failed to initialize COM because the VirtualBox global configuration directory &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt; is not accessible. Please check the permissions of this directory and of its parent directory.&lt;/p&gt;&lt;p&gt;The application will now terminate.&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
-    </message>
-    <message numerus="yes">
-        <source>&lt;p&gt;The %n following virtual machine(s) are currently in a saved state: &lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;If you continue the runtime state of the exported machine(s) will be discarded. The other machine(s) will not be changed.&lt;/p&gt;</source>
-        <comment>This text is never used with n == 0.  Feel free to drop the %n where possible, we only included it because of problems with Qt Linguist (but the user can see how many machines are in the list and doesn&apos;t need to be told).</comment>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-        </translation>
     </message>
     <message>
         <source>&lt;p&gt;You are about to remove following virtual machine items from the machine list:&lt;/p&gt;&lt;p&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;Do you wish to proceed?&lt;/p&gt;</source>
@@ -5794,10 +5954,6 @@
     </message>
     <message>
         <source>Failed to drop data.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&lt;p&gt;Could not find the VirtualBox Guest Additions CD image file.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this CD image from the Internet?&lt;/p&gt;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5850,7 +6006,222 @@
     </message>
     <message>
         <source>Close Virtual Machine</source>
-        <translation type="unfinished">Makina Birtuala Itxi</translation>
+        <translation type="obsolete">Makina Birtuala Itxi</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Cannot start the VirtualBox Manager due to local restrictions.&lt;/p&gt;&lt;p&gt;The application will now terminate.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not find a language file for the language &lt;b&gt;%1&lt;/b&gt; in the directory &lt;b&gt;&lt;nobr&gt;%2&lt;/nobr&gt;&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;The language will be temporarily reset to the system default language. Please go to the &lt;b&gt;Preferences&lt;/b&gt; window which you can open from the &lt;b&gt;File&lt;/b&gt; menu of the VirtualBox Manager window, and select one of the existing languages on the &lt;b&gt;Language&lt;/b&gt; page.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not load the language file &lt;b&gt;&lt;nobr&gt;%1&lt;/nobr&gt;&lt;/b&gt;. &lt;p&gt;The language will be temporarily reset to English (built-in). Please go to the &lt;b&gt;Preferences&lt;/b&gt; window which you can open from the &lt;b&gt;File&lt;/b&gt; menu of the VirtualBox Manager window, and select one of the existing languages on the &lt;b&gt;Language&lt;/b&gt; page.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>There is no virtual machine with the identifier &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Ignore</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to create NAT network.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to remove NAT network &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to create DHCP server.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to remove DHCP server for network interface &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to create the host network interface.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Create &amp;new disk</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Choose existing disk</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Leave &amp;empty</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Choose disk</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to release the virtual hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;?&lt;/p&gt;&lt;p&gt;This will detach it from the following virtual machine(s): &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to release the virtual optical disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;?&lt;/p&gt;&lt;p&gt;This will detach it from the following virtual machine(s): &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to release the virtual floppy disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;?&lt;/p&gt;&lt;p&gt;This will detach it from the following virtual machine(s): &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to remove the virtual hard disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the list of known disk image files?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;As this hard disk is inaccessible its image file can not be deleted.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to remove the virtual optical disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the list of known disk image files?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to remove the virtual floppy disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the list of known disk image files?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Unable to insert the virtual optical disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; into the machine &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Would you like to try to force insertion of this disk?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Unable to eject the virtual optical disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the machine &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Would you like to try to force ejection of this disk?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Unable to insert the virtual floppy disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; into the machine &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Unable to eject the virtual floppy disk &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt; from the machine &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to open the hard disk file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to open the optical disk file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to open the floppy disk file &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to close the hard disk file &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to close the optical disk file &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to close the floppy disk file &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message numerus="yes">
+        <source>&lt;p&gt;The %n following virtual machine(s) are currently in a saved state: &lt;b&gt;%1&lt;/b&gt;&lt;/p&gt;&lt;p&gt;If you continue the runtime state of the exported machine(s) will be discarded. The other machine(s) will not be changed.&lt;/p&gt;</source>
+        <comment>This text is never used with n == 0. Feel free to drop the %n where possible, we only included it because of problems with Qt Linguist (but the user can see how many machines are in the list and doesn&apos;t need to be told).</comment>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>Switch</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to enable the remote desktop server for the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to disable the remote desktop server for the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to enable video capturing for the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Failed to disable video capturing for the virtual machine &lt;b&gt;%1&lt;/b&gt;.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not find the &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file.&lt;/p&gt;&lt;p&gt;Do you wish to download this disk image file from the Internet?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Download</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to download the &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; (size %2 bytes)?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; but can&apos;t be saved locally as &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Please choose another location for that file.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to register this disk image file and insert it into the virtual CD/DVD drive?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not insert the &lt;b&gt;VirtualBox Guest Additions&lt;/b&gt; disk image file into the virtual machine &lt;b&gt;%1&lt;/b&gt;, as the machine has no CD/DVD drives. Please add a drive using the storage page of the virtual machine settings window.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not find the &lt;b&gt;VirtualBox User Manual&lt;/b&gt; &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Do you wish to download this file from the Internet?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to download the &lt;b&gt;VirtualBox User Manual&lt;/b&gt; from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; (size %2 bytes)?&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox User Manual has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; but can&apos;t be saved locally as &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Please choose another location for that file.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;The VirtualBox User Manual has been successfully downloaded from &lt;nobr&gt;&lt;a href=&quot;%1&quot;&gt;%1&lt;/a&gt;&lt;/nobr&gt; and saved locally as &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation type="unfinished">Itxi</translation>
+    </message>
+    <message>
+        <source>Ok</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Do not show this message again</source>
+        <translation type="unfinished">Ez erakutsi mezu hau berriz</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Do you want to remove the NAT network &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;If this network is in use by one or more virtual machine network adapters these adapters will no longer be usable until you correct their settings by either choosing a different network name or a different adapter attachment type.&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -5860,11 +6231,11 @@
         <translation type="obsolete">Utzi</translation>
     </message>
     <message>
-        <source>Cancel the VirtualBox Guest Additions CD image download</source>
+        <source>Cancel the VirtualBox Guest Additions disk image file download</source>
         <translation type="obsolete">Utzi VirtualBox Bezero Gehigarri CD irudi deskarga</translation>
     </message>
     <message>
-        <source>Downloading the VirtualBox Guest Additions CD image from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
+        <source>Downloading the VirtualBox Guest Additions disk image file from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
         <translation type="obsolete">VirtualBox Bezero Gehigarri CD irudia &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;-etik deskargatzen...&lt;/nobr&gt;</translation>
     </message>
 </context>
@@ -5878,12 +6249,31 @@
 <context>
     <name>UIMiniProgressWidgetAdditions</name>
     <message>
-        <source>Cancel the VirtualBox Guest Additions CD image download</source>
+        <source>Cancel the VirtualBox Guest Additions disk image file download</source>
         <translation type="obsolete">Utzi VirtualBox Bezero Gehigarri CD irudi deskarga</translation>
     </message>
     <message>
-        <source>Downloading the VirtualBox Guest Additions CD image from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
+        <source>Downloading the VirtualBox Guest Additions disk image file from &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;...&lt;/nobr&gt;</source>
         <translation type="obsolete">VirtualBox Bezero Gehigarri CD irudia &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;-etik deskargatzen...&lt;/nobr&gt;</translation>
+    </message>
+</context>
+<context>
+    <name>UIMiniToolBar</name>
+    <message>
+        <source>Always show the toolbar</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Minimize Window</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exit Full Screen or Seamless Mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Close VM</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -5904,7 +6294,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the name of the virtual machine.</source>
+        <source>Holds the name of the virtual machine.</source>
         <translation type="unfinished">Makina birtualaren izena bistaratzen du.</translation>
     </message>
     <message>
@@ -5912,7 +6302,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the operating system family that you plan to install into this virtual machine.</source>
+        <source>Selects the operating system family that you plan to install into this virtual machine.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5920,7 +6310,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Displays the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
+        <source>Selects the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
         <translation type="unfinished">Makina birtual honetan instalatzea pentsatzen duzun sistema eragilea erakusten du (sistema eragile bezeroa deiturikoa).</translation>
     </message>
 </context>
@@ -5943,10 +6333,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Error: %1.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Network Operation</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5956,6 +6342,10 @@
     </message>
     <message>
         <source>Cancel network operation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The network operation failed with the following error: %1.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5976,6 +6366,33 @@
     </message>
     <message>
         <source>Double-click for more information.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UINetworkReplyPrivate</name>
+    <message>
+        <source>Host not found</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Content access denied</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Protocol failure</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Wrong SSL certificate format</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>SSL authentication failed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unknown reason</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -6236,7 +6653,7 @@ Hau VirtualBox-ek zure makina birtuala identifikatzeko erabiliko du.&lt;/p&gt;</
 as the boot hard disk of the virtual machine. You can either create a new hard
 disk using the &lt;b&gt;New&lt;/b&gt; button or select an existing hard disk
 image from the drop-down list or by pressing the &lt;b&gt;Existing&lt;/b&gt;
-button (to invoke the Virtual Disk Manager dialog).&lt;/p&gt;
+button (to invoke the Virtual Disk Manager window).&lt;/p&gt;
 &lt;p&gt;If you need a more complicated hard disk setup, you can also skip this
 step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source>
         <translation type="obsolete">&lt;p&gt;Hautatu makina birtualak abio disko gogor bezala
@@ -6437,6 +6854,13 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
+    <name>UIPopupCenter</name>
+    <message>
+        <source>Click for full details</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>UIPortForwardingModel</name>
     <message>
         <source>Name</source>
@@ -6534,20 +6958,20 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>On the &lt;b&gt;%1&lt;/b&gt; page, %2</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Invalid settings detected</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Non-optimal settings detected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Settings</source>
         <translation type="unfinished">Ezarpenak</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;%1&lt;/b&gt; page:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;%1: %2&lt;/b&gt; page:</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -6570,7 +6994,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>USB</source>
-        <translation type="unfinished">USB</translation>
+        <translation type="obsolete">USB</translation>
     </message>
     <message>
         <source>Network</source>
@@ -6908,37 +7332,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
-    <name>UIVMPreviewWindow</name>
-    <message>
-        <source>Update Disabled</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Every 0.5 s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Every 1 s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Every 2 s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Every 5 s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Every 10 s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>No Preview</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
     <name>UIWizard</name>
     <message>
         <source>Hide Description</source>
@@ -7227,10 +7620,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Please choose a virtual appliance file</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open Virtualization Format Archive (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7240,10 +7629,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Write in legacy OVF 0.9 format for compatibility with other virtualization products.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Write legacy OVF 0.9</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7274,6 +7659,42 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <source>&amp;Local Filesystem </source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Storage settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Please choose a file to export the virtual appliance to</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>F&amp;ormat:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>OVF 0.9</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>OVF 1.0</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>OVF 2.0</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Write in standard OVF 1.0 format.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Write in new experimental OVF 2.0 format.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Storage settings</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>UIWizardExportAppPageBasic3</name>
@@ -7287,6 +7708,17 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Please complete the additional fields like the username, password, hostname and the bucket, and provide a filename for the OVF target.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose a file to export the virtual appliance to...</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>UIWizardExportAppPageExpert</name>
+    <message>
+        <source>Choose a file to export the virtual appliance to...</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -7316,10 +7748,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
 <context>
     <name>UIWizardImportApp</name>
     <message>
-        <source>Import Virtual Applicance</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Restore Defaults</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7336,14 +7764,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Open appliance...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select an appliance to import</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Open Virtualization Format (%1)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7353,6 +7773,18 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>These are the virtual machines contained in the appliance and the suggested settings of the imported VirtualBox machines. You can change many of the properties shown by double-clicking on the items and disable others using the check boxes below.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import Virtual Appliance</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose a virtual appliance file to import...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Please choose a virtual appliance file to import</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -7447,26 +7879,6 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Create</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>IDE Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>SATA Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>SCSI Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Floppy Controller</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>SAS Controller</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -7588,11 +8000,11 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Karpeta Izena</translation>
     </message>
     <message>
-        <source>Displays the path to an existing folder on the host PC.</source>
+        <source>Holds the path to an existing folder on the host PC.</source>
         <translation type="obsolete">Ostalari PC-an dagoeneko dagoen karpeta baten bidea bistaratzen du.</translation>
     </message>
     <message>
-        <source>Displays the name of the shared folder (as it will be seen by the guest OS).</source>
+        <source>Holds the name of the shared folder (as it will be seen by the guest OS).</source>
         <translation type="obsolete">Partekatutako karpetaren izen bistaratzen du (Ostalari PC-an ikusiko den bezala).</translation>
     </message>
     <message>
@@ -7772,24 +8184,24 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Dis&amp;kete Desmuntatu</translation>
     </message>
     <message>
-        <source>Unmount the currently mounted floppy media</source>
+        <source>Unmount the currently mounted floppy disk image files</source>
         <translation type="obsolete">Muntaturik dagoen diskete medioa desmuntatu</translation>
     </message>
     <message>
-        <source>&amp;CD/DVD-ROM Image...</source>
-        <translation type="obsolete">&amp;CD/DVD-ROM Irudia...</translation>
+        <source>&amp;CD/DVD Image...</source>
+        <translation type="obsolete">&amp;CD/DVD Irudia...</translation>
     </message>
     <message>
-        <source>Mount a CD/DVD-ROM image file</source>
-        <translation type="obsolete">CD/DVD-ROM irudi fitxategi bat muntatu</translation>
+        <source>Mount a CD/DVD image file</source>
+        <translation type="obsolete">CD/DVD irudi fitxategi bat muntatu</translation>
     </message>
     <message>
         <source>Unmount C&amp;D/DVD-ROM</source>
         <translation type="obsolete">C&amp;D/DVD-ROM Desmuntatu</translation>
     </message>
     <message>
-        <source>Unmount the currently mounted CD/DVD-ROM media</source>
-        <translation type="obsolete">Muntaturik dagoen CD/DVD-ROM medioa desmuntatu</translation>
+        <source>Unmount the currently mounted CD/DVD media</source>
+        <translation type="obsolete">Muntaturik dagoen CD/DVD medioa desmuntatu</translation>
     </message>
     <message>
         <source>Remote Desktop (RDP) Server</source>
@@ -7841,7 +8253,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">VirtualBox - &amp;Honi Buruz...</translation>
     </message>
     <message>
-        <source>Show a dialog with product information</source>
+        <source>Show a window with product information</source>
         <translation type="obsolete">Karpeta hauatzeko leiho bat irekitzen du</translation>
     </message>
     <message>
@@ -7857,7 +8269,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Dis&amp;ketea Muntatu</translation>
     </message>
     <message>
-        <source>Mount &amp;CD/DVD-ROM</source>
+        <source>Mount &amp;CD/DVD</source>
         <translation type="obsolete">C&amp;D/DVD-ROM muntatu</translation>
     </message>
     <message>
@@ -7968,7 +8380,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Idazmahai integrazio garden modura aldatu</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the floppy media:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the floppy disk image files:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>Floppy tooltip</comment>
         <translation type="obsolete">&lt;qt&gt;&lt;nobr&gt;Diskete medioaren aktibitatea erakusten du:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
@@ -7988,9 +8400,9 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Ez dago medio muntaturik&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the CD/DVD-ROM media:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the CD/DVD media:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>DVD-ROM tooltip</comment>
-        <translation type="obsolete">&lt;qt&gt;&lt;nobr&gt;CD/DVD-ROM medioaren aktibitatea erakusten du:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
+        <translation type="obsolete">&lt;qt&gt;&lt;nobr&gt;CD/DVD medioaren aktibitatea erakusten du:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
@@ -8281,7 +8693,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">&lt;br&gt;&lt;nobr&gt;Egoera-argazkia:&amp;nbsp;&amp;nbsp;%5&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;&lt;br&gt;Error checking media accessibility</source>
+        <source>&lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;&lt;br&gt;Error checking accessibility of disk image files</source>
         <comment>HDD</comment>
         <translation type="obsolete">&lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;&lt;br&gt;Errorea medio eskuragarritasuna egiaztatzen</translation>
     </message>
@@ -8313,11 +8725,11 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Disko gogor irudi fitxategia hautatu</translation>
     </message>
     <message>
-        <source>Select a CD/DVD-ROM disk image file</source>
-        <translation type="obsolete">Hautatu CD/DVD-ROM disko irudi fitxategi bat</translation>
+        <source>Select a CD/DVD disk image file</source>
+        <translation type="obsolete">Hautatu CD/DVD disko irudi fitxategi bat</translation>
     </message>
     <message>
-        <source>Select a floppy disk image file</source>
+        <source>Select a floppy disk image files</source>
         <translation type="obsolete">Hautatu diskete irudi fitxategi bat</translation>
     </message>
     <message>
@@ -8337,12 +8749,12 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Atera hautatutako medioa berau makinatik kentzen</translation>
     </message>
     <message>
-        <source>Refresh the media list</source>
+        <source>Refresh the list of disk image files</source>
         <translation type="obsolete">Medio zerrenda freskatu</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM images (*.iso);;All files (*)</source>
-        <translation type="obsolete">CD/DVD-ROM irudiak (*.iso);;Fitxategi guztiak (*)</translation>
+        <source>CD/DVD images (*.iso);;All files (*)</source>
+        <translation type="obsolete">CD/DVD irudiak (*.iso);;Fitxategi guztiak (*)</translation>
     </message>
     <message>
         <source>Floppy images (*.img);;All files (*)</source>
@@ -8359,7 +8771,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">&lt;br&gt;&lt;nobr&gt;Non erantsia:&amp;nbsp;&amp;nbsp;%1&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;&lt;br&gt;Error checking media accessibility</source>
+        <source>&lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;&lt;br&gt;Error checking accessibility of disk image files</source>
         <comment>CD/DVD/Floppy</comment>
         <translation type="obsolete">&lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;&lt;br&gt;Errorea medio eskuragarritasuna egiaztatzen</translation>
     </message>
@@ -8371,7 +8783,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
 <context>
     <name>VBoxEmptyFileSelector</name>
     <message>
-        <source>&amp;Choose...</source>
+        <source>Choose...</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -8402,7 +8814,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished">Berrezarri</translation>
     </message>
     <message>
-        <source>Opens a dialog to select a different folder.</source>
+        <source>Opens a window to select a different folder.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -8410,7 +8822,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Opens a dialog to select a different file.</source>
+        <source>Opens a window to select a different file.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -8452,7 +8864,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
 <context>
     <name>VBoxGLSettingsInput</name>
     <message>
-        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
+        <source>Holds the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
         <translation type="obsolete">MB leihoan Ostalari Tekla bezala erabilitakoa tekla erakusten du. Eremua gaitu eta Ostalari Tekla berria sakatu. Kontutan izan alfazenbakizkoak, kurtsore mugimenduak eta edizio teklak ezin direla Ostalari tekla bezala erabili.</translation>
     </message>
     <message>
@@ -8533,9 +8945,9 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation>ACPI</translation>
     </message>
     <message>
-        <source>IO APIC</source>
+        <source>I/O APIC</source>
         <comment>details report</comment>
-        <translation>IO APIC</translation>
+        <translation>I/O APIC</translation>
     </message>
     <message>
         <source>Nested Paging</source>
@@ -8593,9 +9005,9 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">Disketea</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM</source>
+        <source>CD/DVD</source>
         <comment>details report</comment>
-        <translation type="obsolete">CD/DVD-ROM</translation>
+        <translation type="obsolete">CD/DVD</translation>
     </message>
     <message>
         <source>Adapter</source>
@@ -9001,12 +9413,12 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Enabled</source>
-        <comment>details report (IO APIC)</comment>
+        <comment>details report (I/O APIC)</comment>
         <translation type="unfinished">Gaiturik</translation>
     </message>
     <message>
         <source>Disabled</source>
-        <comment>details report (IO APIC)</comment>
+        <comment>details report (I/O APIC)</comment>
         <translation type="unfinished">Ezgaiturik</translation>
     </message>
     <message>
@@ -9080,9 +9492,9 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished">Disketea</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM</source>
+        <source>CD/DVD</source>
         <comment>DeviceType</comment>
-        <translation type="unfinished">CD/DVD-ROM</translation>
+        <translation type="unfinished">CD/DVD</translation>
     </message>
     <message>
         <source>Network</source>
@@ -9480,12 +9892,12 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Failed to check media accessibility.</source>
+        <source>Failed to check accessibility of disk image files.</source>
         <comment>medium</comment>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;No medium selected&lt;/b&gt;</source>
+        <source>&lt;b&gt;No disk image file selected&lt;/b&gt;</source>
         <comment>medium</comment>
         <translation type="unfinished"></translation>
     </message>
@@ -9494,12 +9906,8 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&lt;b&gt;No media available&lt;/b&gt;</source>
+        <source>&lt;b&gt;No disk image files available&lt;/b&gt;</source>
         <comment>medium</comment>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>You can create media images using the virtual media manager.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -9508,7 +9916,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Some of the media in this hard disk chain are inaccessible. Please use the Virtual Media Manager in &lt;b&gt;Show Differencing Hard Disks&lt;/b&gt; mode to inspect these media.</source>
+        <source>Some of the files in this hard disk chain are inaccessible. Please use the Virtual Media Manager in &lt;b&gt;Show Differencing Hard Disks&lt;/b&gt; mode to inspect these files.</source>
         <comment>medium</comment>
         <translation type="unfinished"></translation>
     </message>
@@ -10010,6 +10418,74 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <source>Please choose a location for new virtual hard drive file</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Enabled</source>
+        <comment>details report (Unrestricted Execution)</comment>
+        <translation type="unfinished">Gaiturik</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <comment>details report (Unrestricted Execution)</comment>
+        <translation type="unfinished">Ezgaiturik</translation>
+    </message>
+    <message>
+        <source>Unrestricted Execution</source>
+        <comment>details report</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>PS/2 Mouse</source>
+        <comment>PointingHIDType</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>USB Mouse</source>
+        <comment>PointingHIDType</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>PS/2 and USB Mouse</source>
+        <comment>PointingHIDType</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enabled</source>
+        <comment>unrestricted execution</comment>
+        <translation type="unfinished">Gaiturik</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <comment>unrestricted execution</comment>
+        <translation type="unfinished">Ezgaiturik</translation>
+    </message>
+    <message>
+        <source>Unrestricted Execution</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>USB Tablet</source>
+        <comment>PointingHIDType</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>USB Multi-Touch Tablet</source>
+        <comment>PointingHIDType</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>NAT Network</source>
+        <comment>NetworkAttachmentType</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>NAT network, &apos;%1&apos;</source>
+        <comment>details report (network)</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>You can create or add disk image files in the virtual machine settings.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -10185,7 +10661,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">F1</translation>
     </message>
     <message>
-        <source>Displays the dialog help.</source>
+        <source>Holds the dialog help.</source>
         <translation type="obsolete">Elkarrizketa laguntza bistaratzen du.</translation>
     </message>
     <message>
@@ -10217,7 +10693,7 @@ gogorrak erantsi ditzakezu.&lt;/p&gt;</translation>
         <translation type="obsolete">VirtualBox Hobespenak</translation>
     </message>
     <message>
-        <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
+        <source>Holds the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used.</source>
         <translation type="obsolete">MB leihoan Ostalari Tekla bezala erabilitakoa tekla erakusten du. Eremua gaitu eta Ostalari Tekla berria sakatu. Kontutan izan alfazenbakizkoak, kurtsore mugimenduak eta edizio teklak ezin direla Ostalari tekla bezala erabili.</translation>
     </message>
     <message>
@@ -10283,7 +10759,7 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">Lehenetsia</translation>
     </message>
     <message>
-        <source>Displays the path to the default VDI folder. This folder is used, if not explicitly specified otherwise, when adding existing or creating new virtual hard disks.</source>
+        <source>Holds the path to the default VDI folder. This folder is used, if not explicitly specified otherwise, when adding existing or creating new virtual hard disks.</source>
         <translation type="obsolete">Lehenetsiriko VDI karpetaren bidea bistaratzen du. Karpeta hau erabiliko, beste ezer zehazten ez den bitartean, disko gogor birtual sortu edo gehitzerakoan.</translation>
     </message>
     <message>
@@ -10295,15 +10771,15 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">VDI karpeta bidearen lehenetsiriko balioa berrezartzen du. Uneko lehenetsiriko bidea bistaraziko da aldaketak onartu eta leiho hau berriz irekitzean.</translation>
     </message>
     <message>
-        <source>Displays the path to the default virtual machine folder. This folder is used, if not explicitly specified otherwise, when creating new virtual machines.</source>
+        <source>Holds the path to the default virtual machine folder. This folder is used, if not explicitly specified otherwise, when creating new virtual machines.</source>
         <translation type="obsolete">Lehenetsiriko makina birtual karpetaren bidea bistaratzen du. Karpeta hau erabiliko, beste ezer zehazten ez den bitartean, makina birtualak sortzerakoan.</translation>
     </message>
     <message>
-        <source>Opens a dialog to select the default VDI folder.</source>
+        <source>Opens a window to select the default VDI folder.</source>
         <translation type="obsolete">Lehenetsiriko VDI karpeta hautatzeko leihoa irekitzen du.</translation>
     </message>
     <message>
-        <source>Opens a dialog to select the default virtual machine folder.</source>
+        <source>Opens a window to select the default virtual machine folder.</source>
         <translation type="obsolete">Lehenetsiriko makina birtual karpeta hautatzeko leihoa irekitzen du.</translation>
     </message>
     <message>
@@ -10327,11 +10803,11 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">V&amp;RDP Autentifikazio Liburutegia</translation>
     </message>
     <message>
-        <source>Displays the path to the library that provides authentication for Remote Display (VRDP) clients.</source>
+        <source>Holds the path to the library that provides authentication for Remote Display (VRDP) clients.</source>
         <translation type="obsolete">Urruneko Pantaila (VRDP) bezeroentzat autentifikazioaz hornitzen duen liburutegiaren bidea erakusten du.</translation>
     </message>
     <message>
-        <source>Opens a dialog to select the VRDP authentication library file.</source>
+        <source>Opens a window to select the VRDP authentication library file.</source>
         <translation type="obsolete">VRDP autentifikazio liburutegiaren bidea hautatzeko leihoa irekitzen du.</translation>
     </message>
     <message>
@@ -10466,11 +10942,11 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
     </message>
     <message>
         <source>&amp;New...</source>
-        <translation type="unfinished">&amp;Berria...</translation>
+        <translation type="obsolete">&amp;Berria...</translation>
     </message>
     <message>
         <source>&amp;Add...</source>
-        <translation type="unfinished">&amp;Gehitu...</translation>
+        <translation type="obsolete">&amp;Gehitu...</translation>
     </message>
     <message>
         <source>R&amp;emove</source>
@@ -10489,19 +10965,15 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">Sortu disko birtual berri bat</translation>
     </message>
     <message>
-        <source>Add an existing medium</source>
+        <source>Remove the selected disk image file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Remove the selected medium</source>
+        <source>Release the selected disk image file by detaching it from the machines</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Release the selected medium by detaching it from the machines</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Refresh the media list</source>
+        <source>Refresh the list of disk image files</source>
         <translation type="unfinished">Medio zerrenda freskatu</translation>
     </message>
     <message>
@@ -10521,27 +10993,23 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">&amp;Hautatu</translation>
     </message>
     <message>
-        <source>All files (*)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Select a hard disk image file</source>
         <translation type="obsolete">Disko gogor irudi fitxategia hautatu</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM images (*.iso);;All files (*)</source>
-        <translation type="obsolete">CD/DVD-ROM irudiak (*.iso);;Fitxategi guztiak (*)</translation>
+        <source>CD/DVD images (*.iso);;All files (*)</source>
+        <translation type="obsolete">CD/DVD irudiak (*.iso);;Fitxategi guztiak (*)</translation>
     </message>
     <message>
-        <source>Select a CD/DVD-ROM disk image file</source>
-        <translation type="obsolete">Hautatu CD/DVD-ROM disko irudi fitxategi bat</translation>
+        <source>Select a CD/DVD disk image file</source>
+        <translation type="obsolete">Hautatu CD/DVD disko irudi fitxategi bat</translation>
     </message>
     <message>
         <source>Floppy images (*.img);;All files (*)</source>
         <translation type="obsolete">Diskete irudiak (*.img);;Fitxategi guztiak (*)</translation>
     </message>
     <message>
-        <source>Select a floppy disk image file</source>
+        <source>Select a floppy disk image files</source>
         <translation type="obsolete">Hautatu diskete irudi fitxategi bat</translation>
     </message>
     <message>
@@ -10629,34 +11097,11 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Copy an existing medium</source>
+        <source>Copy an existing disk image file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Modify the attributes of the selected medium</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Create a new virtual hard drive</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
-    <name>UIMiniToolBar</name>
-    <message>
-        <source>Always show the toolbar</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Exit Full Screen or Seamless Mode</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Close VM</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Minimize Window</source>
+        <source>Modify the attributes of the selected disk image file</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -10690,7 +11135,7 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
 <context>
     <name>VBoxOSTypeSelectorWidget</name>
     <message>
-        <source>Displays the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
+        <source>Selects the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
         <translation type="obsolete">Makina birtual honetan instalatzea pentsatzen duzun sistema eragilea erakusten du (sistema eragile bezeroa deiturikoa).</translation>
     </message>
 </context>
@@ -10762,7 +11207,7 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">Ktrl+D</translation>
     </message>
     <message>
-        <source>Display the Virtual Disk Manager dialog</source>
+        <source>Display the Virtual Disk Manager window</source>
         <translation type="obsolete">Makina Birtual Kudeaketa leihoa bistazten du</translation>
     </message>
     <message>
@@ -10775,7 +11220,7 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">Ktrl+G</translation>
     </message>
     <message>
-        <source>Display the global settings dialog</source>
+        <source>Display the global settings window</source>
         <translation type="obsolete">Ezarpen orokor leihoa bistarazi</translation>
     </message>
     <message>
@@ -10887,7 +11332,7 @@ sistemako lehenetsiriko hizkuntza berrezartzeko.&lt;/qt&gt;
         <translation type="obsolete">VirtualBox-ri &amp;Buruz...</translation>
     </message>
     <message>
-        <source>Show a dialog with product information</source>
+        <source>Show a window with product information</source>
         <translation type="obsolete">Produktu argibideekin leiho bat bistarazi du</translation>
     </message>
     <message>
@@ -11408,7 +11853,7 @@ Linux SE batetatik atzitzeko. Ezaugarri honek Bezero Gehigarriak behar ditu.&lt;
         <translation type="obsolete">Ize&amp;na</translation>
     </message>
     <message>
-        <source>Displays the filter name.</source>
+        <source>Holds the filter name.</source>
         <translation type="obsolete">Iragazki izena bistarazten du.</translation>
     </message>
     <message>
@@ -11581,11 +12026,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&amp;Details</source>
-        <translation type="unfinished">&amp;Xehetasunak</translation>
-    </message>
-    <message>
-        <source>&amp;Runtime</source>
-        <translation type="unfinished"></translation>
+        <translation type="obsolete">&amp;Xehetasunak</translation>
     </message>
     <message>
         <source>DMA Transfers</source>
@@ -11690,6 +12131,14 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>Drag&apos;n&apos;Drop Mode</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Configuration &amp;Details</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Runtime Information</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -11844,7 +12293,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Ostalari SE-ren sare errealera konektatzeko moldagailu birtualak modua kontrolatzen du.</translation>
     </message>
     <message>
-        <source>Displays the MAC address of this adapter. It contains exactly 12 characters chosen from {0-9,A-F}.</source>
+        <source>Holds the MAC address of this adapter. It contains exactly 12 characters chosen from {0-9,A-F}.</source>
         <translation type="obsolete">Moldagai honen MAC helbidea bistaratzen du. Zehazki 12 karaktere ditu {0-9,A-F} tartetik.</translation>
     </message>
     <message>
@@ -11852,15 +12301,15 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Abiaraztean sare kable birtuala konektaturik dagoen erakusten du.</translation>
     </message>
     <message>
-        <source>Displays the name of the host interface selected for this adapter.</source>
+        <source>Holds the name of the host interface selected for this adapter.</source>
         <translation type="obsolete">Moldagai honetako hautaturiko interfazearen ostalari izena bistaratzen du.</translation>
     </message>
     <message>
-        <source>Displays the TAP interface name.</source>
+        <source>Holds the TAP interface name.</source>
         <translation type="obsolete">TAP interfaze izena bistaratzen du.</translation>
     </message>
     <message>
-        <source>Displays the command executed to set up the TAP interface.</source>
+        <source>Holds the command executed to set up the TAP interface.</source>
         <translation type="obsolete">TAP interfazea konfiguratzeko exekutatutako komandoa bistaratzen du.</translation>
     </message>
     <message>
@@ -11868,7 +12317,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Konfigurazio aplikazioa Hautatzen du.</translation>
     </message>
     <message>
-        <source>Displays the command executed to terminate the TAP interface.</source>
+        <source>Holds the command executed to terminate the TAP interface.</source>
         <translation type="obsolete">TAP interfazea amaitzeko exekutatutako komandoa bistaratzen du.</translation>
     </message>
     <message>
@@ -11914,7 +12363,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Ataka Ze&amp;nbakia</translation>
     </message>
     <message>
-        <source>Displays the serial port number. You can choose one of the standard serial ports or select &lt;b&gt;User-defined&lt;/b&gt; and specify port parameters manually.</source>
+        <source>Selects the serial port number. You can choose one of the standard serial ports or select &lt;b&gt;User-defined&lt;/b&gt; and specify port parameters manually.</source>
         <translation type="obsolete">Serie ataka zenbakia bistarazi. Serie ataka estandarretako bat hautatu edo &lt;b&gt;Erabiltzaileak-definituriko&lt;/b&gt; bat eta ataka parametroak eskuz ezarri.</translation>
     </message>
     <message>
@@ -11922,15 +12371,15 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">&amp;IRQ</translation>
     </message>
     <message>
-        <source>Displays the IRQ number of this serial port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;IO APIC&lt;/b&gt; is enabled for this virtual machine.</source>
-        <translation type="obsolete">Serie ataka honen IRQ zenbakia bistarazi. Balio erabilgarriak zenbaki osoak &lt;tt&gt;0&lt;/tt&gt; eta &lt;tt&gt;255&lt;/tt&gt; artean. &lt;tt&gt;15&lt;/tt&gt; baina balioa handiagoak erabiltzeko &lt;b&gt;IO APIC&lt;/b&gt; gaiturik egon behar da makina birtual honetan.</translation>
+        <source>Holds the IRQ number of this serial port. Valid values are integer numbers in range from &lt;tt&gt;0&lt;/tt&gt; to &lt;tt&gt;255&lt;/tt&gt;. Values greater than &lt;tt&gt;15&lt;/tt&gt; may only be used if the &lt;b&gt;I/O APIC&lt;/b&gt; is enabled for this virtual machine.</source>
+        <translation type="obsolete">Serie ataka honen IRQ zenbakia bistarazi. Balio erabilgarriak zenbaki osoak &lt;tt&gt;0&lt;/tt&gt; eta &lt;tt&gt;255&lt;/tt&gt; artean. &lt;tt&gt;15&lt;/tt&gt; baina balioa handiagoak erabiltzeko &lt;b&gt;I/O APIC&lt;/b&gt; gaiturik egon behar da makina birtual honetan.</translation>
     </message>
     <message>
         <source>I/O Po&amp;rt</source>
         <translation type="obsolete">I/O A&amp;taka</translation>
     </message>
     <message>
-        <source>Displays the base I/O port address of this serial port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
+        <source>Holds the base I/O port address of this serial port. This should be a whole number between &lt;tt&gt;0&lt;/tt&gt; and &lt;tt&gt;0xFFFF&lt;/tt&gt;.</source>
         <translation type="obsolete">Serie ataka honen oinarri S/I helbidea bistaratzen du. Balio erabilgarria zenbaki osoak &lt;tt&gt;0&lt;/tt&gt; eta &lt;tt&gt;0xFFFF&lt;/tt&gt; tartean.</translation>
     </message>
     <message>
@@ -11958,7 +12407,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Ataka &amp;Bidea</translation>
     </message>
     <message>
-        <source>Displays the path to the serial port&apos;s pipe on the host when the port is working in &lt;b&gt;Host Pipe&lt;/b&gt; mode, or the host serial device name when the port is working in &lt;b&gt;Host Device&lt;/b&gt; mode.</source>
+        <source>Holds the path to the serial port&apos;s pipe on the host when the port is working in &lt;b&gt;Host Pipe&lt;/b&gt; mode, or the host serial device name when the port is working in &lt;b&gt;Host Device&lt;/b&gt; mode.</source>
         <translation type="obsolete">Ostalarian Serial atakarako kanalizazioaren bidea erakusten du ataka &lt;b&gt;Ostalari Kanalizazio&lt;/b&gt; moduan funtzionatzean, edo serie ataka izena atakak &lt;b&gt;Ostalari Gailua&lt;/b&gt; moduan funtzinoatzean.</translation>
     </message>
 </context>
@@ -11985,7 +12434,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Ostalari CD/DVD &amp;Gailua</translation>
     </message>
     <message>
-        <source>Lists host CD/DVD drives available to mount to the virtual machine.</source>
+        <source>Lists host CD/DVD drives available to insert to the virtual machine.</source>
         <translation type="obsolete">Makina birtualean muntatzeko erabilgarri dauden ostalariaren CD/DVD gailuak zerrendatzen ditu.</translation>
     </message>
     <message>
@@ -12001,7 +12450,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">&amp;ISO Irudi Fitxategia</translation>
     </message>
     <message>
-        <source>Displays the image file to mount to the virtual CD/DVD drive and allows to quickly select a different image.</source>
+        <source>Holds the image file to mount to the virtual CD/DVD drive and allows to quickly select a different image.</source>
         <translation type="obsolete">CD/DVD gailu birtualean muntatu behar den irudi fitxategia erakusten du eta beste irudi bat bizkor hautatzeko aukera ematen du.</translation>
     </message>
     <message>
@@ -12072,7 +12521,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">#floppy</translation>
     </message>
     <message>
-        <source> CD/DVD-ROM </source>
+        <source> CD/DVD </source>
         <translation type="obsolete"> CD/DVD_ROM </translation>
     </message>
     <message>
@@ -12152,7 +12601,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">&amp;Izena</translation>
     </message>
     <message>
-        <source>Displays the name of the virtual machine.</source>
+        <source>Holds the name of the virtual machine.</source>
         <translation type="obsolete">Makina birtualaren izena bistaratzen du.</translation>
     </message>
     <message>
@@ -12396,7 +12845,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">F1</translation>
     </message>
     <message>
-        <source>Displays the dialog help.</source>
+        <source>Holds the dialog help.</source>
         <translation type="obsolete">Leiho laguntza erakusten du.</translation>
     </message>
     <message>
@@ -12436,7 +12885,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Markaturik dagoenean, ezarritako disko gogor birtuala bigarren IDE kontrolatzailearen ataka morroian erantsiko da.</translation>
     </message>
     <message>
-        <source>Displays the virtual hard disk to attach to this IDE slot and allows to quickly select a different hard disk.</source>
+        <source>Holds the virtual hard disk to attach to this IDE slot and allows to quickly select a different hard disk.</source>
         <translation type="obsolete">IDE ataka honetan erantsiriko disko gogor birtuala erakusten du eta beste disko bat bizkor hautatzeko aukera ematen du.</translation>
     </message>
     <message>
@@ -12444,7 +12893,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Markaturik dagoenean, ezarritako euskarria makina birtualeko CD/DVD gailuan muntatzen du. Kontutan izan CD/DVD gailua beti bigarren IDE kontrolagailuaren ataka nagusian konektaturik dagoela.</translation>
     </message>
     <message>
-        <source>Displays the image file to mount to the virtual CD/DVD drive and allows to quickly select a different image.</source>
+        <source>Holds the image file to mount to the virtual CD/DVD drive and allows to quickly select a different image.</source>
         <translation type="obsolete">CD/DVD gailu birtualean muntatu behar den irudi fitxategia erakusten du eta beste irudi bat bizkor hautatzeko aukera ematen du.</translation>
     </message>
     <message>
@@ -12452,7 +12901,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">Markaturik dagoenean, ezarritako euskarria makina birtualeko diskete gailuan muntatzen du.</translation>
     </message>
     <message>
-        <source>Displays the image file to mount to the virtual Floppy drive and allows to quickly select a different image.</source>
+        <source>Holds the image file to mount to the virtual Floppy drive and allows to quickly select a different image.</source>
         <translation type="obsolete">Diskete gailu birtualean muntatu behar den irudi fitxategia erakusten du eta beste irudi bat bizkor hautatzeko aukera ematen du.</translation>
     </message>
     <message>
@@ -12490,7 +12939,7 @@ Kate hutsak edozein balio bilatuko du.&lt;/qt&gt;</translation>
         <translation type="obsolete">E&amp;goera-argazki Karpeta</translation>
     </message>
     <message>
-        <source>Displays the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
+        <source>Selects the operating system type that you plan to install into this virtual machine (called a guest operating system).</source>
         <translation type="obsolete">Makina birtual honetan instalatzea pentsatzen duzun sistema eragilea erakusten du (sistema eragile bezeroa deiturikoa).</translation>
     </message>
     <message>
@@ -12503,10 +12952,10 @@ ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</
     </message>
     <message>
         <source>&lt;qt&gt;When checked, the virtual machine will support
-the Input Output APIC (IO APIC), which may slightly decrease performance. &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable
+the Input Output APIC (I/O APIC), which may slightly decrease performance. &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable
 this feature after having installed a Windows guest operating system!&lt;/qt&gt;</source>
         <translation type="obsolete">&lt;qt&gt;Markaturik dagoenean, makina birtualak Sarrera Irteera
-APIC (IO APIC) onartuko du, honek makina birtualaren
+APIC (I/O APIC) onartuko du, honek makina birtualaren
 funtzionamendua asko geldotuko du.&lt;b&gt;Oharra:&lt;/b&gt; ez ezgaitu
 ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</translation>
     </message>
@@ -12515,7 +12964,7 @@ ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</
         <translation type="obsolete">Bezero eta ostalariaren sistema eragileen arteko arbela partekatzeko modua ezartzen du. Kontutan izan honek Bezero Gehigarriak sistema eragile bezeroan instalaturik egotea behar duela.</translation>
     </message>
     <message>
-        <source>Displays the path where snapshots of this virtual machine will be stored. Be aware that snapshots can take quite a lot of disk space.</source>
+        <source>Holds the path where snapshots of this virtual machine will be stored. Be aware that snapshots can take quite a lot of disk space.</source>
         <translation type="obsolete">Makina birtual honen egoera-argazkiak gordeko diren bidea erakusten du. Kontutan izan egoera-argazkiek disko leku asko erabili dezaketela.</translation>
     </message>
     <message>
@@ -12523,7 +12972,7 @@ ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</
         <translation type="obsolete">Egoera-argazki karpeta bidea lehenetsiriko balioan berrezartzen du. Uneko lehenetsiriko bidea erakutsiko da aldaketak onartu eta leiho hau berriz irekitzean.</translation>
     </message>
     <message>
-        <source>Displays the description of the virtual machine. The description field is useful for commenting on configuration details of the installed guest OS.</source>
+        <source>Holds the description of the virtual machine. The description field is useful for commenting on configuration details of the installed guest OS.</source>
         <translation type="obsolete">Makina birtualaren azalpena erakusten du. Azalpenen eremua instalaturiko bezero sistemaren eragileari edo konfigurazioari buruz iruzkinak egiteko da erabilgarria.</translation>
     </message>
     <message>
@@ -12531,7 +12980,7 @@ ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</
         <translation type="obsolete">Eransteko disko gogor birtual bat sortu edo daudenen arteak aukeratzeko Disko Gogor Kudeatzaile irekitzen du.</translation>
     </message>
     <message>
-        <source>Lists host Floppy drives available to mount to the virtual machine.</source>
+        <source>Lists host Floppy drives available to insert to the virtual machine.</source>
         <translation type="obsolete">Makina birtualean muntatzeko erabilgarri dauden ostalariaren diskete gailuak zerrendatzen ditu.</translation>
     </message>
     <message>
@@ -12539,7 +12988,7 @@ ezaugarri hau windows bezero sistema eragile bat instalatu ondoren!&lt;/qt&gt;</
         <translation type="obsolete">Disko Birtual Kudeatzailea deitzen du muntatzeko Diskete irudi bat hautatzeko.</translation>
     </message>
     <message>
-        <source>Lists host CD/DVD drives available to mount to the virtual machine.</source>
+        <source>Lists host CD/DVD drives available to insert to the virtual machine.</source>
         <translation type="obsolete">Makina birtualean muntatzeko erabilgarri dauden ostalariaren CD/DVD gailuak zerrendatzen ditu.</translation>
     </message>
     <message>
@@ -12646,7 +13095,7 @@ bezeroak audio txartela ikustea eragiten du baina sortzen duen edozein irteera b
         <translation type="obsolete">Alt+G</translation>
     </message>
     <message>
-        <source>If checked, any change to mounted CD/DVD or Floppy media performed during machine execution will be saved in the settings file in order to preserve the configuration of mounted media between runs.</source>
+        <source>If checked, any CD/DVD or floppy disks inserted into or removed from the virtual drives while the machine is running will be remembered.</source>
         <translation type="obsolete">Markaturik badago, Muntaturiko CD/DVD edo diskete euskarrietan eginiko edozein aldaketa gorde egingo da, abiarazteen artean muntaturiko medioen konfigurazioa mantentzeko.</translation>
     </message>
     <message>
@@ -12678,7 +13127,7 @@ bezeroak audio txartela ikustea eragiten du baina sortzen duen edozein irteera b
         <translation type="obsolete">Autentifikazio &amp;Denbora-muga </translation>
     </message>
     <message>
-        <source>&lt;qt&gt;Displays the VRDP Server port number. You may specify &lt;tt&gt;0&lt;/tt&gt; (zero) to reset the port to the default value.&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;Holds the VRDP Server port number. You may specify &lt;tt&gt;0&lt;/tt&gt; (zero) to reset the port to the default value.&lt;/qt&gt;</source>
         <translation type="obsolete">&lt;qt&gt;VRDP zerbitzariaren ataka zenbakia erakusten du. &lt;tt&gt;0&lt;/tt&gt; (zero) ezarri ezazu ataka lehenetsiriko baliora berrezartzeko&lt;/qt&gt;</translation>
     </message>
     <message>
@@ -12783,8 +13232,8 @@ bezeroak audio txartela ikustea eragiten du baina sortzen duen edozein irteera b
         <translation type="obsolete">Disko Gogorrak</translation>
     </message>
     <message>
-        <source>CD/DVD-ROM</source>
-        <translation type="obsolete">CD/DVD-ROM</translation>
+        <source>CD/DVD</source>
+        <translation type="obsolete">CD/DVD</translation>
     </message>
     <message>
         <source>Floppy</source>
@@ -12838,7 +13287,7 @@ bezeroak audio txartela ikustea eragiten du baina sortzen duen edozein irteera b
         <translation type="obsolete">Ostalari Diskete &amp;Gailua</translation>
     </message>
     <message>
-        <source>Lists host Floppy drives available to mount to the virtual machine.</source>
+        <source>Lists host Floppy drives available to insert to the virtual machine.</source>
         <translation type="obsolete">Makina birtualean muntatzeko erabilgarri dauden ostalariaren diskete gailuak zerrendatzen ditu.</translation>
     </message>
     <message>
@@ -12846,7 +13295,7 @@ bezeroak audio txartela ikustea eragiten du baina sortzen duen edozein irteera b
         <translation type="obsolete">Muntatu hautatutako diskete irudia diskete gailu birtualean.</translation>
     </message>
     <message>
-        <source>Displays the image file to mount to the virtual Floppy drive and allows to quickly select a different image.</source>
+        <source>Holds the image file to mount to the virtual Floppy drive and allows to quickly select a different image.</source>
         <translation type="obsolete">Diskete gailu birtualean muntatu behar den irudi fitxategia erakusten du eta beste irudi bat bizkor hautatzeko aukera ematen du.</translation>
     </message>
     <message>

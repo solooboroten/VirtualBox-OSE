@@ -4,7 +4,7 @@
 ;
 
 ;
-; Copyright (C) 2006-2011 Oracle Corporation
+; Copyright (C) 2006-2013 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -157,9 +157,18 @@ hlfpua_switch_fpu_ctx:
     jz short hlfpua_no_fxsave
 %endif
 
+%ifdef RT_ARCH_AMD64
+    ; Use explicit REX prefix. See @bugref{6398}.
+    o64 fxsave  [xDX + CPUMCPU.Host.fpu]
+%else
     fxsave  [xDX + CPUMCPU.Host.fpu]
+%endif
     or      dword [xDX + CPUMCPU.fUseFlags], (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM)
+%ifdef RT_ARCH_AMD64
+    o64 fxrstor [xDX + CPUMCPU.Guest.fpu]
+%else
     fxrstor [xDX + CPUMCPU.Guest.fpu]
+%endif
 hlfpua_finished_switch:
 %ifdef IN_RC
     mov     cr0, xCX                            ; load the new cr0 flags.

@@ -1382,7 +1382,7 @@
   // IVirtualBox
   /////////////////////////////////////////////////////////////////////////
   -->
-  <!-- This is experimental interface to LWIP based NAT server -->
+
   <interface name="INATNetwork" extends="$unknown"
     uuid="a63c75da-4c99-4e9d-8351-eb73651c18cc"
     wsmap="managed">
@@ -1431,7 +1431,7 @@
       </desc>
     </attribute>
     <attribute name="localMappings" type="wstring" readonly="yes" safearray="yes">
-      <desc>Array of mappings (address,offset),e.g. ("127.0.1.1;4") maps 127.0.1.1 to networkid + 4. 
+      <desc>Array of mappings (address,offset),e.g. ("127.0.1.1=4") maps 127.0.1.1 to networkid + 4. 
       </desc>
     </attribute>
     
@@ -2585,7 +2585,7 @@
     <method name="createNATNetwork">
       <!-- Here we create a record in NAT network array with name
            and gateway/network parameters this information should
-           be enough for VBoxNet[Lwip]NAT and VBoxNetDHCP for
+           be enough for VBoxNetNAT and VBoxNetDHCP for
            servicing the guests.
       -->
       <param name="networkName" type="wstring" dir="in"/>
@@ -4121,7 +4121,7 @@
 
   <interface
     name="IMachine" extends="$unknown"
-    uuid="b6057c6f-2176-4820-a8d6-cb6687ed1583"
+    uuid="7108c7c7-2c0a-47ee-9c69-022fe2a466bf"
     wsmap="managed"
     >
     <desc>
@@ -4511,7 +4511,6 @@
       <desc>VirtualBox Remote Desktop Extension (VRDE) server object.</desc>
     </attribute>
 
-    <attribute name="emulatedUSBWebcameraEnabled" type="boolean" default="false"/>
     <attribute name="emulatedUSBCardReaderEnabled" type="boolean" default="false"/>
 
     <attribute name="mediumAttachments" type="IMediumAttachment" readonly="yes" safearray="yes">
@@ -6300,6 +6299,35 @@
       </param>
     </method>
 
+    <method name="setSettingsFilePath">
+      <desc>
+        Currently, it is an error to change this property on any machine.
+        Later this will allow setting a new path for the settings file, with
+        automatic relocation of all files (including snapshots and disk images)
+        which are inside the base directory. This operation is only allowed
+        when there are no pending unsaved settings.
+
+        <note>
+          Setting this property to @c null or to an empty string is forbidden. 
+          When setting this property, the specified path must be absolute.
+          The specified path may not exist, it will be created when necessary.
+        </note>
+
+        <result name="E_NOTIMPL">
+          The operation is not implemented yet.
+        </result>
+      </desc>
+
+      <param name="settingsFilePath" type="wstring" dir="in">
+        <desc>New settings file path, will be used to determine the new
+        location for the attached media if it is in the same directory or
+        below as the original settings file.</desc>
+      </param>
+      <param name="progress" type="IProgress" dir="return">
+        <desc>Progress object to track the operation completion.</desc>
+      </param>
+    </method>
+
     <method name="saveSettings">
       <desc>
         Saves any changes to machine settings made since the session
@@ -7127,6 +7155,41 @@
 
   </interface>
 
+  <interface
+    name="IEmulatedUSB" extends="$unknown"
+    uuid="38cc4dfd-8bb2-4d40-aebe-699eead8c2dd"
+    wsmap="managed"
+    >
+    <desc>
+      Manages emulated USB devices.
+    </desc>
+
+    <method name="webcamAttach">
+      <desc>
+        Attaches the emulated USB webcam to the VM, which will use a host video capture device.
+      </desc>
+      <param name="path" type="wstring" dir="in">
+        <desc>The host path of the capture device to use.</desc>
+      </param>
+      <param name="settings" type="wstring" dir="in">
+        <desc>Optional settings.</desc>
+      </param>
+    </method>
+
+    <method name="webcamDetach">
+      <desc>
+        Detaches the emulated USB webcam from the VM
+      </desc>
+      <param name="path" type="wstring" dir="in">
+        <desc>The host path of the capture device to detach.</desc>
+      </param>
+    </method>
+
+    <attribute name="webcams" type="wstring" safearray="yes" readonly="yes">
+      <desc>Lists attached virtual webcams.</desc>
+    </attribute>
+  </interface>
+
   <!--
   // IConsole
   /////////////////////////////////////////////////////////////////////////
@@ -7242,7 +7305,7 @@
 
   <interface
     name="IConsole" extends="$unknown"
-    uuid="db7ab4ca-2a3f-4183-9243-c1208da92392"
+    uuid="8ab7c520-2442-4b66-8d74-4ff1e195d2b6"
     wsmap="managed"
     >
     <desc>
@@ -7379,6 +7442,12 @@
         whether it should only be allowed access to the VRDE clipboard. This
         setting may not affect existing guest clipboard connections which
         are already connected to the host clipboard.
+      </desc>
+    </attribute>
+
+    <attribute name="emulatedUSB" type="IEmulatedUSB" readonly="yes">
+      <desc>
+        Interface that manages emulated USB devices.
       </desc>
     </attribute>
 
@@ -8239,8 +8308,30 @@
   </interface>
 
   <interface
+    name="IHostVideoInputDevice" extends="$unknown"
+    uuid="a1ceae44-d65e-4156-9359-d390f93ee9a0"
+    wsmap="managed"
+    >
+    <desc>
+      Represents one of host's video capture devices, for example a webcam.
+    </desc>
+    <attribute name="name" type="wstring" readonly="yes">
+      <desc>User friendly name.</desc>
+    </attribute>
+
+    <attribute name="path" type="wstring" readonly="yes">
+      <desc>The host path of the device.</desc>
+    </attribute>
+
+    <attribute name="alias" type="wstring" readonly="yes">
+      <desc>An alias which can be used for IConsole::webcamAttach</desc>
+    </attribute>
+
+  </interface>
+
+  <interface
     name="IHost" extends="$unknown"
-    uuid="a6107246-f939-42c4-82b6-8aca40327b6d"
+    uuid="93269330-48ca-4096-b4a2-1189df336267"
     wsmap="managed"
     >
     <desc>
@@ -8695,6 +8786,10 @@
         <desc>New Ethernet MAC address.</desc>
       </param>
     </method>
+
+    <attribute name="videoInputDevices" type="IHostVideoInputDevice" safearray="yes" readonly="yes">
+      <desc>List of currently available host video capture devices.</desc>
+    </attribute>
 
   </interface>
 
@@ -12988,7 +13083,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IMedium" extends="$unknown"
-    uuid="8df5fc17-503a-4171-85bc-039b6f24d86b"
+    uuid="05f2bbb6-a3a6-4fb9-9b49-6d0dda7142ac"
     wsmap="managed"
     >
     <desc>
@@ -13202,25 +13297,13 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </desc>
     </attribute>
 
-    <attribute name="location" type="wstring">
+    <attribute name="location" type="wstring" readonly="yes">
       <desc>
         Location of the storage unit holding medium data.
 
         The format of the location string is medium type specific. For medium
         types using regular files in a host's file system, the location
         string is the full file name.
-
-        Some medium types may support changing the storage unit location by
-        simply changing the value of this property. If this operation is not
-        supported, the implementation will return E_NOTIMPL in attempt to set
-        this attribute's value.
-
-        When setting a value of the location attribute which is a regular file
-        in the host's file system, the given file name may be either relative to
-        the <link to="IVirtualBox::homeFolder">VirtualBox home folder</link> or
-        absolute. Note that if the given location specification does not contain
-        the file extension part then a proper default extension will be
-        automatically appended by the implementation depending on the medium type.
       </desc>
     </attribute>
 
@@ -14128,6 +14211,42 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     </method>
 
     <!-- other methods -->
+
+    <method name="setLocation">
+      <desc>
+        Changes the location of this medium. Some medium types may support
+        changing the storage unit location by simply changing the value of the
+        associated property. In this case the operation is performed
+        immediately, and @a progress is returning a @c null reference.
+        Otherwise on success there is a progress object returned, which
+        signals progress and completion of the operation. This distinction is
+        necessary because for some formats the operation is very fast, while
+        for others it can be very slow (moving the image file by copying all
+        data), and in the former case it'd be a waste of resources to create
+        a progress object which will immediately signal completion.
+
+        When setting a location for a medium which corresponds to a/several
+        regular file(s) in the host's file system, the given file name may be
+        either relative to the <link to="IVirtualBox::homeFolder">VirtualBox
+        home folder</link> or absolute. Note that if the given location
+        specification does not contain the file extension part then a proper
+        default extension will be automatically appended by the implementation
+        depending on the medium type.
+
+        <result name="E_NOTIMPL">
+          The operation is not implemented yet.
+        </result>
+        <result name="VBOX_E_NOT_SUPPORTED">
+          Medium format does not support changing the location.
+        </result>
+      </desc>
+      <param name="location" type="wstring" dir="in">
+        <desc>New location.</desc>
+      </param>
+      <param name="progress" type="IProgress" dir="return">
+        <desc>Progress object to track the operation completion.</desc>
+      </param>
+    </method>
 
     <method name="compact">
       <desc>
@@ -15594,7 +15713,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <enum
     name="NetworkAttachmentType"
-    uuid="2ac4bc71-6b82-417a-acd1-f7426d2570d6"
+    uuid="524a8f9d-4b86-4b51-877d-1aa27c4ebeac"
     >
     <desc>
       Network attachment type.
@@ -15608,6 +15727,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     <const name="Internal"              value="3"/>
     <const name="HostOnly"              value="4"/>
     <const name="Generic"               value="5"/>
+    <const name="NATNetwork"            value="6"/>
   </enum>
 
   <enum
@@ -17438,7 +17558,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IInternalSessionControl" extends="$unknown"
-    uuid="41506410-03d3-4b0c-9b27-e8e5149ce775"
+    uuid="2d2124a7-0f62-4907-ae21-eee5a559bdde"
     internal="yes"
     wsmap="suppress"
     >
@@ -17500,7 +17620,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </desc>
       <param name="machine" type="IMachine" dir="in"/>
       <param name="lockType" type="LockType" dir="in"/>
-      <param name="tokenId" type="wstring" dir="in"/>
+      <param name="token" type="IToken" dir="in"/>
     </method>
 </if>
 

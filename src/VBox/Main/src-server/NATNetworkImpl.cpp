@@ -171,6 +171,7 @@ HRESULT NATNetwork::init(VirtualBox *aVirtualBox,
     m->fEnabled = data.fEnabled;
     m->fAdvertiseDefaultIPv6Route = data.fAdvertiseDefaultIPv6Route;
     m->fNeedDhcpServer = data.fNeedDhcpServer;
+    m->fIPv6Enabled = data.fIPv6;
 
     m->u32LoopbackIp6 = data.u32HostLoopback6Offset;
 
@@ -373,24 +374,24 @@ STDMETHODIMP NATNetwork::COMSETTER(Network)(IN_BSTR aIPv4NetworkCidr)
     return rc;
 }
 
-STDMETHODIMP NATNetwork::COMGETTER(IPv6Enabled)(BOOL *aAdvertiseDefaultIPv6Route)
+STDMETHODIMP NATNetwork::COMGETTER(IPv6Enabled)(BOOL *aIPv6Enabled)
 {
-    CheckComArgOutPointerValid(aAdvertiseDefaultIPv6Route);
+    CheckComArgOutPointerValid(aIPv6Enabled);
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    *aAdvertiseDefaultIPv6Route = m->fAdvertiseDefaultIPv6Route;
+    *aIPv6Enabled = m->fIPv6Enabled;
 
     return S_OK;
 }
 
-STDMETHODIMP NATNetwork::COMSETTER(IPv6Enabled)(BOOL aAdvertiseDefaultIPv6Route)
+STDMETHODIMP NATNetwork::COMSETTER(IPv6Enabled)(BOOL aIPv6Enabled)
 {
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-    m->fAdvertiseDefaultIPv6Route = aAdvertiseDefaultIPv6Route;
+    m->fIPv6Enabled = aIPv6Enabled;
 
     // save the global settings; for that we should hold only the VirtualBox lock
     alock.release();
@@ -520,7 +521,7 @@ STDMETHODIMP NATNetwork::COMGETTER(LocalMappings)(ComSafeArrayOut(BSTR, aLocalMa
     for (it = m->llNATLoopbackOffsetList.begin();
          it != m->llNATLoopbackOffsetList.end(); ++it, ++i)
       {
-          BstrFmt bstr("%s;%d",
+          BstrFmt bstr("%s=%d",
                        (*it).strLoopbackHostAddress.c_str(),
                        (*it).u32Offset);
         bstr.detachTo(&sf[i]);
@@ -903,7 +904,7 @@ void NATNetwork::GetPortForwardRulesFromMap(ComSafeArrayOut(BSTR, aPortForwardRu
 }
 
 
-int NATNetwork::findFirstAvailableOffset(uint32_t *poff)
+int NATNetwork::findFirstAvailableOffset(ADDRESSLOOKUPTYPE addrType, uint32_t *poff)
 {
     RTNETADDRIPV4 network, netmask;
 
@@ -917,12 +918,6 @@ int NATNetwork::findFirstAvailableOffset(uint32_t *poff)
     for (off = 1; off < ~netmask.u; ++off)
     {
 
-        if (off == m->offGateway)
-            continue;
-
-        if (off == m->offDhcp)
-            continue;
-        
         bool skip = false;
         for (it = m->llNATLoopbackOffsetList.begin();
              it != m->llNATLoopbackOffsetList.end();
@@ -936,6 +931,25 @@ int NATNetwork::findFirstAvailableOffset(uint32_t *poff)
 
         }
         
+        if (skip)
+            continue;
+
+        if (off == m->offGateway)
+        {
+            if (addrType == ADDR_GATEWAY)
+                break;
+            else
+                continue;
+        }
+
+        if (off == m->offDhcp)
+        {
+            if (addrType == ADDR_DHCP)
+                break;
+            else
+                continue;
+        }
+
         if (!skip)
             break;
     }
@@ -954,9 +968,9 @@ int NATNetwork::recalculateIpv4AddressAssignments()
                              &netmask);
     AssertRCReturn(rc, rc);
 
-    findFirstAvailableOffset(&m->offGateway);
+    findFirstAvailableOffset(ADDR_GATEWAY, &m->offGateway);
     if (m->fNeedDhcpServer)
-        findFirstAvailableOffset(&m->offDhcp);
+        findFirstAvailableOffset(ADDR_DHCP, &m->offDhcp);
 
     /* I don't remember the reason CIDR calculated on the host. */
     RTNETADDRIPV4 gateway = network;
@@ -972,8 +986,11 @@ int NATNetwork::recalculateIpv4AddressAssignments()
         dhcpserver.u += m->offDhcp;
 
         /* XXX: adding more services should change the math here */
-        RTNETADDRIPV4 dhcplowerip;
-        dhcplowerip.u = RT_H2N_U32(dhcpserver.u + 1);
+        RTNETADDRIPV4 dhcplowerip = network;
+        uint32_t offDhcpLowerIp;
+        findFirstAvailableOffset(ADDR_DHCPLOWERIP, &offDhcpLowerIp);
+        dhcplowerip.u = RT_H2N_U32(dhcplowerip.u + offDhcpLowerIp);
+
         RTNETADDRIPV4 dhcpupperip;
         dhcpupperip.u = RT_H2N_U32((network.u | ~netmask.u) - 1);
 

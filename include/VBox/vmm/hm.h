@@ -38,6 +38,71 @@
 
 RT_C_DECLS_BEGIN
 
+/** @def VMCPU_HMCF_CLEAR
+ * Clears a HM-context flag for the given VCPU.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlag   The flag to clear.
+ */
+#define VMCPU_HMCF_CLEAR(pVCpu, fFlag)              ((pVCpu)->hm.s.fContextUseFlags &= ~(fFlag))
+
+/** @def VMCPU_FF_SET
+ * Sets a HM-context flag for the given VCPU.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlag   The flag to set.
+ */
+#define VMCPU_HMCF_SET(pVCpu, fFlag)                ((pVCpu)->hm.s.fContextUseFlags |= (fFlag))
+
+/** @def VMCPU_HMCF_IS_SET
+ * Checks if all the flags in the specified HM-context set is pending.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlag   The flag to check.
+ */
+#define VMCPU_HMCF_IS_SET(pVCpu, fFlag)             (((pVCpu)->hm.s.fContextUseFlags & (fFlag)) == (fFlag))
+
+/** @def VMCPU_HMCF_IS_PENDING
+ * Checks if one or more of the flags in the specified HM-context set is
+ * pending.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlags  The flags to check for.
+ */
+#define VMCPU_HMCF_IS_PENDING(pVCpu, fFlags)        RT_BOOL((pVCpu)->hm.s.fContextUseFlags & (fFlags))
+
+/** @def VMCPU_HMCF_IS_PENDING_ONLY
+ * Checks if -only- one or more of the specified HM-context flags is pending.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlags  The flags to check for.
+ */
+#define VMCPU_HMCF_IS_PENDING_ONLY(pVCpu, fFlags)   !RT_BOOL((pVCpu)->hm.s.fContextUseFlags & ~(fFlags))
+
+/** @def VMCPU_HMCF_IS_SET_ONLY
+ * Checks if -only- all the flags in the specified HM-context set is pending.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlags  The flags to check for.
+ */
+#define VMCPU_HMCF_IS_SET_ONLY(pVCpu, fFlags)       ((pVCpu)->hm.s.fContextUseFlags == (fFlags))
+
+/** @def VMCPU_HMCF_RESET_TO
+ * Resets the HM-context flags to the specified value.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ * @param   fFlags  The new value.
+ */
+#define VMCPU_HMCF_RESET_TO(pVCpu, fFlags)          ((pVCpu)->hm.s.fContextUseFlags = (fFlags))
+
+/** @def VMCPU_HMCF_VALUE
+ * Returns the current HM-context flags value.
+ *
+ * @param   pVCpu   Pointer to the VMCPU.
+ */
+#define VMCPU_HMCF_VALUE(pVCpu)                     ((pVCpu)->hm.s.fContextUseFlags)
+
+
 /**
  * Checks whether HM (VT-x/AMD-V) is being used by this VM.
  *
@@ -49,9 +114,9 @@ RT_C_DECLS_BEGIN
  * @internal
  */
 #if defined(VBOX_STRICT) && defined(IN_RING3)
-# define HMIsEnabled(a_pVM)   HMIsEnabledNotMacro(a_pVM)
+# define HMIsEnabled(a_pVM)                 HMIsEnabledNotMacro(a_pVM)
 #else
-# define HMIsEnabled(a_pVM)   ((a_pVM)->fHMEnabled)
+# define HMIsEnabled(a_pVM)                 ((a_pVM)->fHMEnabled)
 #endif
 
 /**
@@ -65,9 +130,9 @@ RT_C_DECLS_BEGIN
  * @internal
  */
 #if HC_ARCH_BITS == 64
-# define HMIsRawModeCtxNeeded(a_pVM)   (!HMIsEnabled(a_pVM))
+# define HMIsRawModeCtxNeeded(a_pVM)        (!HMIsEnabled(a_pVM))
 #else
-# define HMIsRawModeCtxNeeded(a_pVM)   (!HMIsEnabled(a_pVM) || (a_pVM)->fHMNeedRawModeCtx)
+# define HMIsRawModeCtxNeeded(a_pVM)        (!HMIsEnabled(a_pVM) || (a_pVM)->fHMNeedRawModeCtx)
 #endif
 
  /**
@@ -77,7 +142,7 @@ RT_C_DECLS_BEGIN
  * @param   a_pVCpu     Pointer to the shared virtual CPU structure.
  * @internal
  */
-#define HMCanEmulateIoBlock(a_pVCpu)     (!CPUMIsGuestInPagedProtectedMode(a_pVCpu))
+#define HMCanEmulateIoBlock(a_pVCpu)        (!CPUMIsGuestInPagedProtectedMode(a_pVCpu))
 
  /**
  * Check if the current CPU state is valid for emulating IO blocks in the recompiler
@@ -86,7 +151,7 @@ RT_C_DECLS_BEGIN
  * @param   a_pCtx      Pointer to the CPU context (within PVM).
  * @internal
  */
-#define HMCanEmulateIoBlockEx(a_pCtx)   (!CPUMIsGuestInPagedProtectedModeEx(a_pCtx))
+#define HMCanEmulateIoBlockEx(a_pCtx)       (!CPUMIsGuestInPagedProtectedModeEx(a_pCtx))
 
 /**
  * Checks whether we're in the special hardware virtualization context.
@@ -95,9 +160,9 @@ RT_C_DECLS_BEGIN
  * @thread  EMT
  */
 #ifdef IN_RING0
-# define HMIsInHwVirtCtx(a_pVCpu)       (VMCPU_GET_STATE(a_pVCpu) == VMCPUSTATE_STARTED_HM)
+# define HMIsInHwVirtCtx(a_pVCpu)           (VMCPU_GET_STATE(a_pVCpu) == VMCPUSTATE_STARTED_HM)
 #else
-# define HMIsInHwVirtCtx(a_pVCpu)       (false)
+# define HMIsInHwVirtCtx(a_pVCpu)           (false)
 #endif
 
 /**

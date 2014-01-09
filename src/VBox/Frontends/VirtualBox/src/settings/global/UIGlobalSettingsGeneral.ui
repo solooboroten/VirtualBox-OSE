@@ -40,7 +40,7 @@
       </sizepolicy>
      </property>
      <property name="whatsThis">
-      <string>Displays the path to the default virtual machine folder. This folder is used, if not explicitly specified otherwise, when creating new virtual machines.</string>
+      <string>Holds the path to the default virtual machine folder. This folder is used, if not explicitly specified otherwise, when creating new virtual machines.</string>
      </property>
     </widget>
    </item>
@@ -66,7 +66,7 @@
       </sizepolicy>
      </property>
      <property name="whatsThis">
-      <string>Displays the path to the library that provides authentication for Remote Display (VRDP) clients.</string>
+      <string>Holds the path to the library that provides authentication for Remote Display (VRDP) clients.</string>
      </property>
     </widget>
    </item>
@@ -86,17 +86,17 @@
    <item row="2" column="1">
     <widget class="QCheckBox" name="m_pCheckBoxPresentationMode">
      <property name="text">
-      <string>Auto Show in Fullscreen</string>
+      <string>Auto-Show in Fullscreen</string>
      </property>
      <property name="whatsThis">
-      <string>When checked, Dock and Menubar will be shown in virtual machine fullscreen.</string>
+      <string>When checked, the host dock and menu bar will be shown when the virtual machine is in fullscreen mode.</string>
      </property>
     </widget>
    </item>
    <item row="3" column="0">
     <widget class="QLabel" name="m_pLabelHostScreenSaver">
      <property name="text">
-      <string>&amp;Host Screen Saver:</string>
+      <string>&amp;Host Screensaver:</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -109,10 +109,10 @@
    <item row="3" column="1">
     <widget class="QCheckBox" name="m_pCheckBoxHostScreenSaver">
      <property name="whatsThis">
-      <string>When checked, the host screen saver will be disabled whenever a virtual machine is running.</string>
+      <string>When checked, the host screensaver will be disabled whenever a virtual machine is running.</string>
      </property>
      <property name="text">
-      <string>Disable at Virtual Machine Runtime</string>
+      <string>Disable When Running Virtual Machines</string>
      </property>
     </widget>
    </item>

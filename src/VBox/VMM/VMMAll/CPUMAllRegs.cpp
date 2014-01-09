@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2012 Oracle Corporation
+ * Copyright (C) 2006-2013 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1995,7 +1995,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
 
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx |= X86_CPUID_FEATURE_EDX_SEP;
-            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled sysenter/exit\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled SYSENTER/EXIT\n"));
             break;
         }
 
@@ -2023,7 +2023,7 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             }
             /* Valid for both Intel and AMD CPUs, although only in 64 bits mode for Intel. */
             pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_EXT_FEATURE_EDX_SYSCALL;
-            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled syscall/ret\n"));
+            LogRel(("CPUM: SetGuestCpuIdFeature: Enabled SYSCALL/RET\n"));
             break;
         }
 
@@ -3116,12 +3116,26 @@ VMMDECL(void) CPUMDeactivateGuestFPUState(PVMCPU pVCpu)
  * Checks if the guest debug state is active.
  *
  * @returns boolean
- * @param   pVM         Pointer to the VM.
+ * @param   pVM         Pointer to the VMCPU.
  */
 VMMDECL(bool) CPUMIsGuestDebugStateActive(PVMCPU pVCpu)
 {
     return RT_BOOL(pVCpu->cpum.s.fUseFlags & CPUM_USED_DEBUG_REGS_GUEST);
 }
+
+
+/**
+ * Checks if the guest debug state is to be made active during the world-switch
+ * (currently only used for the 32->64 switcher case).
+ *
+ * @returns boolean
+ * @param   pVM         Pointer to the VMCPU.
+ */
+VMMDECL(bool) CPUMIsGuestDebugStateActivePending(PVMCPU pVCpu)
+{
+    return RT_BOOL(pVCpu->cpum.s.fUseFlags & CPUM_SYNC_DEBUG_REGS_GUEST);
+}
+
 
 /**
  * Checks if the hyper debug state is active.
@@ -3132,6 +3146,19 @@ VMMDECL(bool) CPUMIsGuestDebugStateActive(PVMCPU pVCpu)
 VMMDECL(bool) CPUMIsHyperDebugStateActive(PVMCPU pVCpu)
 {
     return RT_BOOL(pVCpu->cpum.s.fUseFlags & CPUM_USED_DEBUG_REGS_HYPER);
+}
+
+
+/**
+ * Checks if the hyper debug state is to be made active during the world-switch
+ * (currently only used for the 32->64 switcher case).
+ *
+ * @returns boolean
+ * @param   pVM         Pointer to the VMCPU.
+ */
+VMMDECL(bool) CPUMIsHyperDebugStateActivePending(PVMCPU pVCpu)
+{
+    return RT_BOOL(pVCpu->cpum.s.fUseFlags & CPUM_SYNC_DEBUG_REGS_HYPER);
 }
 
 

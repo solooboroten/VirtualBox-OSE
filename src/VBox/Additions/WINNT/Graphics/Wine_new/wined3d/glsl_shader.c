@@ -50,10 +50,13 @@
 # if defined(RT_ARCH_AMD64)
 #  define copysignf _copysignf
 # else
-#  define _VBOX_FLOAT_BITVAL(_f) (*((const uint32_t*)((const void*)(&(_f)))))
+#  define _VBOX_BITVAL_CAST(_t, _f) (*((const _t*)((const void*)(&(_f)))))
+#  define _VBOX_BITVAL_TO_FLOATL(_f) _VBOX_BITVAL_CAST(float, _f)
+#  define _VBOX_BITVAL_FROM_FLOAT(_f) _VBOX_BITVAL_CAST(uint32_t, _f)
 DECLINLINE(float) copysignf(float val, float sign)
 {
-    return ((_VBOX_FLOAT_BITVAL(val) & 0x7fffffff) | (_VBOX_FLOAT_BITVAL(sign) & 0x80000000));
+    uint32_t u32Val = ((_VBOX_BITVAL_FROM_FLOAT(val) & 0x7fffffff) | (_VBOX_BITVAL_FROM_FLOAT(sign) & 0x80000000));
+    return _VBOX_BITVAL_TO_FLOATL(u32Val);
 }
 # endif
 #endif
@@ -231,6 +234,9 @@ struct glsl_ffp_destroy_ctx
 {
     struct shader_glsl_priv *priv;
     const struct wined3d_gl_info *gl_info;
+#ifdef VBOX_WITH_WINE_FIX_SHADERCLEANUP
+    struct wined3d_context *context;
+#endif
 };
 
 static const char *debug_gl_shader_type(GLenum type)
@@ -6841,7 +6847,7 @@ static void shader_glsl_free_ffp_vertex_shader(struct wine_rb_entry *entry, void
     {
         delete_glsl_program_entry(ctx->priv, ctx->gl_info, program
 #ifdef VBOX_WITH_WINE_FIX_SHADERCLEANUP
-                            , NULL
+                            , ctx->context
 #endif
                             );
     }
@@ -6857,6 +6863,9 @@ static void glsl_vertex_pipe_vp_free(struct wined3d_device *device)
 
     ctx.priv = priv;
     ctx.gl_info = &device->adapter->gl_info;
+#ifdef VBOX_WITH_WINE_FIX_SHADERCLEANUP
+    ctx.context = device->contexts[0];
+#endif
     wine_rb_destroy(&priv->ffp_vertex_shaders, shader_glsl_free_ffp_vertex_shader, &ctx);
 }
 
@@ -7106,7 +7115,7 @@ static void shader_glsl_free_ffp_fragment_shader(struct wine_rb_entry *entry, vo
     {
         delete_glsl_program_entry(ctx->priv, ctx->gl_info, program
 #ifdef VBOX_WITH_WINE_FIX_SHADERCLEANUP
-                            , context
+                            , ctx->context
 #endif
                             );
     }
@@ -7122,6 +7131,9 @@ static void glsl_fragment_pipe_free(struct wined3d_device *device)
 
     ctx.priv = priv;
     ctx.gl_info = &device->adapter->gl_info;
+#ifdef VBOX_WITH_WINE_FIX_SHADERCLEANUP
+    ctx.context = device->contexts[0];
+#endif
     wine_rb_destroy(&priv->ffp_fragment_shaders, shader_glsl_free_ffp_fragment_shader, &ctx);
 }
 
