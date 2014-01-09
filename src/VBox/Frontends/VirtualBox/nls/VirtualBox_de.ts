@@ -4530,7 +4530,7 @@
     </message>
     <message>
         <source>Create a snapshot of the current machine state</source>
-        <translation>Erzeugt einen Sicherungspunkt der aktuellen virtuellen Maschine</translation>
+        <translation>Sicherungspunkt des aktuellen VM-Zustands erstellen</translation>
     </message>
     <message>
         <source>&lt;p&gt;Cannot create the machine folder &lt;b&gt;%1&lt;/b&gt; in the parent folder &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;.&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;Please check that the parent really exists and that you have permissions to create the machine folder.&lt;/p&gt;</source>
@@ -4665,7 +4665,7 @@
     </message>
     <message>
         <source>Do you wish to cancel all current network operations?</source>
-        <translation>Möchten Sie alle laufenden Netzwerk-Operationen abbrechen?</translation>
+        <translation>Möchten Sie alle laufenden Netzoperationen abbrechen?</translation>
     </message>
     <message>
         <source>ACPI Shutdown</source>
@@ -4792,7 +4792,7 @@
     <name>UINetworkManagerDialog</name>
     <message>
         <source>Network Operations Manager</source>
-        <translation>Netzwerk-Operationen</translation>
+        <translation>Manager für Netzoperationen</translation>
     </message>
     <message>
         <source>There are no active network operations.</source>
@@ -4804,7 +4804,7 @@
     </message>
     <message>
         <source>Cancel all active network operations</source>
-        <translation>Alle aktiven Netzwerk-Operationen abbrechen</translation>
+        <translation>Alle aktiven Netzoperationen abbrechen</translation>
     </message>
     <message>
         <source>Error: %1.</source>
@@ -4827,7 +4827,7 @@
     <name>UINetworkManagerIndicator</name>
     <message>
         <source>Current network operations:</source>
-        <translation>Netzwerk-Operationen:</translation>
+        <translation>Netzweroperationen:</translation>
     </message>
     <message>
         <source>failed</source>
@@ -7519,7 +7519,7 @@
     </message>
     <message>
         <source>Take a snapshot of the current virtual machine state</source>
-        <translation>Erzeugt einen Sicherungspunkt der aktuellen virtuellen Maschine</translation>
+        <translation>Sicherungspunkt des aktuellen VM-Zustands erstellen</translation>
     </message>
     <message>
         <source>Show the details of the selected snapshot</source>

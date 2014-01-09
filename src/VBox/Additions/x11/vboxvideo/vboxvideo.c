@@ -55,7 +55,7 @@
  */
 
 #ifdef XORG_7X
-# include "xorg-server.h"
+# include <stdlib.h>
 # include <string.h>
 #endif
 
@@ -559,7 +559,6 @@ static const xf86OutputFuncsRec VBOXOutputFuncs = {
 };
 #endif /* VBOXVIDEO_13 */
 
-#ifdef XFree86LOADER
 /* Module loader interface */
 static MODULESETUPPROTO(vboxSetup);
 
@@ -622,7 +621,6 @@ vboxSetup(pointer Module, pointer Options, int *ErrorMajor, int *ErrorMinor)
     return (NULL);
 }
 
-#endif  /* XFree86Loader defined */
 
 static const OptionInfoRec *
 VBOXAvailableOptions(int chipid, int busid)
@@ -1115,6 +1113,13 @@ static Bool VBOXScreenInit(ScreenPtr pScreen, int argc, char **argv)
                      pScrn->currentMode->VDisplay, pScrn->frameX0,
                      pScrn->frameY0))
         return FALSE;
+    /* Save the size in case we need to re-set it later. */
+    pVBox->FBSize.cx = pScrn->currentMode->HDisplay;
+    pVBox->FBSize.cy = pScrn->currentMode->VDisplay;
+    pVBox->aScreenLocation[0].cx = pScrn->currentMode->HDisplay;
+    pVBox->aScreenLocation[0].cy = pScrn->currentMode->VDisplay;
+    pVBox->aScreenLocation[0].x = pScrn->frameX0;
+    pVBox->aScreenLocation[0].y = pScrn->frameY0;
     /* And make sure that a non-current dynamic mode is at the front of the
      * list */
     vboxWriteHostModes(pScrn, pScrn->currentMode);
@@ -1174,7 +1179,8 @@ static Bool VBOXEnterVT(ScrnInfoPtr pScrn)
         DRIUnlock(xf86ScrnToScreen(pScrn));
 #endif
     /* Re-assert this in case we had a change request while switched out. */
-    VBOXAdjustScreenPixmap(pScrn, pVBox->FBSize.cx, pVBox->FBSize.cy);
+    if (pVBox->FBSize.cx && pVBox->FBSize.cy)
+        VBOXAdjustScreenPixmap(pScrn, pVBox->FBSize.cx, pVBox->FBSize.cy);
 #ifdef VBOXVIDEO_13
     if (!xf86SetDesiredModes(pScrn))
         return FALSE;

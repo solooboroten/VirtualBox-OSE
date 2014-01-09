@@ -604,7 +604,7 @@ Utf8Str GuestProcess::guestErrorToString(int guestRc)
             break;
 
         case VERR_NOT_EQUAL: /** @todo Imprecise to the user; can mean anything and all. */
-            strError += Utf8StrFmt(tr("Unable to retrieving requested information"));
+            strError += Utf8StrFmt(tr("Unable to retrieve requested information"));
             break;
 
         case VERR_NOT_FOUND:
@@ -935,7 +935,7 @@ int GuestProcess::readData(uint32_t uHandle, uint32_t uSize, uint32_t uTimeoutMS
 
     int vrc = VINF_SUCCESS;
 
-    GuestCtrlCallback *pCallbackRead;
+    GuestCtrlCallback *pCallbackRead = NULL;
     try
     {
         pCallbackRead = new GuestCtrlCallback();
@@ -1464,6 +1464,7 @@ int GuestProcess::waitFor(uint32_t fWaitFlags, ULONG uTimeoutMS, ProcessWaitResu
         alock.release(); /* Release lock before waiting. */
 
         vrc = pEvent->Wait(uTimeoutMS);
+        LogFlowThisFunc(("Waiting completed with rc=%Rrc\n", vrc));
         if (RT_SUCCESS(vrc))
         {
             waitResult = pEvent->GetWaitResult();
@@ -1512,7 +1513,7 @@ int GuestProcess::writeData(uint32_t uHandle, uint32_t uFlags,
 
     int vrc = VINF_SUCCESS;
 
-    GuestCtrlCallback *pCallbackWrite;
+    GuestCtrlCallback *pCallbackWrite = NULL;
     try
     {
         pCallbackWrite = new GuestCtrlCallback();
@@ -1744,6 +1745,10 @@ STDMETHODIMP GuestProcess::WaitFor(ULONG aWaitFlags, ULONG aTimeoutMS, ProcessWa
         {
             case VERR_GENERAL_FAILURE: /** @todo Special guest control rc needed! */
                 hr = GuestProcess::setErrorExternal(this, guestRc);
+                break;
+
+            case VERR_TIMEOUT:
+                *aReason = ProcessWaitResult_Timeout;
                 break;
 
             default:
@@ -2014,9 +2019,8 @@ int GuestProcessTool::WaitEx(uint32_t fFlags, GuestProcessStreamBlock *pStreamBl
         switch (waitRes)
         {
             case ProcessWaitResult_StdIn:
-               /* Nothing to do here yet. */
-               fDone = true;
-               break;
+                vrc = VERR_NOT_IMPLEMENTED;
+                break;
 
             case ProcessWaitResult_StdOut:
                 fHandleStdOut = true;
@@ -2037,14 +2041,24 @@ int GuestProcessTool::WaitEx(uint32_t fFlags, GuestProcessStreamBlock *pStreamBl
                 break;
 
             case ProcessWaitResult_Error:
+                vrc = VERR_GENERAL_FAILURE; /** @todo Special guest control rc needed! */
+                break;
+
             case ProcessWaitResult_Terminate:
-            case ProcessWaitResult_Timeout:
                 fDone = true;
                 break;
 
+            case ProcessWaitResult_Timeout:
+                vrc = VERR_TIMEOUT;
+                break;
+
+            case ProcessWaitResult_Start:
+            case ProcessWaitResult_Status:
+                /* Not used here, just skip. */
+                break;
+
             default:
-                AssertMsgFailed(("Unhandled process wait result %ld\n", waitRes));
-                fDone = true;
+                AssertReleaseMsgFailed(("Unhandled process wait result %ld\n", waitRes));
                 break;
         }
 
@@ -2108,6 +2122,8 @@ void GuestProcessTool::Terminate(void)
 
     if (!pProcess.isNull())
     {
+        /** @todo Add pProcess.Terminate() here as soon as it's implemented. */
+
         Assert(pSession);
         int rc2 = pSession->processRemoveFromList(pProcess);
         AssertRC(rc2);
