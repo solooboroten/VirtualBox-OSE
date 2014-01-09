@@ -109,6 +109,15 @@ QString UIGChooserItemMachine::name() const
     return UIVMItem::name();
 }
 
+bool UIGChooserItemMachine::isLockedMachine() const
+{
+    KMachineState state = machineState();
+    return state != KMachineState_PoweredOff &&
+           state != KMachineState_Saved &&
+           state != KMachineState_Teleported &&
+           state != KMachineState_Aborted;
+}
+
 QVariant UIGChooserItemMachine::data(int iKey) const
 {
     /* Provide other members with required data: */
@@ -410,6 +419,9 @@ bool UIGChooserItemMachine::isDropAllowed(QGraphicsSceneDragDropEvent *pEvent, D
     /* No drops while saving groups: */
     if (model()->isGroupSavingInProgress())
         return false;
+    /* No drops for immutable item: */
+    if (isLockedMachine())
+        return false;
     /* Get mime: */
     const QMimeData *pMimeData = pEvent->mimeData();
     /* If drag token is shown, its up to parent to decide: */
@@ -425,7 +437,11 @@ bool UIGChooserItemMachine::isDropAllowed(QGraphicsSceneDragDropEvent *pEvent, D
         const UIGChooserItemMimeData *pCastedMimeData = qobject_cast<const UIGChooserItemMimeData*>(pMimeData);
         AssertMsg(pCastedMimeData, ("Can't cast passed mime-data to UIGChooserItemMimeData!"));
         UIGChooserItem *pItem = pCastedMimeData->item();
-        return pItem->toMachineItem()->id() != id();
+        UIGChooserItemMachine *pMachineItem = pItem->toMachineItem();
+        /* Make sure passed machine is mutable: */
+        if (pMachineItem->isLockedMachine())
+            return false;
+        return pMachineItem->id() != id();
     }
     /* That was invalid mime: */
     return false;
@@ -706,10 +722,12 @@ void UIGChooserItemMachine::paintMachineInfo(QPainter *pPainter, const QStyleOpt
                 /* Paint name: */
                 paintText(/* Painter: */
                           pPainter,
-                          /* Rectangle to paint in: */
-                          QRect(QPoint(iNameX, iNameY), machineNameSize),
+                          /* Point to paint in: */
+                          QPoint(iNameX, iNameY),
                           /* Font to paint text: */
                           data(MachineItemData_NameFont).value<QFont>(),
+                          /* Paint device: */
+                          model()->paintDevice(),
                           /* Text to paint: */
                           data(MachineItemData_Name).toString());
             }
@@ -728,10 +746,12 @@ void UIGChooserItemMachine::paintMachineInfo(QPainter *pPainter, const QStyleOpt
                 /* Paint snapshot name: */
                 paintText(/* Painter: */
                           pPainter,
-                          /* Rectangle to paint in: */
-                          QRect(QPoint(iSnapshotNameX, iSnapshotNameY), snapshotNameSize),
+                          /* Point to paint in: */
+                          QPoint(iSnapshotNameX, iSnapshotNameY),
                           /* Font to paint text: */
                           data(MachineItemData_SnapshotNameFont).value<QFont>(),
+                          /* Paint device: */
+                          model()->paintDevice(),
                           /* Text to paint: */
                           data(MachineItemData_SnapshotName).toString());
             }
@@ -769,10 +789,12 @@ void UIGChooserItemMachine::paintMachineInfo(QPainter *pPainter, const QStyleOpt
                 /* Paint state text: */
                 paintText(/* Painter: */
                           pPainter,
-                          /* Rectangle to paint in: */
-                          QRect(QPoint(iMachineStateTextX, iMachineStateTextY), machineStateTextSize),
+                          /* Point to paint in: */
+                          QPoint(iMachineStateTextX, iMachineStateTextY),
                           /* Font to paint text: */
                           data(MachineItemData_StateTextFont).value<QFont>(),
+                          /* Paint device: */
+                          model()->paintDevice(),
                           /* Text to paint: */
                           data(MachineItemData_StateText).toString());
             }

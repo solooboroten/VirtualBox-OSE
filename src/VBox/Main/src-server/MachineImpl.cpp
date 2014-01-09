@@ -289,7 +289,8 @@ HRESULT Machine::init(VirtualBox *aParent,
                       const StringsList &llGroups,
                       GuestOSType *aOsType,
                       const Guid &aId,
-                      bool fForceOverwrite)
+                      bool fForceOverwrite,
+                      bool fDirectoryIncludesUUID)
 {
     LogFlowThisFuncEnter();
     LogFlowThisFunc(("(Init_New) aConfigFile='%s'\n", strConfigFile.c_str()));
@@ -323,6 +324,7 @@ HRESULT Machine::init(VirtualBox *aParent,
 
         mUserData->s.llGroups = llGroups;
 
+        mUserData->s.fDirectoryIncludesUUID = fDirectoryIncludesUUID;
         // the "name sync" flag determines whether the machine directory gets renamed along
         // with the machine file; say so if the settings file name is the same as the
         // settings file parent directory (machine directory)
@@ -8756,10 +8758,10 @@ HRESULT Machine::loadStorageControllers(const settings::Storage &data,
         /* Set IDE emulation settings (only for AHCI controller). */
         if (ctlData.controllerType == StorageControllerType_IntelAhci)
         {
-            if (    (FAILED(rc = pCtl->SetIDEEmulationPort(0, ctlData.lIDE0MasterEmulationPort)))
-                 || (FAILED(rc = pCtl->SetIDEEmulationPort(1, ctlData.lIDE0SlaveEmulationPort)))
-                 || (FAILED(rc = pCtl->SetIDEEmulationPort(2, ctlData.lIDE1MasterEmulationPort)))
-                 || (FAILED(rc = pCtl->SetIDEEmulationPort(3, ctlData.lIDE1SlaveEmulationPort)))
+            if (    (FAILED(rc = pCtl->setIDEEmulationPort(0, ctlData.lIDE0MasterEmulationPort)))
+                 || (FAILED(rc = pCtl->setIDEEmulationPort(1, ctlData.lIDE0SlaveEmulationPort)))
+                 || (FAILED(rc = pCtl->setIDEEmulationPort(2, ctlData.lIDE1MasterEmulationPort)))
+                 || (FAILED(rc = pCtl->setIDEEmulationPort(3, ctlData.lIDE1SlaveEmulationPort)))
                )
                 return rc;
         }
@@ -9192,8 +9194,14 @@ HRESULT Machine::prepareSaveSettings(bool *pfNeedsGlobalSaveSettings)
             /* first, rename the directory if it matches the group and machine name */
             Utf8Str groupPlusName = Utf8StrFmt("%s%c%s",
                 group.c_str(), RTPATH_DELIMITER, name.c_str());
+            /** @todo hack, make somehow use of ComposeMachineFilename */
+            if (mUserData->s.fDirectoryIncludesUUID)
+                groupPlusName += Utf8StrFmt(" (%RTuuid)", mData->mUuid.raw());
             Utf8Str newGroupPlusName = Utf8StrFmt("%s%c%s",
                 newGroup.c_str(), RTPATH_DELIMITER, newName.c_str());
+            /** @todo hack, make somehow use of ComposeMachineFilename */
+            if (mUserData->s.fDirectoryIncludesUUID)
+                newGroupPlusName += Utf8StrFmt(" (%RTuuid)", mData->mUuid.raw());
             configDir = configFile;
             configDir.stripFilename();
             newConfigDir = configDir;
@@ -9926,10 +9934,10 @@ HRESULT Machine::saveStorageControllers(settings::Storage &data)
         /* Save IDE emulation settings. */
         if (ctl.controllerType == StorageControllerType_IntelAhci)
         {
-            if (    (FAILED(rc = pCtl->GetIDEEmulationPort(0, (LONG*)&ctl.lIDE0MasterEmulationPort)))
-                 || (FAILED(rc = pCtl->GetIDEEmulationPort(1, (LONG*)&ctl.lIDE0SlaveEmulationPort)))
-                 || (FAILED(rc = pCtl->GetIDEEmulationPort(2, (LONG*)&ctl.lIDE1MasterEmulationPort)))
-                 || (FAILED(rc = pCtl->GetIDEEmulationPort(3, (LONG*)&ctl.lIDE1SlaveEmulationPort)))
+            if (    (FAILED(rc = pCtl->getIDEEmulationPort(0, (LONG*)&ctl.lIDE0MasterEmulationPort)))
+                 || (FAILED(rc = pCtl->getIDEEmulationPort(1, (LONG*)&ctl.lIDE0SlaveEmulationPort)))
+                 || (FAILED(rc = pCtl->getIDEEmulationPort(2, (LONG*)&ctl.lIDE1MasterEmulationPort)))
+                 || (FAILED(rc = pCtl->getIDEEmulationPort(3, (LONG*)&ctl.lIDE1SlaveEmulationPort)))
                )
                 ComAssertComRCRet(rc, rc);
         }
@@ -10945,6 +10953,9 @@ bool Machine::isInOwnDir(Utf8Str *aSettingsDir /* = NULL */) const
     Utf8Str strConfigFileOnly(mData->m_strConfigFileFull);  // path/to/machinesfolder/vmname/vmname.vbox
     strConfigFileOnly.stripPath()                           // vmname.vbox
                      .stripExt();                           // vmname
+    /** @todo hack, make somehow use of ComposeMachineFilename */
+    if (mUserData->s.fDirectoryIncludesUUID)
+        strConfigFileOnly += Utf8StrFmt(" (%RTuuid)", mData->mUuid.raw());
 
     AssertReturn(!strMachineDirName.isEmpty(), false);
     AssertReturn(!strConfigFileOnly.isEmpty(), false);

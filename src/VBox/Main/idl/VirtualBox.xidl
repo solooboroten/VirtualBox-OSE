@@ -1423,7 +1423,7 @@
 
   <interface
     name="IVirtualBox" extends="$unknown"
-    uuid="5c8814a1-2a35-402d-8680-68e5cb4e72aa"
+    uuid="3b2f08eb-b810-4715-bee0-bb06b9880ad2"
     wsmap="managed"
     >
     <desc>
@@ -1663,6 +1663,9 @@
         <desc>Machine group name for the new machine or machine group. It is
         used to determine the right subdirectory.</desc>
       </param>
+      <param name="createFlags" type="wstring" dir="in">
+        <desc>Machine creation flags, see <link to="#createMachine" /> (optional).</desc>
+      </param>
       <param name="baseFolder" type="wstring" dir="in">
         <desc>Base machine folder (optional).</desc>
       </param>
@@ -1689,7 +1692,7 @@
         given in the @a name argument and the primary group.
 
         If the resulting settings file already exists, this method will fail,
-        unless @a forceOverwrite is set.
+        unless the forceOverwrite flag is set.
 
         The new machine is created unregistered, with the initial configuration
         set according to the specified guest OS type. A typical sequence of
@@ -1721,12 +1724,6 @@
         The specified guest OS type identifier must match an ID of one of known
         guest OS types listed in the <link to="IVirtualBox::guestOSTypes"/>
         array.
-
-        Optionally, you may specify an UUID of to assign to the created machine.
-        However, this is not recommended and you should normally pass an empty
-        (@c null) UUID to this method so that a new UUID will be automatically
-        generated for every created machine. You can use UUID
-        00000000-0000-0000-0000-000000000000 as @c null value.
 
         <note>
           There is no way to change the name of the settings file or
@@ -1762,11 +1759,15 @@
       <param name="osTypeId" type="wstring" dir="in">
         <desc>Guest OS Type ID.</desc>
       </param>
-      <param name="id" type="uuid" mod="string" dir="in">
-        <desc>Machine UUID (optional).</desc>
-      </param>
-      <param name="forceOverwrite" type="boolean" dir="in">
-        <desc>If true, an existing machine settings file will be overwritten.</desc>
+      <param name="flags" type="wstring" dir="in">
+        <desc>
+          Additional property parameters, passed as a comma-separated list of
+          "name=value" type entries. The following ones are recognized:
+          <tt>forceOverwrite=1</tt> to overwrite an existing machine settings
+          file, <tt>UUID=&lt;uuid&gt;</tt> to specify a machine UUID and
+          <tt>directoryIncludesUUID=1</tt> to switch to a special VM directory
+          naming scheme which should not be used unless necessary.
+        </desc>
       </param>
       <param name="machine" type="IMachine" dir="return">
         <desc>Created machine object.</desc>
@@ -8907,8 +8908,10 @@
       <desc>No flag set.</desc>
     </const>
     <const name="WaitForUpdateStartOnly"  value="1">
-      <desc>Only wait for the update process being started and do not
-        wait while peforming the actual update.</desc>
+      <desc>Starts the regular updating process and waits until the
+        actual Guest Additions update inside the guest was started.
+        This can be necessary due to needed interaction with the guest
+        OS during the installation phase.</desc>
     </const>
   </enum>
 
@@ -9346,7 +9349,7 @@
       every operation will use the same credentials specified when creating
       the session object via <link to="IGuest::createSession"/>.
 
-      There can be a maximum of 255 sessions at once per VM. Each session keeps
+      There can be a maximum of 32 sessions at once per VM. Each session keeps
       track of its started guest processes, opened guest files or guest directories.
       To work on guest files or directories a guest session offers methods to open
       or create such objects (see <link to="IGuestSession::fileOpen"/> or
@@ -11092,15 +11095,15 @@
 
     <method name="createSession">
       <desc>
-        Creates a new guest session for controlling the guest. 
-        
+        Creates a new guest session for controlling the guest.
+
         A guest session represents one impersonated user account on the guest, so
         every operation will use the same credentials specified when creating
-        the session object via <link to="IGuest::createSession"/>. Anonymous 
+        the session object via <link to="IGuest::createSession"/>. Anonymous
         sessions, that is, sessions without specifying a valid
         user account on the guest are not allowed due to security reasons.
 
-        There can be a maximum of 255 sessions at once per VM. Each session keeps
+        There can be a maximum of 32 sessions at once per VM. Each session keeps
         track of its started guest processes, opened guest files or guest directories.
         To work on guest files or directories a guest session offers methods to open
         or create such objects (see <link to="IGuestSession::fileOpen"/> or
@@ -11115,7 +11118,7 @@
         To override (or unset) certain environment variables already set by the
         guest session, one can specify a per-process environment block when using
         one of the both above mentioned process creation calls.
-        
+
         Closing a session via <link to="IGuestSession::close" /> will try to close
         all the mentioned objects above unless these objects are still used by
         a client.
@@ -11165,12 +11168,28 @@
           Array with all guest sessions found matching the name specified.
         </desc>
       </param>
-    </method>  
+    </method>
 
     <method name="updateGuestAdditions">
       <desc>
-        Updates already installed Guest Additions in a VM
-        (Windows guests only).
+        Automatically updates already installed Guest Additions in a VM.
+
+        At the moment only Windows guests are supported.
+
+        Because the VirtualBox Guest Additions drivers are not WHQL-certified
+        yet there might be warning dialogs during the actual Guest Additions
+        update. These need to be confirmed manually in order to continue the
+        installation process. This applies to Windows 2000 and Windows XP guests
+        and therefore these guests can't be updated in a fully automated fashion
+        without user interaction. However, to start a Guest Additions update for
+        the mentioned Windows versions anyway, the flag
+        AdditionsUpdateFlag_WaitForUpdateStartOnly can be specified. See
+        <link to="AdditionsUpdateFlag"/> for more information.
+
+        <result name="VBOX_E_NOT_SUPPORTED">
+          Guest OS is not supported for automated Guest Additions updates or the
+          already installed Guest Additions are not ready yet.
+        </result>
 
         <result name="VBOX_E_IPRT_ERROR">
           Error while updating.
@@ -17083,42 +17102,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         Returns whether it is possible to boot from disks attached to this controller.
       </desc>
     </attribute>
-
-    <method name="getIDEEmulationPort">
-      <desc>
-        Gets the corresponding port number which is emulated as an IDE device.
-        Works only with SATA controllers.
-
-        <result name="E_INVALIDARG">
-          The @a devicePosition is not in the range 0 to 3.
-        </result>
-        <result name="E_NOTIMPL">
-          The storage controller type is not SATAIntelAhci.
-        </result>
-
-      </desc>
-      <param name="devicePosition" type="long" dir="in"/>
-      <param name="portNumber" type="long" dir="return"/>
-    </method>
-
-    <method name="setIDEEmulationPort">
-      <desc>
-        Sets the port number which is emulated as an IDE device.
-        Works only with SATA controllers.
-
-        <result name="E_INVALIDARG">
-          The @a devicePosition is not in the range 0 to 3 or the
-          @a portNumber is not in the range 0 to 29.
-        </result>
-        <result name="E_NOTIMPL">
-          The storage controller type is not SATAIntelAhci.
-        </result>
-
-      </desc>
-      <param name="devicePosition" type="long" dir="in"/>
-      <param name="portNumber" type="long" dir="in"/>
-    </method>
-
   </interface>
 
 <if target="wsdl">

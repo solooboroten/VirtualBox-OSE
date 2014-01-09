@@ -208,14 +208,14 @@ VBOX_BUILD_PUBLISHER =
 # Note! The BETA[n],ALPHA[n],RC[n] indicators should be inserted before the
 #       publisher so that RTStrVersionCompare have a chance of comparing
 #       prerelease from different publishers correctly.
-VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)_RC2$(VBOX_BUILD_PUBLISHER)
+VBOX_VERSION_STRING = $(VBOX_VERSION_STRING_RAW)_RC3$(VBOX_BUILD_PUBLISHER)
 
 # Force the additions.sh script to get an exact additions build when we're doing the release.
 ifeq ($(int-mod $(VBOX_VERSION_BUILD),2),0)
- export VBOX_ADDITIONS_SH_MODE     = release
- export VBOX_DOCUMENTATION_SH_MODE = release
- export VBOX_EFI_SH_MODE           = release
- export VBOX_EXTPACKS_SH_MODE      = release
+# export VBOX_ADDITIONS_SH_MODE     = release
+# export VBOX_DOCUMENTATION_SH_MODE = release
+# export VBOX_EFI_SH_MODE           = release
+# export VBOX_EXTPACKS_SH_MODE      = release
 endif
 
 # Some info on the vendor
@@ -1881,7 +1881,6 @@ ifeq ($(KBUILD_TARGET),darwin)
  ifeq ($(KBUILD_HOST),darwin)
   ifndef VBOX_XCODE_VERSION
    ifdef VBOX_WITH_MACOSX_COMPILERS_FROM_DEVEL
-    $(warning VBOX_XCODE_VERSION := $(VBOX_PATH_MACOSX_DEVEL_ROOT)/usr/bin/xcodebuild -version)
     VBOX_XCODE_VERSION := $(word 2, $(shell $(VBOX_PATH_MACOSX_DEVEL_ROOT)/usr/bin/xcodebuild -version))
    else
     VBOX_XCODE_VERSION := $(word 2, $(shell xcodebuild -version))
@@ -1899,41 +1898,23 @@ ifeq ($(KBUILD_TARGET),darwin)
  VBOX_XCODE_VERSION_MINOR := $(word 2, $(subst ., ,$(VBOX_XCODE_VERSION)))
  VBOX_XCODE_VERSION       := $(VBOX_XCODE_VERSION_MAJOR).$(VBOX_XCODE_VERSION_MINOR)
 
+ VBOX_DEF_MACOSX_VERSION_MIN ?= 10.6
  ifeq ($(KBUILD_TARGET_ARCH),x86)
-  ifdef VBOX_WITH_COCOA_QT
-   if "$(VBOX_XCODE_VERSION_MAJOR)" == "4"
-    VBOX_DEF_MACOSX_VERSION_MIN ?= 10.6
-    VBOX_DARWIN_NO_COMPACT_LINKEDIT ?=
-    if $(VBOX_XCODE_VERSION_MINOR) >= 2
-     TOOL_GXX4MACHO_V ?= llvm-
-     TOOL_GXX4MACHO_SUFFIX ?= -4.2
-    else
-     TOOL_GXX4MACHO_SUFFIX ?= -4.2
-    endif
-   else
-    VBOX_DEF_MACOSX_VERSION_MIN ?= 10.5
-    VBOX_DARWIN_NO_COMPACT_LINKEDIT ?= $(VBOX_LD_no_compact_linkedit)
-    TOOL_GXX4MACHO_SUFFIX ?= -4.0
-   endif
-  else
-   if $(VBOX_XCODE_VERSION_MAJOR) >= 4
-    $(error VBox: Too new Xcode version ($(VBOX_XCODE_VERSION)) for non-Cocoa builds.)
-   endif
-   VBOX_DEF_MACOSX_VERSION_MIN ?= 10.4
-   VBOX_DARWIN_NO_COMPACT_LINKEDIT ?=
+  if1of ($(VBOX_DEF_MACOSX_VERSION_MIN), 10.4 10.5)
+   VBOX_DARWIN_NO_COMPACT_LINKEDIT ?= $(VBOX_LD_no_compact_linkedit)
    TOOL_GXX4MACHO_SUFFIX ?= -4.0
   endif
  else
   if $(VBOX_XCODE_VERSION_MAJOR) < 4 && "$(VBOX_XCODE_VERSION)" != "3.2"
    $(error VBox: 64-bit darwin builds require Xcode 3.2 or later, you have $(VBOX_XCODE_VERSION))
   endif
-  VBOX_DEF_MACOSX_VERSION_MIN ?= 10.6
-  TOOL_GXX4MACHO_SUFFIX ?= -4.2
-  if $(VBOX_XCODE_VERSION_MAJOR) == 4 && $(VBOX_XCODE_VERSION_MINOR) >= 2
-   TOOL_GXX4MACHO_PREFIX ?= llvm-
-  endif
-  VBOX_DARWIN_NO_COMPACT_LINKEDIT ?=
  endif
+ if $(VBOX_XCODE_VERSION_MAJOR) == 4 && $(VBOX_XCODE_VERSION_MINOR) >= 2
+  TOOL_GXX4MACHO_PREFIX ?= llvm-
+ endif
+ TOOL_GXX4MACHO_SUFFIX ?= -4.2
+ VBOX_DARWIN_NO_COMPACT_LINKEDIT ?=
+
  TOOL_GCC4MACHO_SUFFIX ?= $(TOOL_GXX4MACHO_SUFFIX)$(HOSTSUFF_EXE)
  TOOL_GCC4MACHO_PREFIX ?= $(TOOL_GXX4MACHO_PREFIX)
  ifdef VBOX_WITH_MACOSX_COMPILERS_FROM_DEVEL
@@ -2435,6 +2416,10 @@ endef # VBOX_GENERATE_IMPORT_TARGET_DEF
 #
 ifdef VBOX_SIGNING_MODE
  ifeq ($(KBUILD_HOST),win)
+  #
+  # Windows
+  #
+
   # VBOX_PATH_SELFSIGN points to the Vista WDK bin/SelfSign directory.
   ifndef VBOX_PATH_SELFSIGN
    VBOX_PATH_SELFSIGN := $(lastword $(sort $(wildcard $(PATH_DEVTOOLS)/win.x86/selfsign/*)))
@@ -2498,8 +2483,59 @@ ifdef VBOX_SIGNING_MODE
   endif
   ## Enable signing of the additions.
   VBOX_SIGN_ADDITIONS   ?= 1
+
+ else ifeq ($(KBUILD_HOST),darwin)
+  #
+  # Darwin code signing.
+  #
+  # Currently release signing is done when packing.  This may change later.
+  # (Installer package signing is done elsewhere (VBOX_MACOSX_INSTALLER_SIGN).)
+  #
+  ifeq ($(strip $(VBOX_SIGNING_MODE)),test)
+   VBOX_CERTIFICATE_SUBJECT_NAME ?= $(error You, need to set VBOX_CERTIFICATE_SUBJECT_NAME in LocalConfig.kmk.)
+   VBOX_CERTIFICATE_SUBJECT_NAME_ARGS ?= --sign "$(VBOX_CERTIFICATE_SUBJECT_NAME)"
+  else if1of ($(VBOX_SIGNING_MODE), release development)
+   VBOX_CERTIFICATE_SUBJECT_NAME ?= Developer ID Application: Oracle America, Inc.
+   VBOX_CERTIFICATE_SUBJECT_NAME_ARGS ?= --sign "$(VBOX_CERTIFICATE_SUBJECT_NAME)"
+  else
+   $(error VBox: Unknown VBOX_SIGNING_MODE: $(VBOX_SIGNING_MODE))
+  endif
+
+  VBOX_CODESIGN ?= codesign
+  ## Sign an application bundle, framework or kernel extension.
+  # @param 1  The bundle to sign.
+  # @param 2  Identifier, optional.
+  VBOX_SIGN_BUNDLE_FN = $(VBOX_CODESIGN) \
+	--verbose=9 \
+	--force \
+       --file-list - \
+	$(VBOX_CERTIFICATE_SUBJECT_NAME_ARGS) \
+	$(1) $(if $(2),--identifier "$(2)",)
+
+  ## Sign a Mach-O image.
+  # @param 1  The bundle to sign.
+  # @param 2  Identifier, optional.
+  VBOX_SIGN_MACHO_FN = $(VBOX_CODESIGN) \
+	--verbose=9 \
+	--force \
+       --file-list - \
+	$(VBOX_CERTIFICATE_SUBJECT_NAME_ARGS) \
+	$(1) \
+	$(if $(2),--identifier "$(2)",)
+
+  ## Sign a VMM Mach-O image.
+  # @param 1  The bundle to sign.
+  # @param 2  Identifier, optional.
+  VBOX_SIGN_VMM_MOD_FN = $(VBOX_CODESIGN) \
+	--verbose=9 \
+	--force \
+       --file-list - \
+	$(VBOX_CERTIFICATE_SUBJECT_NAME_ARGS) \
+	$(1) -D $(1).codesign \
+	$(if $(2),--identifier "$(2)",)
+
  else
-  # Not windows build platform, ignore.
+  # Not Windows or mac os x build host, ignore.
   VBOX_SIGNING_MODE :=
  endif
 endif
@@ -2942,6 +2978,8 @@ TEMPLATE_VBoxR0_SYSSUFF             = .r0
 TEMPLATE_VBoxR0_MODE                = a+r,u+w
 
 TEMPLATE_VBoxR0_USES               += dtrace
+TEMPLATE_VBoxR0_DTRACE_HDR_FLAGS    = --ring-0-context-agnostic
+TEMPLATE_VBoxR0_DTRACE_OBJ_FLAGS    = --ring-0-context-agnostic
 ifdef VBOX_WITH_DTRACE_R0
  TEMPLATE_VBoxR0_DTRACETOOL         = VBoxTpG
  TEMPLATE_VBoxR0_DEFS              += VBOX_WITH_DTRACE VBOX_WITH_DTRACE_R0
@@ -3688,10 +3726,8 @@ ifdef VBOX_WITH_RUNPATH
 else ifdef VBOX_WITH_RELATIVE_RUNPATH
  TEMPLATE_VBOXR3TSTEXE_LDFLAGS = '$(VBOX_GCC_RPATH_OPT)$(VBOX_WITH_RELATIVE_RUNPATH)/..' $(TEMPLATE_VBOXR3EXE_LDFLAGS)
 endif
-ifeq ($(KBUILD_TARGET),win)
- ifdef VBOX_SIGNING_MODE
-  TEMPLATE_VBOXR3TSTEXE_POST_CMDS =
- endif
+if "$(KBUILD_TARGET)" == "win" && defined(VBOX_SIGNING_MODE)
+ TEMPLATE_VBOXR3TSTEXE_POST_CMDS =
 endif
 
 #
@@ -4645,7 +4681,8 @@ ifeq ($(KBUILD_TARGET),win)
  	$(PATH_TOOL_$(TEMPLATE_VBOXGUESTR3EXE_TOOL.win.amd64)_LIB)/libcmt$(VBOX_VCC_CRT_TYPE).lib \
  	$(PATH_TOOL_$(TEMPLATE_VBOXGUESTR3EXE_TOOL.win.amd64)_LIB)/libcpmt$(VBOX_VCC_CRT_TYPE).lib
  # Hack for running on NT4, W2K and XP w/o SP: Change OS and subsystem version in the image.
- TEMPLATE_VBOXGUESTR3EXE_POST_CMDS.win.x86  = $(if $(eq $(tool_do),LINK_LIBRARY),,$(VBOX_PE_SET_VERSION) $(out))
+ # HACK ALERT! Double expansion of $$(NLTAB).
+ TEMPLATE_VBOXGUESTR3EXE_POST_CMDS.win.x86  = $(if $(eq $(tool_do),LINK_LIBRARY),,$(VBOX_PE_SET_VERSION) $(out)$$(NLTAB)$(TEMPLATE_VBOXR3EXE_POST_CMDS))
  TEMPLATE_VBOXGUESTR3EXE_LNK_DEPS.win.x86   = $(if $(eq $(tool_do),LINK_LIBRARY),,$(VBOX_PE_SET_VERSION))
 else # the gcc guys
  TEMPLATE_VBOXGUESTR3EXE_EXTENDS  = VBOXR3EXE
@@ -4878,13 +4915,8 @@ TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS             = CHROMIUM_THREADSAFE VBOX_WITH_HGC
 TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.win         = _WIN32_WINNT=0x0500 WINDOWS=1
 TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.linux       = Linux=1 _GNU_SOURCE
 TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.solaris     = SunOS=1 _GNU_SOURCE #GLEXT_64_TYPES_DEFINED
-TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.darwin      = DARWIN=1 GL_GLEXT_LEGACY _GNU_SOURCE
-ifdef VBOX_WITH_COCOA_QT
- TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.darwin    += VBOX_WITH_COCOA_QT
- TEMPLATE_VBOXCROGLR3HOSTDLL_LDFLAGS.darwin  = -framework AppKit
-else
- TEMPLATE_VBOXCROGLR3HOSTDLL_LDFLAGS.darwin  = -framework Carbon
-endif
+TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.darwin      = DARWIN=1 GL_GLEXT_LEGACY _GNU_SOURCE VBOX_WITH_COCOA_QT
+TEMPLATE_VBOXCROGLR3HOSTDLL_LDFLAGS.darwin   = -framework AppKit
 TEMPLATE_VBOXCROGLR3HOSTDLL_DEFS.freebsd     = FreeBSD=1 _GNU_SOURCE
 TEMPLATE_VBOXCROGLR3HOSTDLL_INCS             = $(VBOX_PATH_CROGL_INCLUDE) $(VBOX_PATH_CROGL_GENFILES)
 TEMPLATE_VBOXCROGLR3HOSTDLL_SDKS.darwin      = DARWIN-OPENGL
@@ -4912,13 +4944,8 @@ TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS             = CHROMIUM_THREADSAFE VBOX_WITH_HG
 TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.win         = WINDOWS=1
 TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.linux       = Linux=1 _GNU_SOURCE
 TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.solaris     = SunOS=1 _GNU_SOURCE #GLEXT_64_TYPES_DEFINED
-TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.darwin      = DARWIN=1 GL_GLEXT_LEGACY _GNU_SOURCE
-ifdef VBOX_WITH_COCOA_QT
- TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.darwin    += VBOX_WITH_COCOA_QT
- TEMPLATE_VBOXCROGLR3GUESTDLL_LDFLAGS.darwin  = -framework AppKit
-else
- TEMPLATE_VBOXCROGLR3GUESTDLL_LDFLAGS.darwin  = -framework Carbon
-endif
+TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.darwin      = DARWIN=1 GL_GLEXT_LEGACY _GNU_SOURCE VBOX_WITH_COCOA_QT
+TEMPLATE_VBOXCROGLR3GUESTDLL_LDFLAGS.darwin   = -framework AppKit
 TEMPLATE_VBOXCROGLR3GUESTDLL_DEFS.freebsd     = FreeBSD=1 _GNU_SOURCE
 TEMPLATE_VBOXCROGLR3GUESTDLL_INCS             = $(VBOX_PATH_CROGL_INCLUDE) $(VBOX_PATH_CROGL_GENFILES)
 TEMPLATE_VBOXCROGLR3GUESTDLL_SDKS.darwin      = DARWIN-OPENGL

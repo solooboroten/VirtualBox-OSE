@@ -208,6 +208,19 @@ bool UIGChooserItemGroup::contains(const QString &strId, bool fRecursively /* = 
     return false;
 }
 
+bool UIGChooserItemGroup::isContainsLockedMachine()
+{
+    /* For each machine item: */
+    foreach (UIGChooserItem *pItem, items(UIGChooserItemType_Machine))
+        if (pItem->toMachineItem()->isLockedMachine())
+            return true;
+    /* For each group item: */
+    foreach (UIGChooserItem *pItem, items(UIGChooserItemType_Group))
+        if (pItem->toGroupItem()->isContainsLockedMachine())
+            return true;
+    return false;
+}
+
 void UIGChooserItemGroup::sltNameEditingFinished()
 {
     /* Not for root-item: */
@@ -226,6 +239,10 @@ void UIGChooserItemGroup::sltNameEditingFinished()
     QString strNewName = m_pNameEditorWidget->text().trimmed();
     if (strNewName.isEmpty() || groupNames.contains(strNewName))
         return;
+
+    /* Since '/' symbol is forbidden,
+     * we should replace it: */
+    strNewName.replace('/', '_');
 
     /* Set new name / update model: */
     m_strName = strNewName;
@@ -874,6 +891,9 @@ bool UIGChooserItemGroup::isDropAllowed(QGraphicsSceneDragDropEvent *pEvent, Dra
         const UIGChooserItemMimeData *pCastedMimeData = qobject_cast<const UIGChooserItemMimeData*>(pMimeData);
         AssertMsg(pCastedMimeData, ("Can't cast passed mime-data to UIGChooserItemMimeData!"));
         UIGChooserItem *pItem = pCastedMimeData->item();
+        /* Make sure passed group contains only mutable machines: */
+        if (pItem->toGroupItem()->isContainsLockedMachine())
+            return false;
         /* Make sure passed group is not 'this': */
         if (pItem == this)
             return false;
@@ -893,6 +913,9 @@ bool UIGChooserItemGroup::isDropAllowed(QGraphicsSceneDragDropEvent *pEvent, Dra
         const UIGChooserItemMimeData *pCastedMimeData = qobject_cast<const UIGChooserItemMimeData*>(pMimeData);
         AssertMsg(pCastedMimeData, ("Can't cast passed mime-data to UIGChooserItemMimeData!"));
         UIGChooserItem *pItem = pCastedMimeData->item();
+        /* Make sure passed machine is mutable: */
+        if (pItem->toMachineItem()->isLockedMachine())
+            return false;
         switch (pEvent->proposedAction())
         {
             case Qt::MoveAction:
@@ -1239,10 +1262,12 @@ void UIGChooserItemGroup::paintGroupInfo(QPainter *pPainter, const QStyleOptionG
                  iVerticalMargin + (iFullHeaderHeight - nameSize.height()) / 2;
     paintText(/* Painter: */
               pPainter,
-              /* Rectangle to paint in: */
-              QRect(QPoint(iNameX, iNameY), nameSize),
+              /* Point to paint in: */
+              QPoint(iNameX, iNameY),
               /* Font to paint text: */
               data(GroupItemData_NameFont).value<QFont>(),
+              /* Paint device: */
+              model()->paintDevice(),
               /* Text to paint: */
               data(GroupItemData_Name).toString());
 
@@ -1281,10 +1306,12 @@ void UIGChooserItemGroup::paintGroupInfo(QPainter *pPainter, const QStyleOptionG
                                      iVerticalMargin : iVerticalMargin + (iFullHeaderHeight - machineCountTextSize.height()) / 2;
             paintText(/* Painter: */
                       pPainter,
-                      /* Rectangle to paint in: */
-                      QRect(QPoint(iMachineCountTextX, iMachineCountTextY), machineCountTextSize),
+                      /* Point to paint in: */
+                      QPoint(iMachineCountTextX, iMachineCountTextY),
                       /* Font to paint text: */
                       infoFont,
+                      /* Paint device: */
+                      model()->paintDevice(),
                       /* Text to paint: */
                       strMachineCountText);
 
@@ -1309,10 +1336,12 @@ void UIGChooserItemGroup::paintGroupInfo(QPainter *pPainter, const QStyleOptionG
                                    iVerticalMargin : iVerticalMargin + (iFullHeaderHeight - groupCountTextSize.height()) / 2;
             paintText(/* Painter: */
                       pPainter,
-                      /* Rectangle to paint in: */
-                      QRect(QPoint(iGroupCountTextX, iGroupCountTextY), groupCountTextSize),
+                      /* Point to paint in: */
+                      QPoint(iGroupCountTextX, iGroupCountTextY),
                       /* Font to paint text: */
                       infoFont,
+                      /* Paint device: */
+                      model()->paintDevice(),
                       /* Text to paint: */
                       strGroupCountText);
 

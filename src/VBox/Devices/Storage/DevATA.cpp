@@ -2293,13 +2293,15 @@ static bool atapiPassthroughSS(ATADevState *s)
                 ataSCSIPadStr(s->CTX_SUFF(pbIOBuffer) + 16, "CD-ROM", 16);
                 ataSCSIPadStr(s->CTX_SUFF(pbIOBuffer) + 32, "1.0", 4);
             }
-            else if (s->aATAPICmd[0] == SCSI_READ_TOC_PMA_ATIP)
+            else if (   s->aATAPICmd[0] == SCSI_READ_TOC_PMA_ATIP
+                     && (s->aATAPICmd[2] & 0xf) != 0x05
+                     && s->aATAPICmd[6] != 0xaa)
             {
                 /* Set the media type if we can detect it. */
                 uint8_t *pbBuf = s->CTX_SUFF(pbIOBuffer);
 
                 /** @todo: Implemented only for formatted TOC now. */
-                if (   (s->aATAPICmd[1] & 0xf) == 0
+                if (   (s->aATAPICmd[2] & 0xf) == 0
                     && cbTransfer >= 6)
                 {
                     uint32_t NewMediaType;

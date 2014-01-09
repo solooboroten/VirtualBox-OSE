@@ -657,6 +657,10 @@ int GuestProcess::onProcessStatusChange(GuestCtrlCallback *pCallback, PCALLBACKD
        case PROC_STS_STARTED:
         {
             fSignal = (uWaitFlags & ProcessWaitForFlag_Start);
+            /* If the caller only wants to wait until the process has been started,
+             * notify in any case. */
+            if (mData.mProcess.mFlags & ProcessCreateFlag_WaitForProcessStartOnly)
+                fSignal = true;
             waitRes = ProcessWaitResult_Start;
 
             mData.mStatus = ProcessStatus_Started;
@@ -715,8 +719,10 @@ int GuestProcess::onProcessStatusChange(GuestCtrlCallback *pCallback, PCALLBACKD
         {
             fSignal = TRUE; /* Signal in any case. */
             /* Do we need to report termination? */
-            waitRes = (mData.mProcess.mFlags & ProcessCreateFlag_IgnoreOrphanedProcesses)
-                    ? ProcessWaitResult_Status : ProcessWaitResult_Terminate;
+            if (mData.mProcess.mFlags & ProcessCreateFlag_IgnoreOrphanedProcesses)
+                waitRes = ProcessWaitResult_Status;
+            else
+                waitRes = ProcessWaitResult_Terminate;
 
             mData.mStatus = ProcessStatus_Down;
             break;
@@ -864,8 +870,11 @@ int GuestProcess::onProcessOutput(GuestCtrlCallback *pCallback, PCALLBACKDATAEXE
 
     if (fSignal)
     {
-        int rc2 = signalWaiters(  pData->u32HandleId == OUTPUT_HANDLE_ID_STDOUT
-                                ? ProcessWaitResult_StdOut : ProcessWaitResult_StdErr);
+        int rc2;
+        if (pData->u32HandleId == OUTPUT_HANDLE_ID_STDOUT)
+            rc2 = signalWaiters(ProcessWaitResult_StdOut);
+        else
+            rc2 = signalWaiters(ProcessWaitResult_StdErr);
         if (RT_SUCCESS(vrc))
             vrc = rc2;
     }
@@ -1073,23 +1082,45 @@ int GuestProcess::startProcess(void)
         /* Prepare arguments. */
         char *pszArgs = NULL;
         size_t cArgs = mData.mProcess.mArguments.size();
-        if (cArgs)
+        if (cArgs >= UINT32_MAX)
+            vrc = VERR_BUFFER_OVERFLOW;
+
+        if (   RT_SUCCESS(vrc)
+            && cArgs)
         {
-            char **papszArgv = (char**)RTMemAlloc(sizeof(char*) * (cArgs + 1));
+            char **papszArgv = (char**)RTMemAlloc((cArgs + 1) * sizeof(char*));
             AssertReturn(papszArgv, VERR_NO_MEMORY);
-            for (size_t i = 0; RT_SUCCESS(vrc) && i < cArgs; i++)
-                vrc = RTStrDupEx(&papszArgv[i], mData.mProcess.mArguments[i].c_str());
+
+            for (size_t i = 0; i < cArgs && RT_SUCCESS(vrc); i++)
+            {
+                const char *pszCurArg = mData.mProcess.mArguments[i].c_str();
+                AssertPtr(pszCurArg);
+                vrc = RTStrDupEx(&papszArgv[i], pszCurArg);
+            }
             papszArgv[cArgs] = NULL;
 
             if (RT_SUCCESS(vrc))
                 vrc = RTGetOptArgvToString(&pszArgs, papszArgv, RTGETOPTARGV_CNV_QUOTE_MS_CRT);
+
+            if (papszArgv)
+            {
+                size_t i = 0;
+                while (papszArgv[i])
+                    RTStrFree(papszArgv[i++]);
+                RTMemFree(papszArgv);
+            }
         }
-        size_t cbArgs = pszArgs ? strlen(pszArgs) + 1 : 0; /* Include terminating zero. */
+
+        /* Calculate arguments size (in bytes). */
+        size_t cbArgs = 0;
+        if (RT_SUCCESS(vrc))
+            cbArgs = pszArgs ? strlen(pszArgs) + 1 : 0; /* Include terminating zero. */
 
         /* Prepare environment. */
         void *pvEnv = NULL;
         size_t cbEnv = 0;
-        vrc = mData.mProcess.mEnvironment.BuildEnvironmentBlock(&pvEnv, &cbEnv, NULL /* cEnv */);
+        if (RT_SUCCESS(vrc))
+            vrc = mData.mProcess.mEnvironment.BuildEnvironmentBlock(&pvEnv, &cbEnv, NULL /* cEnv */);
 
         if (RT_SUCCESS(vrc))
         {
@@ -1297,6 +1328,13 @@ int GuestProcess::waitFor(uint32_t fWaitFlags, ULONG uTimeoutMS, GuestProcessWai
                     }
                 }
 
+                /*
+                 * If ProcessCreateFlag_WaitForProcessStartOnly was specified on process creation the
+                 * caller is not interested in getting further process statuses -- so just don't notify
+                 * anything here anymore and return.
+                 */
+                if (mData.mProcess.mFlags & ProcessCreateFlag_WaitForProcessStartOnly)
+                    waitRes.mResult = ProcessWaitResult_Start;
                 break;
             }
 

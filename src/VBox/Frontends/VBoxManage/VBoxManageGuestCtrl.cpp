@@ -259,6 +259,7 @@ void usageGuestControl(PRTSTREAM pStrm, const char *pcszSep1, const char *pcszSe
                  "\n"
                  "                            updateadditions\n"
                  "                            [--source <guest additions .ISO>] [--verbose]\n"
+                 "                            [--wait-start]\n"
                  "\n", pcszSep1, pcszSep2);
 }
 
@@ -978,7 +979,9 @@ static int ctrlCopyTranslatePath(const char *pszSourceRoot, const char *pszSourc
     AssertPtrReturn(pszSource, VERR_INVALID_POINTER);
     AssertPtrReturn(pszDest, VERR_INVALID_POINTER);
     AssertPtrReturn(ppszTranslated, VERR_INVALID_POINTER);
+#if 0 /** @todo r=bird: It does not make sense to apply host path parsing semantics onto guest paths. I hope this code isn't mixing host/guest paths in the same way anywhere else... @bugref{6344} */
     AssertReturn(RTPathStartsWith(pszSource, pszSourceRoot), VERR_INVALID_PARAMETER);
+#endif
 
     /* Construct the relative dest destination path by "subtracting" the
      * source from the source root, e.g.
@@ -1938,6 +1941,17 @@ static int handleCtrlCopy(ComPtr<IGuest> guest, HandlerArg *pArg,
 
     /* If the destination is a path, (try to) create it. */
     const char *pszDest = strDest.c_str();
+/** @todo r=bird: RTPathFilename and RTPathStripFilename won't work
+ * correctly on non-windows hosts when the guest is from the DOS world (Windows,
+ * OS/2, DOS).  The host doesn't know about DOS slashes, only UNIX slashes and
+ * will get the wrong idea if some dilligent user does:
+ *
+ *      copyto myfile.txt 'C:\guestfile.txt'
+ * or
+ *      copyto myfile.txt 'D:guestfile.txt'
+ *
+ * @bugref{6344}
+ */
     if (!RTPathFilename(pszDest))
     {
         vrc = ctrlCopyDirCreate(pContext, pszDest);
@@ -2192,6 +2206,165 @@ static int handleCtrlCreateDirectory(ComPtr<IGuest> pGuest, HandlerArg *pArg)
     return FAILED(hrc) ? RTEXITCODE_FAILURE : RTEXITCODE_SUCCESS;
 }
 
+static int handleCtrlCreateTemp(ComPtr<IGuest> pGuest, HandlerArg *pArg)
+{
+    AssertPtrReturn(pArg, VERR_INVALID_PARAMETER);
+
+    /*
+     * Parse arguments.
+     *
+     * Note! No direct returns here, everyone must go thru the cleanup at the
+     *       end of this function.
+     */
+    static const RTGETOPTDEF s_aOptions[] =
+    {
+        { "--mode",                'm',                             RTGETOPT_REQ_UINT32  },
+        { "--directory",           'D',                             RTGETOPT_REQ_NOTHING },
+        { "--secure",              's',                             RTGETOPT_REQ_NOTHING },
+        { "--tmpdir",              't',                             RTGETOPT_REQ_STRING  },
+        { "--username",            'u',                             RTGETOPT_REQ_STRING  },
+        { "--passwordfile",        'p',                             RTGETOPT_REQ_STRING  },
+        { "--password",            GETOPTDEF_MKDIR_PASSWORD,        RTGETOPT_REQ_STRING  },
+        { "--domain",              'd',                             RTGETOPT_REQ_STRING  },
+        { "--verbose",             'v',                             RTGETOPT_REQ_NOTHING }
+    };
+
+    int ch;
+    RTGETOPTUNION ValueUnion;
+    RTGETOPTSTATE GetState;
+    RTGetOptInit(&GetState, pArg->argc, pArg->argv,
+                 s_aOptions, RT_ELEMENTS(s_aOptions), 0, RTGETOPTINIT_FLAGS_OPTS_FIRST);
+
+    Utf8Str strUsername;
+    Utf8Str strPassword;
+    Utf8Str strDomain;
+    Utf8Str strTemplate;
+    uint32_t fMode = 0; /* Default mode. */
+    bool fDirectory = false;
+    bool fSecure = false;
+    Utf8Str strTempDir;
+    bool fVerbose = false;
+
+    DESTDIRMAP mapDirs;
+
+    while ((ch = RTGetOpt(&GetState, &ValueUnion)))
+    {
+        /* For options that require an argument, ValueUnion has received the value. */
+        switch (ch)
+        {
+            case 'm': /* Mode */
+                fMode = ValueUnion.u32;
+                break;
+
+            case 'D': /* Create directory */
+                fDirectory = true;
+                break;
+
+            case 's': /* Secure */
+                fSecure = true;
+                break;
+
+            case 't': /* Temp directory */
+                strTempDir = ValueUnion.psz;
+                break;
+
+            case 'u': /* User name */
+                strUsername = ValueUnion.psz;
+                break;
+
+            case GETOPTDEF_MKDIR_PASSWORD: /* Password */
+                strPassword = ValueUnion.psz;
+                break;
+
+            case 'p': /* Password file */
+            {
+                RTEXITCODE rcExit = readPasswordFile(ValueUnion.psz, &strPassword);
+                if (rcExit != RTEXITCODE_SUCCESS)
+                    return rcExit;
+                break;
+            }
+
+            case 'd': /* domain */
+                strDomain = ValueUnion.psz;
+                break;
+
+            case 'v': /* Verbose */
+                fVerbose = true;
+                break;
+
+            case VINF_GETOPT_NOT_OPTION:
+            {
+                if (strTemplate.isEmpty())
+                    strTemplate = ValueUnion.psz;
+                else
+                    return errorSyntax(USAGE_GUESTCONTROL,
+                                       "More than one template specified!\n");
+                break;
+            }
+
+            default:
+                return RTGetOptPrintError(ch, &ValueUnion);
+        }
+    }
+
+    if (strTemplate.isEmpty())
+        return errorSyntax(USAGE_GUESTCONTROL, "No template specified!");
+
+    if (strUsername.isEmpty())
+        return errorSyntax(USAGE_GUESTCONTROL, "No user name specified!");
+
+    if (!fDirectory)
+        return errorSyntax(USAGE_GUESTCONTROL, "Creating temporary files is currently not supported!");
+
+    /*
+     * Create the directories.
+     */
+    HRESULT hrc = S_OK;
+    if (fVerbose)
+    {
+        if (fDirectory && !strTempDir.isEmpty())
+            RTPrintf("Creating temporary directory from template '%s' in directory '%s' ...\n",
+                     strTemplate.c_str(), strTempDir.c_str());
+        else if (fDirectory)
+            RTPrintf("Creating temporary directory from template '%s' in default temporary directory ...\n",
+                     strTemplate.c_str());
+        else if (!fDirectory && !strTempDir.isEmpty())
+            RTPrintf("Creating temporary file from template '%s' in directory '%s' ...\n",
+                     strTemplate.c_str(), strTempDir.c_str());
+        else if (!fDirectory)
+            RTPrintf("Creating temporary file from template '%s' in default temporary directory ...\n",
+                     strTemplate.c_str());
+    }
+
+    ComPtr<IGuestSession> pGuestSession;
+    hrc = pGuest->CreateSession(Bstr(strUsername).raw(),
+                                Bstr(strPassword).raw(),
+                                Bstr(strDomain).raw(),
+                                Bstr("VBoxManage Guest Control MkTemp").raw(),
+                                pGuestSession.asOutParam());
+    if (FAILED(hrc))
+        return ctrlPrintError(pGuest, COM_IIDOF(IGuest));
+
+    if (fDirectory)
+    {
+        Bstr directory;
+        hrc = pGuestSession->DirectoryCreateTemp(Bstr(strTemplate).raw(),
+                                                 fMode, Bstr(strTempDir).raw(),
+                                                 fSecure,
+                                                 directory.asOutParam());
+        if (SUCCEEDED(hrc))
+            RTPrintf("Directory name: %ls\n", directory.raw());
+    }
+    // else - temporary file not yet implemented
+    if (FAILED(hrc))
+        ctrlPrintError(pGuest, COM_IIDOF(IGuestSession)); /* Return code ignored, save original rc. */
+
+    if (!pGuestSession.isNull())
+        pGuestSession->Close();
+
+    return FAILED(hrc) ? RTEXITCODE_FAILURE : RTEXITCODE_SUCCESS;
+}
+
 static int handleCtrlStat(ComPtr<IGuest> pGuest, HandlerArg *pArg)
 {
     AssertPtrReturn(pArg, VERR_INVALID_PARAMETER);
@@ -2357,11 +2530,13 @@ static int handleCtrlUpdateAdditions(ComPtr<IGuest> guest, HandlerArg *pArg)
      */
     Utf8Str strSource;
     bool fVerbose = false;
+    bool fWaitStartOnly = false;
 
     static const RTGETOPTDEF s_aOptions[] =
     {
         { "--source",              's',         RTGETOPT_REQ_STRING  },
-        { "--verbose",             'v',         RTGETOPT_REQ_NOTHING }
+        { "--verbose",             'v',         RTGETOPT_REQ_NOTHING },
+        { "--wait-start",          'w',         RTGETOPT_REQ_NOTHING }
     };
 
     int ch;
@@ -2383,6 +2558,10 @@ static int handleCtrlUpdateAdditions(ComPtr<IGuest> guest, HandlerArg *pArg)
                 fVerbose = true;
                 break;
 
+            case 'w':
+                fWaitStartOnly = true;
+                break;
+
             default:
                 return RTGetOptPrintError(ch, &ValueUnion);
         }
@@ -2391,33 +2570,22 @@ static int handleCtrlUpdateAdditions(ComPtr<IGuest> guest, HandlerArg *pArg)
     if (fVerbose)
         RTPrintf("Updating Guest Additions ...\n");
 
-#ifdef DEBUG_andy
-    if (strSource.isEmpty())
-        strSource = "c:\\Downloads\\VBoxGuestAdditions-r67158.iso";
-#endif
+    HRESULT rc = S_OK;
+    while (strSource.isEmpty())
+    {
+        ComPtr<ISystemProperties> pProperties;
+        CHECK_ERROR_BREAK(pArg->virtualBox, COMGETTER(SystemProperties)(pProperties.asOutParam()));
+        Bstr strISO;
+        CHECK_ERROR_BREAK(pProperties, COMGETTER(DefaultAdditionsISO)(strISO.asOutParam()));
+        strSource = strISO;
+        break;
+    }
 
     /* Determine source if not set yet. */
     if (strSource.isEmpty())
     {
-        char strTemp[RTPATH_MAX];
-        vrc = RTPathAppPrivateNoArch(strTemp, sizeof(strTemp));
-        AssertRC(vrc);
-        Utf8Str strSrc1 = Utf8Str(strTemp).append("/VBoxGuestAdditions.iso");
-
-        vrc = RTPathExecDir(strTemp, sizeof(strTemp));
-        AssertRC(vrc);
-        Utf8Str strSrc2 = Utf8Str(strTemp).append("/additions/VBoxGuestAdditions.iso");
-
-        /* Check the standard image locations */
-        if (RTFileExists(strSrc1.c_str()))
-            strSource = strSrc1;
-        else if (RTFileExists(strSrc2.c_str()))
-            strSource = strSrc2;
-        else
-        {
-            RTMsgError("Source could not be determined! Please use --source to specify a valid source\n");
-            vrc = VERR_FILE_NOT_FOUND;
-        }
+        RTMsgError("No Guest Additions source found or specified, aborting\n");
+        vrc = VERR_FILE_NOT_FOUND;
     }
     else if (!RTFileExists(strSource.c_str()))
     {
@@ -2430,13 +2598,18 @@ static int handleCtrlUpdateAdditions(ComPtr<IGuest> guest, HandlerArg *pArg)
         if (fVerbose)
             RTPrintf("Using source: %s\n", strSource.c_str());
 
-        HRESULT rc = S_OK;
-        ComPtr<IProgress> pProgress;
+        com::SafeArray<AdditionsUpdateFlag_T> aUpdateFlags;
+        if (fWaitStartOnly)
+        {
+            aUpdateFlags.push_back(AdditionsUpdateFlag_WaitForUpdateStartOnly);
+            if (fVerbose)
+                RTPrintf("Preparing and waiting for Guest Additions installer to start ...\n");
+        }
 
-        SafeArray<AdditionsUpdateFlag_T> updateFlags;
+        ComPtr<IProgress> pProgress;
         CHECK_ERROR(guest, UpdateGuestAdditions(Bstr(strSource).raw(),
                                                 /* Wait for whole update process to complete. */
-                                                ComSafeArrayAsInParam(updateFlags),
+                                                ComSafeArrayAsInParam(aUpdateFlags),
                                                 pProgress.asOutParam()));
         if (FAILED(rc))
             vrc = ctrlPrintError(guest, COM_IIDOF(IGuest));
@@ -2500,6 +2673,10 @@ int handleGuestControl(HandlerArg *pArg)
                  || !strcmp(pArg->argv[1], "mkdir")
                  || !strcmp(pArg->argv[1], "md"))
             rcExit = handleCtrlCreateDirectory(guest, &arg);
+        else if (   !strcmp(pArg->argv[1], "createtemporary")
+                 || !strcmp(pArg->argv[1], "createtemp")
+                 || !strcmp(pArg->argv[1], "mktemp"))
+            rcExit = handleCtrlCreateTemp(guest, &arg);
         else if (   !strcmp(pArg->argv[1], "stat"))
             rcExit = handleCtrlStat(guest, &arg);
         else if (   !strcmp(pArg->argv[1], "updateadditions")

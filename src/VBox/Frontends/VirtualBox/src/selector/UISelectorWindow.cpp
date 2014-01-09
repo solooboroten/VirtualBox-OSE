@@ -1450,8 +1450,7 @@ void UISelectorWindow::prepareConnections()
     connect(m_pChooser, SIGNAL(sigSlidingStarted()), m_pDetails, SIGNAL(sigSlidingStarted()));
     connect(m_pChooser, SIGNAL(sigToggleStarted()), m_pDetails, SIGNAL(sigToggleStarted()));
     connect(m_pChooser, SIGNAL(sigToggleFinished()), m_pDetails, SIGNAL(sigToggleFinished()));
-    connect(m_pChooser, SIGNAL(sigGroupSavingStarted()), this, SLOT(sltGroupSavingUpdate()));
-    connect(m_pChooser, SIGNAL(sigGroupSavingFinished()), this, SLOT(sltGroupSavingUpdate()));
+    connect(m_pChooser, SIGNAL(sigGroupSavingStateChanged()), this, SLOT(sltGroupSavingUpdate()));
 
     /* Tool-bar connections: */
 #ifndef Q_WS_MAC
@@ -1705,7 +1704,7 @@ bool UISelectorWindow::isActionEnabled(int iActionIndex, const QList<UIVMItem*> 
         case UIActionIndexSelector_Simple_Machine_AddGroup:
         {
             return !m_pChooser->isGroupSavingInProgress() &&
-                   items.size() > 1 && isItemsPoweredOff(items);
+                   isItemsPoweredOff(items);
         }
         case UIActionIndexSelector_State_Common_StartOrShow:
         {

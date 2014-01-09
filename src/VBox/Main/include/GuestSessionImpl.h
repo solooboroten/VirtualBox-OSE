@@ -48,6 +48,10 @@ public:
     virtual int Run(void) = 0;
     virtual int RunAsync(const Utf8Str &strDesc, ComObjPtr<Progress> &pProgress) = 0;
 
+protected:
+
+    int getGuestProperty(const ComObjPtr<Guest> &pGuest,
+                         const Utf8Str &strPath, Utf8Str &strValue);
     int setProgress(ULONG uPercent);
     int setProgressSuccess(void);
     HRESULT setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg);
@@ -138,16 +142,67 @@ public:
 
 protected:
 
+    /**
+     * Suported OS types for automatic updating.
+     */
+    enum eOSType
+    {
+        eOSType_Unknown = 0,
+        eOSType_Windows = 1,
+        eOSType_Linux   = 2,
+        eOSType_Solaris = 3
+    };
+
+    /**
+     * Structure representing a file to
+     * get off the .ISO, copied to the guest.
+     */
+    struct InstallerFile
+    {
+        InstallerFile(const Utf8Str &aSource,
+                      const Utf8Str &aDest,
+                      uint32_t       aFlags = 0)
+            : strSource(aSource),
+              strDest(aDest),
+              fFlags(aFlags) { }
+
+        InstallerFile(const Utf8Str          &aSource,
+                      const Utf8Str          &aDest,
+                      uint32_t                aFlags,
+                      GuestProcessStartupInfo startupInfo)
+            : strSource(aSource),
+              strDest(aDest),
+              fFlags(aFlags),
+              mProcInfo(startupInfo)
+        {
+            mProcInfo.mCommand = strDest;
+            if (mProcInfo.mName.isEmpty())
+                mProcInfo.mName = strDest;
+        }
+
+        /** Source file on .ISO. */
+        Utf8Str                 strSource;
+        /** Destination file on the guest. */
+        Utf8Str                 strDest;
+        /** File flags. */
+        uint32_t                fFlags;
+        /** Optional arguments if this file needs to be
+         *  executed. */
+        GuestProcessStartupInfo mProcInfo;
+    };
+
     int copyFileToGuest(GuestSession *pSession, PRTISOFSFILE pISO,
                         Utf8Str const &strFileSource, const Utf8Str &strFileDest,
                         bool fOptional, uint32_t *pcbSize);
-    int runFile(GuestSession *pSession, GuestProcessStartupInfo &procInfo);
+    int runFileOnGuest(GuestSession *pSession, GuestProcessStartupInfo &procInfo);
 
+    /** Files to handle. */
+    std::vector<InstallerFile> mFiles;
     /** The (optionally) specified Guest Additions .ISO on the host
      *  which will be used for the updating process. */
-    Utf8Str  mSource;
+    Utf8Str                    mSource;
     /** Update flags. */
-    uint32_t mFlags;
+    uint32_t                   mFlags;
 };
 
 /**
@@ -222,9 +277,6 @@ public:
                                ProcessPriority_T aPriority, ComSafeArrayIn(LONG, aAffinity),
                                IGuestProcess **aProcess);
     STDMETHOD(ProcessGet)(ULONG aPID, IGuestProcess **aProcess);
-#if 0
-    STDMETHOD(SetTimeout)(ULONG aTimeoutMS);
-#endif
     STDMETHOD(SymlinkCreate)(IN_BSTR aSource, IN_BSTR aTarget, SymlinkType_T aType);
     STDMETHOD(SymlinkExists)(IN_BSTR aSymlink, BOOL *aExists);
     STDMETHOD(SymlinkRead)(IN_BSTR aSymlink, ComSafeArrayIn(SymlinkReadFlag_T, aFlags), BSTR *aTarget);

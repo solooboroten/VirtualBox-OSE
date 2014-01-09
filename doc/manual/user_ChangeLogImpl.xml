@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.2.0 Release Candidate 2 (2012-08-22)</title>
+    <title>Version 4.2.0 Release Candidate 3 (2012-08-29)</title>
 
     <para>This is a major update. The following major new features
       were added:</para>
@@ -90,6 +90,10 @@
       </listitem>
 
       <listitem>
+        <para>VMM: fixed handling of task gates if VT-x/AMD-V is disabled</para>
+      </listitem>
+
+      <listitem>
         <para>GUI: network operations manager</para>
       </listitem>
 
@@ -122,16 +126,27 @@
       <listitem>
         <para>GUI: do not create additional folders when a new machine has a
            separator character in its name (bug #6541)</para>
-       </listitem>
+      </listitem>
 
-       <listitem>
-         <para>GUI: don't crash on terminate if the settings dialog is still open
-           (bug #9973)</para>
-       </listitem>
+      <listitem>
+        <para>GUI: don't crash on terminate if the settings dialog is still open
+          (bug #9973)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: consider scaled DPI values when display fonts on Windows hosts
+          (bug #9864)</para>
+      </listitem>
 
       <listitem>
         <para>Snapshots: fixed a crash when restoring an old
           snapshot when powering off a VM (bugs #9364, #9604, #10491)</para>
+      </listitem>
+
+      <listitem>
+        <para>Clipboard: disable the clipboard by default for new VMs
+          (see <xref linkend="security_clipboard" />). It can be enabled at
+            any time using the VM menu.</para>
       </listitem>
 
       <listitem>
@@ -142,6 +157,10 @@
         <para>Settings: allow to store the iSCSI initiator secret encrypted</para>
       </listitem>
 
+       <listitem>
+         <para>NAT: improvements for the built-in TFTP server (bugs #7385, #10286)</para>
+       </listitem>
+
       <listitem>
         <para>E1000: 802.1q VLAN support (bug #10429)</para>
       </listitem>
@@ -149,6 +168,10 @@
        <listitem>
          <para>Storage: implemented burning of audio CDs in passthrough mode</para>
        </listitem>
+
+      <listitem>
+        <para>Storage: fixed audio CD passthrough for certain media players</para>
+      </listitem>
 
        <listitem>
          <para>Storage: implemented support for discarding unused image blocks
@@ -173,6 +196,10 @@
        </listitem>
 
        <listitem>
+         <para>Solaris additions: switched to using an in-kernel mouse driver</para>
+       </listitem>
+
+       <listitem>
          <para>Windows hosts: no need to recreate host-only adapters after a
            VirtualBox update</para>
        </listitem>
@@ -180,10 +207,6 @@
        <listitem>
          <para>Windows hosts: updated toolchain; make the source code compatible
            to VC 2010 and enable some security-related compiler options</para>
-       </listitem>
-
-       <listitem>
-         <para>NAT: improvements for the built-in TFTP server (bugs #7385, #10286)</para>
        </listitem>
 
     </itemizedlist>

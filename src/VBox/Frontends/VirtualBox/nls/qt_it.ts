@@ -29,7 +29,7 @@
     </message>
     <message>
         <source>About %1</source>
-        <translation>Informzioni su %1</translation>
+        <translation>Informazioni su %1</translation>
     </message>
 </context>
 <context>
@@ -871,7 +871,7 @@ in
     </message>
     <message>
         <source>Unable to prepare statement</source>
-        <translation>Impossible preparare l&apos;istruzione</translation>
+        <translation>Impossibile preparare l&apos;istruzione</translation>
     </message>
     <message>
         <source>Unable to bind variable</source>
@@ -1183,7 +1183,7 @@ Verifica che sia stato fornito il nome corretto della cartella.</translation>
     <message>
         <source>&apos;%1&apos; is write protected.
 Do you want to delete it anyway?</source>
-        <translation>«%1» è protetto da scrittua.
+        <translation>«%1» è protetto da scrittura.
 Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
@@ -1511,7 +1511,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Wr&amp;iting System</source>
-        <translation>S&amp;istema di scrittua</translation>
+        <translation>S&amp;istema di scrittura</translation>
     </message>
     <message>
         <source>Select Font</source>
@@ -1681,7 +1681,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Invalid HTTP chunked body</source>
-        <translation>ContenutoHTTP  spezzettato non valido</translation>
+        <translation>Contenuto HTTP spezzettato non valido</translation>
     </message>
     <message>
         <source>Host %1 found</source>
@@ -2116,11 +2116,11 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Minimize</source>
-        <translation>Minizza</translation>
+        <translation>Minimizza</translation>
     </message>
     <message>
         <source>Restore Down</source>
-        <translation type="unfinished">Ripristina in basso</translation>
+        <translation>Ripristina in basso</translation>
     </message>
     <message>
         <source>&amp;Restore</source>
@@ -2431,11 +2431,11 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Unable to commit transaction</source>
-        <translation type="unfinished"></translation>
+        <translation>Impossibile effettuare il commit della transazione</translation>
     </message>
     <message>
         <source>Unable to rollback transaction</source>
-        <translation type="unfinished">Impossibile effettuare il rollback della transazione</translation>
+        <translation>Impossibile effettuare il rollback della transazione</translation>
     </message>
 </context>
 <context>
@@ -2458,7 +2458,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Unable to prepare statement</source>
-        <translation>Impossible preparare l&apos;istruzione</translation>
+        <translation>Impossibile preparare l&apos;istruzione</translation>
     </message>
     <message>
         <source>Unable to bind value</source>
@@ -2528,7 +2528,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Unable to fetch</source>
-        <translation type="unfinished"></translation>
+        <translation>Impossibile recuperare</translation>
     </message>
     <message>
         <source>Unable to fetch first</source>
@@ -2563,7 +2563,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Remote host closed the connection prematurely on %1</source>
-        <translation type="unfinished"></translation>
+        <translation>L&apos;host remoto ha terminato prematuramente la connessione su %1</translation>
     </message>
     <message>
         <source>Protocol error: packet of size 0 received</source>
@@ -2593,7 +2593,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Could not commit transaction</source>
-        <translation>Impossibile appliare l&apos;istruzione</translation>
+        <translation>Impossibile effettuare il commit dell&apos;istruzione</translation>
     </message>
     <message>
         <source>Could not rollback transaction</source>
@@ -2616,7 +2616,7 @@ Vuoi eliminarlo comunque?</translation>
     </message>
     <message>
         <source>Unable to prepare statement</source>
-        <translation>Impossible preparare l&apos;istruzione</translation>
+        <translation>Impossibile preparare l&apos;istruzione</translation>
     </message>
 </context>
 <context>
@@ -3139,11 +3139,11 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>disabled feature used</source>
-        <translation type="unfinished"></translation>
+        <translation>utilizzata una funzionalità disabilitata</translation>
     </message>
     <message>
         <source>bad char class syntax</source>
-        <translation type="unfinished"></translation>
+        <translation>sintassi della classe di caratteri errata</translation>
     </message>
     <message>
         <source>bad lookahead syntax</source>
@@ -3151,7 +3151,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>bad repetition syntax</source>
-        <translation type="unfinished"></translation>
+        <translation>sintassi di ripetizione non valida</translation>
     </message>
     <message>
         <source>invalid octal value</source>
@@ -3167,7 +3167,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>met internal limit</source>
-        <translation type="unfinished"></translation>
+        <translation>raggiunto limite interno</translation>
     </message>
 </context>
 <context>
@@ -3178,7 +3178,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Unable to begin transaction</source>
-        <translation>Impossibile inizare la transazione</translation>
+        <translation>Impossibile iniziare la transazione</translation>
     </message>
     <message>
         <source>Unable to commit transaction</source>
@@ -3220,7 +3220,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Unable to rollback transaction</source>
-        <translation type="unfinished">Impossibile effettuare il rollback della transazione</translation>
+        <translation>Impossibile effettuare il rollback della transazione</translation>
     </message>
 </context>
 <context>
@@ -3373,7 +3373,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>%1: system-imposed size restrictions</source>
-        <translation type="unfinished"></translation>
+        <translation>%1: restrizione delle dimensioni imposte dal sistema</translation>
     </message>
     <message>
         <source>%1: not attached</source>
@@ -3576,67 +3576,67 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Launch (0)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (0)</translation>
     </message>
     <message>
         <source>Launch (1)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (1)</translation>
     </message>
     <message>
         <source>Launch (2)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (2)</translation>
     </message>
     <message>
         <source>Launch (3)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (3)</translation>
     </message>
     <message>
         <source>Launch (4)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (4)</translation>
     </message>
     <message>
         <source>Launch (5)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (5)</translation>
     </message>
     <message>
         <source>Launch (6)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (6)</translation>
     </message>
     <message>
         <source>Launch (7)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (7)</translation>
     </message>
     <message>
         <source>Launch (8)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (8)</translation>
     </message>
     <message>
         <source>Launch (9)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (9)</translation>
     </message>
     <message>
         <source>Launch (A)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (A)</translation>
     </message>
     <message>
         <source>Launch (B)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (B)</translation>
     </message>
     <message>
         <source>Launch (C)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (C)</translation>
     </message>
     <message>
         <source>Launch (D)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (D)</translation>
     </message>
     <message>
         <source>Launch (E)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (E)</translation>
     </message>
     <message>
         <source>Launch (F)</source>
-        <translation type="unfinished"></translation>
+        <translation>Avvia (F)</translation>
     </message>
     <message>
         <source>Print Screen</source>
@@ -4034,7 +4034,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Insert Unicode control character</source>
-        <translation type="unfinished"></translation>
+        <translation>Inserisci carattere di controllo unicode</translation>
     </message>
 </context>
 <context>
@@ -4045,7 +4045,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Request blocked</source>
-        <translation>Richiest bloccata</translation>
+        <translation>Richiesta bloccata</translation>
     </message>
     <message>
         <source>Cannot show URL</source>
@@ -4053,7 +4053,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Frame load interruped by policy change</source>
-        <translation type="unfinished">Caricamento frame interrotto da un cambiamento di regole</translation>
+        <translation>Caricamento frame interrotto da un cambiamento di regole</translation>
     </message>
     <message>
         <source>Cannot show mimetype</source>
@@ -4642,7 +4642,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>Opening and ending tag mismatch.</source>
-        <translation type="unfinished"></translation>
+        <translation>Mancata corrispondenza tra tag di apertura e chiusura.</translation>
     </message>
     <message>
         <source>Reference to unparsed entity &apos;%1&apos;.</source>
@@ -4853,7 +4853,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>A comment cannot end with a %1.</source>
-        <translation>Un commentio non può terminare con un %1.</translation>
+        <translation>Un commento non può terminare con un %1.</translation>
     </message>
     <message>
         <source>No comparisons can be done involving the type %1.</source>
@@ -4933,7 +4933,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>%1 is not a valid XML 1.0 character.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 non è un carattere XML 1.0 valido.</translation>
     </message>
     <message>
         <source>The first argument to %1 cannot be of type %2.</source>
@@ -5025,7 +5025,7 @@ Scegli un nome diverso.</translation>
     </message>
     <message>
         <source>%1 is an unknown schema type.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 è un tipo di schema sconosciuto.</translation>
     </message>
     <message>
         <source>Only one %1 declaration can occur in the query prolog.</source>

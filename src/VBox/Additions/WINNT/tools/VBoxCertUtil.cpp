@@ -220,10 +220,10 @@ static bool readCertFile(const char *pszCertFile, PCCERT_CONTEXT *ppOutCtx, HCER
             RTMsgError("CertCreateCertificateContext returned %s parsing the content of '%s'",
                        errorToString(GetLastError()), pszCertFile);
         }
+        RTFileReadAllFree(pvFile, cbFile);
     }
     else
         RTMsgError("RTFileReadAll failed on '%s': %Rrc", pszCertFile, rc);
-    RTFileReadAllFree(pvFile, cbFile);
     return fRc;
 }
 
@@ -234,7 +234,7 @@ static bool readCertFile(const char *pszCertFile, PCCERT_CONTEXT *ppOutCtx, HCER
  * @returns true on success, false on failure (error message written).
  * @param   dwDst           The destination, like
  *                          CERT_SYSTEM_STORE_LOCAL_MACHINE or
- *                          ERT_SYSTEM_STORE_CURRENT_USER.
+ *                          CERT_SYSTEM_STORE_CURRENT_USER.
  * @param   pszStoreNm      The store name.
  */
 static HCERTSTORE openCertStore(DWORD dwDst, const char *pszStoreNm)
@@ -247,10 +247,22 @@ static HCERTSTORE openCertStore(DWORD dwDst, const char *pszStoreNm)
         if (g_cVerbosityLevel > 1)
             RTMsgInfo("Opening store %#x:'%s'", dwDst, pszStoreNm);
 
+        /*
+         * Make sure CERT_STORE_OPEN_EXISTING_FLAG is not set. This causes Windows XP
+         * to return ACCESS_DENIED when installing TrustedPublisher certificates via
+         * CertAddCertificateContextToStore() if the TrustedPublisher store never has
+         * been used (through certmgr.exe and friends) yet.
+         *
+         * According to MSDN, if neither CERT_STORE_OPEN_EXISTING_FLAG nor
+         * CERT_STORE_CREATE_NEW_FLAG is set, the store will be either opened or
+         * created accordingly.
+         */
+        dwDst &= ~CERT_STORE_OPEN_EXISTING_FLAG;
+
         hStore = CertOpenStore(CERT_STORE_PROV_SYSTEM_W,
                                PKCS_7_ASN_ENCODING | X509_ASN_ENCODING,
                                NULL /* hCryptProv = default */,
-                               dwDst | CERT_STORE_OPEN_EXISTING_FLAG,
+                               dwDst,
                                pwszStoreNm);
         if (hStore == NULL)
             RTMsgError("CertOpenStore failed opening %#x:'%s': %s",
@@ -267,7 +279,7 @@ static HCERTSTORE openCertStore(DWORD dwDst, const char *pszStoreNm)
  * @returns true on success, false on failure (error message written).
  * @param   dwDst           The destination, like
  *                          CERT_SYSTEM_STORE_LOCAL_MACHINE or
- *                          ERT_SYSTEM_STORE_CURRENT_USER.
+ *                          CERT_SYSTEM_STORE_CURRENT_USER.
  * @param   pszStoreNm      The store name.
  * @param   pszCertFile     The file containing the certificate to add.
  */
@@ -343,7 +355,7 @@ static bool removeCertFromStoreByFile(DWORD dwDst, const char *pszStoreNm, const
  * @returns true on success, false on failure (error message written).
  * @param   dwDst           The destination, like
  *                          CERT_SYSTEM_STORE_LOCAL_MACHINE or
- *                          ERT_SYSTEM_STORE_CURRENT_USER.
+ *                          CERT_SYSTEM_STORE_CURRENT_USER.
  * @param   pszStoreNm      The store name.
  * @param   pszCertFile     The file containing the certificate to add.
  * @param   dwDisposition   The disposition towards existing certificates when
@@ -615,7 +627,7 @@ static RTEXITCODE cmdAddTrustedPublisher(int argc, char **argv)
                 if (pszTrustedCert)
                     return RTMsgErrorExit(RTEXITCODE_SUCCESS,
                                           "You've already specified '%s' as trusted certificate.",
-                                          pszRootCert);
+                                          pszTrustedCert);
                 pszTrustedCert = ValueUnion.psz;
                 break;
 

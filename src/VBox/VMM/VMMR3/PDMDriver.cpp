@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2012 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -799,9 +799,10 @@ int pdmR3DrvInstantiate(PVM pVM, PCFGMNODE pNode, PPDMIBASE pBaseInterface, PPDM
     }
     else
     {
-        AssertMsgFailed(("Query for string value of \"Driver\" -> %Rrc\n", rc));
         if (rc == VERR_CFGM_VALUE_NOT_FOUND)
             rc = VERR_PDM_CFG_MISSING_DRIVER_NAME;
+        else
+            AssertMsgFailed(("Query for string value of \"Driver\" -> %Rrc\n", rc));
     }
     return rc;
 }

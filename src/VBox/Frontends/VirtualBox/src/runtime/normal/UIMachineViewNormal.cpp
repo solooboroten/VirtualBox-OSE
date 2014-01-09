@@ -97,6 +97,14 @@ bool UIMachineViewNormal::eventFilter(QObject *pWatched, QEvent *pEvent)
         {
             case QEvent::Resize:
             {
+                /* We call this on every resize as:
+                 *   * Window frame geometry can change on resize.
+                 *   * On X11 we set information here which becomes available
+                 *     asynchronously at an unknown time after window
+                 *     creation.  As long as the information is not available
+                 *     we make a best guess.
+                 */
+                setMaxGuestSize();
                 if (pEvent->spontaneous() && m_bIsGuestAutoresizeEnabled && uisession()->isGuestSupportsGraphics())
                     QTimer::singleShot(300, this, SLOT(sltPerformGuestResize()));
                 break;
@@ -273,19 +281,22 @@ QRect UIMachineViewNormal::workingArea() const
 
 QSize UIMachineViewNormal::calculateMaxGuestSize() const
 {
-    /* The area taken up by the machine window on the desktop,
-     * including window frame, title, menu bar and status bar: */
-    QRect windowGeo = machineWindow()->frameGeometry();
-    /* The area taken up by the machine central widget, so excluding all decorations: */
-    QRect centralWidgetGeo = machineWindow()->centralWidget()->geometry();
-    /* To work out how big we can make the console window while still fitting on the desktop,
-     * we calculate workingArea() - (windowGeo - centralWidgetGeo).
-     * This works because the difference between machine window and machine central widget
-     * (or at least its width and height) is a constant. */
-    return QSize(  workingArea().width()
-                 - (windowGeo.width() - centralWidgetGeo.width()),
-                   workingArea().height()
-                 - (windowGeo.height() - centralWidgetGeo.height()));
+    /* The area taken up by the machine window on the desktop, including window
+     * frame, title, menu bar and status bar. */
+    QSize windowSize = machineWindow()->frameGeometry().size();
+    /* The window shouldn't be allowed to expand beyond the working area
+     * unless it already does.  In that case the guest shouldn't expand it
+     * any further though. */
+    QSize maximumSize = workingArea().size().expandedTo(windowSize);
+    /* The current size of the machine display. */
+    QSize centralWidgetSize = machineWindow()->centralWidget()->size();
+    /* To work out how big the guest display can get without the window going
+     * over the maximum size we calculated above, we work out how much space
+     * the other parts of the window (frame, menu bar, status bar and so on)
+     * take up and subtract that space from the maximum window size. The 
+     * central widget shouldn't be bigger than the window, but we bound it for
+     * sanity (or insanity) reasons. */
+    return maximumSize - (windowSize - centralWidgetSize.boundedTo(windowSize));
 }
 
 void UIMachineViewNormal::maybeRestrictMinimumSize()

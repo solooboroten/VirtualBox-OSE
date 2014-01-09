@@ -26,6 +26,8 @@
 
 #include "Global.h"
 #include "AutoCaller.h"
+#include "ConsoleImpl.h"
+#include "MachineImpl.h"
 #include "ProgressImpl.h"
 
 #include <memory> /* For auto_ptr. */
@@ -40,13 +42,24 @@
 #include <VBox/log.h>
 
 
-/*
- * If the following define is enabled the Guest Additions update code also
- * checks for locations which were not supposed to happen due to not resolving
- * environment variables in VBoxService toolbox arguments. So a file copied
- * to "%TEMP%\foo.exe" became "C:\Windows\EMPfoo.exe".
+/*******************************************************************************
+*   Defines                                                                    *
+*******************************************************************************/
+
+/**
+ * Update file flags.
  */
-#define VBOX_SERVICE_ENVARG_BUG
+#define UPDATEFILE_FLAG_NONE                RT_BIT(0)
+/** Copy over the file from host to the
+ *  guest. */
+#define UPDATEFILE_FLAG_COPY_FROM_ISO       RT_BIT(1)
+/** Execute file on the guest after it has
+ *  been successfully transfered. */
+#define UPDATEFILE_FLAG_EXECUTE             RT_BIT(7)
+/** File is optional, does not have to be
+ *  existent on the .ISO. */
+#define UPDATEFILE_FLAG_OPTIONAL            RT_BIT(8)
+
 
 // session task classes
 /////////////////////////////////////////////////////////////////////////////
@@ -60,6 +73,26 @@ GuestSessionTask::~GuestSessionTask(void)
 {
 }
 
+int GuestSessionTask::getGuestProperty(const ComObjPtr<Guest> &pGuest,
+                                       const Utf8Str &strPath, Utf8Str &strValue)
+{
+    ComObjPtr<Console> pConsole = pGuest->getConsole();
+    const ComPtr<IMachine> pMachine = pConsole->machine();
+
+    Assert(!pMachine.isNull());
+    Bstr strTemp, strFlags;
+    LONG64 i64Timestamp;
+    HRESULT hr = pMachine->GetGuestProperty(Bstr(strPath).raw(),
+                                            strTemp.asOutParam(),
+                                            &i64Timestamp, strFlags.asOutParam());
+    if (SUCCEEDED(hr))
+    {
+        strValue = strTemp;
+        return VINF_SUCCESS;
+    }
+    return VERR_NOT_FOUND;
+}
+
 int GuestSessionTask::setProgress(ULONG uPercent)
 {
     if (mProgress.isNull()) /* Progress is optional. */
@@ -71,8 +104,11 @@ int GuestSessionTask::setProgress(ULONG uPercent)
         return VERR_CANCELLED;
     BOOL fCompleted;
     if (   SUCCEEDED(mProgress->COMGETTER(Completed(&fCompleted)))
-        && !fCompleted)
+        && fCompleted)
+    {
+        AssertMsgFailed(("Setting value of an already completed progress\n"));
         return VINF_SUCCESS;
+    }
     HRESULT hr = mProgress->SetCurrentOperationProgress(uPercent);
     if (FAILED(hr))
         return VERR_COM_UNEXPECTED;
@@ -113,9 +149,9 @@ HRESULT GuestSessionTask::setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg)
         && !fCompleted)
     {
         HRESULT hr2 = mProgress->notifyComplete(hr,
-                                               COM_IIDOF(IGuestSession),
-                                               GuestSession::getStaticComponentName(),
-                                               strMsg.c_str());
+                                                COM_IIDOF(IGuestSession),
+                                                GuestSession::getStaticComponentName(),
+                                                strMsg.c_str());
         if (FAILED(hr2))
             return hr2;
     }
@@ -124,12 +160,12 @@ HRESULT GuestSessionTask::setProgressErrorMsg(HRESULT hr, const Utf8Str &strMsg)
 
 SessionTaskCopyTo::SessionTaskCopyTo(GuestSession *pSession,
                                      const Utf8Str &strSource, const Utf8Str &strDest, uint32_t uFlags)
-                                     : mSource(strSource),
-                                       mDest(strDest),
+                                     : GuestSessionTask(pSession),
+                                       mSource(strSource),
                                        mSourceFile(NULL),
                                        mSourceOffset(0),
                                        mSourceSize(0),
-                                       GuestSessionTask(pSession)
+                                       mDest(strDest)
 {
     mCopyFileFlags = uFlags;
 }
@@ -715,8 +751,8 @@ int SessionTaskUpdateAdditions::copyFileToGuest(GuestSession *pSession, PRTISOFS
     /* Copy over the Guest Additions file to the guest. */
     if (RT_SUCCESS(rc))
     {
-        LogRel(("Copying Guest Additions installer file \"%s\" to \"%s\" on guest ...\n",
-                strFileSource.c_str(), strFileDest.c_str()));
+        LogFlowThisFunc(("Copying Guest Additions installer file \"%s\" to \"%s\" on guest ...\n",
+                         strFileSource.c_str(), strFileDest.c_str()));
 
         if (RT_SUCCESS(rc))
         {
@@ -728,7 +764,7 @@ int SessionTaskUpdateAdditions::copyFileToGuest(GuestSession *pSession, PRTISOFS
             ComObjPtr<Progress> pProgressCopyTo;
             rc = pSession->startTaskAsync(Utf8StrFmt(GuestSession::tr("Copying Guest Additions installer file \"%s\" to \"%s\" on guest"),
                                                      mSource.c_str(), strFileDest.c_str()),
-                                          pTask, pProgressCopyTo);
+                                                     pTask, pProgressCopyTo);
             if (RT_SUCCESS(rc))
             {
                 BOOL fCanceled = FALSE;
@@ -753,34 +789,29 @@ int SessionTaskUpdateAdditions::copyFileToGuest(GuestSession *pSession, PRTISOFS
     /* Determine where the installer image ended up and if it has the correct size. */
     if (RT_SUCCESS(rc))
     {
-        LogRel(("Verifying Guest Additions installer file \"%s\" ...\n", strFileDest.c_str()));
+        LogFlowThisFunc(("Verifying Guest Additions installer file \"%s\" ...\n",
+                         strFileDest.c_str()));
 
         GuestFsObjData objData;
         int64_t cbSizeOnGuest;
         rc = pSession->fileQuerySizeInternal(strFileDest, &cbSizeOnGuest);
-#ifdef VBOX_SERVICE_ENVARG_BUG
-        if (RT_FAILURE(rc))
-        {
-            /* Ugly hack: Because older Guest Additions have problems with environment variable
-                          expansion in parameters we have to check an alternative location on Windows.
-                          So check for "%TEMP%\" being "C:\\Windows\\system32\\EMP" actually. */
-            if (strFileDest.startsWith("%TEMP%\\", RTCString::CaseSensitive))
-            {
-                Utf8Str strFileDestBug = "C:\\Windows\\system32\\EMP" + strFileDest.substr(sizeof("%TEMP%\\") - sizeof(char));
-                rc = pSession->fileQuerySizeInternal(strFileDestBug, &cbSizeOnGuest);
-            }
-        }
-#endif
         if (   RT_SUCCESS(rc)
             && cbSize == (uint64_t)cbSizeOnGuest)
         {
-            LogRel(("Guest Additions installer file \"%s\" successfully verified\n",
-                    strFileDest.c_str()));
+            LogFlowThisFunc(("Guest Additions installer file \"%s\" successfully verified\n",
+                             strFileDest.c_str()));
         }
         else
         {
             if (RT_SUCCESS(rc)) /* Size does not match. */
-                rc = VERR_BROKEN_PIPE; /** @todo FInd a better error. */
+            {
+                LogFlowThisFunc(("Size of Guest Additions installer file \"%s\" does not match: %RI64bytes copied, %RU64bytes expected\n",
+                                 strFileDest.c_str(), cbSizeOnGuest, cbSize));
+                rc = VERR_BROKEN_PIPE; /** @todo Find a better error. */
+            }
+            else
+                LogFlowThisFunc(("Error copying Guest Additions installer file \"%s\": %Rrc\n",
+                                 strFileDest.c_str(), rc));
         }
 
         if (RT_SUCCESS(rc))
@@ -793,19 +824,12 @@ int SessionTaskUpdateAdditions::copyFileToGuest(GuestSession *pSession, PRTISOFS
     return rc;
 }
 
-int SessionTaskUpdateAdditions::runFile(GuestSession *pSession, GuestProcessStartupInfo &procInfo)
+int SessionTaskUpdateAdditions::runFileOnGuest(GuestSession *pSession, GuestProcessStartupInfo &procInfo)
 {
     AssertPtrReturn(pSession, VERR_INVALID_POINTER);
 
-#ifdef VBOX_SERVICE_ENVARG_BUG
-    GuestFsObjData objData;
-    int rc = pSession->fileQueryInfoInternal(procInfo.mCommand, objData);
-    if (RT_FAILURE(rc))
-        procInfo.mCommand = "C:\\Windows\\system32\\EMP" + procInfo.mCommand.substr(sizeof("%TEMP%\\") - sizeof(char));
-#endif
-
     ComObjPtr<GuestProcess> pProcess;
-    rc = pSession->processCreateExInteral(procInfo, pProcess);
+    int rc = pSession->processCreateExInteral(procInfo, pProcess);
     if (RT_SUCCESS(rc))
         rc = pProcess->startProcess();
 
@@ -816,6 +840,7 @@ int SessionTaskUpdateAdditions::runFile(GuestSession *pSession, GuestProcessStar
         GuestProcessWaitResult waitRes;
         rc = pProcess->waitFor(ProcessWaitForFlag_Terminate,
                                10 * 60 * 1000 /* 10 mins Timeout */, waitRes);
+        LogFlowThisFunc(("waitFor rc=%Rrc, waitRes=%ld\n", rc, waitRes));
         if (waitRes.mResult == ProcessWaitResult_Terminate)
         {
             ProcessStatus_T procStatus;
@@ -833,18 +858,33 @@ int SessionTaskUpdateAdditions::runFile(GuestSession *pSession, GuestProcessStar
             }
             else /* Yay, success! */
             {
-                LogRel(("%s successfully completed\n", procInfo.mName.c_str()));
+                LogFlowThisFunc(("%s successfully completed\n", procInfo.mName.c_str()));
             }
+        }
+        else if (   procInfo.mFlags == ProcessCreateFlag_WaitForProcessStartOnly
+                 && waitRes.mResult == ProcessWaitResult_Start)
+        {
+            LogFlowThisFunc(("%s successfully started\n", procInfo.mName.c_str()));
         }
         else
         {
+            /** @todo Unify error handling. */
             if (RT_FAILURE(rc))
+            {
                 setProgressErrorMsg(VBOX_E_IPRT_ERROR,
                                     Utf8StrFmt(GuestSession::tr("Error while waiting running %s: %Rrc"),
                                                procInfo.mName.c_str(), rc));
+            }
             else
             {
-                setProgressErrorMsg(VBOX_E_IPRT_ERROR, pProcess->errorMsg());
+                if (pProcess->errorMsg().isEmpty())
+                {
+                    setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                        Utf8StrFmt(GuestSession::tr("Running %s returned unexpectedly with status %ld"),
+                                                   procInfo.mName.c_str(), waitRes.mResult));
+                }
+                else
+                    setProgressErrorMsg(VBOX_E_IPRT_ERROR, pProcess->errorMsg());
                 rc = VERR_GENERAL_FAILURE; /* Fudge. */
             }
         }
@@ -874,50 +914,139 @@ int SessionTaskUpdateAdditions::Run(void)
 
     LogRel(("Automatic update of Guest Additions started, using \"%s\"\n", mSource.c_str()));
 
-    /*
-     * Determine guest OS type and the required installer image.
-     * At the moment only Windows guests are supported.
-     */
-    Utf8Str strInstallerImage;
-
     ComObjPtr<Guest> pGuest(mSession->getParent());
-    Bstr osTypeId;
-    if (   SUCCEEDED(pGuest->COMGETTER(OSTypeId(osTypeId.asOutParam())))
-        && !osTypeId.isEmpty())
+#if 0
+    /*
+     * Wait for the guest being ready within 30 seconds.
+     */
+    AdditionsRunLevelType_T addsRunLevel;
+    uint64_t tsStart = RTTimeSystemMilliTS();
+    while (   SUCCEEDED(hr = pGuest->COMGETTER(AdditionsRunLevel)(&addsRunLevel))
+           && (    addsRunLevel != AdditionsRunLevelType_Userland
+                && addsRunLevel != AdditionsRunLevelType_Desktop))
     {
-        Utf8Str osTypeIdUtf8(osTypeId); /* Needed for .contains(). */
-        if (   osTypeIdUtf8.contains("Microsoft", Utf8Str::CaseInsensitive)
-            || osTypeIdUtf8.contains("Windows", Utf8Str::CaseInsensitive))
+        if ((RTTimeSystemMilliTS() - tsStart) > 30 * 1000)
         {
-            if (osTypeIdUtf8.contains("64", Utf8Str::CaseInsensitive))
-                strInstallerImage = "VBOXWINDOWSADDITIONS_AMD64.EXE";
-            else
-                strInstallerImage = "VBOXWINDOWSADDITIONS_X86.EXE";
-            /* Since the installers are located in the root directory,
-             * no further path processing needs to be done (yet). */
+            rc = VERR_TIMEOUT;
+            break;
         }
-        else /* Everything else is not supported (yet). */
+
+        RTThreadSleep(100); /* Wait a bit. */
+    }
+
+    if (FAILED(hr)) rc = VERR_TIMEOUT;
+    if (rc == VERR_TIMEOUT)
+        hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                 Utf8StrFmt(GuestSession::tr("Guest Additions were not ready within time, giving up")));
+#else
+    /*
+     * For use with the GUI we don't want to wait, just return so that the manual .ISO mounting
+     * can continue.
+     */
+    AdditionsRunLevelType_T addsRunLevel;
+    if (   FAILED(hr = pGuest->COMGETTER(AdditionsRunLevel)(&addsRunLevel))
+        || (   addsRunLevel != AdditionsRunLevelType_Userland
+            && addsRunLevel != AdditionsRunLevelType_Desktop))
+    {
+        if (addsRunLevel == AdditionsRunLevelType_System)
+            hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                     Utf8StrFmt(GuestSession::tr("Guest Additions are installed but not fully loaded yet, aborting automatic update")));
+        else
+            hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                     Utf8StrFmt(GuestSession::tr("Guest Additions not installed or ready, aborting automatic update")));
+        rc = VERR_NOT_SUPPORTED;
+    }
+#endif
+
+    if (RT_SUCCESS(rc))
+    {
+        /*
+         * Determine if we are able to update automatically. This only works
+         * if there are recent Guest Additions installed already.
+         */
+        Utf8Str strAddsVer;
+        rc = getGuestProperty(pGuest, "/VirtualBox/GuestAdd/Version", strAddsVer);
+        if (   RT_SUCCESS(rc)
+            && RTStrVersionCompare(strAddsVer.c_str(), "4.1") < 0)
         {
-            hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                     Utf8StrFmt(GuestSession::tr("Detected guest OS (%s) does not support automatic Guest Additions updating, please update manually"),
-                                     osTypeIdUtf8.c_str()));
-            rc = VERR_GENERAL_FAILURE; /* Fudge. */
+            hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                     Utf8StrFmt(GuestSession::tr("Guest has too old Guest Additions (%s) installed for automatic updating, please update manually"),
+                                                strAddsVer.c_str()));
+            rc = VERR_NOT_SUPPORTED;
         }
     }
-    else
+
+    Utf8Str strOSVer;
+    eOSType osType;
+    if (RT_SUCCESS(rc))
     {
-        hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                 Utf8StrFmt(GuestSession::tr("Could not detected guest OS type/version, please update manually")));
-        rc = VERR_GENERAL_FAILURE; /* Fudge. */
+        /*
+         * Determine guest OS type and the required installer image.
+         */
+        Utf8Str strOSType;
+        rc = getGuestProperty(pGuest, "/VirtualBox/GuestInfo/OS/Product", strOSType);
+        if (RT_SUCCESS(rc))
+        {
+            if (   strOSType.contains("Microsoft", Utf8Str::CaseInsensitive)
+                || strOSType.contains("Windows", Utf8Str::CaseInsensitive))
+            {
+                osType = eOSType_Windows;
+
+                /*
+                 * Determine guest OS version.
+                 */
+                rc = getGuestProperty(pGuest, "/VirtualBox/GuestInfo/OS/Release", strOSVer);
+                if (RT_FAILURE(rc))
+                {
+                    hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                         Utf8StrFmt(GuestSession::tr("Unable to detected guest OS version, please update manually")));
+                    rc = VERR_NOT_SUPPORTED;
+                }
+
+                /* Because Windows 2000 + XP and is bitching with WHQL popups even if we have signed drivers we
+                 * can't do automated updates here. */
+                /* Windows XP 64-bit (5.2) is a Windows 2003 Server actually, so skip this here. */
+                if (   RT_SUCCESS(rc)
+                    && (   strOSVer.startsWith("5.0")  /* Exclude the build number. */
+                        || strOSVer.startsWith("5.1")) /* Exclude the build number. */
+                   )
+                {
+                    /* If we don't have AdditionsUpdateFlag_WaitForUpdateStartOnly set we can't continue
+                     * because the Windows Guest Additions installer will fail because of WHQL popups. If the
+                     * flag is set this update routine ends successfully as soon as the installer was started
+                     * (and the user has to deal with it in the guest). */
+                    if (!(mFlags & AdditionsUpdateFlag_WaitForUpdateStartOnly))
+                    {
+                        hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                                 Utf8StrFmt(GuestSession::tr("Windows 2000 and XP are not supported for automatic updating due to WHQL interaction, please update manually")));
+                        rc = VERR_NOT_SUPPORTED;
+                    }
+                }
+            }
+            else if (strOSType.contains("Solaris", Utf8Str::CaseInsensitive))
+            {
+                osType = eOSType_Solaris;
+            }
+            else /* Everything else hopefully means Linux :-). */
+                osType = eOSType_Linux;
+
+#if 1 /* Only Windows is supported (and tested) at the moment. */
+            if (osType != eOSType_Windows)
+            {
+                hr = setProgressErrorMsg(VBOX_E_NOT_SUPPORTED,
+                                         Utf8StrFmt(GuestSession::tr("Detected guest OS (%s) does not support automatic Guest Additions updating, please update manually"),
+                                                    strOSType.c_str()));
+                rc = VERR_NOT_SUPPORTED;
+            }
+#endif
+        }
     }
 
     RTISOFSFILE iso;
     if (RT_SUCCESS(rc))
     {
-        Assert(!strInstallerImage.isEmpty());
-
         /*
-         * Try to open the .ISO file and locate the specified installer.
+         * Try to open the .ISO file to extract all needed files.
          */
         rc = RTIsoFsOpen(&iso, mSource.c_str());
         if (RT_FAILURE(rc))
@@ -928,119 +1057,267 @@ int SessionTaskUpdateAdditions::Run(void)
         }
         else
         {
+            /* Set default installation directories. */
+            Utf8Str strUpdateDir = "/tmp/";
+            if (osType == eOSType_Windows)
+                 strUpdateDir = "C:\\Temp\\";
+
             rc = setProgress(5);
 
-            /** @todo Add support for non-Windows as well! */
-            Utf8Str strInstallerDest = "%TEMP%\\VBoxWindowsAdditions.exe";
-            bool fInstallCertificates = false;
-
+            /* Try looking up the Guest Additions installation directory. */
             if (RT_SUCCESS(rc))
             {
-                /*
-                 * Copy over main installer to the guest.
+                /* Try getting the installed Guest Additions version to know whether we
+                 * can install our temporary Guest Addition data into the original installation
+                 * directory.
+                 *
+                 * Because versions prior to 4.2 had bugs wrt spaces in paths we have to choose
+                 * a different location then.
                  */
-                rc = copyFileToGuest(pSession, &iso, strInstallerImage, strInstallerDest,
-                                     false /* File is not optional */, NULL /* cbSize */);
-                if (RT_SUCCESS(rc))
-                    rc = setProgress(20);
+                bool fUseInstallDir = false;
 
-                /*
-                 * Install needed certificates for the WHQL crap.
-                 ** @todo Only for Windows!
-                 */
-                if (RT_SUCCESS(rc))
+                Utf8Str strAddsVer;
+                rc = getGuestProperty(pGuest, "/VirtualBox/GuestAdd/Version", strAddsVer);
+                if (   RT_SUCCESS(rc)
+                    && RTStrVersionCompare(strAddsVer.c_str(), "4.2") >= 0)
                 {
-                    rc = copyFileToGuest(pSession, &iso, "CERT/ORACLE_VBOX.CER", "%TEMP%\\oracle-vbox.cer",
-                                         true /* File is optional */, NULL /* cbSize */);
+                    fUseInstallDir = true;
+                }
+
+                if (fUseInstallDir)
+                {
+                    if (RT_SUCCESS(rc))
+                        rc = getGuestProperty(pGuest, "/VirtualBox/GuestAdd/InstallDir", strUpdateDir);
                     if (RT_SUCCESS(rc))
                     {
-                        rc = setProgress(30);
-                        if (RT_SUCCESS(rc))
+                        if (osType == eOSType_Windows)
                         {
-                            rc = copyFileToGuest(pSession, &iso, "CERT/VBOXCERTUTIL.EXE", "%TEMP%\\VBoxCertUtil.exe",
-                                                 true /* File is optional */, NULL /* cbSize */);
-                            if (RT_SUCCESS(rc))
-                            {
-                                fInstallCertificates = true;
-                                rc = setProgress(40);
-                            }
-                            else
-                                hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                         Utf8StrFmt(GuestSession::tr("Error while copying certificate installation tool to the guest: %Rrc"), rc));
+                            strUpdateDir.findReplace('/', '\\');
+                            strUpdateDir.append("\\Update\\");
                         }
+                        else
+                            strUpdateDir.append("/update/");
                     }
-                    else
-                        hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
-                                                 Utf8StrFmt(GuestSession::tr("Error while copying certificate to the guest: %Rrc"), rc));
                 }
             }
 
-            /*
-             * Run VBoxCertUtil.exe to install the Oracle certificate.
-             */
-            if (   RT_SUCCESS(rc)
-                && fInstallCertificates)
-            {
-                LogRel(("Installing certificates on the guest ...\n"));
-
-                GuestProcessStartupInfo procInfo;
-                procInfo.mName    = Utf8StrFmt(GuestSession::tr("VirtualBox Guest Additions Certificate Utility"));
-                procInfo.mCommand = Utf8Str("%TEMP%\\VBoxCertUtil.exe");
-                procInfo.mFlags   = ProcessCreateFlag_Hidden;
-
-                /* Construct arguments. */
-                /** @todo Remove hardcoded paths. */
-                procInfo.mArguments.push_back(Utf8Str("add-trusted-publisher"));
-                /* Ugly hack: Because older Guest Additions have problems with environment variable
-                          expansion in parameters we have to check an alternative location on Windows.
-                          So check for "%TEMP%\VBoxWindowsAdditions.exe" in a screwed up way. */
-#ifdef VBOX_SERVICE_ENVARG_BUG
-                GuestFsObjData objData;
-                rc = pSession->fileQueryInfoInternal("%TEMP%\\oracle-vbox.cer", objData);
-                if (RT_SUCCESS(rc))
-#endif
-                    procInfo.mArguments.push_back(Utf8Str("%TEMP%\\oracle-vbox.cer"));
-#ifdef VBOX_SERVICE_ENVARG_BUG
-                else
-                    procInfo.mArguments.push_back(Utf8Str("C:\\Windows\\system32\\EMPoracle-vbox.cer"));
-#endif
-                /* Overwrite rc in any case. */
-                rc = runFile(pSession, procInfo);
-            }
-
             if (RT_SUCCESS(rc))
-                rc = setProgress(60);
+                LogRel(("Guest Additions update directory is: %s\n",
+                        strUpdateDir.c_str()));
+
+            /* Create the installation directory. */
+            rc = pSession->directoryCreateInternal(strUpdateDir,
+                                                   755 /* Mode */, DirectoryCreateFlag_Parents);
+            if (RT_FAILURE(rc))
+                hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                         Utf8StrFmt(GuestSession::tr("Error creating installation directory \"%s\" on the guest: %Rrc"),
+                                                    strUpdateDir.c_str(), rc));
+            if (RT_SUCCESS(rc))
+                rc = setProgress(10);
 
             if (RT_SUCCESS(rc))
             {
-                LogRel(("Updating Guest Additions ...\n"));
+                /* Prepare the file(s) we want to copy over to the guest and
+                 * (maybe) want to run. */
+                switch (osType)
+                {
+                    case eOSType_Windows:
+                    {
+                        /* Do we need to install our certificates? We do this for W2K and up. */
+                        bool fInstallCert = false;
 
-                GuestProcessStartupInfo procInfo;
-                procInfo.mName    = Utf8StrFmt(GuestSession::tr("VirtualBox Guest Additions Setup"));
-                procInfo.mCommand = Utf8Str(strInstallerDest);
-                procInfo.mFlags   = ProcessCreateFlag_Hidden;
-                /* If the caller does not want to wait for out guest update process to end,
-                 * complete the progress object now so that the caller can do other work. */
-                if (mFlags & AdditionsUpdateFlag_WaitForUpdateStartOnly)
-                    procInfo.mFlags |= ProcessCreateFlag_WaitForProcessStartOnly;
+                        /* Only Windows 2000 and up need certificates to be installed. */
+                        if (RTStrVersionCompare(strOSVer.c_str(), "5.0") >= 0)
+                        {
+                            fInstallCert = true;
+                            LogRel(("Certificates for auto updating WHQL drivers will be installed\n"));
+                        }
+                        else
+                            LogRel(("Skipping installation of certificates for WHQL drivers\n"));
 
-                /* Construct arguments. */
-                procInfo.mArguments.push_back(Utf8Str("/S")); /* We want to install in silent mode. */
-                procInfo.mArguments.push_back(Utf8Str("/l")); /* ... and logging enabled. */
-                /* Don't quit VBoxService during upgrade because it still is used for this
-                 * piece of code we're in right now (that is, here!) ... */
-                procInfo.mArguments.push_back(Utf8Str("/no_vboxservice_exit"));
-                /* Tell the installer to report its current installation status
-                 * using a running VBoxTray instance via balloon messages in the
-                 * Windows taskbar. */
-                procInfo.mArguments.push_back(Utf8Str("/post_installstatus"));
-
-                rc = runFile(pSession, procInfo);
-                if (RT_SUCCESS(rc))
-                    hr = setProgressSuccess();
+                        if (fInstallCert)
+                        {
+                            /* Our certificate. */
+                            mFiles.push_back(InstallerFile("CERT/ORACLE_VBOX.CER",
+                                                           strUpdateDir + "oracle-vbox.cer",
+                                                           UPDATEFILE_FLAG_COPY_FROM_ISO | UPDATEFILE_FLAG_OPTIONAL));
+                            /* Our certificate installation utility. */
+                            /* First pass: Copy over the file + execute it to remove any existing
+                             *             VBox certificates. */
+                            GuestProcessStartupInfo siCertUtilRem;
+                            siCertUtilRem.mName = "VirtualBox Certificate Utility, removing old VirtualBox certificates";
+                            siCertUtilRem.mArguments.push_back(Utf8Str("remove-trusted-publisher"));
+                            siCertUtilRem.mArguments.push_back(Utf8Str("--root")); /* Add root certificate as well. */
+                            siCertUtilRem.mArguments.push_back(Utf8Str(strUpdateDir + "oracle-vbox.cer"));
+                            siCertUtilRem.mArguments.push_back(Utf8Str(strUpdateDir + "oracle-vbox.cer"));
+                            mFiles.push_back(InstallerFile("CERT/VBOXCERTUTIL.EXE",
+                                                           strUpdateDir + "VBoxCertUtil.exe",
+                                                           UPDATEFILE_FLAG_COPY_FROM_ISO | UPDATEFILE_FLAG_EXECUTE | UPDATEFILE_FLAG_OPTIONAL,
+                                                           siCertUtilRem));
+                            /* Second pass: Only execute (but don't copy) again, this time installng the
+                             *              recent certificates just copied over. */
+                            GuestProcessStartupInfo siCertUtilAdd;
+                            siCertUtilAdd.mName = "VirtualBox Certificate Utility, installing VirtualBox certificates";
+                            siCertUtilAdd.mArguments.push_back(Utf8Str("add-trusted-publisher"));
+                            siCertUtilAdd.mArguments.push_back(Utf8Str("--root")); /* Add root certificate as well. */
+                            siCertUtilAdd.mArguments.push_back(Utf8Str(strUpdateDir + "oracle-vbox.cer"));
+                            siCertUtilAdd.mArguments.push_back(Utf8Str(strUpdateDir + "oracle-vbox.cer"));
+                            mFiles.push_back(InstallerFile("CERT/VBOXCERTUTIL.EXE",
+                                                           strUpdateDir + "VBoxCertUtil.exe",
+                                                           UPDATEFILE_FLAG_EXECUTE | UPDATEFILE_FLAG_OPTIONAL,
+                                                           siCertUtilAdd));
+                        }
+                        /* The installers in different flavors, as we don't know (and can't assume)
+                         * the guest's bitness. */
+                        mFiles.push_back(InstallerFile("VBOXWINDOWSADDITIONS_X86.EXE",
+                                                       strUpdateDir + "VBoxWindowsAdditions-x86.exe",
+                                                       UPDATEFILE_FLAG_COPY_FROM_ISO));
+                        mFiles.push_back(InstallerFile("VBOXWINDOWSADDITIONS_AMD64.EXE",
+                                                       strUpdateDir + "VBoxWindowsAdditions-amd64.exe",
+                                                       UPDATEFILE_FLAG_COPY_FROM_ISO));
+                        /* The stub loader which decides which flavor to run. */
+                        GuestProcessStartupInfo siInstaller;
+                        siInstaller.mName = "VirtualBox Windows Guest Additions Installer";
+                        /* Set a running timeout of 5 minutes -- the Windows Guest Additions
+                         * setup can take quite a while, so be on the safe side. */
+                        siInstaller.mTimeoutMS = 5 * 60 * 1000;
+                        siInstaller.mArguments.push_back(Utf8Str("/S")); /* We want to install in silent mode. */
+                        siInstaller.mArguments.push_back(Utf8Str("/l")); /* ... and logging enabled. */
+                        /* Don't quit VBoxService during upgrade because it still is used for this
+                         * piece of code we're in right now (that is, here!) ... */
+                        siInstaller.mArguments.push_back(Utf8Str("/no_vboxservice_exit"));
+                        /* Tell the installer to report its current installation status
+                         * using a running VBoxTray instance via balloon messages in the
+                         * Windows taskbar. */
+                        siInstaller.mArguments.push_back(Utf8Str("/post_installstatus"));
+                        /* If the caller does not want to wait for out guest update process to end,
+                         * complete the progress object now so that the caller can do other work. */
+                        if (mFlags & AdditionsUpdateFlag_WaitForUpdateStartOnly)
+                            siInstaller.mFlags |= ProcessCreateFlag_WaitForProcessStartOnly;
+                        mFiles.push_back(InstallerFile("VBOXWINDOWSADDITIONS.EXE",
+                                                       strUpdateDir + "VBoxWindowsAdditions.exe",
+                                                       UPDATEFILE_FLAG_COPY_FROM_ISO | UPDATEFILE_FLAG_EXECUTE, siInstaller));
+                        break;
+                    }
+                    case eOSType_Linux:
+                        /** @todo Add Linux support. */
+                        break;
+                    case eOSType_Solaris:
+                        /** @todo Add Solaris support. */
+                        break;
+                    default:
+                        AssertReleaseMsgFailed(("Unsupported guest type: %d\n", osType));
+                        break;
+                }
             }
+
+            if (RT_SUCCESS(rc))
+            {
+                /* We want to spend 40% total for all copying operations. So roughly
+                 * calculate the specific percentage step of each copied file. */
+                uint8_t uOffset = 20; /* Start at 20%. */
+                uint8_t uStep = 40 / mFiles.size();
+
+                LogRel(("Copying over Guest Additions update files to the guest ...\n"));
+
+                std::vector<InstallerFile>::const_iterator itFiles = mFiles.begin();
+                while (itFiles != mFiles.end())
+                {
+                    if (itFiles->fFlags & UPDATEFILE_FLAG_COPY_FROM_ISO)
+                    {
+                        bool fOptional = false;
+                        if (itFiles->fFlags & UPDATEFILE_FLAG_OPTIONAL)
+                            fOptional = true;
+                        rc = copyFileToGuest(pSession, &iso, itFiles->strSource, itFiles->strDest,
+                                             fOptional, NULL /* cbSize */);
+                        if (RT_FAILURE(rc))
+                        {
+                            hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                                     Utf8StrFmt(GuestSession::tr("Error while copying file \"%s\" to \"%s\" on the guest: %Rrc"),
+                                                                itFiles->strSource.c_str(), itFiles->strDest.c_str(), rc));
+                            break;
+                        }
+                    }
+
+                    rc = setProgress(uOffset);
+                    if (RT_FAILURE(rc))
+                        break;
+                    uOffset += uStep;
+
+                    itFiles++;
+                }
+            }
+
+            /* Done copying, close .ISO file. */
             RTIsoFsClose(&iso);
+
+            if (RT_SUCCESS(rc))
+            {
+                /* We want to spend 35% total for all copying operations. So roughly
+                 * calculate the specific percentage step of each copied file. */
+                uint8_t uOffset = 60; /* Start at 60%. */
+                uint8_t uStep = 35 / mFiles.size();
+
+                LogRel(("Executing Guest Additions update files ...\n"));
+
+                std::vector<InstallerFile>::iterator itFiles = mFiles.begin();
+                while (itFiles != mFiles.end())
+                {
+                    if (itFiles->fFlags & UPDATEFILE_FLAG_EXECUTE)
+                    {
+                        rc = runFileOnGuest(pSession, itFiles->mProcInfo);
+                        if (RT_FAILURE(rc))
+                            break;
+                    }
+
+                    rc = setProgress(uOffset);
+                    if (RT_FAILURE(rc))
+                        break;
+                    uOffset += uStep;
+
+                    itFiles++;
+                }
+            }
+
+            if (RT_SUCCESS(rc))
+            {
+                LogRel(("Automatic update of Guest Additions succeeded\n"));
+                rc = setProgressSuccess();
+            }
         }
+    }
+
+    if (RT_FAILURE(rc))
+    {
+        if (rc == VERR_CANCELLED)
+        {
+            LogRel(("Automatic update of Guest Additions was canceled\n"));
+
+            hr = setProgressErrorMsg(VBOX_E_IPRT_ERROR,
+                                     Utf8StrFmt(GuestSession::tr("Installation was canceled")));
+        }
+        else
+        {
+            Utf8Str strError = Utf8StrFmt("No further error information available (%Rrc)", rc);
+            if (!mProgress.isNull()) /* Progress object is optional. */
+            {
+                ComPtr<IVirtualBoxErrorInfo> pError;
+                hr = mProgress->COMGETTER(ErrorInfo)(pError.asOutParam());
+                Assert(!pError.isNull());
+                if (SUCCEEDED(hr))
+                {
+                    Bstr strVal;
+                    hr = pError->COMGETTER(Text)(strVal.asOutParam());
+                    if (   SUCCEEDED(hr)
+                        && strVal.isNotEmpty())
+                        strError = strVal;
+                }
+            }
+
+            LogRel(("Automatic update of Guest Additions failed: %s\n", strError.c_str()));
+        }
+
+        LogRel(("Please install Guest Additions manually\n"));
     }
 
     LogFlowFuncLeaveRC(rc);

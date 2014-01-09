@@ -25,6 +25,8 @@
 #include <QTransform>
 #include <QMap>
 #include <QThread>
+#include <QMutex>
+#include <QWaitCondition>
 
 /* GUI includes: */
 #include "UIGChooserItem.h"
@@ -82,8 +84,7 @@ signals:
 
     /* Notifiers: Group saving stuff: */
     void sigStartGroupSaving();
-    void sigGroupSavingStarted();
-    void sigGroupSavingFinished();
+    void sigGroupSavingStateChanged();
 
 public:
 
@@ -210,7 +211,9 @@ private slots:
 
     /* Handlers: Group saving stuff: */
     void sltGroupSavingStart();
-    void sltGroupSavingComplete();
+    void sltGroupDefinitionsSaveComplete();
+    void sltGroupOrdersSaveComplete();
+    void sltReloadMachine(const QString &strId);
 
     /* Handler: Lookup stuff: */
     void sltEraseLookupTimer();
@@ -263,11 +266,11 @@ private:
     int positionFromDefinitions(UIGChooserItem *pParentItem, UIGChooserItemType type, const QString &strName);
     void createMachineItem(const CMachine &machine, UIGChooserItem *pParentItem);
 
-    /* Helpers: Saving: */
-    void saveGroupTree();
-    void saveGroupsOrder();
-    void saveGroupsOrder(UIGChooserItem *pParentItem);
-    void gatherGroupTree(QMap<QString, QStringList> &groups, UIGChooserItem *pParentGroup);
+    /* Helpers: Group saving stuff: */
+    void saveGroupDefinitions();
+    void saveGroupOrders();
+    void gatherGroupDefinitions(QMap<QString, QStringList> &groups, UIGChooserItem *pParentGroup);
+    void gatherGroupOrders(QMap<QString, QStringList> &groups, UIGChooserItem *pParentItem);
     QString fullName(UIGChooserItem *pItem);
 
     /* Helpers: Update stuff: */
@@ -304,8 +307,9 @@ private:
     /* Helper: Sorting stuff: */
     void sortItems(UIGChooserItem *pParent, bool fRecursively = false);
 
-    /* Helper: Group saving stuff: */
-    void makeSureGroupSavingIsFinished();
+    /* Helpers: Group saving stuff: */
+    void makeSureGroupDefinitionsSaveIsFinished();
+    void makeSureGroupOrdersSaveIsFinished();
 
     /* Helper: Lookup stuff: */
     UIGChooserItem* lookForItem(UIGChooserItem *pParent, const QString &strStartingFrom);
@@ -336,8 +340,67 @@ private:
     QString m_strLookupString;
 };
 
-/* Allows to save group settings asynchronously: */
-class UIGroupsSavingThread : public QThread
+/* Represents group definitions save error types: */
+enum UIGroupsSavingError
+{
+    UIGroupsSavingError_MachineLockFailed,
+    UIGroupsSavingError_MachineGroupSetFailed,
+    UIGroupsSavingError_MachineSettingsSaveFailed
+};
+Q_DECLARE_METATYPE(UIGroupsSavingError);
+
+/* Allows to save group definitions asynchronously: */
+class UIGroupDefinitionSaveThread : public QThread
+{
+    Q_OBJECT;
+
+signals:
+
+    /* Notifier: Error stuff: */
+    void sigError(UIGroupsSavingError errorType, const CMachine &machine);
+
+    /* Notifier: */
+    void sigReload(QString strId);
+
+    /* Notifier: Complete stuff: */
+    void sigComplete();
+
+public:
+
+    /* Singleton stuff: */
+    static UIGroupDefinitionSaveThread* instance();
+    static void prepare();
+    static void cleanup();
+
+    /* API: Configuring stuff: */
+    void configure(QObject *pParent,
+                   const QMap<QString, QStringList> &oldLists,
+                   const QMap<QString, QStringList> &newLists);
+
+private slots:
+
+    /* Handler: Error stuff: */
+    void sltHandleError(UIGroupsSavingError errorType, const CMachine &machine);
+
+private:
+
+    /* Constructor/destructor: */
+    UIGroupDefinitionSaveThread();
+    ~UIGroupDefinitionSaveThread();
+
+    /* Worker thread stuff: */
+    void run();
+
+    /* Variables: */
+    static UIGroupDefinitionSaveThread *m_spInstance;
+    QMap<QString, QStringList> m_oldLists;
+    QMap<QString, QStringList> m_newLists;
+    QMutex m_mutex;
+    QWaitCondition m_condition;
+};
+
+/* Allows to save group order asynchronously: */
+class UIGroupOrderSaveThread : public QThread
 {
     Q_OBJECT;
 
@@ -349,28 +412,25 @@ signals:
 public:
 
     /* Singleton stuff: */
-    static UIGroupsSavingThread* instance();
+    static UIGroupOrderSaveThread* instance();
     static void prepare();
     static void cleanup();
 
     /* API: Configuring stuff: */
-    void configure(QObject *pParent,
-                   const QMap<QString, QStringList> &oldLists,
-                   const QMap<QString, QStringList> &newLists);
+    void configure(QObject *pParent, const QMap<QString, QStringList> &groups);
 
 private:
 
     /* Constructor/destructor: */
-    UIGroupsSavingThread();
-    ~UIGroupsSavingThread();
+    UIGroupOrderSaveThread();
+    ~UIGroupOrderSaveThread();
 
     /* Worker thread stuff: */
     void run();
 
     /* Variables: */
-    static UIGroupsSavingThread *m_spInstance;
-    QMap<QString, QStringList> m_oldLists;
-    QMap<QString, QStringList> m_newLists;
+    static UIGroupOrderSaveThread *m_spInstance;
+    QMap<QString, QStringList> m_groups;
 };
 
 #endif /* __UIGChooserModel_h__ */

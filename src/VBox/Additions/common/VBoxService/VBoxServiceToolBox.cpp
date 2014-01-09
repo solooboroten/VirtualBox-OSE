@@ -366,7 +366,7 @@ static RTEXITCODE VBoxServiceToolboxCat(int argc, char **argv)
     int rc = VINF_SUCCESS;
     bool fUsageOK = true;
 
-    char szOutput[RTPATH_MAX] = { 0 };
+    const char *pszOutput = NULL;
     RTFILE hOutput = NIL_RTFILE;
     uint32_t fFlags = RTFILE_O_CREATE_REPLACE /* Output file flags. */
                       | RTFILE_O_WRITE
@@ -402,8 +402,7 @@ static RTEXITCODE VBoxServiceToolboxCat(int argc, char **argv)
                 return RTEXITCODE_SUCCESS;
 
             case 'o':
-                if (!RTStrPrintf(szOutput, sizeof(szOutput), ValueUnion.psz))
-                    rc = VERR_NO_MEMORY;
+                pszOutput = ValueUnion.psz;
                 break;
 
             case 'u':
@@ -437,12 +436,12 @@ static RTEXITCODE VBoxServiceToolboxCat(int argc, char **argv)
 
     if (RT_SUCCESS(rc))
     {
-        if (strlen(szOutput))
+        if (pszOutput)
         {
-            rc = RTFileOpen(&hOutput, szOutput, fFlags);
+            rc = RTFileOpen(&hOutput, pszOutput, fFlags);
             if (RT_FAILURE(rc))
                 RTMsgError("Could not create output file '%s', rc=%Rrc\n",
-                           szOutput, rc);
+                           pszOutput, rc);
         }
 
         if (RT_SUCCESS(rc))
@@ -1021,7 +1020,7 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
         VBOXSERVICETOOLBOXRMFLAG_RECURSIVE = RT_BIT_32(0)
     };
 
-    int ch, rc, rc2;
+    int ch, rc;
     RTGETOPTUNION ValueUnion;
     RTGETOPTSTATE GetState;
     rc = RTGetOptInit(&GetState, argc, argv, s_aOptions,
@@ -1032,7 +1031,7 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
     bool     fVerbose     = false;
     uint32_t fFlags       = 0;
     uint32_t fOutputFlags = 0;
-    int cNonOptions       = 0;
+    int      cNonOptions  = 0;
 
     while (   (ch = RTGetOpt(&GetState, &ValueUnion))
               && RT_SUCCESS(rc))
@@ -1101,8 +1100,8 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
                                     fOutputFlags, &rc);
                 else
                 {
-                    rc2 = RTDirRemoveRecursive(argv[i],
-                                               RTDIRRMREC_F_CONTENT_AND_DIR);
+                    int rc2 = RTDirRemoveRecursive(argv[i],
+                                                   RTDIRRMREC_F_CONTENT_AND_DIR);
                     toolboxRmReport("", argv[i], RT_SUCCESS(rc2), rc2,
                                     fOutputFlags, NULL);
                     toolboxRmReport("The following error occurred while removing directory '%s': %Rrc.\n",
@@ -1112,7 +1111,7 @@ static RTEXITCODE VBoxServiceToolboxRm(int argc, char **argv)
             }
             else if (RTPathExists(argv[i]) || RTSymlinkExists(argv[i]))
             {
-                rc2 = RTFileDelete(argv[i]);
+                int rc2 = RTFileDelete(argv[i]);
                 toolboxRmReport("", argv[i], RT_SUCCESS(rc2), rc2,
                                 fOutputFlags, NULL);
                 toolboxRmReport("The following error occurred while removing file '%s': %Rrc.\n",
@@ -1203,7 +1202,7 @@ static RTEXITCODE VBoxServiceToolboxMkTemp(int argc, char **argv)
         VBOXSERVICETOOLBOXMKTEMPFLAG_SECURE    = RT_BIT_32(1)
     };
 
-    int ch, rc, rc2;
+    int ch, rc;
     RTGETOPTUNION ValueUnion;
     RTGETOPTSTATE GetState;
     rc = RTGetOptInit(&GetState, argc, argv, s_aOptions,
