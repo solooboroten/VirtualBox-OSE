@@ -4,7 +4,7 @@
 ;
 
 ;
-; Copyright (C) 2012-2013 Oracle Corporation
+; Copyright (C) 2012-2014 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -786,51 +786,22 @@ exit:
 
 SectionEnd
 
-; Prepares the access rights for replacing
-; a WRP (Windows Resource Protection) protected file
-Function PrepareWRPFile
-
-  Pop $0
-
-  ${IfNot} ${FileExists} "$0"
-    ${LogVerbose} "WRP: File $0 does not exist, skipping"
-    Return
-  ${EndIf}
-
-  ${If} ${FileExists} "$g_strSystemDir\takeown.exe"
-    ${CmdExecute} "$\"$g_strSystemDir\takeown.exe$\" /F $\"$0$\"" "true"
-  ${Else}
-    ${LogVerbose} "WRP: Warning: takeown.exe not found, skipping"
-  ${EndIf}
-
-  AccessControl::SetFileOwner "$0" "(S-1-5-32-545)"
-  Pop $1
-  ${LogVerbose} "WRP: Setting file owner for $0 returned: $1"
-
-  AccessControl::GrantOnFile "$0" "(S-1-5-32-545)" "FullAccess"
-  Pop $1
-  ${LogVerbose} "WRP: Setting access rights for $0 returned: $1"
-
-!if $%VBOX_WITH_GUEST_INSTALL_HELPER% == "1"
-  !ifdef WFP_FILE_EXCEPTION
-    VBoxGuestInstallHelper::DisableWFP "$0"
-    Pop $1 ; Get return value (ignored for now)
-    ${LogVerbose} "WRP: Setting WFP exception for $0 returned: $1"
-  !endif
-!endif
-
-FunctionEnd
-
 ; Direct3D support
 Section /o $(VBOX_COMPONENT_D3D) SEC03
 
 !if $%VBOX_WITH_WDDM% == "1"
   ${If} $g_bWithWDDM == "true"
-    ; All D3D components are installed with WDDM driver package, nothing to be done here
+    ${LogVerbose} "Installing WDDM Direct3D support ..."
+
+    ; Do we need to restore the original d3d8.dll/d3d9.dll files because the guest
+    ; installation was upgraded from XPDM to WDDM driver? In a XPDM installation
+    ; those DLLs were replaced by our own stub files.
+    Call RestoreFilesDirect3D
     Return
   ${EndIf}
 !endif
 
+  Call SetAppMode64
   SetOverwrite on
 
   ${If} $g_strSystemDir == ''
@@ -838,7 +809,7 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
   ${EndIf}
 
   SetOutPath $g_strSystemDir
-  ${LogVerbose} "Installing Direct3D support ..."
+  ${LogVerbose} "Installing XPDM Direct3D support ..."
   FILE "$%PATH_OUT%\bin\additions\VBoxD3D8.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxD3D9.dll"
   FILE "$%PATH_OUT%\bin\additions\wined3d.dll"
@@ -852,14 +823,10 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
       ${CopyFileEx} "" "$g_strSystemDir\dllcache\d3d8.dll" "$g_strSystemDir\dllcache\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
       ${CopyFileEx} "" "$g_strSystemDir\dllcache\d3d9.dll" "$g_strSystemDir\dllcache\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
 
-      Push "$g_strSystemDir\dllcache\d3d8.dll"
-      Call PrepareWRPFile
-
-      Push "$g_strSystemDir\dllcache\d3d9.dll"
-      Call PrepareWRPFile
-
       ; Exchange DLLs
+      ${PrepareWRPFileEx} "" "$g_strSystemDir\dllcache\d3d8.dll"
       ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\dllcache\d3d8.dll" "$TEMP"
+      ${PrepareWRPFileEx} "" "$g_strSystemDir\dllcache\d3d9.dll"
       ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\dllcache\d3d9.dll" "$TEMP"
     ${Else}
         ${LogVerbose} "DLL cache does not exist, skipping"
@@ -873,14 +840,10 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
   ${CopyFileEx} "" "$g_strSystemDir\d3d8.dll" "$g_strSystemDir\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
   ${CopyFileEx} "" "$g_strSystemDir\d3d9.dll" "$g_strSystemDir\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
 
-  Push "$g_strSystemDir\d3d8.dll"
-  Call PrepareWRPFile
-
-  Push "$g_strSystemDir\d3d9.dll"
-  Call PrepareWRPFile
-
   ; Exchange DLLs
+  ${PrepareWRPFileEx} "" "$g_strSystemDir\d3d8.dll"
   ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d8.dll" "$g_strSystemDir\d3d8.dll" "$TEMP"
+  ${PrepareWRPFileEx} "" "$g_strSystemDir\d3d9.dll"
   ${InstallFileEx} "" "$%PATH_OUT%\bin\additions\d3d9.dll" "$g_strSystemDir\d3d9.dll" "$TEMP"
 
 !if $%BUILD_TARGET_ARCH% == "amd64"
@@ -901,14 +864,10 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
         ${CopyFileEx} "" "$g_strSysWow64\dllcache\d3d8.dll" "$g_strSysWow64\dllcache\msd3d8.dll" "Microsoft Corporation" "x86"
         ${CopyFileEx} "" "$g_strSysWow64\dllcache\d3d9.dll" "$g_strSysWow64\dllcache\msd3d9.dll" "Microsoft Corporation" "x86"
 
-        Push "$g_strSysWow64\dllcache\d3d8.dll"
-        Call PrepareWRPFile
-
-        Push "$g_strSysWow64\dllcache\d3d9.dll"
-        Call PrepareWRPFile
-
         ; Exchange DLLs
+        ${PrepareWRPFileEx} "" "$g_strSysWow64\dllcache\d3d8.dll"
         ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$g_strSysWow64\dllcache\d3d8.dll" "$TEMP"
+        ${PrepareWRPFileEx} "" "$g_strSysWow64\dllcache\d3d9.dll"
         ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$g_strSysWow64\dllcache\d3d9.dll" "$TEMP"
       ${Else}
         ${LogVerbose} "DLL cache does not exist, skipping"
@@ -923,14 +882,9 @@ Section /o $(VBOX_COMPONENT_D3D) SEC03
     ${CopyFileEx} "" "$g_strSysWow64\d3d8.dll" "$g_strSysWow64\msd3d8.dll" "Microsoft Corporation" "x86"
     ${CopyFileEx} "" "$g_strSysWow64\d3d9.dll" "$g_strSysWow64\msd3d9.dll" "Microsoft Corporation" "x86"
 
-    Push "$g_strSysWow64\d3d8.dll"
-    Call PrepareWRPFile
-
-    Push "$g_strSysWow64\d3d9.dll"
-    Call PrepareWRPFile
-
-    ; Exchange DLLs
+    ${PrepareWRPFileEx} "" "$g_strSysWow64\d3d8.dll"
     ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d8.dll" "$g_strSysWow64\d3d8.dll" "$TEMP"
+    ${PrepareWRPFileEx} "" "$g_strSysWow64\d3d9.dll"
     ${InstallFileEx} "" "$%VBOX_PATH_ADDITIONS_WIN_X86%\d3d9.dll" "$g_strSysWow64\d3d9.dll" "$TEMP"
 
 !endif ; amd64
@@ -1249,7 +1203,7 @@ Function .onInit
   ${If} $g_bWithWDDM == "true" ; D3D / WDDM support
     !insertmacro SelectSection ${SEC03}
   ${EndIf}
-  ; On Windows 8 / 8.1 / Windows Server 2012 R2 we always select the 3D 
+  ; On Windows 8 / 8.1 / Windows Server 2012 R2 we always select the 3D
   ; section and disable it so that it cannot be deselected again
   ${If}   $g_strWinVersion == "8"
   ${OrIf} $g_strWinVersion == "8_1"

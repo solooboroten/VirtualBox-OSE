@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2012-2013 Oracle Corporation
+ * Copyright (C) 2012-2014 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -41,11 +41,12 @@
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-static LONG g_cDllRefs  = 0;            /**< Global DLL reference count. */
-static HINSTANCE g_hDllInst = NULL;     /**< Global DLL hInstance. */
+static LONG g_cDllRefs  = 0;                 /**< Global DLL reference count. */
+static HINSTANCE g_hDllInst = NULL;          /**< Global DLL hInstance. */
 
 #ifdef VBOX_WITH_SENS
-static IEventSystem *g_pIEventSystem;   /**< Pointer to IEventSystem interface. */
+static bool g_fSENSEnabled = false;
+static IEventSystem *g_pIEventSystem = NULL; /**< Pointer to IEventSystem interface. */
 
 /**
  * Subscribed SENS events.
@@ -180,7 +181,7 @@ protected:
 
     LONG m_cRefs;
 };
-static VBoxCredProvSensLogon *g_pISensLogon;
+static VBoxCredProvSensLogon *g_pISensLogon = NULL;
 
 
 /**
@@ -211,7 +212,8 @@ static HRESULT VBoxCredentialProviderRegisterSENS(void)
         hr = E_OUTOFMEMORY;
     }
 
-    if (SUCCEEDED(hr))
+    if (   SUCCEEDED(hr)
+        && g_pIEventSystem)
     {
         IEventSubscription *pIEventSubscription;
         int i;
@@ -290,9 +292,13 @@ static HRESULT VBoxCredentialProviderRegisterSENS(void)
     {
         VBoxCredProvVerbose(0, "VBoxCredentialProviderRegisterSENS: Error registering SENS provider, hr=%Rhrc\n", hr);
         if (g_pIEventSystem)
+        {
             g_pIEventSystem->Release();
+            g_pIEventSystem = NULL;
+        }
     }
 
+    VBoxCredProvVerbose(0, "VBoxCredentialProviderRegisterSENS: Returning hr=%Rhrc\n", hr);
     return hr;
 }
 
@@ -302,12 +308,17 @@ static HRESULT VBoxCredentialProviderRegisterSENS(void)
 static void VBoxCredentialProviderUnregisterSENS(void)
 {
     if (g_pIEventSystem)
+    {
         g_pIEventSystem->Release();
+        g_pIEventSystem = NULL;
+    }
 
     /* We need to reconnecto to the event system because we can be called
      * in a different context COM can't handle. */
-    HRESULT hr = CoCreateInstance(CLSID_CEventSystem, 0, CLSCTX_SERVER, IID_IEventSystem, (void**)&g_pIEventSystem);
-    if (SUCCEEDED(hr))
+    HRESULT hr = CoCreateInstance(CLSID_CEventSystem, 0,
+                                  CLSCTX_SERVER, IID_IEventSystem, (void**)&g_pIEventSystem);
+    if (   SUCCEEDED(hr)
+        && g_pIEventSystem)
     {
         VBoxCredProvVerbose(0, "VBoxCredentialProviderUnregisterSENS\n");
 
@@ -344,10 +355,16 @@ static void VBoxCredentialProviderUnregisterSENS(void)
         }
 
         g_pIEventSystem->Release();
+        g_pIEventSystem = NULL;
     }
 
     if (g_pISensLogon)
+    {
         delete g_pISensLogon;
+        g_pISensLogon = NULL;
+    }
+
+    VBoxCredProvVerbose(0, "VBoxCredentialProviderUnregisterSENS: Returning hr=%Rhrc\n", hr);
 }
 #endif /* VBOX_WITH_SENS */
 
@@ -386,6 +403,9 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD dwReason, LPVOID pReserved)
 
         case DLL_THREAD_ATTACH:
         case DLL_THREAD_DETACH:
+            break;
+
+        default:
             break;
     }
 
@@ -441,7 +461,8 @@ HRESULT __stdcall DllCanUnloadNow(void)
 #ifdef VBOX_WITH_SENS
     if (!g_cDllRefs)
     {
-        VBoxCredentialProviderUnregisterSENS();
+        if (g_fSENSEnabled)
+            VBoxCredentialProviderUnregisterSENS();
 
         CoUninitialize();
     }
@@ -476,11 +497,39 @@ HRESULT VBoxCredentialProviderCreate(REFCLSID classID, REFIID interfaceID,
             pFactory->Release();
 
 #ifdef VBOX_WITH_SENS
-            if (SUCCEEDED(hr))
+            g_fSENSEnabled = true; /* By default SENS support is enabled. */
+
+            HKEY hKey;
+            /** @todo Add some registry wrapper function(s) as soon as we got more values to retrieve. */
+            DWORD dwRet = RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Oracle\\VirtualBox Guest Additions\\AutoLogon",
+                                       0L, KEY_QUERY_VALUE, &hKey);
+            if (dwRet == ERROR_SUCCESS)
+            {
+                DWORD dwValue;
+                DWORD dwType = REG_DWORD;
+                DWORD dwSize = sizeof(DWORD);
+
+                dwRet = RegQueryValueEx(hKey, L"HandleSENS", NULL, &dwType, (LPBYTE)&dwValue, &dwSize);
+                if (   dwRet  == ERROR_SUCCESS
+                    && dwType == REG_DWORD
+                    && dwSize == sizeof(DWORD))
+                {
+                    g_fSENSEnabled = RT_BOOL(dwValue);
+                }
+
+                RegCloseKey(hKey);
+            }
+
+            VBoxCredProvVerbose(0, "VBoxCredentialProviderCreate: g_fSENSEnabled=%RTbool\n",
+                                g_fSENSEnabled);
+            if (   SUCCEEDED(hr)
+                && g_fSENSEnabled)
             {
                 HRESULT hRes = CoInitializeEx(NULL, COINIT_MULTITHREADED);
                 VBoxCredentialProviderRegisterSENS();
             }
+#else
+            VBoxCredProvVerbose(0, "VBoxCredentialProviderCreate: SENS support is disabled\n");
 #endif
         }
         catch (std::bad_alloc &ex)
