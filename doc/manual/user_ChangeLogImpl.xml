@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
-    <title>Version 4.3.8 Release Candidate 1 (2014-02-21)</title>
+    <title>Version 4.3.8 (2014-02-25)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
       added:</para>
@@ -30,7 +30,7 @@
 
       <listitem>
         <para>GUI: experimental HID LEDs synchronization for Windows hosts, see
-          <xref linkend="hidledssync" xreflabel="here"/> for more details</para>
+          <xref linkend="hidledssync" xreflabel="here"/></para>
       </listitem>
 
       <listitem>
@@ -66,6 +66,16 @@
       </listitem>
 
       <listitem>
+        <para>GUI: allow to set host-combination to 'None' using the Global settings
+          / Input page (bug #12730)</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: don't switch the guest to a black screen during online snapshot
+          merge (4.3 regression)</para>
+      </listitem>
+
+      <listitem>
         <para>VBoxManage: when exporting an appliance, support the suppression
            of MAC addresses, which means they will be always recreated on
            import, avoiding duplicate MAC addresses for VMs which are imported
@@ -73,8 +83,12 @@
       </listitem>
 
       <listitem>
-        <para>Storage: fixed a VM hang during suspend under certain circumstances
-          if the AHCI controller is used</para>
+        <para>AHCI: fixed a VM hang during suspend under certain circumstances</para>
+      </listitem>
+
+      <listitem>
+        <para>AHCI: fixed a VM hang during online snapshot merge under certain
+          circumstances</para>
       </listitem>
 
       <listitem>
@@ -164,6 +178,11 @@
         <para>VBoxSVC: fixed a bug which could trigger a crash if a VM snapshot
           was restored the second time and the VM has associated bandwidth groups
           (bug #12569)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxSVC: properly detect ifconfig if located in <emphasis>/bin</emphasis>
+          (bug #12713)</para>
       </listitem>
 
       <listitem>
