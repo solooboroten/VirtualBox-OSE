@@ -76,8 +76,6 @@ typedef struct VBVAEXBUFFERCONTEXT
     /** This flag is set if we wrote to the buffer faster than the host could
      * read it. */
     bool        fHwBufferOverflow;
-    /* VBVA operation used to enable/disable VBVA */
-    uint16_t    u16EnableOp;
     /* the window between indexRecordFirstUncompleted and pVBVA->::indexRecordFirst represents
      * command records processed by the host, but not completed by the guest yet */
     volatile uint32_t    indexRecordFirstUncompleted;
@@ -131,7 +129,7 @@ typedef struct VBOXCMDVBVA
 
 /** @name VBVAEx APIs
  * @{ */
-RTDECL(bool) VBoxVBVAExEnable(PVBVAEXBUFFERCONTEXT pCtx,
+RTDECL(int) VBoxVBVAExEnable(PVBVAEXBUFFERCONTEXT pCtx,
                             PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx,
                             struct VBVABUFFER *pVBVA);
 RTDECL(void) VBoxVBVAExDisable(PVBVAEXBUFFERCONTEXT pCtx,
@@ -149,8 +147,7 @@ RTDECL(void) VBoxVBVAExSetupBufferContext(PVBVAEXBUFFERCONTEXT pCtx,
                                         uint32_t offVRAMBuffer,
                                         uint32_t cbBuffer,
                                         PFNVBVAEXBUFFERFLUSH pfnFlush,
-                                        void *pvFlush,
-                                        uint16_t u16EnableOp);
+                                        void *pvFlush);
 
 DECLINLINE(uint32_t) VBoxVBVAExGetSize(PVBVAEXBUFFERCONTEXT pCtx)
 {

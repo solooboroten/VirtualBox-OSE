@@ -121,6 +121,8 @@ typedef struct _VBOXMP_DEVEXT
    volatile uint32_t cRenderFromShadowDisabledContexts;
    volatile uint32_t cUnlockedVBVADisabled;
 
+   volatile uint32_t fCompletingCommands;
+
    DWORD dwDrvCfgFlags;
    /* this is examined and swicthed by DxgkDdiSubmitCommand only! */
    volatile BOOLEAN fRenderToShadowDisabled;
@@ -149,7 +151,9 @@ typedef struct _VBOXMP_DEVEXT
    PKTHREAD pWdThread;
    KEVENT WdEvent;
 #endif
-
+   BOOL bVSyncTimerEnabled;
+   volatile uint32_t fVSyncInVBlank;
+   volatile LARGE_INTEGER VSyncTime;
    KTIMER VSyncTimer;
    KDPC VSyncDpc;
 
