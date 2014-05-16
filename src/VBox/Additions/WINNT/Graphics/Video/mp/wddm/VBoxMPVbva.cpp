@@ -97,6 +97,7 @@ int vboxVbvaReportDirtyRect (PVBOXMP_DEVEXT pDevExt, PVBOXWDDM_SOURCE pSrc, RECT
     return VERR_GENERAL_FAILURE;
 }
 
+#ifdef VBOX_WITH_CROGL
 /* command vbva ring buffer */
 
 /* customized VBVA implementation */
@@ -1129,3 +1130,4 @@ done:
     return cbInitBuffer - cbBuffer;
 }
 
+#endif

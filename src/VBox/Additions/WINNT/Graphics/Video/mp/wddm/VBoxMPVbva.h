@@ -58,6 +58,7 @@ int vboxVbvaReportDirtyRect(PVBOXMP_DEVEXT pDevExt, struct VBOXWDDM_SOURCE *pSrc
         } while (0)
 
 
+#ifdef VBOX_WITH_CROGL
 /* customized VBVA implementation */
 struct VBVAEXBUFFERCONTEXT;
 
@@ -222,5 +223,7 @@ DECLINLINE(void) VBoxCVDdiPackRects(VBOXCMDVBVA_RECT *paVbvaRects, const RECT *p
 }
 
 uint32_t VBoxCVDdiPTransferVRamSysBuildEls(VBOXCMDVBVA_PAGING_TRANSFER *pCmd, PMDL pMdl, uint32_t iPfn, uint32_t cPages, uint32_t cbBuffer, uint32_t *pcPagesWritten);
+
+#endif /* VBOX_WITH_CROGL */
 
 #endif /* #ifndef ___VBoxMPVbva_h___ */

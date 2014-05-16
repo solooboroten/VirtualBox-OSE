@@ -15,13 +15,13 @@
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
+#ifdef VBOX_WITH_CROGL
 
 #include "VBoxMPWddm.h"
 #include "VBoxMPCr.h"
 
 #include <VBox/HostServices/VBoxCrOpenGLSvc.h>
 
-#ifdef VBOX_WITH_CROGL
 #include <cr_protocol.h>
 
 static uint32_t g_VBoxMpCrHostCaps = 0;
@@ -643,8 +643,6 @@ void VBoxMpCrShgsmiTransportCmdTermWriteAsync(PVBOXMP_CRSHGSMITRANSPORT pCon, vo
     vboxMpCrShgsmiTransportCmdTermDmaCmd(pCon, pHdr);
 }
 
-#endif
-
 static int vboxMpCrCtlAddRef(PVBOXMP_CRCTLCON pCrCtlCon)
 {
     if (pCrCtlCon->cCrCtlRefs++)
@@ -864,7 +862,6 @@ void VBoxMpCrCtlConInit()
     g_VBoxMpCr3DSupported = 0;
     g_VBoxMpCrHostCaps = 0;
 
-#ifdef VBOX_WITH_CROGL
     VBOXMP_CRCTLCON CrCtlCon = {0};
     uint32_t u32ClientID = 0;
     int rc = VBoxMpCrCtlConConnect(&CrCtlCon, CR_PROTOCOL_VERSION_MAJOR, CR_PROTOCOL_VERSION_MINOR, &u32ClientID);
@@ -890,7 +887,6 @@ void VBoxMpCrCtlConInit()
     rc = VBoxMpCrCtlConDisconnect(&CrCtlCon, u32ClientID);
     if (RT_FAILURE(rc))
         WARN(("VBoxMpCrCtlConDisconnect failed rc (%d), ignoring..", rc));
-#endif
 }
 
 int VBoxMpCrCmdRxReadbackHandler(CRMessageReadback *pRx, uint32_t cbRx)
@@ -925,3 +921,4 @@ int VBoxMpCrCmdRxHandler(CRMessageHeader *pRx, uint32_t cbRx)
     }
 }
 
+#endif

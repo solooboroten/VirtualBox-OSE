@@ -1,8 +1,14 @@
+virtualbox-ose (4.3.12) unstable; urgency=low
+
+  * rebuild Debian package
+
+ -- Oracle Corporation <info@virtualbox.org>  Fri, 16 May 2014 20:00:00 +0100
+
 virtualbox-ose (4.3.10) unstable; urgency=low
 
   * rebuild Debian package
 
- -- Oracle Corporation <info@virtualbox.org>  Tue, 25 Mar 2014 18:00:00 +0100
+ -- Oracle Corporation <info@virtualbox.org>  Wed, 26 Mar 2014 20:00:00 +0100
 
 virtualbox-ose (4.3.8) unstable; urgency=low
 
