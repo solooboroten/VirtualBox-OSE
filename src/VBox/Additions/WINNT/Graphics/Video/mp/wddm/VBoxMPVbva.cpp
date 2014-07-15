@@ -172,15 +172,9 @@ static int vboxCmdVbvaCtlSubmitSync(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, VBOXCMD
     return rc;
 }
 
-static int vboxCmdVbvaCtlSubmitAsync(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, VBOXCMDVBVA_CTL * pCtl, PFNVBOXSHGSMICMDCOMPLETION_IRQ pfnCompletionIrq, void *pvCompletionIrq)
+static int vboxCmdVbvaCtlSubmitAsync(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, VBOXCMDVBVA_CTL * pCtl, FNVBOXSHGSMICMDCOMPLETION pfnCompletion, void *pvCompletion)
 {
-    const VBOXSHGSMIHEADER* pHdr = VBoxSHGSMICommandPrepAsynchIrq(&pHGSMICtx->heapCtx, pCtl, pfnCompletionIrq, pvCompletionIrq, VBOXSHGSMI_FLAG_GH_ASYNCH_FORCE);
-    if (!pHdr)
-    {
-        WARN(("VBoxSHGSMICommandPrepAsynchIrq returnd NULL"));
-        return VERR_INVALID_PARAMETER;
-    }
-
+    const VBOXSHGSMIHEADER* pHdr = VBoxSHGSMICommandPrepAsynch(&pHGSMICtx->heapCtx, pCtl, pfnCompletion, pvCompletion, VBOXSHGSMI_FLAG_GH_ASYNCH_IRQ);
     HGSMIOFFSET offCmd = VBoxSHGSMICommandOffset(&pHGSMICtx->heapCtx, pHdr);
     if (offCmd == HGSMIOFFSET_VOID)
     {
@@ -283,11 +277,11 @@ RTDECL(void) VBoxVBVAExDisable(PVBVAEXBUFFERCONTEXT pCtx,
 {
     LogFlowFunc(("\n"));
 
+    vboxVBVAExCtlSubmitEnableDisable(pCtx, pHGSMICtx, false);
+
     pCtx->fHwBufferOverflow = false;
     pCtx->pRecord           = NULL;
     pCtx->pVBVA             = NULL;
-
-    vboxVBVAExCtlSubmitEnableDisable(pCtx, pHGSMICtx, false);
 
     return;
 }
@@ -299,8 +293,11 @@ RTDECL(bool) VBoxVBVAExBufferBeginUpdate(PVBVAEXBUFFERCONTEXT pCtx,
 
     // LogFunc(("flags = 0x%08X\n", pCtx->pVBVA? pCtx->pVBVA->u32HostEvents: -1));
 
-    if (   pCtx->pVBVA
-        && (pCtx->pVBVA->hostFlags.u32HostEvents & VBVA_F_MODE_ENABLED))
+    Assert(pCtx->pVBVA);
+    /* we do not use u32HostEvents & VBVA_F_MODE_ENABLED,
+     * VBVA stays enabled once ENABLE call succeeds, until it is disabled with DISABLED call */
+//    if (   pCtx->pVBVA
+//        && (pCtx->pVBVA->hostFlags.u32HostEvents & VBVA_F_MODE_ENABLED))
     {
         uint32_t indexRecordNext;
 
@@ -372,17 +369,23 @@ DECLINLINE(bool) vboxVBVAExIsEntryInRange(uint32_t u32First, uint32_t u32Entry, 
            );
 }
 
+DECLINLINE(bool) vboxVBVAExIsEntryInRangeOrEmpty(uint32_t u32First, uint32_t u32Entry, uint32_t u32Free)
+{
+    return vboxVBVAExIsEntryInRange(u32First, u32Entry, u32Free)
+            || (    u32First == u32Entry
+                 && u32Entry == u32Free);
+}
 #ifdef DEBUG
 
 DECLINLINE(void) vboxHwBufferVerifyCompleted(PVBVAEXBUFFERCONTEXT pCtx)
 {
     VBVABUFFER *pVBVA = pCtx->pVBVA;
-    if (!vboxVBVAExIsEntryInRange(pCtx->indexRecordFirstUncompleted, pVBVA->indexRecordFirst, pVBVA->indexRecordFree))
+    if (!vboxVBVAExIsEntryInRangeOrEmpty(pCtx->indexRecordFirstUncompleted, pVBVA->indexRecordFirst, pVBVA->indexRecordFree))
     {
         WARN(("invalid record set"));
     }
 
-    if (!vboxVBVAExIsEntryInRange(pCtx->off32DataUncompleted, pVBVA->off32Data, pVBVA->off32Free))
+    if (!vboxVBVAExIsEntryInRangeOrEmpty(pCtx->off32DataUncompleted, pVBVA->off32Data, pVBVA->off32Free))
     {
         WARN(("invalid data set"));
     }
@@ -584,9 +587,6 @@ RTDECL(void) VBoxVBVAExCBufferCompleted(PVBVAEXBUFFERCONTEXT pCtx)
     uint32_t cbBuffer = pVBVA->aRecords[pCtx->indexRecordFirstUncompleted].cbRecord;
     pCtx->indexRecordFirstUncompleted = (pCtx->indexRecordFirstUncompleted + 1) % VBVA_MAX_RECORDS;
     pCtx->off32DataUncompleted = (pCtx->off32DataUncompleted + cbBuffer) % pVBVA->cbData;
-#ifdef DEBUG
-    vboxHwBufferVerifyCompleted(pCtx);
-#endif
 }
 
 RTDECL(bool) VBoxVBVAExWrite(PVBVAEXBUFFERCONTEXT pCtx,
@@ -770,43 +770,59 @@ static void vboxCmdVbvaDdiNotifyCompleteIrq(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA 
     pDevExt->u.primary.DxgkInterface.DxgkCbNotifyInterrupt(pDevExt->u.primary.DxgkInterface.DeviceHandle, &notify);
 }
 
-typedef struct VBOXCMDVBVA_NOTIFYCOMPLETED_CB
+typedef struct VBOXCMDVBVA_NOTIFYPREEMPT_CB
 {
     PVBOXMP_DEVEXT pDevExt;
     VBOXCMDVBVA *pVbva;
-    volatile UINT *pu32FenceId;
-    DXGK_INTERRUPT_TYPE enmComplType;
-} VBOXCMDVBVA_NOTIFYCOMPLETED_CB, *PVBOXCMDVBVA_NOTIFYCOMPLETED_CB;
+    int rc;
+    UINT u32SubmitFenceId;
+    UINT u32PreemptFenceId;
+} VBOXCMDVBVA_NOTIFYPREEMPT_CB;
 
-static BOOLEAN vboxCmdVbvaDdiNotifyCompleteCb(PVOID pvContext)
+static BOOLEAN vboxCmdVbvaDdiNotifyPreemptCb(PVOID pvContext)
 {
-    PVBOXCMDVBVA_NOTIFYCOMPLETED_CB pData = (PVBOXCMDVBVA_NOTIFYCOMPLETED_CB)pvContext;
-    if (*pData->pu32FenceId)
+    VBOXCMDVBVA_NOTIFYPREEMPT_CB* pData = (VBOXCMDVBVA_NOTIFYPREEMPT_CB*)pvContext;
+    PVBOXMP_DEVEXT pDevExt = pData->pDevExt;
+    VBOXCMDVBVA *pVbva = pData->pVbva;
+    if (!pData->u32SubmitFenceId || pVbva->u32FenceCompleted == pData->u32SubmitFenceId)
     {
-        UINT u32FenceId = *pData->pu32FenceId;
-        *pData->pu32FenceId = 0;
+        vboxCmdVbvaDdiNotifyCompleteIrq(pDevExt, pVbva, pData->u32PreemptFenceId, DXGK_INTERRUPT_DMA_PREEMPTED);
 
-        vboxCmdVbvaDdiNotifyCompleteIrq(pData->pDevExt, pData->pVbva, u32FenceId, pData->enmComplType);
-
-        pData->pDevExt->u.primary.DxgkInterface.DxgkCbQueueDpc(pData->pDevExt->u.primary.DxgkInterface.DeviceHandle);
-
-        return TRUE;
+        pDevExt->u.primary.DxgkInterface.DxgkCbQueueDpc(pDevExt->u.primary.DxgkInterface.DeviceHandle);
+    }
+    else
+    {
+        Assert(pVbva->u32FenceCompleted < pData->u32SubmitFenceId);
+        Assert(pVbva->cPreempt <= VBOXCMDVBVA_PREEMPT_EL_SIZE);
+        if (pVbva->cPreempt == VBOXCMDVBVA_PREEMPT_EL_SIZE)
+        {
+            WARN(("no more free elements in preempt map"));
+            pData->rc = VERR_BUFFER_OVERFLOW;
+            return FALSE;
+        }
+        uint32_t iNewEl = (pVbva->iCurPreempt + pVbva->cPreempt) % VBOXCMDVBVA_PREEMPT_EL_SIZE;
+        Assert(iNewEl < VBOXCMDVBVA_PREEMPT_EL_SIZE);
+        pVbva->aPreempt[iNewEl].u32SubmitFence = pData->u32SubmitFenceId;
+        pVbva->aPreempt[iNewEl].u32PreemptFence = pData->u32PreemptFenceId;
+        ++pVbva->cPreempt;
     }
 
-    return FALSE;
+    pData->rc = VINF_SUCCESS;
+    return TRUE;
 }
 
-static int vboxCmdVbvaDdiNotifyComplete(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, volatile UINT *pu32FenceId, DXGK_INTERRUPT_TYPE enmComplType)
+static int vboxCmdVbvaDdiNotifyPreempt(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, UINT u32SubmitFenceId, UINT u32PreemptFenceId)
 {
-    VBOXCMDVBVA_NOTIFYCOMPLETED_CB Data;
+    VBOXCMDVBVA_NOTIFYPREEMPT_CB Data;
     Data.pDevExt = pDevExt;
     Data.pVbva = pVbva;
-    Data.pu32FenceId = pu32FenceId;
-    Data.enmComplType = enmComplType;
+    Data.rc = VERR_INTERNAL_ERROR;
+    Data.u32SubmitFenceId = u32SubmitFenceId;
+    Data.u32PreemptFenceId = u32PreemptFenceId;
     BOOLEAN bDummy;
     NTSTATUS Status = pDevExt->u.primary.DxgkInterface.DxgkCbSynchronizeExecution(
             pDevExt->u.primary.DxgkInterface.DeviceHandle,
-            vboxCmdVbvaDdiNotifyCompleteCb,
+            vboxCmdVbvaDdiNotifyPreemptCb,
             &Data,
             0, /* IN ULONG MessageNumber */
             &bDummy);
@@ -815,7 +831,14 @@ static int vboxCmdVbvaDdiNotifyComplete(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVb
         WARN(("DxgkCbSynchronizeExecution failed Status %#x", Status));
         return VERR_GENERAL_FAILURE;
     }
-    return Status;
+
+    if (!RT_SUCCESS(Data.rc))
+    {
+        WARN(("vboxCmdVbvaDdiNotifyPreemptCb failed rc %d", Data.rc));
+        return Data.rc;
+    }
+
+    return VINF_SUCCESS;
 }
 
 static int vboxCmdVbvaFlush(PVBOXMP_DEVEXT pDevExt, HGSMIGUESTCOMMANDCONTEXT *pCtx, bool fBufferOverflow)
@@ -844,7 +867,10 @@ typedef struct VBOXCMDVBVA_CHECK_COMPLETED_CB
 {
     PVBOXMP_DEVEXT pDevExt;
     VBOXCMDVBVA *pVbva;
-    uint32_t u32FenceID;
+    /* last completted fence id */
+    uint32_t u32FenceCompleted;
+    /* last submitted fence id */
+    uint32_t u32FenceSubmitted;
 } VBOXCMDVBVA_CHECK_COMPLETED_CB;
 
 static BOOLEAN vboxCmdVbvaCheckCompletedIrqCb(PVOID pContext)
@@ -852,12 +878,21 @@ static BOOLEAN vboxCmdVbvaCheckCompletedIrqCb(PVOID pContext)
     VBOXCMDVBVA_CHECK_COMPLETED_CB *pCompleted = (VBOXCMDVBVA_CHECK_COMPLETED_CB*)pContext;
     BOOLEAN bRc = DxgkDdiInterruptRoutineNew(pCompleted->pDevExt, 0);
     if (pCompleted->pVbva)
-        pCompleted->u32FenceID = pCompleted->pVbva->u32FenceCompleted;
+    {
+        pCompleted->u32FenceCompleted = pCompleted->pVbva->u32FenceCompleted;
+        pCompleted->u32FenceSubmitted = pCompleted->pVbva->u32FenceSubmitted;
+    }
+    else
+    {
+        WARN(("no vbva"));
+        pCompleted->u32FenceCompleted = 0;
+        pCompleted->u32FenceSubmitted = 0;
+    }
     return bRc;
 }
 
 
-static uint32_t vboxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, bool fPingHost, HGSMIGUESTCOMMANDCONTEXT *pCtx, bool fBufferOverflow)
+static uint32_t vboxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, bool fPingHost, HGSMIGUESTCOMMANDCONTEXT *pCtx, bool fBufferOverflow, uint32_t *pu32FenceSubmitted)
 {
     if (fPingHost)
         vboxCmdVbvaFlush(pDevExt, pCtx, fBufferOverflow);
@@ -865,7 +900,8 @@ static uint32_t vboxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *p
     VBOXCMDVBVA_CHECK_COMPLETED_CB context;
     context.pDevExt = pDevExt;
     context.pVbva = pVbva;
-    context.u32FenceID = 0;
+    context.u32FenceCompleted = 0;
+    context.u32FenceSubmitted = 0;
     BOOLEAN bRet;
     NTSTATUS Status = pDevExt->u.primary.DxgkInterface.DxgkCbSynchronizeExecution(
                             pDevExt->u.primary.DxgkInterface.DeviceHandle,
@@ -875,14 +911,17 @@ static uint32_t vboxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *p
                             &bRet);
     Assert(Status == STATUS_SUCCESS);
 
-    return context.u32FenceID;
+    if (pu32FenceSubmitted)
+        *pu32FenceSubmitted = context.u32FenceSubmitted;
+
+    return context.u32FenceCompleted;
 }
 
 DECLCALLBACK(void) voxCmdVbvaFlushCb(struct VBVAEXBUFFERCONTEXT *pCtx, PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, void *pvFlush)
 {
     PVBOXMP_DEVEXT pDevExt = (PVBOXMP_DEVEXT)pvFlush;
 
-    vboxCmdVbvaCheckCompleted(pDevExt, NULL,  true /*fPingHost*/, pHGSMICtx, true /*fBufferOverflow*/);
+    vboxCmdVbvaCheckCompleted(pDevExt, NULL,  true /*fPingHost*/, pHGSMICtx, true /*fBufferOverflow*/, NULL);
 }
 
 int VBoxCmdVbvaCreate(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, ULONG offBuffer, ULONG cbBuffer)
@@ -906,23 +945,53 @@ int VBoxCmdVbvaCreate(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, ULONG offBuffe
     return rc;
 }
 
-int VBoxCmdVbvaSubmit(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, struct VBOXCMDVBVA_HDR *pCmd, uint32_t cbCmd)
+void VBoxCmdVbvaSubmitUnlock(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, VBOXCMDVBVA_HDR* pCmd, uint32_t u32FenceID)
 {
-    int rc = VINF_SUCCESS;
+    if (u32FenceID)
+        pVbva->u32FenceSubmitted = u32FenceID;
+    else
+        WARN(("no cmd fence specified"));
 
     pCmd->u8State = VBOXCMDVBVA_STATE_SUBMITTED;
-    pVbva->u32FenceSubmitted = pCmd->u32FenceID;
 
-    if (VBoxVBVAExGetSize(&pVbva->Vbva) > cbCmd)
+    pCmd->u2.u32FenceID = u32FenceID;
+
+    VBoxVBVAExBufferEndUpdate(&pVbva->Vbva);
+
+    if (!VBoxVBVAExIsProcessing(&pVbva->Vbva))
+    {
+        /* Issue the submit command. */
+        HGSMIGUESTCOMMANDCONTEXT *pCtx = &VBoxCommonFromDeviceExt(pDevExt)->guestCtx;
+        VBVACMDVBVASUBMIT *pSubmit = (VBVACMDVBVASUBMIT*)VBoxHGSMIBufferAlloc(pCtx,
+                                       sizeof (VBVACMDVBVASUBMIT),
+                                       HGSMI_CH_VBVA,
+                                       VBVA_CMDVBVA_SUBMIT);
+        if (!pSubmit)
+        {
+            WARN(("VBoxHGSMIBufferAlloc failed\n"));
+            return;
+        }
+
+        pSubmit->u32Reserved = 0;
+
+        VBoxHGSMIBufferSubmit(pCtx, pSubmit);
+
+        VBoxHGSMIBufferFree(pCtx, pSubmit);
+    }
+}
+
+VBOXCMDVBVA_HDR* VBoxCmdVbvaSubmitLock(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t cbCmd)
+{
+    if (VBoxVBVAExGetSize(&pVbva->Vbva) < cbCmd)
     {
         WARN(("buffer does not fit the vbva buffer, we do not support splitting buffers"));
-        return VERR_NOT_SUPPORTED;
+        NULL;
     }
 
     if (!VBoxVBVAExBufferBeginUpdate(&pVbva->Vbva, &VBoxCommonFromDeviceExt(pDevExt)->guestCtx))
     {
         WARN(("VBoxVBVAExBufferBeginUpdate failed!"));
-        return VERR_GENERAL_FAILURE;
+        return NULL;
     }
 
     void* pvBuffer = VBoxVBVAExAllocContiguous(&pVbva->Vbva, &VBoxCommonFromDeviceExt(pDevExt)->guestCtx, cbCmd);
@@ -933,7 +1002,7 @@ int VBoxCmdVbvaSubmit(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, struct VBOXCMD
         if (!cbTail)
         {
             WARN(("this is not a free tail case, cbTail is NULL"));
-            return VERR_BUFFER_OVERFLOW;
+            return NULL;
         }
 
         Assert(cbTail < cbCmd);
@@ -949,43 +1018,35 @@ int VBoxCmdVbvaSubmit(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, struct VBOXCMD
         if (!VBoxVBVAExBufferBeginUpdate(&pVbva->Vbva, &VBoxCommonFromDeviceExt(pDevExt)->guestCtx))
         {
             WARN(("VBoxVBVAExBufferBeginUpdate 2 failed!"));
-            return VERR_GENERAL_FAILURE;
+            return NULL;
         }
 
         pvBuffer = VBoxVBVAExAllocContiguous(&pVbva->Vbva, &VBoxCommonFromDeviceExt(pDevExt)->guestCtx, cbCmd);
         if (!pvBuffer)
         {
             WARN(("failed to allocate contiguous buffer, failing"));
-            return VERR_GENERAL_FAILURE;
+            return NULL;
         }
     }
 
     Assert(pvBuffer);
 
-    memcpy(pvBuffer, pCmd, cbCmd);
+    return (VBOXCMDVBVA_HDR*)pvBuffer;
+}
 
-    VBoxVBVAExBufferEndUpdate(&pVbva->Vbva);
+int VBoxCmdVbvaSubmit(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, struct VBOXCMDVBVA_HDR *pCmd, uint32_t u32FenceID, uint32_t cbCmd)
+{
+    VBOXCMDVBVA_HDR* pHdr = VBoxCmdVbvaSubmitLock(pDevExt, pVbva, cbCmd);
 
-    if (!VBoxVBVAExIsProcessing(&pVbva->Vbva))
+    if (!pHdr)
     {
-        /* Issue the submit command. */
-        HGSMIGUESTCOMMANDCONTEXT *pCtx = &VBoxCommonFromDeviceExt(pDevExt)->guestCtx;
-        VBVACMDVBVASUBMIT *pSubmit = (VBVACMDVBVASUBMIT*)VBoxHGSMIBufferAlloc(pCtx,
-                                       sizeof (VBVACMDVBVASUBMIT),
-                                       HGSMI_CH_VBVA,
-                                       VBVA_CMDVBVA_SUBMIT);
-        if (!pSubmit)
-        {
-            WARN(("VBoxHGSMIBufferAlloc failed\n"));
-            return VERR_OUT_OF_RESOURCES;
-        }
-
-        pSubmit->u32Reserved = 0;
-
-        VBoxHGSMIBufferSubmit(pCtx, pSubmit);
-
-        VBoxHGSMIBufferFree(pCtx, pSubmit);
+        WARN(("VBoxCmdVbvaSubmitLock failed"));
+        return VERR_GENERAL_FAILURE;
     }
+
+    memcpy(pHdr, pCmd, cbCmd);
+
+    VBoxCmdVbvaSubmitUnlock(pDevExt, pVbva, pCmd, u32FenceID);
 
     return VINF_SUCCESS;
 }
@@ -998,7 +1059,9 @@ bool VBoxCmdVbvaPreempt(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t u32
     uint32_t cbBuffer;
     bool fProcessed;
     uint8_t* pu8Cmd;
+    uint32_t u32SubmitFence = 0;
 
+    /* we can do it right here */
     while ((pu8Cmd = (uint8_t*)VBoxVBVAExBIterNext(&Iter, &cbBuffer, &fProcessed)) != NULL)
     {
         if (*pu8Cmd == VBOXCMDVBVA_OPTYPE_NOP)
@@ -1006,19 +1069,17 @@ bool VBoxCmdVbvaPreempt(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t u32
 
         VBOXCMDVBVA_HDR *pCmd = (VBOXCMDVBVA_HDR*)pu8Cmd;
 
-        if (pCmd->u32FenceID != u32FenceID)
+        if (ASMAtomicCmpXchgU8(&pCmd->u8State, VBOXCMDVBVA_STATE_CANCELLED, VBOXCMDVBVA_STATE_SUBMITTED)
+                || pCmd->u8State == VBOXCMDVBVA_STATE_CANCELLED)
             continue;
 
-        if (!ASMAtomicCmpXchgU8(&pCmd->u8State, VBOXCMDVBVA_STATE_CANCELLED, VBOXCMDVBVA_STATE_SUBMITTED))
-        {
-            Assert(pCmd->u8State == VBOXCMDVBVA_STATE_IN_PROGRESS);
-            break;
-        }
+        Assert(pCmd->u8State == VBOXCMDVBVA_STATE_IN_PROGRESS);
 
-        /* we have canceled the command successfully */
-        vboxCmdVbvaDdiNotifyComplete(pDevExt, pVbva, &pCmd->u32FenceID, DXGK_INTERRUPT_DMA_PREEMPTED);
-        return true;
+        u32SubmitFence = pCmd->u2.u32FenceID;
+        break;
     }
+
+    vboxCmdVbvaDdiNotifyPreempt(pDevExt, pVbva, u32SubmitFence, u32FenceID);
 
     return false;
 }
@@ -1043,43 +1104,62 @@ bool VBoxCmdVbvaCheckCompletedIrq(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva)
 
         VBOXCMDVBVA_HDR *pCmd = (VBOXCMDVBVA_HDR*)pu8Cmd;
         uint8_t u8State = pCmd->u8State;
-        uint32_t u32FenceID = pCmd->u32FenceID;
+        uint32_t u32FenceID = pCmd->u2.u32FenceID;
 
         Assert(u8State == VBOXCMDVBVA_STATE_IN_PROGRESS
                 || u8State == VBOXCMDVBVA_STATE_CANCELLED);
         Assert(u32FenceID);
         VBoxVBVAExCBufferCompleted(&pVbva->Vbva);
-        DXGK_INTERRUPT_TYPE enmDdiNotify;
 
         if (u8State == VBOXCMDVBVA_STATE_IN_PROGRESS)
         {
-            if (u32FenceID)
-                pVbva->u32FenceCompleted = u32FenceID;
-            enmDdiNotify = DXGK_INTERRUPT_DMA_COMPLETED;
+            if (!u32FenceID)
+            {
+                WARN(("fence is NULL"));
+                continue;
+            }
+
+            pVbva->u32FenceCompleted = u32FenceID;
         }
         else
         {
             Assert(u8State == VBOXCMDVBVA_STATE_CANCELLED);
-            enmDdiNotify = DXGK_INTERRUPT_DMA_PREEMPTED;
-            /* to prevent concurrent notifications from DdiPreemptCommand */
-            pCmd->u32FenceID = 0;
+            continue;
         }
 
-        if (u32FenceID)
-            vboxCmdVbvaDdiNotifyCompleteIrq(pDevExt, pVbva, u32FenceID, enmDdiNotify);
+        Assert(u32FenceID);
+        vboxCmdVbvaDdiNotifyCompleteIrq(pDevExt, pVbva, u32FenceID, DXGK_INTERRUPT_DMA_COMPLETED);
+
+        if (pVbva->cPreempt && pVbva->aPreempt[pVbva->iCurPreempt].u32SubmitFence == u32FenceID)
+        {
+            Assert(pVbva->aPreempt[pVbva->iCurPreempt].u32PreemptFence);
+            vboxCmdVbvaDdiNotifyCompleteIrq(pDevExt, pVbva, pVbva->aPreempt[pVbva->iCurPreempt].u32PreemptFence, DXGK_INTERRUPT_DMA_PREEMPTED);
+            --pVbva->cPreempt;
+            if (!pVbva->cPreempt)
+                pVbva->iCurPreempt = 0;
+            else
+            {
+                ++pVbva->iCurPreempt;
+                pVbva->iCurPreempt %= VBOXCMDVBVA_PREEMPT_EL_SIZE;
+            }
+        }
 
         fHasCommandsCompletedPreempted = true;
     }
 
+#ifdef DEBUG
+    vboxHwBufferVerifyCompleted(&pVbva->Vbva);
+#endif
+
     return fHasCommandsCompletedPreempted;
 }
 
-uint32_t VBoxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, bool fPingHost)
+uint32_t VBoxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, bool fPingHost, uint32_t *pu32FenceSubmitted)
 {
-    return vboxCmdVbvaCheckCompleted(pDevExt, pVbva, fPingHost, &VBoxCommonFromDeviceExt(pDevExt)->guestCtx, false /* fBufferOverflow */);
+    return vboxCmdVbvaCheckCompleted(pDevExt, pVbva, fPingHost, &VBoxCommonFromDeviceExt(pDevExt)->guestCtx, false /* fBufferOverflow */, pu32FenceSubmitted);
 }
 
-
+#if 0
 static uint32_t vboxCVDdiSysMemElBuild(VBOXCMDVBVA_SYSMEMEL *pEl, PMDL pMdl, uint32_t iPfn, uint32_t cPages)
 {
     PFN_NUMBER cur = MmGetMdlPfnArray(pMdl)[iPfn];
@@ -1109,25 +1189,207 @@ uint32_t VBoxCVDdiPTransferVRamSysBuildEls(VBOXCMDVBVA_PAGING_TRANSFER *pCmd, PM
     uint32_t cEls = 0;
     VBOXCMDVBVA_SYSMEMEL *pEl = pCmd->aSysMem;
 
-    if (cbBuffer < sizeof (VBOXCMDVBVA_PAGING_TRANSFER))
-    {
-        WARN(("cbBuffer < sizeof (VBOXCMDVBVA_PAGING_TRANSFER)"));
-        goto done;
-    }
+    Assert(cbBuffer >= sizeof (VBOXCMDVBVA_PAGING_TRANSFER));
 
     cbBuffer -= RT_OFFSETOF(VBOXCMDVBVA_PAGING_TRANSFER, aSysMem);
-    uint32_t i = 0;
 
-    for (; cPages && cbBuffer >= sizeof (VBOXCMDVBVA_PAGING_TRANSFER); ++cEls, cbBuffer-=sizeof (VBOXCMDVBVA_SYSMEMEL), ++pEl, ++i)
+    for (; cPages && cbBuffer >= sizeof (VBOXCMDVBVA_SYSMEMEL); ++cEls, cbBuffer-=sizeof (VBOXCMDVBVA_SYSMEMEL), ++pEl)
     {
         cPages = vboxCVDdiSysMemElBuild(pEl, pMdl, iPfn + cInitPages - cPages, cPages);
     }
 
-    pCmd->cSysMem = i;
-
-done:
     *pcPagesWritten = cInitPages - cPages;
     return cbInitBuffer - cbBuffer;
 }
+#endif
 
+uint32_t VBoxCVDdiPTransferVRamSysBuildEls(VBOXCMDVBVA_PAGING_TRANSFER *pCmd, PMDL pMdl, uint32_t iPfn, uint32_t cPages, uint32_t cbBuffer, uint32_t *pcPagesWritten)
+{
+    uint32_t cbInitBuffer = cbBuffer;
+    uint32_t i = 0;
+    VBOXCMDVBVAPAGEIDX *pPageNumbers = pCmd->Data.aPageNumbers;
+
+    cbBuffer -= RT_OFFSETOF(VBOXCMDVBVA_PAGING_TRANSFER, Data.aPageNumbers);
+
+    for (; i < cPages && cbBuffer >= sizeof (*pPageNumbers); ++i, cbBuffer -= sizeof (*pPageNumbers))
+    {
+        pPageNumbers[i] = (VBOXCMDVBVAPAGEIDX)(MmGetMdlPfnArray(pMdl)[iPfn + i]);
+    }
+
+    *pcPagesWritten = i;
+    Assert(cbInitBuffer - cbBuffer == RT_OFFSETOF(VBOXCMDVBVA_PAGING_TRANSFER, Data.aPageNumbers[i]));
+    Assert(cbInitBuffer - cbBuffer >= sizeof (VBOXCMDVBVA_PAGING_TRANSFER));
+    return cbInitBuffer - cbBuffer;
+}
+
+
+int vboxCmdVbvaConConnect(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx,
+        uint32_t crVersionMajor, uint32_t crVersionMinor,
+        uint32_t *pu32ClientID)
+{
+    VBOXCMDVBVA_CTL_3DCTL_CONNECT *pConnect = (VBOXCMDVBVA_CTL_3DCTL_CONNECT*)vboxCmdVbvaCtlCreate(pHGSMICtx, sizeof (VBOXCMDVBVA_CTL_3DCTL_CONNECT));
+    if (!pConnect)
+    {
+        WARN(("vboxCmdVbvaCtlCreate failed"));
+        return VERR_OUT_OF_RESOURCES;
+    }
+    pConnect->Hdr.u32Type = VBOXCMDVBVACTL_TYPE_3DCTL;
+    pConnect->Hdr.i32Result = VERR_NOT_SUPPORTED;
+    pConnect->Connect.Hdr.u32Type = VBOXCMDVBVA3DCTL_TYPE_CONNECT;
+    pConnect->Connect.Hdr.u32CmdClientId = 0;
+    pConnect->Connect.u32MajorVersion = crVersionMajor;
+    pConnect->Connect.u32MinorVersion = crVersionMinor;
+    pConnect->Connect.u64Pid = (uint64_t)PsGetCurrentProcessId();
+
+    int rc = vboxCmdVbvaCtlSubmitSync(pHGSMICtx, &pConnect->Hdr);
+    if (RT_SUCCESS(rc))
+    {
+        rc = pConnect->Hdr.i32Result;
+        if (RT_SUCCESS(rc))
+        {
+            Assert(pConnect->Connect.Hdr.u32CmdClientId);
+            *pu32ClientID = pConnect->Connect.Hdr.u32CmdClientId;
+        }
+        else
+            WARN(("VBOXCMDVBVA3DCTL_TYPE_CONNECT Disable failed %d", rc));
+    }
+    else
+        WARN(("vboxCmdVbvaCtlSubmitSync returnd %d", rc));
+
+    vboxCmdVbvaCtlFree(pHGSMICtx, &pConnect->Hdr);
+
+    return rc;
+}
+
+int vboxCmdVbvaConDisconnect(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, uint32_t u32ClientID)
+{
+    VBOXCMDVBVA_CTL_3DCTL *pDisconnect = (VBOXCMDVBVA_CTL_3DCTL*)vboxCmdVbvaCtlCreate(pHGSMICtx, sizeof (VBOXCMDVBVA_CTL_3DCTL));
+    if (!pDisconnect)
+    {
+        WARN(("vboxCmdVbvaCtlCreate failed"));
+        return VERR_OUT_OF_RESOURCES;
+    }
+    pDisconnect->Hdr.u32Type = VBOXCMDVBVACTL_TYPE_3DCTL;
+    pDisconnect->Hdr.i32Result = VERR_NOT_SUPPORTED;
+    pDisconnect->Ctl.u32Type = VBOXCMDVBVA3DCTL_TYPE_DISCONNECT;
+    pDisconnect->Ctl.u32CmdClientId = u32ClientID;
+
+    int rc = vboxCmdVbvaCtlSubmitSync(pHGSMICtx, &pDisconnect->Hdr);
+    if (RT_SUCCESS(rc))
+    {
+        rc = pDisconnect->Hdr.i32Result;
+        if (!RT_SUCCESS(rc))
+            WARN(("VBOXCMDVBVA3DCTL_TYPE_DISCONNECT Disable failed %d", rc));
+    }
+    else
+        WARN(("vboxCmdVbvaCtlSubmitSync returnd %d", rc));
+
+    vboxCmdVbvaCtlFree(pHGSMICtx, &pDisconnect->Hdr);
+
+    return rc;
+}
+
+int VBoxCmdVbvaConConnect(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva,
+        uint32_t crVersionMajor, uint32_t crVersionMinor,
+        uint32_t *pu32ClientID)
+{
+    return vboxCmdVbvaConConnect(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, crVersionMajor, crVersionMinor, pu32ClientID);
+}
+
+int VBoxCmdVbvaConDisconnect(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t u32ClientID)
+{
+    return vboxCmdVbvaConDisconnect(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, u32ClientID);
+}
+
+VBOXCMDVBVA_CRCMD_CMD* vboxCmdVbvaConCmdAlloc(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, uint32_t cbCmd)
+{
+    VBOXCMDVBVA_CTL_3DCTL_CMD *pCmd = (VBOXCMDVBVA_CTL_3DCTL_CMD*)vboxCmdVbvaCtlCreate(pHGSMICtx, sizeof (VBOXCMDVBVA_CTL_3DCTL_CMD) + cbCmd);
+    if (!pCmd)
+    {
+        WARN(("vboxCmdVbvaCtlCreate failed"));
+        return NULL;
+    }
+    pCmd->Hdr.u32Type = VBOXCMDVBVACTL_TYPE_3DCTL;
+    pCmd->Hdr.i32Result = VERR_NOT_SUPPORTED;
+    pCmd->Cmd.Hdr.u32Type = VBOXCMDVBVA3DCTL_TYPE_CMD;
+    pCmd->Cmd.Hdr.u32CmdClientId = 0;
+    pCmd->Cmd.Cmd.u8OpCode = VBOXCMDVBVA_OPTYPE_CRCMD;
+    pCmd->Cmd.Cmd.u8Flags = 0;
+    pCmd->Cmd.Cmd.u8State = VBOXCMDVBVA_STATE_SUBMITTED;
+    pCmd->Cmd.Cmd.u.i8Result = -1;
+    pCmd->Cmd.Cmd.u2.u32FenceID = 0;
+
+    return (VBOXCMDVBVA_CRCMD_CMD*)(pCmd+1);
+}
+
+void vboxCmdVbvaConCmdFree(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, VBOXCMDVBVA_CRCMD_CMD *pCmd)
+{
+    VBOXCMDVBVA_CTL_3DCTL_CMD *pHdr = ((VBOXCMDVBVA_CTL_3DCTL_CMD*)pCmd)-1;
+    vboxCmdVbvaCtlFree(pHGSMICtx, &pHdr->Hdr);
+}
+
+int vboxCmdVbvaConSubmitAsync(PHGSMIGUESTCOMMANDCONTEXT pHGSMICtx, VBOXCMDVBVA_CRCMD_CMD* pCmd, FNVBOXSHGSMICMDCOMPLETION pfnCompletion, void *pvCompletion)
+{
+    VBOXCMDVBVA_CTL_3DCTL_CMD *pHdr = ((VBOXCMDVBVA_CTL_3DCTL_CMD*)pCmd)-1;
+    return vboxCmdVbvaCtlSubmitAsync(pHGSMICtx, &pHdr->Hdr, pfnCompletion, pvCompletion);
+}
+
+VBOXCMDVBVA_CRCMD_CMD* VBoxCmdVbvaConCmdAlloc(PVBOXMP_DEVEXT pDevExt, uint32_t cbCmd)
+{
+    return vboxCmdVbvaConCmdAlloc(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, cbCmd);
+}
+
+void VBoxCmdVbvaConCmdFree(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA_CRCMD_CMD *pCmd)
+{
+    vboxCmdVbvaConCmdFree(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, pCmd);
+}
+
+int VBoxCmdVbvaConCmdSubmitAsync(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA_CRCMD_CMD* pCmd, FNVBOXSHGSMICMDCOMPLETION pfnCompletion, void *pvCompletion)
+{
+    return vboxCmdVbvaConSubmitAsync(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, pCmd, pfnCompletion, pvCompletion);
+}
+
+int VBoxCmdVbvaConCmdCompletionData(void *pvCmd, VBOXCMDVBVA_CRCMD_CMD **ppCmd)
+{
+    VBOXCMDVBVA_CTL_3DCTL_CMD *pCmd = (VBOXCMDVBVA_CTL_3DCTL_CMD*)pvCmd;
+    if (ppCmd)
+        *ppCmd = (VBOXCMDVBVA_CRCMD_CMD*)(pCmd+1);
+    return pCmd->Hdr.i32Result;
+}
+
+int VBoxCmdVbvaConCmdResize(PVBOXMP_DEVEXT pDevExt, const VBOXWDDM_ALLOC_DATA *pAllocData, const uint32_t *pTargetMap, const POINT * pVScreenPos, uint16_t fFlags)
+{
+    Assert(KeGetCurrentIrql() < DISPATCH_LEVEL);
+
+    VBOXCMDVBVA_CTL_RESIZE *pResize = (VBOXCMDVBVA_CTL_RESIZE*)vboxCmdVbvaCtlCreate(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, sizeof (VBOXCMDVBVA_CTL_RESIZE));
+    if (!pResize)
+    {
+        WARN(("vboxCmdVbvaCtlCreate failed"));
+        return VERR_OUT_OF_RESOURCES;
+    }
+
+    pResize->Hdr.u32Type = VBOXCMDVBVACTL_TYPE_RESIZE;
+    pResize->Hdr.i32Result = VERR_NOT_IMPLEMENTED;
+
+    int rc = vboxWddmScreenInfoInit(&pResize->Resize.aEntries[0].Screen, pAllocData, pVScreenPos, fFlags);
+    if (RT_SUCCESS(rc))
+    {
+        memcpy(&pResize->Resize.aEntries[0].aTargetMap, pTargetMap, sizeof (pResize->Resize.aEntries[0].aTargetMap));
+        rc = vboxCmdVbvaCtlSubmitSync(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, &pResize->Hdr);
+        if (RT_SUCCESS(rc))
+        {
+            rc = pResize->Hdr.i32Result;
+            if (RT_FAILURE(rc))
+                WARN(("VBOXCMDVBVACTL_TYPE_RESIZE failed %d", rc));
+        }
+        else
+            WARN(("vboxCmdVbvaCtlSubmitSync failed %d", rc));
+    }
+    else
+        WARN(("vboxWddmScreenInfoInit failed %d", rc));
+
+    vboxCmdVbvaCtlFree(&VBoxCommonFromDeviceExt(pDevExt)->guestCtx, &pResize->Hdr);
+
+    return rc;
+}
 #endif

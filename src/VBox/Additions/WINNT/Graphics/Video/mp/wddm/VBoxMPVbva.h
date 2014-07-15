@@ -115,6 +115,14 @@ typedef struct VBVAEXBUFFERBACKWARDITER
 
 #define VBOXCMDVBVA_BUFFERSIZE(_cbCmdApprox) (RT_OFFSETOF(VBVABUFFER, au8Data) + ((RT_SIZEOFMEMB(VBVABUFFER, aRecords)/RT_SIZEOFMEMB(VBVABUFFER, aRecords[0])) * (_cbCmdApprox)))
 
+typedef struct VBOXCMDVBVA_PREEMPT_EL
+{
+    uint32_t u32SubmitFence;
+    uint32_t u32PreemptFence;
+} VBOXCMDVBVA_PREEMPT_EL;
+
+#define VBOXCMDVBVA_PREEMPT_EL_SIZE 16
+
 typedef struct VBOXCMDVBVA
 {
     VBVAEXBUFFERCONTEXT Vbva;
@@ -126,6 +134,10 @@ typedef struct VBOXCMDVBVA
 
     /* node ordinal */
     uint32_t idNode;
+
+    uint32_t cPreempt;
+    uint32_t iCurPreempt;
+    VBOXCMDVBVA_PREEMPT_EL aPreempt[VBOXCMDVBVA_PREEMPT_EL_SIZE];
 } VBOXCMDVBVA;
 
 /** @name VBVAEx APIs
@@ -199,9 +211,11 @@ int VBoxCmdVbvaEnable(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva);
 int VBoxCmdVbvaDisable(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva);
 int VBoxCmdVbvaDestroy(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva);
 int VBoxCmdVbvaCreate(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, ULONG offBuffer, ULONG cbBuffer);
-int VBoxCmdVbvaSubmit(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, struct VBOXCMDVBVA_HDR *pCmd, uint32_t cbCmd);
+int VBoxCmdVbvaSubmit(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, struct VBOXCMDVBVA_HDR *pCmd, uint32_t u32FenceID, uint32_t cbCmd);
+void VBoxCmdVbvaSubmitUnlock(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, VBOXCMDVBVA_HDR* pCmd, uint32_t u32FenceID);
+VBOXCMDVBVA_HDR* VBoxCmdVbvaSubmitLock(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t cbCmd);
 bool VBoxCmdVbvaPreempt(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t u32FenceID);
-uint32_t VBoxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, bool fPingHost);
+uint32_t VBoxCmdVbvaCheckCompleted(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, bool fPingHost, uint32_t *pu32FenceSubmitted);
 bool VBoxCmdVbvaCheckCompletedIrq(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva);
 
 /*helper functions for filling vbva commands */
@@ -224,6 +238,15 @@ DECLINLINE(void) VBoxCVDdiPackRects(VBOXCMDVBVA_RECT *paVbvaRects, const RECT *p
 
 uint32_t VBoxCVDdiPTransferVRamSysBuildEls(VBOXCMDVBVA_PAGING_TRANSFER *pCmd, PMDL pMdl, uint32_t iPfn, uint32_t cPages, uint32_t cbBuffer, uint32_t *pcPagesWritten);
 
-#endif /* VBOX_WITH_CROGL */
+int VBoxCmdVbvaConConnect(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva,
+        uint32_t crVersionMajor, uint32_t crVersionMinor,
+        uint32_t *pu32ClientID);
+int VBoxCmdVbvaConDisconnect(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA *pVbva, uint32_t u32ClientID);
+VBOXCMDVBVA_CRCMD_CMD* VBoxCmdVbvaConCmdAlloc(PVBOXMP_DEVEXT pDevExt, uint32_t cbCmd);
+void VBoxCmdVbvaConCmdFree(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA_CRCMD_CMD* pCmd);
+int VBoxCmdVbvaConCmdSubmitAsync(PVBOXMP_DEVEXT pDevExt, VBOXCMDVBVA_CRCMD_CMD* pCmd, FNVBOXSHGSMICMDCOMPLETION pfnCompletion, void *pvCompletion);
+int VBoxCmdVbvaConCmdCompletionData(void *pvCmd, VBOXCMDVBVA_CRCMD_CMD **ppCmd);
+int VBoxCmdVbvaConCmdResize(PVBOXMP_DEVEXT pDevExt, const VBOXWDDM_ALLOC_DATA *pAllocData, const uint32_t *pTargetMap, const POINT * pVScreenPos, uint16_t fFlags);
+#endif /* #ifdef VBOX_WITH_CROGL */
 
 #endif /* #ifndef ___VBoxMPVbva_h___ */

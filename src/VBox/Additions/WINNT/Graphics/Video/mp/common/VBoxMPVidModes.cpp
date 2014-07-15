@@ -272,8 +272,15 @@ VBoxMPFillModesTable(PVBOXMP_DEVEXT pExt, int iDisplay, PVIDEO_MODE_INFORMATION 
     ULONG vramSize = pExt->pPrimary->u.primary.ulMaxFrameBufferSize;
 #else
     ULONG vramSize = vboxWddmVramCpuVisibleSegmentSize(pExt);
-    /* at least two surfaces will be needed: primary & shadow */
-    vramSize /= 2 * pExt->u.primary.commonInfo.cDisplays;
+    vramSize /= pExt->u.primary.commonInfo.cDisplays;
+# ifdef VBOX_WDDM_WIN8
+    if (!g_VBoxDisplayOnly)
+# endif
+    {
+        /* at least two surfaces will be needed: primary & shadow */
+        vramSize /= 2;
+    }
+    vramSize &= ~PAGE_OFFSET_MASK;
 #endif
 
     uint32_t iMode=0, iPrefIdx=0;
@@ -600,6 +607,7 @@ VBoxMPValidateVideoModeParams(PVBOXMP_DEVEXT pExt, uint32_t iDisplay, uint32_t &
         /* at least two surfaces will be needed: primary & shadow */
         vramSize /= 2;
     }
+    vramSize &= ~PAGE_OFFSET_MASK;
 #endif
 
     /* Check that values are valid and mode fits into VRAM */
@@ -1441,10 +1449,6 @@ void VBoxWddmUpdateVideoMode(PVBOXMP_DEVEXT pExt, int i)
         return;
 
 #ifdef DEBUG_misha
-    g_VBoxDbgBreakModes = 0;
-#endif
-
-#ifdef DEBUG_misha
     LOGREL(("modes changed for target %d", i));
 #else
     LOG(("modes changed for target %d", i));
@@ -1476,7 +1480,6 @@ void VBoxWddmAdjustMode(PVBOXMP_DEVEXT pExt, PVBOXWDDM_ADJUSTVIDEOMODE pMode)
         return;
     }
 
-    PVBOXWDDM_TARGET pTarget = &pExt->aTargets[pMode->Mode.Id];
     /* @todo: this info should go from the target actually */
     PVBOXWDDM_SOURCE pSource = &pExt->aSources[pMode->Mode.Id];
 
@@ -1500,7 +1503,7 @@ void VBoxWddmAdjustMode(PVBOXMP_DEVEXT pExt, PVBOXWDDM_ADJUSTVIDEOMODE pMode)
         pMode->Mode.BitsPerPixel = newBpp;
     }
 
-    if (pTarget->HeightVisible /* <- active */
+    if (pSource->cTargets /* <- active */
             && pSource->AllocData.SurfDesc.width == pMode->Mode.Width
             && pSource->AllocData.SurfDesc.height == pMode->Mode.Height
             && pSource->AllocData.SurfDesc.bpp == pMode->Mode.BitsPerPixel)

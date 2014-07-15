@@ -93,6 +93,7 @@ enum wined3d_gl_extension
     ARB_TEXTURE_ENV_DOT3,
     ARB_TEXTURE_FLOAT,
     ARB_TEXTURE_MIRRORED_REPEAT,
+    ARB_TEXTURE_MIRROR_CLAMP_TO_EDGE,
     ARB_TEXTURE_NON_POWER_OF_TWO,
     ARB_TEXTURE_RECTANGLE,
     ARB_TEXTURE_RG,
@@ -136,6 +137,7 @@ enum wined3d_gl_extension
     EXT_TEXTURE_ENV_DOT3,
     EXT_TEXTURE_FILTER_ANISOTROPIC,
     EXT_TEXTURE_LOD_BIAS,
+    EXT_TEXTURE_MIRROR_CLAMP,
     EXT_TEXTURE_SRGB,
     EXT_TEXTURE_SRGB_DECODE,
     EXT_VERTEX_ARRAY_BGRA,
@@ -186,6 +188,9 @@ enum wined3d_gl_extension
 #define GL_RCUSAGE_TEXTURE_CLEAR_CR   0x8B2A
 /*configures host to create windows initially hidden*/
 #define GL_HOST_WND_CREATED_HIDDEN_CR 0x8B2B
+
+/* enable zero vertex attribute generation to work around wine bug */
+#define GL_CHECK_ZERO_VERT_ARRT       0x8B30
 
 typedef void (WINE_GLAPI *PGLFNCHROMIUMPARAMETERUCR)(GLenum param, GLint value);
 PGLFNCHROMIUMPARAMETERUCR pglChromiumParameteriCR;

@@ -41,6 +41,9 @@ DECLCALLBACK(int) vboxUhgsmiKmtBufferDestroy(PVBOXUHGSMI_BUFFER pBuf)
     NTSTATUS Status = pPrivate->Callbacks.pfnD3DKMTDestroyAllocation(&DdiDealloc);
     if (NT_SUCCESS(Status))
     {
+#ifdef DEBUG_misha
+        memset(pBuffer, 0, sizeof(*pBuffer));
+#endif
         RTMemFree(pBuffer);
         return VINF_SUCCESS;
     }
@@ -148,7 +151,10 @@ DECLCALLBACK(int) vboxUhgsmiKmtBufferCreate(PVBOXUHGSMI pHgsmi, uint32_t cbBuf, 
         pBuf->BasePrivate.Base.fType = fType;
         pBuf->BasePrivate.Base.cbBuffer = cbBuf;
 
+        pBuf->BasePrivate.pHgsmi = &pPrivate->BasePrivate;
+
         pBuf->hAllocation = DdiAllocInfo.hAllocation;
+
 
         *ppBuf = &pBuf->BasePrivate.Base;
 
@@ -278,8 +284,8 @@ static void vboxUhgsmiKmtSetupCallbacks(PVBOXUHGSMI_PRIVATE_KMT pHgsmi)
 {
     pHgsmi->BasePrivate.Base.pfnBufferCreate = vboxUhgsmiKmtBufferCreate;
     pHgsmi->BasePrivate.Base.pfnBufferSubmit = vboxUhgsmiKmtBufferSubmit;
-     /* no escapes (for now) */
-    pHgsmi->BasePrivate.pfnEscape = NULL;
+    /* escape is still needed, since Ugfsmi uses it e.g. to query connection id */
+    pHgsmi->BasePrivate.pfnEscape = vboxCrHhgsmiKmtEscape;
 }
 
 static void vboxUhgsmiKmtEscSetupCallbacks(PVBOXUHGSMI_PRIVATE_KMT pHgsmi)
@@ -367,7 +373,12 @@ HRESULT vboxUhgsmiKmtDestroy(PVBOXUHGSMI_PRIVATE_KMT pHgsmi)
                 hr = vboxDispKmtCallbacksTerm(&pHgsmi->Callbacks);
                 Assert(hr == S_OK);
                 if (hr == S_OK)
+                {
+#ifdef DEBUG_misha
+                    memset(pHgsmi, 0, sizeof (*pHgsmi));
+#endif
                     return S_OK;
+                }
             }
         }
     }

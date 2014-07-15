@@ -1061,6 +1061,7 @@ typedef struct VBOXVIDEOCM_ALLOC_REF
     PKEVENT pSynchEvent;
     VBOXUHGSMI_BUFFER_TYPE_FLAGS fUhgsmiType;
     volatile uint32_t cRefs;
+    PVOID pvUm;
     MDL Mdl;
 } VBOXVIDEOCM_ALLOC_REF, *PVBOXVIDEOCM_ALLOC_REF;
 
@@ -1182,6 +1183,7 @@ NTSTATUS vboxVideoAMgrCtxAllocMap(PVBOXVIDEOCM_ALLOC_CONTEXT pContext, PVBOXVIDE
                           NormalPagePriority);
                 if (pvUm)
                 {
+                    pAllocRef->pvUm = pvUm;
                     pAllocRef->pContext = pContext;
                     pAllocRef->pAlloc = pAlloc;
                     pAllocRef->fUhgsmiType = pUmAlloc->fUhgsmiType;
@@ -1196,6 +1198,8 @@ NTSTATUS vboxVideoAMgrCtxAllocMap(PVBOXVIDEOCM_ALLOC_CONTEXT pContext, PVBOXVIDE
                         pUmAlloc->pvData = (uint64_t)pvUm;
                         return STATUS_SUCCESS;
                     }
+
+                    MmUnmapLockedPages(pvUm, &pAllocRef->Mdl);
                 }
                 else
                 {
@@ -1236,6 +1240,8 @@ NTSTATUS vboxVideoAMgrCtxAllocUnmap(PVBOXVIDEOCM_ALLOC_CONTEXT pContext, VBOXDIS
     {
         /* wait for the dereference, i.e. for all commands involving this allocation to complete */
         vboxWddmCounterU32Wait(&pAllocRef->cRefs, 1);
+
+        MmUnmapLockedPages(pAllocRef->pvUm, &pAllocRef->Mdl);
 
         MmUnlockPages(&pAllocRef->Mdl);
         *ppAlloc = pAllocRef->pAlloc;
@@ -1920,10 +1926,9 @@ NTSTATUS VBoxWddmSlGetScanLine(PVBOXMP_DEVEXT pDevExt, DXGKARG_GETSCANLINE *pGet
 {
     Assert((UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays > pGetScanLine->VidPnTargetId);
     VBOXWDDM_TARGET *pTarget = &pDevExt->aTargets[pGetScanLine->VidPnTargetId];
-    Assert(pTarget->HeightTotal);
-    Assert(pTarget->HeightVisible);
-    Assert(pTarget->HeightTotal >= pTarget->HeightVisible);
-    if (pTarget->HeightTotal)
+    Assert(pTarget->Size.cx);
+    Assert(pTarget->Size.cy);
+    if (pTarget->Size.cy)
     {
         uint32_t curScanLine;
         BOOL bVBlank;
@@ -1941,19 +1946,19 @@ NTSTATUS VBoxWddmSlGetScanLine(PVBOXMP_DEVEXT pDevExt, DXGKARG_GETSCANLINE *pGet
         {
             VSyncTime.QuadPart = VSyncTime.QuadPart - DevVSyncTime.QuadPart;
             /* time is in 100ns, */
-            curScanLine = (uint32_t)((pTarget->HeightTotal * VSyncTime.QuadPart) / DevVSyncTime.QuadPart);
+            curScanLine = (uint32_t)((pTarget->Size.cy * VSyncTime.QuadPart) / DevVSyncTime.QuadPart);
             if (pDevExt->bVSyncTimerEnabled)
             {
-                if (curScanLine >= pTarget->HeightTotal)
+                if (curScanLine >= pTarget->Size.cy)
                     curScanLine = 0;
             }
             else
             {
-                curScanLine %= pTarget->HeightTotal;
+                curScanLine %= pTarget->Size.cy;
             }
         }
 
-        bVBlank = (!curScanLine || curScanLine > pTarget->HeightVisible);
+        bVBlank = (!curScanLine || curScanLine > pTarget->Size.cy);
         pGetScanLine->ScanLine = curScanLine;
         pGetScanLine->InVerticalBlank = bVBlank;
     }
@@ -2066,25 +2071,16 @@ void vboxWddmDiToAllocData(PVBOXMP_DEVEXT pDevExt, const DXGK_DISPLAY_INFORMATIO
             vboxWddmVramAddrToOffset(pDevExt, pInfo->PhysicAddress));
 }
 
-void vboxWddmDmAdjustDefaultVramLocations(PVBOXMP_DEVEXT pDevExt, D3DDDI_VIDEO_PRESENT_SOURCE_ID ModifiedVidPnSourceId)
+void vboxWddmDmSetupDefaultVramLocation(PVBOXMP_DEVEXT pDevExt, D3DDDI_VIDEO_PRESENT_SOURCE_ID ModifiedVidPnSourceId, VBOXWDDM_SOURCE *paSources)
 {
-    PVBOXWDDM_SOURCE pSource = &pDevExt->aSources[ModifiedVidPnSourceId];
-    PHYSICAL_ADDRESS PhAddr;
-    AssertRelease(pSource->AllocData.Addr.SegmentId);
-    AssertRelease(pSource->AllocData.Addr.offVram != VBOXVIDEOOFFSET_VOID);
-    PhAddr.QuadPart = pSource->AllocData.Addr.offVram;
+    PVBOXWDDM_SOURCE pSource = &paSources[ModifiedVidPnSourceId];
+    AssertRelease(g_VBoxDisplayOnly);
+    ULONG offVram = vboxWddmVramCpuVisibleSegmentSize(pDevExt);
+    offVram /= VBoxCommonFromDeviceExt(pDevExt)->cDisplays;
+    offVram &= ~PAGE_OFFSET_MASK;
+    offVram *= ModifiedVidPnSourceId;
 
-    for (UINT i = ModifiedVidPnSourceId + 1; i < (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays; ++i)
-    {
-        /* increaze the phaddr based on the previous source size info */
-        PhAddr.QuadPart += pSource->AllocData.SurfDesc.cbSize;
-        PhAddr.QuadPart = ROUND_TO_PAGES(PhAddr.QuadPart);
-        pSource = &pDevExt->aSources[i];
-        if (pSource->AllocData.Addr.offVram != PhAddr.QuadPart
-                || pSource->AllocData.Addr.SegmentId != 1)
-            pSource->u8SyncState &= ~VBOXWDDM_HGSYNC_F_SYNCED_LOCATION;
-        pSource->AllocData.Addr.SegmentId = 1;
-        pSource->AllocData.Addr.offVram = PhAddr.QuadPart;
-    }
+    if (vboxWddmAddrSetVram(&pSource->AllocData.Addr, 1, offVram))
+        pSource->u8SyncState &= ~VBOXWDDM_HGSYNC_F_SYNCED_LOCATION;
 }
 #endif
