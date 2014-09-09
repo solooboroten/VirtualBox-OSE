@@ -1247,7 +1247,7 @@ static DWORD vboxDispIfQueryDisplayConnection(VBOXDISPIF_OP *pOp, UINT32 iDispla
     return ERROR_SUCCESS;
 }
 
-static DWORD vboxDispIfWaitDisplayDataInited(VBOXDISPIF_OP *pOp, const uint8_t *pu8DisplayMask)
+static DWORD vboxDispIfWaitDisplayDataInited(VBOXDISPIF_OP *pOp)
 {
     DWORD winEr = ERROR_SUCCESS;
     do
@@ -1294,12 +1294,13 @@ static DWORD vboxDispIfWaitDisplayDataInited(VBOXDISPIF_OP *pOp, const uint8_t *
     return winEr;
 }
 
-static DWORD vboxDispIfReninitModesWDDM(VBOXDISPIF_OP *pOp, const uint8_t *pScreenIdMask)
+static DWORD vboxDispIfUpdateModesWDDM(VBOXDISPIF_OP *pOp, uint32_t u32TargetId, const RTRECTSIZE *pSize)
 {
     DWORD winEr = ERROR_SUCCESS;
-    VBOXDISPIFESCAPE_REINITVIDEOMODESBYMASK EscData = {0};
-    EscData.EscapeHdr.escapeCode = VBOXESC_REINITVIDEOMODESBYMASK;
-    memcpy(EscData.ScreenMask, pScreenIdMask, sizeof (EscData.ScreenMask));
+    VBOXDISPIFESCAPE_UPDATEMODES EscData = {0};
+    EscData.EscapeHdr.escapeCode = VBOXESC_UPDATEMODES;
+    EscData.u32TargetId = u32TargetId;
+    EscData.Size = *pSize;
 
     D3DKMT_ESCAPE EscapeData = {0};
     EscapeData.hAdapter = pOp->Adapter.hAdapter;
@@ -1318,11 +1319,11 @@ static DWORD vboxDispIfReninitModesWDDM(VBOXDISPIF_OP *pOp, const uint8_t *pScre
         winEr = ERROR_SUCCESS;
     else
     {
-        WARN(("VBoxTray: pfnD3DKMTEscape VBOXESC_REINITVIDEOMODESBYMASK failed Status 0x%x\n", Status));
+        WARN(("VBoxTray: pfnD3DKMTEscape VBOXESC_UPDATEMODES failed Status 0x%x\n", Status));
         winEr = ERROR_GEN_FAILURE;
     }
 
-    winEr =  vboxDispIfWaitDisplayDataInited(pOp, pScreenIdMask);
+    winEr =  vboxDispIfWaitDisplayDataInited(pOp);
     if (winEr != NO_ERROR)
         WARN(("VBoxTray: (WDDM) Failed vboxDispIfWaitDisplayDataInited winEr %d\n", winEr));
 
@@ -1378,12 +1379,7 @@ static DWORD vboxDispIfResizePerform(PCVBOXDISPIF const pIf, UINT iChangedMode, 
 
 DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, BOOL fEnable, BOOL fExtDispSup, DISPLAY_DEVICE *paDisplayDevices, DEVMODE *paDeviceModes, UINT cDevModes)
 {
-    UINT cbVidPnInfo = VBOXWDDM_RECOMMENDVIDPN_SIZE(cDevModes);
-    PVBOXWDDM_RECOMMENDVIDPN pVidPnInfo = (PVBOXWDDM_RECOMMENDVIDPN)alloca(cbVidPnInfo);
-    pVidPnInfo->cScreenInfos = cDevModes;
-    D3DKMT_HANDLE hAdapter = NULL;
     DWORD winEr = NO_ERROR;
-    UINT i = 0;
 
     Log(("VBoxTray: vboxDispIfResizeModesWDDM\n"));
     VBoxRrRetryStop();
@@ -1397,22 +1393,59 @@ DWORD vboxDispIfResizeModesWDDM(PCVBOXDISPIF const pIf, UINT iChangedMode, BOOL 
         return winEr;
     }
 
+    VBOXWDDM_RECOMMENDVIDPN VidPnData;
 
-//        if (fEnable)
+    memset(&VidPnData, 0, sizeof (VidPnData));
+
+    uint32_t cElements = 0;
+
+    for (uint32_t i = 0; i < cDevModes; ++i)
     {
-
-        uint8_t ScreenMask[VBOXWDDM_SCREENMASK_SIZE] = {0};
-        ASMBitSet(ScreenMask, iChangedMode);
-        vboxDispIfReninitModesWDDM(&Op, ScreenMask);
+        if ((i == iChangedMode) ? fEnable : (paDisplayDevices[i].StateFlags & DISPLAY_DEVICE_ACTIVE))
+        {
+            VidPnData.aSources[cElements].Size.cx = paDeviceModes[i].dmPelsWidth;
+            VidPnData.aSources[cElements].Size.cy = paDeviceModes[i].dmPelsHeight;
+            VidPnData.aTargets[cElements].iSource = cElements;
+            ++cElements;
+        }
+        else
+            VidPnData.aTargets[cElements].iSource = -1;
     }
 
-    winEr = vboxDispIfResizePerform(pIf, iChangedMode, fEnable, fExtDispSup, paDisplayDevices, paDeviceModes, cDevModes);
+    D3DKMT_INVALIDATEACTIVEVIDPN DdiData = {0};
 
-    if (winEr == ERROR_RETRY)
-    {
-        VBoxRrRetrySchedule(pIf, iChangedMode, fEnable, fExtDispSup, paDisplayDevices, paDeviceModes, cDevModes);
-        /* just pretend everything is fine so far */
+    DdiData.hAdapter = Op.Adapter.hAdapter;
+    DdiData.pPrivateDriverData = &VidPnData;
+    DdiData.PrivateDriverDataSize = sizeof (VidPnData);
+
+    NTSTATUS Status = Op.pIf->modeData.wddm.KmtCallbacks.pfnD3DKMTInvalidateActiveVidPn(&DdiData);
+    if (NT_SUCCESS(Status))
         winEr = NO_ERROR;
+    else
+    {
+        winEr = NO_ERROR;
+
+        if (fEnable)
+        {
+            RTRECTSIZE Size;
+            Size.cx = paDeviceModes[iChangedMode].dmPelsWidth;
+            Size.cy = paDeviceModes[iChangedMode].dmPelsHeight;
+            winEr = vboxDispIfUpdateModesWDDM(&Op, iChangedMode, &Size);
+            if (winEr != NO_ERROR)
+                WARN(("vboxDispIfUpdateModesWDDM failed %d\n", winEr));
+        }
+
+        if (winEr == NO_ERROR)
+        {
+            winEr = vboxDispIfResizePerform(pIf, iChangedMode, fEnable, fExtDispSup, paDisplayDevices, paDeviceModes, cDevModes);
+
+            if (winEr == ERROR_RETRY)
+            {
+                VBoxRrRetrySchedule(pIf, iChangedMode, fEnable, fExtDispSup, paDisplayDevices, paDeviceModes, cDevModes);
+                /* just pretend everything is fine so far */
+                winEr = NO_ERROR;
+            }
+        }
     }
 
     vboxDispIfOpEnd(&Op);
@@ -1775,7 +1808,7 @@ static DWORD vboxDispIfResizeStartedWDDMOp(VBOXDISPIF_OP *pOp)
         return NO_ERROR;
     }
 
-    winEr = vboxDispIfWaitDisplayDataInited(pOp, NULL);
+    winEr = vboxDispIfWaitDisplayDataInited(pOp);
     if (winEr != NO_ERROR)
         WARN(("VBoxTray: vboxDispIfResizeStartedWDDMOp: vboxDispIfWaitDisplayDataInited failed winEr 0x%x\n", winEr));
 
